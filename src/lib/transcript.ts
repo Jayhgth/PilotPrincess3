@@ -8,12 +8,20 @@ import type {
 import { schoolYearForGrade } from "@/lib/planning";
 
 function normalizeCourseName(value: string) {
-  return value
+  const designLabTranscriptLabel = /^\s*d\s*\.?\s*lab\s*:\s*/i.test(value);
+  const normalized = value
     .toLowerCase()
-    .replace(/\bhonors?\b/g, "honors")
+    .replace(/^\s*d\s*\.?\s*lab\s*:\s*/i, "")
+    .replace(/\bhonors?\b/g, designLabTranscriptLabel ? "" : "honors")
     .replace(/\badvanced placement\b/g, "ap")
+    .replace(/\bintro\b/g, "introduction")
+    .replace(/\bcodesigners\b/g, "co designers")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+
+  return normalized === "foundation design thinking"
+    ? "foundation in design thinking"
+    : normalized;
 }
 
 function courseAliases(course: Course) {

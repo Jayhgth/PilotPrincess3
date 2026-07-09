@@ -175,6 +175,10 @@ select
   requirement.id,
   'd7ec1000-0000-4000-8000-000000000001',
   case
+    when requirement.area in (
+      'design_lab'::public.requirement_area,
+      'personal_development'::public.requirement_area
+    ) then 'verified'::public.confidence_status
     when course.confidence = 'verified' and requirement.confidence = 'verified' then 'verified'::public.confidence_status
     else 'likely'::public.confidence_status
   end

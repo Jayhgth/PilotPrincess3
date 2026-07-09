@@ -47,6 +47,12 @@ export interface StructuredRunOptions<T> {
 
 export const CODEX_FEATURES = [
   {
+    id: "diagnostics_chat",
+    label: "AI diagnostics chat",
+    usesCodex: true,
+    condition: "Only when the student sends a test message from AI connection."
+  },
+  {
     id: "plain_language_explanations",
     label: "Plan and simulator explanations",
     usesCodex: true,
@@ -66,9 +72,9 @@ export const CODEX_FEATURES = [
   },
   {
     id: "image_transcript_ocr",
-    label: "Scanned transcript image extraction",
+    label: "Scanned transcript table interpretation",
     usesCodex: true,
-    condition: "Only when a transcript has no usable PDF or document text layer."
+    condition: "Only when a transcript has no usable text layer and visual table understanding is required."
   },
   {
     id: "structured_transcripts",

@@ -9,6 +9,7 @@ describe("Codex feature boundaries", () => {
     expect(featureMap.structured_transcripts).toBe(false);
     expect(featureMap.planning_math).toBe(false);
     expect(featureMap.image_transcript_ocr).toBe(true);
+    expect(featureMap.diagnostics_chat).toBe(true);
     expect(status.features).toEqual(CODEX_FEATURES);
     expect(status.maxConcurrentTurns).toBe(2);
   });

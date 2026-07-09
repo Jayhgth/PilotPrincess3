@@ -272,11 +272,11 @@ export default function SmccdPlanner({
         <a className="secondary-button" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">Official K-12 steps <ArrowSquareOut size={16} /></a>
       </header>
 
-      <div className="notice-strip warning"><Warning size={19} /><span>Catalog inclusion is not approval or a live course offering. Confirm parent and counselor permission, prerequisites, schedule availability, d.tech credit, and transcript delivery.</span></div>
+      <div className="notice-strip warning"><Warning size={19} /><span>Catalog inclusion is not approval or a live course offering. Confirm counselor approval, prerequisites, schedule availability, d.tech credit, and transcript delivery.</span></div>
       {error && <div className="inline-alert error" role="alert">{error}</div>}
       {notice && <div className="inline-alert success" role="status">{notice}</div>}
 
-      <section className="smccd-source-line" aria-label="SMCCD source catalogs">
+      <nav className="smccd-source-line" aria-label="SMCCD source catalogs">
         {colleges.map((college) => (
           <a href={college.courses_url} target="_blank" rel="noreferrer" key={college.code}>
             <strong>{college.name}</strong>
@@ -284,10 +284,58 @@ export default function SmccdPlanner({
             <ArrowSquareOut size={14} />
           </a>
         ))}
+      </nav>
+
+      <section className="content-section smccd-catalog-section">
+        <header className="section-heading"><div><h2>Find a college course</h2><p>Search 2,461 official 2025-2026 catalog records. Select a result to review it before adding it.</p></div></header>
+        <div className="smccd-filters">
+          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Course code or title" /></label>
+          <label className="form-field"><span>College</span><select value={collegeFilter} onChange={(event) => setCollegeFilter(event.target.value as CollegeFilter)}><option value="all">All colleges</option>{Object.entries(SMCCD_COLLEGE_NAMES).map(([code, name]) => <option value={code} key={code}>{name}</option>)}</select></label>
+          <label className="form-field"><span>Transfer</span><select value={transferFilter} onChange={(event) => setTransferFilter(event.target.value)}><option value="all">All courses</option><option value="transferable">CSU or UC transferable</option><option value="uc">UC transferable</option></select></label>
+        </div>
+        <div className="smccd-browser-grid">
+          <div>
+            <p className="result-count">{visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} matches`}</p>
+            <div className="smccd-course-table" role="table" aria-label="SMCCD courses">
+              <div className="smccd-course-row smccd-course-head" role="row"><span role="columnheader">Course</span><span role="columnheader">College</span><span role="columnheader">Units</span><span role="columnheader">Action</span></div>
+              {visibleCourses.map((course) => (
+                <div className={`smccd-course-row ${selectedCourse?.id === course.id ? "selected" : ""}`} role="row" key={course.id}>
+                  <div role="cell"><a href={course.catalog_url} target="_blank" rel="noreferrer"><strong>{course.course_code}</strong> {course.title} <ArrowSquareOut size={13} /></a><small>{course.transfer_credit ?? "Transfer not listed"}{course.attributes.length > 0 ? `, ${course.attributes.slice(0, 1).join(", ")}` : ""}</small></div>
+                  <span role="cell">{course.college_code}</span>
+                  <span role="cell">{course.units_max && course.units_max !== course.units_min ? `${course.units_min}-${course.units_max}` : course.units_min}</span>
+                  <span role="cell"><button className="secondary-button small" type="button" onClick={() => chooseCourse(course)}>{selectedCourse?.id === course.id ? "Selected" : "Select"}</button></span>
+                </div>
+              ))}
+            </div>
+            {visibleCourses.length === 80 && <p className="catalog-limit-note">Refine the search to see a shorter list.</p>}
+          </div>
+          <aside className="smccd-selection-panel" aria-live="polite">
+            {selectedCourse ? (
+              <form className="smccd-course-draft" onSubmit={addCatalogCourse}>
+                <div className="smccd-selected-heading"><BookOpen size={20} /><div><h2>{selectedCourse.course_code}</h2><p>{selectedCourse.title}</p><small>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</small></div></div>
+                <div className="smccd-selection-fields">
+                  <label className="form-field"><span>Plan status</span><select value={courseDraft.status} onChange={(event) => setCourseDraft({ ...courseDraft, status: event.target.value as CourseStatus })}><option value="planned">Planned</option><option value="current">Current</option><option value="completed">Completed</option></select></label>
+                  <label className="form-field"><span>High-school grade</span><select value={courseDraft.gradeLevel} onChange={(event) => setCourseDraft({ ...courseDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{[9, 10, 11, 12].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+                  <label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={courseDraft.collegeUnits} onChange={(event) => setCourseDraft({ ...courseDraft, collegeUnits: Number(event.target.value) })} /></label>
+                  <label className="form-field"><span>Proposed d.tech credits</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /><small>Keep at 0 until d.tech confirms.</small></label>
+                </div>
+                <button className="primary-button" type="submit" disabled={busy}><Plus size={17} /> Add to plan</button>
+                <button className="quiet-button" type="button" onClick={() => setSelectedCourse(null)}>Clear selection</button>
+              </form>
+            ) : (
+              <div className="smccd-selection-empty"><BookOpen size={22} /><h3>Select a course</h3><p>Course settings appear here before anything is added to your plan.</p></div>
+            )}
+          </aside>
+        </div>
+      </section>
+
+      <section className="content-section smccd-plan-section">
+        <header className="section-heading"><div><h2>College courses in this plan</h2><p>Transcript imports and planned catalog courses use the same district record when matched.</p></div></header>
+        {districtRows.length ? <div className="source-list">{districtRows.map((row) => <article className="source-row" key={row.id}><div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>)}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
       </section>
 
       <section className="content-section smccd-goal-section">
-        <header className="section-heading"><div><h2>Associate-degree goal</h2><p>Choose one official AA or AS program. Major progress excludes GE, residency, waivers, and substitutions.</p></div></header>
+        <header className="section-heading"><div><h2>Associate-degree goal</h2><p>Choose one official AA or AS program. Progress covers parsed major requirements only.</p></div></header>
         <div className="smccd-goal-controls">
           <label className="form-field"><span>Program</span><select value={goalProgramId} onChange={(event) => setGoalProgramId(event.target.value)}><option value="">Choose a program</option>{Object.entries(SMCCD_COLLEGE_NAMES).map(([code, name]) => <optgroup label={name} key={code}>{programs.filter((program) => program.college_code === code).map((program) => <option value={program.id} key={program.id}>{program.title} ({program.award_type})</option>)}</optgroup>)}</select></label>
           <button className="primary-button" type="button" onClick={() => void saveGoal()} disabled={busy || !goalProgramId}>Save goal</button>
@@ -296,56 +344,16 @@ export default function SmccdPlanner({
           <div className="smccd-progress">
             <div className="smccd-progress-summary">
               <div><span>Program</span><strong>{goalProgram.title} {goalProgram.award_type}</strong><small>{SMCCD_COLLEGE_NAMES[goalProgram.college_code]}</small></div>
-              <div><span>Projected major units</span><strong>{progress.projectedMajorUnits} / {progress.requiredMajorUnits || "review"}</strong><small>{progress.majorPercent}% of parsed major-unit rules</small></div>
-              <div><span>College units</span><strong>{progress.completedCollegeUnits} completed</strong><small>{progress.projectedCollegeUnits} including current and planned</small></div>
+              <div><span>Projected major units</span><strong>{progress.projectedMajorUnits} / {progress.requiredMajorUnits || "review"}</strong><small>{progress.majorPercent}% of parsed rules</small></div>
+              <div><span>College units</span><strong>{progress.completedCollegeUnits} completed</strong><small>{progress.projectedCollegeUnits} projected</small></div>
               <div><span>Requirement groups</span><strong>{progress.satisfiedRequirements} / {progress.totalRequirements}</strong><small>Catalog rules only</small></div>
             </div>
-            <div className="smccd-requirement-list">
-              {progress.requirements.map((item) => (
-                <article key={item.requirement.id}>
-                  <div><strong>{item.requirement.label}</strong><span>{item.selectedCourseCodes.length ? item.selectedCourseCodes.join(", ") : item.requirement.raw_text ?? "No matching planned course"}</span></div>
-                  <b className={`requirement-state ${item.status}`}>{item.status === "manual_review" ? "Manual review" : item.status}</b>
-                </article>
-              ))}
-            </div>
-            <a className="quiet-button smccd-catalog-link" href={goalProgram.catalog_url} target="_blank" rel="noreferrer">Open official program requirements <ArrowSquareOut size={15} /></a>
+            <details className="smccd-requirements"><summary>Review major requirement groups</summary><div className="smccd-requirement-list">{progress.requirements.map((item) => (
+              <article key={item.requirement.id}><div><strong>{item.requirement.label}</strong><span>{item.selectedCourseCodes.length ? item.selectedCourseCodes.join(", ") : item.requirement.raw_text ?? "No matching planned course"}</span></div><b className={`requirement-state ${item.status}`}>{item.status === "manual_review" ? "Manual review" : item.status}</b></article>
+            ))}</div></details>
+            <a className="quiet-button smccd-catalog-link" href={goalProgram.catalog_url} target="_blank" rel="noreferrer">Official program requirements <ArrowSquareOut size={15} /></a>
           </div>
         )}
-      </section>
-
-      <section className="content-section smccd-catalog-section">
-        <header className="section-heading"><div><h2>District course catalog</h2><p>2,461 source-backed course records from CSM, Skyline, and Cañada for 2025-2026.</p></div></header>
-        <div className="smccd-filters">
-          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search course code or title" /></label>
-          <label className="form-field"><span>College</span><select value={collegeFilter} onChange={(event) => setCollegeFilter(event.target.value as CollegeFilter)}><option value="all">All colleges</option>{Object.entries(SMCCD_COLLEGE_NAMES).map(([code, name]) => <option value={code} key={code}>{name}</option>)}</select></label>
-          <label className="form-field"><span>Transfer</span><select value={transferFilter} onChange={(event) => setTransferFilter(event.target.value)}><option value="all">All courses</option><option value="transferable">CSU or UC transferable</option><option value="uc">UC transferable</option></select></label>
-        </div>
-        <div className="smccd-course-table" role="table" aria-label="SMCCD courses">
-          <div className="smccd-course-row smccd-course-head" role="row"><span role="columnheader">Course</span><span role="columnheader">College</span><span role="columnheader">Units</span><span role="columnheader">Transfer</span><span role="columnheader">Action</span></div>
-          {visibleCourses.map((course) => (
-            <div className="smccd-course-row" role="row" key={course.id}>
-              <div role="cell"><a href={course.catalog_url} target="_blank" rel="noreferrer"><strong>{course.course_code}</strong> {course.title} <ArrowSquareOut size={13} /></a>{course.attributes.length > 0 && <small>{course.attributes.slice(0, 2).join(", ")}</small>}</div>
-              <span role="cell">{course.college_code}</span>
-              <span role="cell">{course.units_max && course.units_max !== course.units_min ? `${course.units_min}-${course.units_max}` : course.units_min}</span>
-              <span role="cell">{course.transfer_credit ?? "Not listed"}</span>
-              <button className="secondary-button small" type="button" onClick={() => chooseCourse(course)}>Select</button>
-            </div>
-          ))}
-        </div>
-        {visibleCourses.length === 80 && <p className="catalog-limit-note">Showing the first 80 matches. Refine the search to narrow the list.</p>}
-      </section>
-
-      {selectedCourse && (
-        <form className="form-section smccd-course-draft" onSubmit={addCatalogCourse}>
-          <div className="smccd-selected-heading"><BookOpen size={20} weight="duotone" /><div><h2>{selectedCourse.course_code} {selectedCourse.title}</h2><p>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}, {selectedCourse.source_year} catalog</p></div></div>
-          <div className="form-grid four"><label className="form-field"><span>Plan status</span><select value={courseDraft.status} onChange={(event) => setCourseDraft({ ...courseDraft, status: event.target.value as CourseStatus })}><option value="planned">Planned</option><option value="current">Current</option><option value="completed">Completed</option></select></label><label className="form-field"><span>High-school grade</span><select value={courseDraft.gradeLevel} onChange={(event) => setCourseDraft({ ...courseDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{[9, 10, 11, 12].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label><label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={courseDraft.collegeUnits} onChange={(event) => setCourseDraft({ ...courseDraft, collegeUnits: Number(event.target.value) })} /></label><label className="form-field"><span>Proposed d.tech credits</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /><small>Leave at 0 until d.tech confirms the conversion.</small></label></div>
-          <div className="form-actions"><button className="primary-button" type="submit" disabled={busy}><Plus size={17} /> Add to plan</button><button className="quiet-button" type="button" onClick={() => setSelectedCourse(null)}>Cancel</button></div>
-        </form>
-      )}
-
-      <section className="content-section smccd-plan-section">
-        <header className="section-heading"><div><h2>College courses in this plan</h2><p>Transcript imports and planned catalog courses use the same district record when matched.</p></div></header>
-        {districtRows.length ? <div className="source-list">{districtRows.map((row) => <article className="source-row" key={row.id}><div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>)}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
       </section>
 
       <details className="smccd-manual-entry">

@@ -6,7 +6,7 @@ Last run: 2026-07-09
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 18/18 unit tests passing
+- [x] `pnpm test` with 21/21 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
@@ -37,6 +37,7 @@ Last run: 2026-07-09
 - [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
 - [x] Official catalog loads 41 courses and supports search/filter/add status
+- [x] Official catalog paginates 12 courses per page and exposes one status selector plus one add action per row
 - [x] Graduation tracker excludes unverified mappings
 - [x] GPA calculations separate current/projected and weighted/unweighted results
 - [x] Suggested plan is generated without overwriting manual rows
@@ -49,7 +50,9 @@ Last run: 2026-07-09
 - [x] SMCCD catalog searches and filters 2,461 source-backed records across all three district colleges
 - [x] Exact SMCCD course selection persists the district foreign key, college units, plan status, and proposed d.tech credit
 - [x] AA/AS goal selection persists per student and computes parsed major-requirement progress deterministically
-- [x] SMCCD browser flow and AI Status browser flow pass with no console errors
+- [x] SMCCD browser flow and AI connection browser flow pass with no console errors
+- [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
+- [x] Mobile overview, navigation, catalog, SMCCD planner, and graduation tracker visually pass at 390x844
 - [x] Lightweight summary works with deterministic fallback
 - [x] Desktop dark-theme UI visually reviewed in the in-app browser
 
@@ -62,13 +65,14 @@ Last run: 2026-07-09
 - [x] Actual d.tech text-layer PDF parses 50 completed rows deterministically with `aiUsed: false`
 - [x] All 17 college rows in the regression PDF match exact SMCCD records
 - [x] Exact transcript course names and aliases match official catalog records deterministically
+- [x] Supplied d.tech PDF aliases produce 30/40 Design Lab and 10/25 Personal Development credits with verified mappings
 - [x] Unmatched transcript courses remain custom and unverified
 - [x] Reviewed transcript rows import as completed with final grade, credits, grade level, and source provenance
 - [x] Existing planned catalog rows reconcile to completed instead of duplicating
 - [x] Confidence and review state remain visible and editable
 - [x] Codex runs server-side with structured schema validation
-- [x] AI Status tab displays runtime configuration and an explicit used/not-used feature matrix
-- [x] Authenticated real Codex connection test succeeds without exposing the credential
+- [x] AI connection tab displays runtime configuration and an explicit used/not-used feature matrix
+- [x] Authenticated Codex conversation succeeds, reports model and latency, and does not expose the credential or claim access to student data
 - [x] Text PDF parsing and planning calculations are explicitly deterministic and do not call Codex
 - [x] Upload content is treated as untrusted data with no network/tool access
 - [x] Deterministic application remains usable if Codex fails or times out
@@ -78,7 +82,7 @@ Last run: 2026-07-09
 - [ ] Add production URL, `/app`, and `/reset-password` callbacks to Supabase Auth redirects
 - [ ] Configure custom SMTP and re-enable email confirmation without restricting email domains
 - [ ] Configure production Codex secret and verify it is not exposed in browser assets
-- [ ] Run the AI Status connection test on the production host
+- [ ] Run the AI connection conversation on the production host
 - [ ] Run the full authenticated flow on the deployed HTTPS origin
 - [ ] Verify password reset and confirmation delivery on the production domain
 - [ ] Confirm backup, restore, monitoring, and log-retention policies

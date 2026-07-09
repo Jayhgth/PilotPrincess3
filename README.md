@@ -108,9 +108,9 @@ The browser never receives an AI key. User-owned tables and uploads are protecte
 
 ### Where Codex is used
 
-The authenticated **AI status** tab is the runtime source of truth. It displays the active model and credential mode, lists every AI boundary, and runs a real structured connection test without exposing credentials.
+The authenticated **AI connection** tab is the runtime source of truth. It displays the active model and credential mode, lists every AI boundary, and provides a bounded conversational test that reports the model and response latency without exposing credentials or student records.
 
-Codex is used for requested plan/simulator explanations, lightweight wording assistance, semantic review of unstructured student-added policy sources, and scanned transcript images that have no usable text layer. It is not used for text-based PDF transcript parsing, catalog matching, graduation calculations, GPA, workload, SMCCD requirement progress, or other planning math. Those paths are deterministic and continue to work with no Codex connection.
+Codex is used for requested plan/simulator explanations, lightweight wording assistance, semantic review of unstructured student-added policy sources, and interpreting scanned transcript tables only when no usable text layer exists. It is not used for text-based PDF transcript parsing, catalog matching, graduation calculations, GPA, workload, SMCCD requirement progress, or other planning math. Those paths are deterministic and continue to work with no Codex connection.
 
 ## Official Seed Sources
 
@@ -132,4 +132,4 @@ Codex is used for requested plan/simulator explanations, lightweight wording ass
 - Run all commands in [TEST_CHECKLIST.md](./TEST_CHECKLIST.md).
 - Enable host-level HTTPS, logs, error monitoring, and backups.
 
-See [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for completed scope and current limitations.
+See [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for completed scope and current limitations, and [UX_AUDIT.md](./UX_AUDIT.md) for the strict final usability grade and evidence.

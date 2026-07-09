@@ -315,4 +315,54 @@ describe("transcript import", () => {
     expect(draft.mapping_verified).toBe(false);
     expect(draft.status).toBe("completed");
   });
+
+  it("matches transcript aliases for Design Lab and Personal Development", () => {
+    const catalogCourses = [
+      course({ id: "foundation", name: "Foundation in Design Thinking", subject: "Design Lab" }),
+      course({ id: "codesigners", name: "Co-designers", subject: "Design Lab" }),
+      course({ id: "innovation", name: "Innovation Diploma", subject: "Design Lab" }),
+      course({ id: "prototyping", name: "Introduction to Prototyping and Fabrication", subject: "Personal Development" })
+    ];
+
+    expect(findTranscriptCatalogMatch("Foundation Design Thinking", catalogCourses)?.id).toBe("foundation");
+    expect(findTranscriptCatalogMatch("D.Lab: CoDesigners Honors", catalogCourses)?.id).toBe("codesigners");
+    expect(findTranscriptCatalogMatch("D.Lab: Innovation Diploma Honors", catalogCourses)?.id).toBe("innovation");
+    expect(findTranscriptCatalogMatch("Intro to Prototyping and Fabrication", catalogCourses)?.id).toBe("prototyping");
+  });
+
+  it("preserves honors distinctions outside Design Lab transcript labels", () => {
+    const catalogCourses = [
+      course({ id: "precalculus", name: "Precalculus" }),
+      course({ id: "precalculus-honors", name: "Precalculus Honors", is_honors: true })
+    ];
+
+    expect(findTranscriptCatalogMatch("Precalculus", catalogCourses)?.id).toBe("precalculus");
+    expect(findTranscriptCatalogMatch("Precalculus Honors", catalogCourses)?.id).toBe("precalculus-honors");
+  });
+
+  it("imports a matched Design Lab alias with verified requirement credit", () => {
+    const designLabCourse = course({
+      id: "innovation",
+      name: "Innovation Diploma",
+      subject: "Design Lab",
+      credits: 10
+    });
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "D.Lab: Innovation Diploma Honors",
+        grade_level: 10,
+        credits: 10,
+        letter_grade: "A"
+      },
+      profile,
+      [designLabCourse],
+      [{ ...verifiedMapping, course_id: designLabCourse.id }],
+      "review-design-lab"
+    );
+
+    expect(draft.course_id).toBe(designLabCourse.id);
+    expect(draft.custom_course_name).toBeNull();
+    expect(draft.mapping_verified).toBe(true);
+    expect(draft.credits).toBe(10);
+  });
 });

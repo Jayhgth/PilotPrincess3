@@ -4,6 +4,7 @@ import {
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
   CalendarCheckIcon as CalendarCheck,
+  CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
@@ -92,20 +93,25 @@ type ViewId =
   | "simulator"
   | "ai_status";
 
-const NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
+const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
-  { id: "profile", label: "Student profile", icon: UserCircle },
-  { id: "sources", label: "Source review", icon: FileArrowUp },
-  { id: "catalog", label: "Course catalog", icon: BookOpen },
-  { id: "graduation", label: "Graduation", icon: GraduationCap },
-  { id: "gpa", label: "GPA", icon: ChartLineUp },
   { id: "planner", label: "Academic plan", icon: CalendarCheck },
-  { id: "dual_credit", label: "SMCCD planning", icon: Compass },
+  { id: "graduation", label: "Graduation", icon: GraduationCap },
+  { id: "catalog", label: "Course catalog", icon: BookOpen },
+  { id: "sources", label: "Transcripts", icon: FileArrowUp },
+  { id: "dual_credit", label: "SMCCD planning", icon: Compass }
+];
+
+const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
+  { id: "gpa", label: "GPA", icon: ChartLineUp },
   { id: "activities", label: "Activities", icon: ActivityIcon },
   { id: "timeline", label: "Timeline", icon: ListChecks },
   { id: "simulator", label: "Simulator", icon: Scales },
-  { id: "ai_status", label: "AI status", icon: Cpu }
+  { id: "profile", label: "Student profile", icon: UserCircle },
+  { id: "ai_status", label: "AI connection", icon: Cpu }
 ];
+
+const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
 
 const DEFAULT_SIMULATION: SimulationConfig = {
   majorDirection: "undecided",
@@ -167,6 +173,27 @@ function EmptyState({ title, body, action }: { title: string; body: string; acti
   );
 }
 
+function PaginationControls({
+  page,
+  pageCount,
+  onChange,
+  label
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+  label: string;
+}) {
+  if (pageCount <= 1) return null;
+  return (
+    <nav className="pagination-controls" aria-label={label}>
+      <button className="secondary-button small" type="button" onClick={() => onChange(page - 1)} disabled={page === 0}>Previous</button>
+      <span>Page {page + 1} of {pageCount}</span>
+      <button className="secondary-button small" type="button" onClick={() => onChange(page + 1)} disabled={page >= pageCount - 1}>Next</button>
+    </nav>
+  );
+}
+
 function LoadingWorkspace() {
   return (
     <main className="workspace-loading" aria-live="polite">
@@ -191,6 +218,7 @@ export default function PlanningWorkspace() {
   const [toast, setToast] = useState<string | null>(null);
   const [view, setView] = useState<ViewId>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [moreNavOpen, setMoreNavOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   const [school, setSchool] = useState<School | null>(null);
@@ -210,7 +238,9 @@ export default function PlanningWorkspace() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
   const [catalogGrade, setCatalogGrade] = useState<GradeLevel | "all">("all");
-  const [catalogConfidence, setCatalogConfidence] = useState<Confidence | "all">("all");
+  const [catalogStatuses, setCatalogStatuses] = useState<Record<string, PlanCourse["status"]>>({});
+  const [catalogPage, setCatalogPage] = useState(0);
+  const [reviewPage, setReviewPage] = useState(0);
   const [sourceForm, setSourceForm] = useState({
     title: "",
     rawText: "",
@@ -410,6 +440,7 @@ export default function PlanningWorkspace() {
 
   function navigate(nextView: ViewId) {
     setView(nextView);
+    if (SECONDARY_NAV_ITEMS.some((item) => item.id === nextView)) setMoreNavOpen(true);
     setMobileNavOpen(false);
     void logEvent("view_opened", { view: nextView });
   }
@@ -992,12 +1023,14 @@ export default function PlanningWorkspace() {
     return (
       (!query || [course.name, course.subject, course.description ?? "", course.prerequisites.join(" ")].join(" ").toLowerCase().includes(query)) &&
       (catalogSubject === "all" || course.subject === catalogSubject) &&
-      (catalogGrade === "all" || course.grade_levels.includes(catalogGrade)) &&
-      (catalogConfidence === "all" || course.confidence === catalogConfidence)
+      (catalogGrade === "all" || course.grade_levels.includes(catalogGrade))
     );
   });
   const subjects = [...new Set(courses.map((course) => course.subject))];
   const pendingReviewCount = reviewItems.filter((item) => item.status === "pending").length;
+  const catalogPageSize = 12;
+  const catalogPageCount = Math.max(1, Math.ceil(filteredCourses.length / catalogPageSize));
+  const visibleCatalogCourses = filteredCourses.slice(catalogPage * catalogPageSize, (catalogPage + 1) * catalogPageSize);
 
   function renderDashboard() {
     if (!profile) return null;
@@ -1095,6 +1128,10 @@ export default function PlanningWorkspace() {
   function renderSources() {
     const userSources = sources.filter((source) => !source.is_official);
     const officialSources = sources.filter((source) => source.is_official);
+    const reviewPageSize = 10;
+    const reviewPageCount = Math.max(1, Math.ceil(reviewItems.length / reviewPageSize));
+    const safeReviewPage = Math.min(reviewPage, reviewPageCount - 1);
+    const visibleReviewItems = reviewItems.slice(safeReviewPage * reviewPageSize, (safeReviewPage + 1) * reviewPageSize);
     return (
       <>
         <PageHeader title="Source import and review" description="Upload official material, inspect structured results, and correct uncertainty before using it." />
@@ -1115,12 +1152,12 @@ export default function PlanningWorkspace() {
         </div>
         <section className="content-section review-section">
           <header className="section-heading"><div><h2>Manual review queue</h2><p>{pendingReviewCount} items still need a decision.</p></div></header>
-          {reviewItems.length ? <div className="review-list">{reviewItems.map((item) => {
+          {reviewItems.length ? <><div className="review-list">{visibleReviewItems.map((item) => {
             const draft = reviewDrafts[item.id] ?? JSON.stringify(item.corrected_payload ?? item.proposed_payload, null, 2);
             const displayPayload = item.corrected_payload ?? item.proposed_payload;
             const isTranscriptCourse = item.entity_type === "transcript_course";
-            return <article className="review-item" key={item.id}><header><div><span>{isTranscriptCourse ? "Transcript course" : titleCase(item.entity_type)}</span><ConfidenceTag value={item.confidence} /></div><strong>{String(displayPayload.name ?? displayPayload.course_name ?? displayPayload.title ?? displayPayload.summary ?? "Parsed source item")}</strong></header>{item.uncertainty_notes.length > 0 && <ul className="uncertainty-list">{item.uncertainty_notes.map((note) => <li key={note}>{note}</li>)}</ul>}<label className="form-field"><span>Corrected structured data</span><textarea className="code-editor" value={draft} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} /></label><footer><span className={`review-status ${item.status}`}>{titleCase(item.status)}</span><div><button className="danger-button small" onClick={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)}><X size={15} /> Reject</button><button className="secondary-button small" onClick={() => void saveReview(item, "approved")} disabled={Boolean(busyLabel)}><Check size={15} /> Approve correction</button>{(item.entity_type === "course" || isTranscriptCourse) && item.status === "approved" && <button className="primary-button small" onClick={() => void addReviewedCourse(item)} disabled={Boolean(busyLabel)}><Plus size={15} /> {isTranscriptCourse ? "Add completed course" : "Use in plan"}</button>}</div></footer></article>;
-          })}</div> : <EmptyState title="Nothing to review" body="Parsed courses, requirements, conflicts, and policy notes appear here." />}
+            return <article className="review-item" key={item.id}><header><div><span>{isTranscriptCourse ? "Transcript course" : titleCase(item.entity_type)}</span><ConfidenceTag value={item.confidence} /></div><strong>{String(displayPayload.name ?? displayPayload.course_name ?? displayPayload.title ?? displayPayload.summary ?? "Parsed source item")}</strong></header>{item.uncertainty_notes.length > 0 && <ul className="uncertainty-list">{item.uncertainty_notes.map((note) => <li key={note}>{note}</li>)}</ul>}<details className="review-data"><summary>Review or correct extracted data</summary><label className="form-field"><span>Structured data</span><textarea className="code-editor" value={draft} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} /></label></details><footer><span className={`review-status ${item.status}`}>{titleCase(item.status)}</span><div><button className="danger-button small" onClick={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)}><X size={15} /> Reject</button><button className="secondary-button small" onClick={() => void saveReview(item, "approved")} disabled={Boolean(busyLabel)}><Check size={15} /> Approve</button>{(item.entity_type === "course" || isTranscriptCourse) && item.status === "approved" && <button className="primary-button small" onClick={() => void addReviewedCourse(item)} disabled={Boolean(busyLabel)}><Plus size={15} /> {isTranscriptCourse ? "Add completed" : "Use in plan"}</button>}</div></footer></article>;
+          })}</div><PaginationControls page={safeReviewPage} pageCount={reviewPageCount} onChange={setReviewPage} label="Review queue pages" /></> : <EmptyState title="Nothing to review" body="Parsed courses, requirements, conflicts, and policy notes appear here." />}
         </section>
         <section className="content-section">
           <header className="section-heading"><div><h2>Official source register</h2><p>Current seed data remains visibly tied to its publication year.</p></div></header>
@@ -1135,21 +1172,28 @@ export default function PlanningWorkspace() {
       <>
         <PageHeader title="Official d.tech catalog" description="Search the 2025-26 source-backed catalog and add courses by status." />
         <section className="catalog-controls" aria-label="Catalog filters">
-          <label><span>Search</span><input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Course, prerequisite, or description" /></label>
-          <label><span>Subject</span><select value={catalogSubject} onChange={(event) => setCatalogSubject(event.target.value)}><option value="all">All subjects</option>{subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
-          <label><span>Grade</span><select value={catalogGrade} onChange={(event) => setCatalogGrade(event.target.value === "all" ? "all" : Number(event.target.value) as GradeLevel)}><option value="all">All grades</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>{grade}</option>)}</select></label>
-          <label><span>Confidence</span><select value={catalogConfidence} onChange={(event) => setCatalogConfidence(event.target.value as Confidence | "all")}><option value="all">All labels</option><option value="verified">Verified</option><option value="likely">Likely</option><option value="uncertain">Uncertain</option></select></label>
+          <label><span>Search courses</span><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Name, subject, or prerequisite" /></label>
+          <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
+          <label><span>Grade</span><select value={catalogGrade} onChange={(event) => { setCatalogGrade(event.target.value === "all" ? "all" : Number(event.target.value) as GradeLevel); setCatalogPage(0); }}><option value="all">All grades</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
         </section>
-        <p className="result-count">{filteredCourses.length} courses</p>
-        <section className="catalog-list">
-          {filteredCourses.map((course) => (
+        <div className="catalog-list-heading"><strong>{filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length} courses` : "No courses"}</strong><span>Choose a status, then add the course once.</span></div>
+        <section className="catalog-list" aria-label="d.tech courses">
+          {visibleCatalogCourses.map((course) => (
             <article className="course-row" key={course.id}>
-              <div className="course-main"><div className="course-title-line"><h2>{course.name}</h2><ConfidenceTag value={course.confidence} />{course.is_honors && <span className="plain-tag">Honors option</span>}</div><p>{course.description}</p><div className="course-meta"><span>{course.subject}</span><span>Grades {course.grade_levels.join(", ") || "verify"}</span><span>{course.credits ? formatCredits(course.credits) : "Credits need verification"}</span>{course.uc_ag_area && <span>{course.uc_ag_area}</span>}</div>{course.prerequisites.length > 0 && <p className="prereq"><strong>Prerequisites:</strong> {course.prerequisites.join(", ")}</p>}</div>
-              <div className="course-actions"><button onClick={() => void addCatalogCourse(course, "completed")} className="quiet-button small">Completed</button><button onClick={() => void addCatalogCourse(course, "current")} className="secondary-button small">Current</button><button onClick={() => void addCatalogCourse(course, "planned")} className="primary-button small">Plan</button></div>
+              <div className="course-main">
+                <div className="course-title-line"><h2>{course.name}</h2>{course.confidence !== "verified" && <ConfidenceTag value={course.confidence} />}</div>
+                <div className="course-meta"><span>{course.subject}</span><span>Grades {course.grade_levels.join(", ") || "verify"}</span><span>{course.credits ? formatCredits(course.credits) : "Credits need review"}</span>{course.is_honors && <span>Honors available</span>}{course.uc_ag_area && <span>{course.uc_ag_area}</span>}</div>
+                <details className="course-details"><summary>Course details</summary><p>{course.description}</p>{course.prerequisites.length > 0 && <p className="prereq"><strong>Prerequisites:</strong> {course.prerequisites.join(", ")}</p>}</details>
+              </div>
+              <div className="course-actions">
+                <label><span className="sr-only">Status for {course.name}</span><select aria-label={`Status for ${course.name}`} value={catalogStatuses[course.id] ?? "planned"} onChange={(event) => setCatalogStatuses((current) => ({ ...current, [course.id]: event.target.value as PlanCourse["status"] }))}><option value="planned">Planned</option><option value="current">Current</option><option value="completed">Completed</option></select></label>
+                <button onClick={() => void addCatalogCourse(course, catalogStatuses[course.id] ?? "planned")} className="primary-button">Add</button>
+              </div>
             </article>
           ))}
           {filteredCourses.length === 0 && <EmptyState title="No matching courses" body="Adjust the search or filters." />}
         </section>
+        <PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />
       </>
     );
   }
@@ -1162,14 +1206,22 @@ export default function PlanningWorkspace() {
         <PageHeader title="Graduation tracker" description={profile.tracker_mode === "selected" ? "This focused view uses the requirement areas chosen during onboarding. Completed, planned, and unverified credits remain distinct." : "Completed, current, planned, missing, and unverified credits remain distinct."} />
         <section className="graduation-total"><div><span>Verified projected coverage</span><strong>{graduationPercent}%</strong></div><p>{profile.tracker_mode === "selected" ? `Showing ${trackedRequirements.length} selected areas totaling ${trackedCredits} credits. The complete d.tech diploma remains 225 credits.` : "d.tech lists 225 total credits for the 2025-26 source year."} This tracker is a planning estimate, not an official audit.</p></section>
         <section className="requirement-rows">
-          {progress.map((item) => (
-            <article className="requirement-detail" key={item.requirement.id}>
-              <header><div><h2>{item.requirement.name}</h2><p>{item.requirement.notes}</p></div><span className={`requirement-status ${item.status}`}>{titleCase(item.status)}</span></header>
+          {progress.map((item) => {
+            const creditsRemaining = Math.max(0, Number(item.requirement.credits_required) - item.verifiedProjectedCredits);
+            const statusText = item.status === "complete"
+              ? "Complete"
+              : item.status === "on_track"
+                ? "On track"
+                : item.verifiedProjectedCredits > 0
+                  ? `${creditsRemaining} credits left`
+                  : "Not started";
+            return <article className="requirement-detail" key={item.requirement.id}>
+              <header><div><h2>{item.requirement.name}</h2><p>{item.requirement.notes}</p></div><span className={`requirement-status ${item.status}`}>{statusText}</span></header>
               <div className="credit-ledger"><div><span>Completed</span><strong>{item.completedCredits}</strong></div><div><span>Current</span><strong>{item.currentCredits}</strong></div><div><span>Planned</span><strong>{item.plannedCredits}</strong></div><div><span>Unverified</span><strong>{item.unverifiedCredits}</strong></div><div><span>Required</span><strong>{item.requirement.credits_required}</strong></div></div>
               <div className="progress-track large"><span style={{ width: `${item.percent}%` }} /></div>
               {item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={16} /> {item.unverifiedCredits} credits are excluded until their mapping is manually verified.</p>}
-            </article>
-          ))}
+            </article>;
+          })}
         </section>
       </>
     );
@@ -1348,11 +1400,16 @@ export default function PlanningWorkspace() {
           <button className="mobile-close icon-button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation"><X size={18} /></button>
         </div>
         <nav className="sidebar-nav" aria-label="Planning workspace">
-          {NAV_ITEMS.map((item) => {
+          {PRIMARY_NAV_ITEMS.map((item) => {
             const NavIcon = item.icon;
             const badge = item.id === "sources" && pendingReviewCount > 0 ? pendingReviewCount : null;
             return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span>{badge && <b>{badge}</b>}</button>;
           })}
+          <button className={`sidebar-more-toggle ${moreNavOpen ? "open" : ""}`} onClick={() => setMoreNavOpen((current) => !current)} type="button" aria-expanded={moreNavOpen}><CaretDown size={17} /><span>More tools</span></button>
+          {moreNavOpen && <div className="sidebar-secondary">{SECONDARY_NAV_ITEMS.map((item) => {
+            const NavIcon = item.icon;
+            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={17} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span></button>;
+          })}</div>}
         </nav>
         <div className="sidebar-footer">
           <div className="school-chip"><GraduationCap size={18} weight="duotone" /><span><strong>{school.short_name}</strong><small>{school.source_year} sources</small></span></div>
