@@ -5,7 +5,6 @@ import {
   FileTextIcon as FileText,
   GraduationCapIcon as GraduationCap,
   PathIcon as Path,
-  SparkleIcon as Sparkle,
   UploadSimpleIcon as UploadSimple,
   UserCircleIcon as UserCircle,
   WarningIcon as Warning
@@ -25,12 +24,14 @@ import type {
   StudentProfile
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
+import { ACADEMIC_INTEREST_OPTIONS, MAJOR_DIRECTION_OPTIONS } from "@/lib/profile-planning";
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 
-type OnboardingStage = "student" | "plan" | "requirements" | "transcript";
+type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "transcript";
 
 const STAGES: Array<{ id: OnboardingStage; label: string }> = [
   { id: "student", label: "About you" },
+  { id: "priorities", label: "Priorities" },
   { id: "plan", label: "Plan window" },
   { id: "requirements", label: "Requirement tracker" },
   { id: "transcript", label: "Transcript" }
@@ -115,6 +116,11 @@ export default function OnboardingFlow({
     () => transcriptItems.filter((item) => selectedTranscriptIds.has(item.id)),
     [selectedTranscriptIds, transcriptItems]
   );
+  const intersessionTranscriptItems = transcriptItems.filter((item) => {
+    const payload = payloadFor(item);
+    return payload.letter_grade?.toUpperCase() === "P" && payload.subject === "Personal Development";
+  });
+  const academicTranscriptItems = transcriptItems.filter((item) => !intersessionTranscriptItems.includes(item));
 
   function validateStage() {
     setError(null);
@@ -123,6 +129,10 @@ export default function OnboardingFlow({
         setError("Add your name, age, current grade, and expected graduation year.");
         return false;
       }
+    }
+    if (stage === "priorities" && !profile.weekly_commitment_limit) {
+      setError("Add the weekly hours you can realistically use for activities and college coursework.");
+      return false;
     }
     if (stage === "requirements" && profile.tracker_mode === "selected" && profile.tracked_requirement_areas.length === 0) {
       setError("Choose at least one requirement area to track.");
@@ -160,6 +170,15 @@ export default function OnboardingFlow({
       if (selected.has(area)) selected.delete(area);
       else selected.add(area);
       return { ...current, tracked_requirement_areas: [...selected] };
+    });
+  }
+
+  function toggleAcademicInterest(interest: string) {
+    setProfile((current) => {
+      const selected = new Set(current.academic_interests);
+      if (selected.has(interest)) selected.delete(interest);
+      else selected.add(interest);
+      return { ...current, academic_interests: [...selected] };
     });
   }
 
@@ -369,7 +388,23 @@ export default function OnboardingFlow({
               <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={profile.age ?? ""} onChange={(event) => setProfile({ ...profile, age: asNumber(event.target.value) })} /></label>
               <label className="form-field"><span>Current grade</span><select value={profile.grade_level ?? ""} onChange={(event) => changeGrade(Number(event.target.value) as GradeLevel)}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
               <label className="form-field"><span>Expected graduation year</span><input type="number" min={2026} max={2040} value={profile.graduation_year ?? ""} onChange={(event) => setProfile({ ...profile, graduation_year: asNumber(event.target.value) })} /></label>
-              <label className="form-field"><span>Planning pace</span><select value={profile.goal_intensity} onChange={(event) => setProfile({ ...profile, goal_intensity: event.target.value as StudentProfile["goal_intensity"] })}><option value="lower_stress">Lower stress</option><option value="balanced">Balanced</option><option value="competitive">Competitive</option></select></label>
+            </div>
+          </>}
+
+          {stage === "priorities" && <>
+            <header><UserCircle size={25} weight="duotone" /><h1>What should the plan optimize for?</h1><p>These answers sort real courses and degrees, set workload limits, and establish the simulator baseline.</p></header>
+            <fieldset className="profile-choice-grid"><legend>Current academic direction</legend>{MAJOR_DIRECTION_OPTIONS.map((option) => <label className={profile.major_direction === option.value ? "selected" : ""} key={option.value}><input type="radio" name="onboarding-major" checked={profile.major_direction === option.value} onChange={() => setProfile({ ...profile, major_direction: option.value })} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</fieldset>
+            <fieldset className="profile-interest-grid"><legend>Interests to match</legend>{ACADEMIC_INTEREST_OPTIONS.map((interest) => <label className={profile.academic_interests.includes(interest) ? "selected" : ""} key={interest}><input type="checkbox" checked={profile.academic_interests.includes(interest)} onChange={() => toggleAcademicInterest(interest)} /><span>{interest}</span></label>)}</fieldset>
+            <label className="form-field"><span>Career ideas to explore</span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="Optional, for example software engineering" /><small>Used only as matching keywords.</small></label>
+            <fieldset className="profile-choice-grid three"><legend>Planning priority</legend>{[
+              { value: "lower_stress", label: "Protect capacity", body: "Prefer fewer demanding courses." },
+              { value: "balanced", label: "Balanced", body: "Mix rigor, activities, and recovery." },
+              { value: "competitive", label: "More rigorous", body: "Prefer honors when limits allow." }
+            ].map((option) => <label className={profile.goal_intensity === option.value ? "selected" : ""} key={option.value}><input type="radio" name="onboarding-intensity" checked={profile.goal_intensity === option.value} onChange={() => setProfile({ ...profile, goal_intensity: option.value as StudentProfile["goal_intensity"] })} /><span><strong>{option.label}</strong><small>{option.body}</small></span></label>)}</fieldset>
+            <div className="form-grid two">
+              <label className="form-field"><span>Demanding-course limit</span><select value={profile.workload_tolerance} onChange={(event) => setProfile({ ...profile, workload_tolerance: event.target.value as StudentProfile["workload_tolerance"] })}><option value="light">Up to 2 weighted or college courses</option><option value="balanced">Up to 4 weighted or college courses</option><option value="high">Up to 6 weighted or college courses</option></select></label>
+              <label className="form-field"><span>Weekly commitment limit</span><input type="number" min={1} max={80} step={0.5} value={profile.weekly_commitment_limit ?? ""} onChange={(event) => setProfile({ ...profile, weekly_commitment_limit: asNumber(event.target.value) })} placeholder="Hours per week" /><small>Activities plus SMCCD class and study time outside d.tech.</small></label>
+              <label className="form-field"><span>Current stress baseline</span><select value={profile.stress_level} onChange={(event) => setProfile({ ...profile, stress_level: Number(event.target.value) })}><option value={1}>1 - Low</option><option value={2}>2 - Manageable</option><option value={3}>3 - Stretched</option><option value={4}>4 - High</option><option value={5}>5 - Overloaded</option></select></label>
             </div>
           </>}
 
@@ -403,15 +438,16 @@ export default function OnboardingFlow({
               <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setTranscriptFile(event.target.files?.[0] ?? null)} /></label>
               <div className="or-divider"><span>or paste text</span></div>
               <label className="form-field"><span>Transcript text</span><textarea value={transcriptText} onChange={(event) => setTranscriptText(event.target.value)} placeholder="Paste completed course rows, grades, credits, and school years." /></label>
-              <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Parse transcript"}</button>
+              <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel)}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>
             </div> : <div className="transcript-review">
               {transcriptSummary && <p className="transcript-summary">{transcriptSummary}</p>}
-              <div className="transcript-review-heading"><strong>{transcriptItems.length} completed courses found</strong><span>Select the rows to add to your plan.</span></div>
-              <div className="transcript-course-list">{transcriptItems.map((item) => {
+              <div className="transcript-review-heading"><strong>{academicTranscriptItems.length} GPA courses found</strong><span>Select the rows to import.</span></div>
+              <div className="transcript-course-list">{academicTranscriptItems.map((item) => {
                 const payload = payloadFor(item);
                 const selected = selectedTranscriptIds.has(item.id);
                 return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{payload.matched_course_id ? "Catalog match" : "Custom course"}, {item.confidence}</em></label>;
               })}</div>
+              {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass credits</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA and counted toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>Pass, grade {payload.grade_level}, {payload.credits ?? 0} Personal Development credits</small></span><em>Not in GPA</em></label>; })}</div></details>}
               <button className="quiet-button" type="button" onClick={() => { setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); }}>Use a different transcript</button>
             </div>}
           </>}

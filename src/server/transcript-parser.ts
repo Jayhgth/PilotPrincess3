@@ -6,7 +6,7 @@ const GRADE_CREDIT_PATTERN = /\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F|P|I|IP|NP
 const COLLEGE_CODE_PATTERN = /^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)\b/;
 const DISTRICT_COLLEGES = ["College of San Mateo", "Skyline College", "Cañada College", "Canada College"];
 
-export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.0.0";
+export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.1.0";
 
 interface TranscriptSection {
   schoolYear: string;
@@ -39,6 +39,10 @@ function termForTitle(title: string, gradeCount: number): "fall" | "spring" | "s
 
 function cleanedCourseName(title: string) {
   return title.replace(/^Q[1-4]\s+/i, "").replace(/\s+/g, " ").trim();
+}
+
+function dtechGradeBand(grade: string) {
+  return /^[A-D]/.test(grade) ? grade[0] : grade;
 }
 
 export function parseDtechTranscriptText(text: string): ParsedTranscriptResult {
@@ -74,25 +78,26 @@ export function parseDtechTranscriptText(text: string): ParsedTranscriptResult {
     const grades = gradeMatches.map((match) => match[1]);
     const credits = gradeMatches.reduce((total, match) => total + Number(match[2]), 0);
     const collegeCode = pending.section.isCollege ? courseName.match(COLLEGE_CODE_PATTERN) : null;
-    const differentSemesterGrades = new Set(grades).size > 1;
-    if (differentSemesterGrades) {
-      conflicts.push(`${courseName} lists multiple semester grades (${grades.join(", ")}); the latest printed grade is used for GPA planning.`);
+    const differentGpaBands = new Set(grades.map(dtechGradeBand)).size > 1;
+    if (differentGpaBands) {
+      conflicts.push(`${courseName} lists semester grades in different d.tech GPA bands (${grades.join(", ")}); the latest printed grade is used for planning.`);
     }
+    const isIntersessionPass = !pending.section.isCollege && /^Q[1-4]\b/i.test(rawTitle) && grades.every((grade) => grade === "P");
 
     courses.push({
       course_name: courseName,
       course_code: collegeCode ? `${collegeCode[1]} ${collegeCode[2]}` : null,
-      subject: collegeCode?.[1]?.replace(/\.$/, "") ?? null,
+      subject: collegeCode?.[1]?.replace(/\.$/, "") ?? (isIntersessionPass ? "Personal Development" : null),
       grade_level: pending.gradeLevel,
       school_year: fullSchoolYear(pending.section.schoolYear),
       term: termForTitle(rawTitle, gradeMatches.length),
       letter_grade: grades.at(-1) ?? null,
       credits,
-      weighted: /\bhonors?\b/i.test(courseName) ? true : null,
+      weighted: pending.section.isCollege || /\bhonors?\b/i.test(courseName) ? true : null,
       institution_name: pending.section.institution,
       college_units: null,
-      confidence: differentSemesterGrades ? "uncertain" : gradeMatches.length > 1 ? "likely" : "verified",
-      evidence: `${pending.section.schoolYear} ${pending.section.institution}: grade ${grades.join("/")}, ${gradeMatches.map((match) => match[2]).join("+")} credits${pending.ucApproved ? ", UC-approved marker" : ""}.`
+      confidence: differentGpaBands ? "uncertain" : gradeMatches.length > 1 ? "likely" : "verified",
+      evidence: `${pending.section.schoolYear} ${pending.section.institution}: grade ${grades.join("/")}, ${gradeMatches.map((match) => match[2]).join("+")} credits${pending.section.isCollege ? ", weighted college course" : ""}${isIntersessionPass ? ", intersession Personal Development credit" : ""}${pending.ucApproved ? ", UC-approved marker" : ""}.`
     });
     pending = null;
   };

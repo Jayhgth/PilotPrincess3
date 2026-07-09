@@ -1,6 +1,6 @@
 # Pilot Princess
 
-Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines a guided 1-4 year plan setup, configurable graduation tracking, deterministic transcript import, SMCCD concurrent-enrollment planning, editable planning tools, workload simulation, and narrowly scoped Codex assistance without treating uncertain information as verified.
+Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines a guided 1-4 year plan setup, configurable graduation tracking, deterministic transcript import, profile-ranked course and associate-degree discovery, SMCCD concurrent-enrollment planning, explicit workload limits, and narrowly scoped Codex assistance without treating uncertain information as verified.
 
 The planning data is intentionally focused on d.tech and currently uses clearly labeled 2025-26 official sources. Account registration accepts any valid email address.
 
@@ -95,6 +95,7 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 - `src/components/OnboardingFlow.tsx` owns the guided student, plan-window, tracker, and transcript setup flow.
 - `src/components/PlanningWorkspace.tsx` contains the authenticated planning workspace and Supabase mutations.
 - `src/lib/planning.ts` contains deterministic graduation, GPA, workload, timeline, plan generation, and simulation logic.
+- `src/lib/profile-planning.ts` contains deterministic course and associate-degree fit scoring with visible match reasons.
 - `src/lib/transcript.ts` contains deterministic catalog matching and reviewed transcript-to-plan conversion.
 - `src/server/transcript-parser.ts` parses text-layer d.tech transcripts without AI and preserves ambiguous rows for review.
 - `src/components/SmccdPlanner.tsx` provides the official district catalog, exact-course planning, and deterministic AA/AS major-progress tracking.
@@ -105,6 +106,12 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 - `supabase/seed.sql` contains official, source-labeled d.tech reference data.
 
 The browser never receives an AI key. User-owned tables and uploads are protected by Supabase RLS. Registration is open to any valid email; the retained domain metadata table is not enforced and can support a future enrollment policy if the product scope changes.
+
+### Transcript and workload rules
+
+Text-layer PDF extraction, transcript row parsing, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic. On d.tech transcripts, `P` earns credit but does not enter GPA; intersession `P` rows are tracked under Personal Development. Exact marks such as `A-` stay visible, while `A+`, `A`, and `A-` share the four-point GPA band. Every SMCCD course receives the weighted point.
+
+Known weekly workload includes recorded activity time and the current plan year's SMCCD courses at three total class/study hours per unit. The app does not invent d.tech homework time or other unrecorded responsibilities; the student supplies a weekly commitment limit and a demanding-course limit instead.
 
 ### Where Codex is used
 
@@ -119,6 +126,7 @@ Codex is used for requested plan/simulator explanations, lightweight wording ass
 - [23/24 Flow of Classes](https://docs.google.com/document/d/1dX4WLEyikPmDjZVWMF3sIYjwGiwmCmSZRYfbdywiQuM/edit)
 - [24/25 Concurrent Enrollment Policy](https://docs.google.com/presentation/d/1cVyDYDya2lGkOymkEbmWaNpjOYkn8iBBCGpowiL4xhI/edit)
 - [SMCCD Concurrent Enrollment](https://smccd.edu/k-12/)
+- [College of San Mateo Work and Credit](https://collegeofsanmateo.edu/grades/workandcredit.asp)
 - [Cañada College Catalog](https://catalog.canadacollege.edu/current/courses/)
 - [College of San Mateo Catalog](https://catalog.collegeofsanmateo.edu/current/courses/)
 - [Skyline College Catalog](https://catalog.skylinecollege.edu/current/courses/)

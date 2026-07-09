@@ -6,6 +6,7 @@ import type {
   CourseRequirementMapping,
   GraduationRequirement,
   PlanCourse,
+  SmccdProgram,
   StudentProfile
 } from "@/lib/models";
 import {
@@ -21,6 +22,7 @@ import {
   simulatePlan
 } from "@/lib/planning";
 import { findTranscriptCatalogMatch, transcriptPlanCourseDraft } from "@/lib/transcript";
+import { courseProfileFit, programProfileFit } from "@/lib/profile-planning";
 
 const profile: StudentProfile = {
   id: "student-1",
@@ -36,6 +38,7 @@ const profile: StudentProfile = {
   workload_tolerance: "balanced",
   stress_level: 3,
   activity_load_hours: 4,
+  weekly_commitment_limit: 20,
   school_confirmed: true,
   onboarding_complete: true,
   plan_start_grade: 10,
@@ -76,6 +79,7 @@ function planCourse(overrides: Partial<PlanCourse> = {}): PlanCourse {
     sort_order: 0,
     source_review_item_id: null,
     smccd_course_id: null,
+    requirement_area_override: null,
     ...overrides
   };
 }
@@ -144,6 +148,30 @@ describe("graduation requirement calculations", () => {
     expect(progress[0].percent).toBe(100);
     expect(overallGraduationPercent(progress)).toBe(100);
   });
+
+  it("counts a verified intersession override toward Personal Development", () => {
+    const personalDevelopment = {
+      ...englishRequirement,
+      id: "requirement-personal-development",
+      area: "personal_development" as const,
+      name: "Personal Development",
+      credits_required: 25
+    };
+    const [progress] = calculateRequirementProgress(
+      [personalDevelopment],
+      [planCourse({
+        course_id: null,
+        custom_course_name: "Archery",
+        letter_grade: "P",
+        credits: 2.5,
+        requirement_area_override: "personal_development"
+      })],
+      []
+    );
+
+    expect(progress.completedCredits).toBe(2.5);
+    expect(progress.unverifiedCredits).toBe(0);
+  });
 });
 
 describe("GPA and workload calculations", () => {
@@ -158,6 +186,30 @@ describe("GPA and workload calculations", () => {
     expect(summary.projectedUnweighted).toBe(3.5);
     expect(summary.projectedWeighted).toBe(4);
     expect(summary.gradedCredits).toBe(20);
+  });
+
+  it("reproduces the d.tech transcript GPA method", () => {
+    const summary = calculateGpa([
+      planCourse({ id: "weighted-a", letter_grade: "A", credits: 190, is_weighted: true }),
+      planCourse({ id: "weighted-a-minus", letter_grade: "A-", credits: 10, is_weighted: true }),
+      planCourse({ id: "standard-a", letter_grade: "A", credits: 70, is_weighted: false }),
+      planCourse({ id: "pass-credit", letter_grade: "P", credits: 45, is_weighted: false })
+    ]);
+
+    expect(summary.currentUnweighted).toBe(4);
+    expect(summary.currentWeighted).toBe(4.74);
+    expect(summary.gradedCredits).toBe(270);
+    expect(summary.weightedCredits).toBe(200);
+    expect(summary.passCredits).toBe(45);
+  });
+
+  it("weights SMCCD rows even when an older stored flag is false", () => {
+    const summary = calculateGpa([
+      planCourse({ letter_grade: "A", credits: 10, is_weighted: false, smccd_course_id: "CSM:CIS 117", college_units: 4 })
+    ]);
+
+    expect(summary.currentWeighted).toBe(5);
+    expect(summary.weightedCredits).toBe(10);
   });
 
   it("combines academic and activity load and warns above profile tolerance", () => {
@@ -179,8 +231,67 @@ describe("GPA and workload calculations", () => {
       activities
     );
 
-    expect(workload.level).toBe("balanced");
-    expect(workload.warning).toContain("above the workload tolerance");
+    expect(workload.level).toBe("over_limit");
+    expect(workload.warning).toContain("exceed your weekly limit");
+  });
+
+  it("does not count every future year as one simultaneous workload", () => {
+    const workload = calculateWorkload(
+      profile,
+      [
+        planCourse({ id: "grade-10", status: "planned", grade_level: 10, college_units: 3, is_weighted: true }),
+        planCourse({ id: "grade-11", status: "planned", grade_level: 11, college_units: 5, is_weighted: true }),
+        planCourse({ id: "grade-12", status: "planned", grade_level: 12, college_units: 5, is_weighted: true })
+      ],
+      [course()],
+      []
+    );
+
+    expect(workload.collegeWeeklyHours).toBe(9);
+    expect(workload.demandingCourseCount).toBe(1);
+  });
+});
+
+describe("profile-driven planning", () => {
+  it("surfaces visible reasons for matching courses", () => {
+    const fit = courseProfileFit(
+      course({ name: "Introduction to Programming", subject: "Design Lab", description: "Build software with data." }),
+      { ...profile, academic_interests: ["Computer science"], career_direction: "software engineering" }
+    );
+
+    expect(fit.score).toBeGreaterThan(0);
+    expect(fit.reasons.length).toBeGreaterThan(0);
+  });
+
+  it("uses interests and career keywords to rank associate degrees", () => {
+    const program = {
+      title: "Computer Science",
+      college_code: "CSM",
+      award_type: "AS"
+    } as SmccdProgram;
+    const fit = programProfileFit(program, {
+      ...profile,
+      academic_interests: ["Computer science"],
+      career_direction: "software engineering"
+    });
+
+    expect(fit.score).toBeGreaterThan(0);
+    expect(fit.reasons).toContain("Matches computer science");
+  });
+
+  it("does not treat every science title as a computer-science match", () => {
+    const fit = programProfileFit({
+      title: "Political Science",
+      college_code: "CSM",
+      award_type: "AA"
+    } as SmccdProgram, {
+      ...profile,
+      academic_interests: ["Computer science"],
+      career_direction: ""
+    });
+
+    expect(fit.score).toBe(0);
+    expect(fit.reasons).toEqual([]);
   });
 });
 
@@ -257,7 +368,8 @@ describe("planning and simulation", () => {
       workload
     );
 
-    expect(result.simulated.projectedWeightedGpa).toBe(4.12);
+    expect(result.simulated.projectedWeightedGpa).toBe(4);
+    expect(result.risks).toContain("No GPA change is calculated until a specific course and grade are added.");
     expect(result.simulated.stressLevel).toBe(5);
     expect(result.simulated.activityHours).toBe(4);
     expect(result.risks.length).toBeGreaterThan(0);
@@ -314,6 +426,48 @@ describe("transcript import", () => {
     expect(draft.custom_course_name).toBe("Independent Study in Robotics");
     expect(draft.mapping_verified).toBe(false);
     expect(draft.status).toBe("completed");
+  });
+
+  it("weights an unmatched district course from its institution", () => {
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "CIS 999 New Topics",
+        course_code: "CIS 999",
+        institution_name: "College of San Mateo",
+        grade_level: 10,
+        credits: 5,
+        letter_grade: "A",
+        weighted: false
+      },
+      profile,
+      [],
+      [],
+      "review-smccd"
+    );
+
+    expect(draft.is_weighted).toBe(true);
+    expect(draft.mapping_verified).toBe(false);
+  });
+
+  it("imports an intersession pass as Personal Development outside GPA", () => {
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "Archery",
+        subject: "Personal Development",
+        institution_name: "Design Tech High School",
+        grade_level: 11,
+        credits: 2.5,
+        letter_grade: "P"
+      },
+      profile,
+      [],
+      [],
+      "review-pass"
+    );
+
+    expect(draft.requirement_area_override).toBe("personal_development");
+    expect(draft.mapping_verified).toBe(true);
+    expect(calculateGpa([{ ...planCourse(), ...draft }]).passCredits).toBe(2.5);
   });
 
   it("matches transcript aliases for Design Lab and Personal Development", () => {

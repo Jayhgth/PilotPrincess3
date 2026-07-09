@@ -43,6 +43,7 @@ import {
   calculateRequirementProgress,
   calculateWorkload,
   courseDisplayName,
+  dtechGradePoint,
   fallbackSummary,
   generateSuggestedPlan,
   generateTimeline,
@@ -53,6 +54,12 @@ import {
   simulatePlan
 } from "@/lib/planning";
 import { requirementsForProfile, selectedPlanGrades } from "@/lib/planning";
+import {
+  ACADEMIC_INTEREST_OPTIONS,
+  courseProfileFit,
+  MAJOR_DIRECTION_OPTIONS,
+  majorDirectionLabel
+} from "@/lib/profile-planning";
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
@@ -344,6 +351,13 @@ export default function PlanningWorkspace() {
       const loadedProfile = profileResult.data as unknown as StudentProfile;
       setSchool(schoolResult.data as unknown as School);
       setProfile(loadedProfile);
+      setSimulationConfig((current) => ({
+        ...current,
+        majorDirection: (MAJOR_DIRECTION_OPTIONS.some((option) => option.value === loadedProfile.major_direction)
+          ? loadedProfile.major_direction
+          : "undecided") as SimulationConfig["majorDirection"],
+        pathIntensity: loadedProfile.goal_intensity
+      }));
       setSources((sourceResult.data ?? []) as unknown as OfficialSource[]);
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
@@ -460,8 +474,8 @@ export default function PlanningWorkspace() {
 
   async function saveProfile() {
     if (!supabase || !profile || !school) return;
-    if (!profile.age || !profile.grade_level || !profile.graduation_year || !profile.school_confirmed || !profile.plan_end_grade) {
-      setToast("Complete age, grade, graduation year, plan window, and school confirmation.");
+    if (!profile.age || !profile.grade_level || !profile.graduation_year || !profile.school_confirmed || !profile.plan_end_grade || !profile.weekly_commitment_limit) {
+      setToast("Complete age, grade, graduation year, plan window, weekly commitment limit, and school confirmation.");
       return;
     }
     if (profile.tracker_mode === "selected" && profile.tracked_requirement_areas.length === 0) {
@@ -508,7 +522,7 @@ export default function PlanningWorkspace() {
             status,
             credits: course.credits,
             college_units: course.college_units,
-            is_weighted: false,
+            is_weighted: course.is_weighted,
             mapping_verified: mappingVerified,
             user_edited: true,
             sort_order: planCourses.filter((row) => row.grade_level === grade).length
@@ -1018,6 +1032,7 @@ export default function PlanningWorkspace() {
     );
   }
 
+  const courseFits = new Map(courses.map((course) => [course.id, courseProfileFit(course, profile)]));
   const filteredCourses = courses.filter((course) => {
     const query = catalogSearch.trim().toLowerCase();
     return (
@@ -1025,7 +1040,7 @@ export default function PlanningWorkspace() {
       (catalogSubject === "all" || course.subject === catalogSubject) &&
       (catalogGrade === "all" || course.grade_levels.includes(catalogGrade))
     );
-  });
+  }).sort((a, b) => (courseFits.get(b.id)?.score ?? 0) - (courseFits.get(a.id)?.score ?? 0) || a.name.localeCompare(b.name));
   const subjects = [...new Set(courses.map((course) => course.subject))];
   const pendingReviewCount = reviewItems.filter((item) => item.status === "pending").length;
   const catalogPageSize = 12;
@@ -1057,7 +1072,7 @@ export default function PlanningWorkspace() {
           <div>
             <span>Workload</span>
             <strong>{workload ? titleCase(workload.level) : "Not available"}</strong>
-            <small>{workload ? `${workload.weeklyActivityHours} activity hours each week` : "Complete profile"}</small>
+            <small>{workload ? `${workload.knownWeeklyHours} known weekly hours; ${workload.demandingCourseCount}/${workload.demandingCourseLimit} demanding courses` : "Complete profile"}</small>
           </div>
         </section>
         {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
@@ -1098,27 +1113,66 @@ export default function PlanningWorkspace() {
 
   function renderProfile() {
     if (!profile || !school) return null;
+    const standardInterests = new Set<string>(ACADEMIC_INTEREST_OPTIONS);
+    const otherInterests = profile.academic_interests.filter((interest) => !standardInterests.has(interest));
+    const matchingCourseCount = courses.filter((course) => courseProfileFit(course, profile).score > 0).length;
+    const toggleInterest = (interest: string) => {
+      const selected = new Set(profile.academic_interests);
+      if (selected.has(interest)) selected.delete(interest);
+      else selected.add(interest);
+      setProfile({ ...profile, academic_interests: [...selected] });
+    };
     return (
       <>
-        <PageHeader title="Student profile" description="Set the context used by planning, workload, and timeline tools." />
+        <PageHeader title="Student profile" description="Each answer below changes a visible planning result." />
         <section className="form-section profile-form">
-          <div className="form-grid two">
-            <label className="form-field"><span>Preferred name</span><input value={profile.preferred_name} onChange={(event) => setProfile({ ...profile, preferred_name: event.target.value })} /></label>
-            <label className="form-field"><span>School</span><input value={school.name} disabled /><small className="form-hint">MVP supports one verified school.</small></label>
-            <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={profile.age ?? ""} onChange={(event) => setProfile({ ...profile, age: numberValue(event.target.value) })} /></label>
-            <label className="form-field"><span>Current grade</span><select value={profile.grade_level ?? ""} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; setProfile({ ...profile, grade_level: grade, plan_start_grade: grade, plan_end_grade: Math.max(grade, profile.plan_end_grade ?? 12) as GradeLevel }); }}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-            <label className="form-field"><span>Graduation year</span><input type="number" min={2025} max={2040} value={profile.graduation_year ?? ""} onChange={(event) => setProfile({ ...profile, graduation_year: numberValue(event.target.value) })} /></label>
-            <label className="form-field"><span>Major direction</span><select value={profile.major_direction} onChange={(event) => setProfile({ ...profile, major_direction: event.target.value })}><option value="undecided">Undecided</option><option value="stem">STEM</option><option value="business">Business</option><option value="humanities">Humanities</option><option value="health">Health</option></select></label>
-            <label className="form-field full"><span>Academic interests</span><input value={profile.academic_interests.join(", ")} onChange={(event) => setProfile({ ...profile, academic_interests: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} placeholder="Engineering, writing, public service" /><small className="form-hint">Separate interests with commas.</small></label>
-            <label className="form-field full"><span>Possible career direction</span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="Optional and changeable" /></label>
-            <label className="form-field"><span>Path intensity</span><select value={profile.goal_intensity} onChange={(event) => setProfile({ ...profile, goal_intensity: event.target.value as StudentProfile["goal_intensity"] })}><option value="lower_stress">Lower stress</option><option value="balanced">Balanced</option><option value="competitive">Competitive</option></select></label>
-            <label className="form-field"><span>Workload tolerance</span><select value={profile.workload_tolerance} onChange={(event) => setProfile({ ...profile, workload_tolerance: event.target.value as StudentProfile["workload_tolerance"] })}><option value="light">Light</option><option value="balanced">Balanced</option><option value="high">High</option></select></label>
-            <label className="form-field"><span>Current stress level</span><input type="range" min={1} max={5} value={profile.stress_level} onChange={(event) => setProfile({ ...profile, stress_level: Number(event.target.value) })} /><small className="form-hint">{profile.stress_level} of 5</small></label>
-            <label className="form-field"><span>Plan through</span><select value={profile.plan_end_grade ?? 12} onChange={(event) => setProfile({ ...profile, plan_start_grade: (profile.grade_level ?? 9) as GradeLevel, plan_end_grade: Number(event.target.value) as GradeLevel })}>{GRADE_LEVELS.filter((grade) => grade >= (profile.grade_level ?? 9)).map((grade) => <option value={grade} key={grade}>Grade {grade}{grade === 12 ? " (graduation)" : ""}</option>)}</select><small className="form-hint">Controls the years shown in your academic plan.</small></label>
-            <label className="form-field"><span>Graduation tracker</span><select value={profile.tracker_mode} onChange={(event) => setProfile({ ...profile, tracker_mode: event.target.value as StudentProfile["tracker_mode"], tracked_requirement_areas: event.target.value === "full" ? requirements.map((requirement) => requirement.area) : [] })}><option value="full">Full d.tech diploma</option><option value="selected">Selected requirement areas</option></select></label>
-            {profile.tracker_mode === "selected" && <fieldset className="profile-requirements full"><legend>Tracked requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id}><input type="checkbox" checked={profile.tracked_requirement_areas.includes(requirement.area)} onChange={() => { const selected = new Set(profile.tracked_requirement_areas); if (selected.has(requirement.area)) selected.delete(requirement.area); else selected.add(requirement.area); setProfile({ ...profile, tracked_requirement_areas: [...selected] }); }} /><span>{requirement.name}</span></label>)}</fieldset>}
-            <label className="confirmation-field full"><input type="checkbox" checked={profile.school_confirmed} onChange={(event) => setProfile({ ...profile, school_confirmed: event.target.checked })} /><span><strong>I confirm this plan is for Design Tech High School.</strong><small>Course and graduation data are labeled for the 2025-26 source year.</small></span></label>
+          <div className="profile-subsection">
+            <header><h2>Student and plan</h2><p>Sets the school years and planning window.</p></header>
+            <div className="form-grid two">
+              <label className="form-field"><span>Preferred name</span><input value={profile.preferred_name} onChange={(event) => setProfile({ ...profile, preferred_name: event.target.value })} /></label>
+              <label className="form-field"><span>School</span><input value={school.name} disabled /></label>
+              <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={profile.age ?? ""} onChange={(event) => setProfile({ ...profile, age: numberValue(event.target.value) })} /></label>
+              <label className="form-field"><span>Current grade</span><select value={profile.grade_level ?? ""} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; setProfile({ ...profile, grade_level: grade, plan_start_grade: grade, plan_end_grade: Math.max(grade, profile.plan_end_grade ?? 12) as GradeLevel }); }}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+              <label className="form-field"><span>Graduation year</span><input type="number" min={2025} max={2040} value={profile.graduation_year ?? ""} onChange={(event) => setProfile({ ...profile, graduation_year: numberValue(event.target.value) })} /></label>
+              <label className="form-field"><span>Plan through</span><select value={profile.plan_end_grade ?? 12} onChange={(event) => setProfile({ ...profile, plan_start_grade: (profile.grade_level ?? 9) as GradeLevel, plan_end_grade: Number(event.target.value) as GradeLevel })}>{GRADE_LEVELS.filter((grade) => grade >= (profile.grade_level ?? 9)).map((grade) => <option value={grade} key={grade}>Grade {grade}{grade === 12 ? " (graduation)" : ""}</option>)}</select></label>
+            </div>
           </div>
+
+          <div className="profile-subsection">
+            <header><h2>Academic direction</h2><p>Sorts d.tech courses and associate degrees without locking you into a major.</p></header>
+            <fieldset className="profile-choice-grid"><legend>Current direction</legend>{MAJOR_DIRECTION_OPTIONS.map((option) => <label className={profile.major_direction === option.value ? "selected" : ""} key={option.value}><input type="radio" name="major-direction" value={option.value} checked={profile.major_direction === option.value} onChange={() => setProfile({ ...profile, major_direction: option.value })} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</fieldset>
+            <fieldset className="profile-interest-grid"><legend>Academic interests</legend>{ACADEMIC_INTEREST_OPTIONS.map((interest) => <label className={profile.academic_interests.includes(interest) ? "selected" : ""} key={interest}><input type="checkbox" checked={profile.academic_interests.includes(interest)} onChange={() => toggleInterest(interest)} /><span>{interest}</span></label>)}</fieldset>
+            <label className="form-field"><span>Other interests</span><input value={otherInterests.join(", ")} onChange={(event) => setProfile({ ...profile, academic_interests: [...profile.academic_interests.filter((interest) => standardInterests.has(interest)), ...event.target.value.split(",").map((item) => item.trim()).filter(Boolean)] })} placeholder="Specific subjects, separated by commas" /></label>
+            <label className="form-field"><span>Career ideas to explore</span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="For example: software engineering, public health" /><small className="form-hint">Used as course and degree search keywords, not as a commitment.</small></label>
+          </div>
+
+          <div className="profile-subsection">
+            <header><h2>Capacity and stress</h2><p>Drives workload warnings and the simulator baseline.</p></header>
+            <fieldset className="profile-choice-grid three"><legend>Planning priority</legend>{[
+              { value: "lower_stress", label: "Protect capacity", body: "Prefer fewer simultaneous demanding courses." },
+              { value: "balanced", label: "Balanced", body: "Mix rigor with activities and recovery." },
+              { value: "competitive", label: "More rigorous", body: "Prefer honors when the plan still fits your limits." }
+            ].map((option) => <label className={profile.goal_intensity === option.value ? "selected" : ""} key={option.value}><input type="radio" name="goal-intensity" checked={profile.goal_intensity === option.value} onChange={() => setProfile({ ...profile, goal_intensity: option.value as StudentProfile["goal_intensity"] })} /><span><strong>{option.label}</strong><small>{option.body}</small></span></label>)}</fieldset>
+            <div className="form-grid two">
+              <label className="form-field"><span>Demanding-course limit</span><select value={profile.workload_tolerance} onChange={(event) => setProfile({ ...profile, workload_tolerance: event.target.value as StudentProfile["workload_tolerance"] })}><option value="light">Up to 2 weighted or college courses</option><option value="balanced">Up to 4 weighted or college courses</option><option value="high">Up to 6 weighted or college courses</option></select></label>
+              <label className="form-field"><span>Weekly commitment limit</span><input type="number" min={1} max={80} step={0.5} value={profile.weekly_commitment_limit ?? ""} onChange={(event) => setProfile({ ...profile, weekly_commitment_limit: numberValue(event.target.value) })} placeholder="Hours per week" /><small className="form-hint">For activities plus SMCCD class and study time outside the d.tech school day.</small></label>
+              <label className="form-field"><span>Current stress baseline</span><select value={profile.stress_level} onChange={(event) => setProfile({ ...profile, stress_level: Number(event.target.value) })}><option value={1}>1 - Low</option><option value={2}>2 - Manageable</option><option value={3}>3 - Stretched</option><option value={4}>4 - High</option><option value={5}>5 - Overloaded</option></select><small className="form-hint">Used for warnings only. It does not diagnose health or predict grades.</small></label>
+              <label className="form-field"><span>Graduation tracker</span><select value={profile.tracker_mode} onChange={(event) => setProfile({ ...profile, tracker_mode: event.target.value as StudentProfile["tracker_mode"], tracked_requirement_areas: event.target.value === "full" ? requirements.map((requirement) => requirement.area) : [] })}><option value="full">Full d.tech diploma</option><option value="selected">Selected requirement areas</option></select></label>
+            </div>
+            {profile.tracker_mode === "selected" && <fieldset className="profile-requirements"><legend>Tracked requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id}><input type="checkbox" checked={profile.tracked_requirement_areas.includes(requirement.area)} onChange={() => { const selected = new Set(profile.tracked_requirement_areas); if (selected.has(requirement.area)) selected.delete(requirement.area); else selected.add(requirement.area); setProfile({ ...profile, tracked_requirement_areas: [...selected] }); }} /><span>{requirement.name}</span></label>)}</fieldset>}
+          </div>
+
+          <aside className="profile-effects" aria-label="How this profile changes planning">
+            <h2>Where these answers are used</h2>
+            <dl>
+              <div><dt>Course catalog</dt><dd>{matchingCourseCount} courses currently match your direction, interests, or career keywords and sort first.</dd></div>
+              <div><dt>Associate degrees</dt><dd>Programs with matching transcript coursework rank first, followed by profile keyword matches.</dd></div>
+              <div><dt>Workload</dt><dd>{workload ? `${workload.knownWeeklyHours} known weekly hours and ${workload.demandingCourseCount} demanding courses compared with your limits.` : "Calculated from active courses and activities."}</dd></div>
+              <div><dt>Simulator</dt><dd>Starts from {majorDirectionLabel(profile.major_direction)}, stress {profile.stress_level}, and your saved capacity. No GPA change is invented.</dd></div>
+            </dl>
+          </aside>
+
+          <label className="confirmation-field"><input type="checkbox" checked={profile.school_confirmed} onChange={(event) => setProfile({ ...profile, school_confirmed: event.target.checked })} /><span><strong>I confirm this plan is for Design Tech High School.</strong><small>Course and graduation data are labeled for the 2025-26 source year.</small></span></label>
           <div className="form-footer"><button className="primary-button" onClick={() => void saveProfile()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save profile</button></div>
         </section>
       </>
@@ -1146,8 +1200,8 @@ export default function PlanningWorkspace() {
             <button className="primary-button" type="submit" disabled={Boolean(busyLabel)}><Plus size={17} /> Add source</button>
           </form>
           <section className="content-section">
-            <header className="section-heading"><div><h2>Your sources</h2><p>Raw content remains available if AI parsing fails.</p></div></header>
-            {userSources.length ? <div className="source-list">{userSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.title}</strong><span>{source.document_type === "transcript" ? "Transcript" : titleCase(source.kind)} · {source.source_year}</span></div><div className="source-actions"><ConfidenceTag value={source.confidence} /><span className={`status-label ${source.parse_status}`}>{titleCase(source.parse_status)}</span>{source.parse_status !== "processing" && <button className="secondary-button small" onClick={() => void parseSource(source)} disabled={Boolean(busyLabel)}><Sparkle size={15} /> {source.document_type === "transcript" ? "Read transcript" : "Parse"}</button>}</div>{source.error_message && <p className="row-error">{source.error_message}</p>}</article>)}</div> : <EmptyState title="No uploaded sources" body="Add a transcript, screenshot, or official document to start a review queue." />}
+            <header className="section-heading"><div><h2>Your sources</h2><p>Raw content remains available if any extraction method fails. Text-based transcripts never use Codex.</p></div></header>
+            {userSources.length ? <div className="source-list">{userSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.title}</strong><span>{source.document_type === "transcript" ? "Transcript" : titleCase(source.kind)} · {source.source_year}</span></div><div className="source-actions"><ConfidenceTag value={source.confidence} /><span className={`status-label ${source.parse_status}`}>{titleCase(source.parse_status)}</span>{source.parse_status !== "processing" && <button className="secondary-button small" onClick={() => void parseSource(source)} disabled={Boolean(busyLabel)}>{source.document_type === "transcript" ? <FileArrowUp size={15} /> : <Sparkle size={15} />} {source.document_type === "transcript" ? "Read transcript" : "AI parse"}</button>}</div>{source.error_message && <p className="row-error">{source.error_message}</p>}</article>)}</div> : <EmptyState title="No uploaded sources" body="Add a transcript, screenshot, or official document to start a review queue." />}
           </section>
         </div>
         <section className="content-section review-section">
@@ -1183,6 +1237,7 @@ export default function PlanningWorkspace() {
               <div className="course-main">
                 <div className="course-title-line"><h2>{course.name}</h2>{course.confidence !== "verified" && <ConfidenceTag value={course.confidence} />}</div>
                 <div className="course-meta"><span>{course.subject}</span><span>Grades {course.grade_levels.join(", ") || "verify"}</span><span>{course.credits ? formatCredits(course.credits) : "Credits need review"}</span>{course.is_honors && <span>Honors available</span>}{course.uc_ag_area && <span>{course.uc_ag_area}</span>}</div>
+                {(courseFits.get(course.id)?.reasons.length ?? 0) > 0 && <p className="profile-match-note">Profile match: {courseFits.get(course.id)?.reasons.join("; ")}</p>}
                 <details className="course-details"><summary>Course details</summary><p>{course.description}</p>{course.prerequisites.length > 0 && <p className="prereq"><strong>Prerequisites:</strong> {course.prerequisites.join(", ")}</p>}</details>
               </div>
               <div className="course-actions">
@@ -1228,15 +1283,16 @@ export default function PlanningWorkspace() {
   }
 
   function renderGpa() {
-    const gradedRows = planCourses.filter((row) => row.letter_grade && !["IP", "P"].includes(row.letter_grade));
+    const gradedRows = planCourses.filter((row) => row.letter_grade && !["IP", "P"].includes(row.letter_grade.toUpperCase()));
     return (
       <>
-        <PageHeader title="GPA tracker" description="Current and projected estimates use saved grades, course credits, and selected weighting." />
+        <PageHeader title="GPA tracker" description="Uses the grading behavior shown on the d.tech transcript." />
         <div className="gpa-ledger"><div><span>Current unweighted</span><strong>{formatGpa(gpa.currentUnweighted)}</strong></div><div><span>Current weighted</span><strong>{formatGpa(gpa.currentWeighted)}</strong></div><div><span>Projected unweighted</span><strong>{formatGpa(gpa.projectedUnweighted)}</strong></div><div><span>Projected weighted</span><strong>{formatGpa(gpa.projectedWeighted)}</strong></div></div>
-        <div className="notice-strip"><Gauge size={19} /><span>Estimates use a standard 4.0 scale plus one point for courses you mark weighted, capped at 5.0. Verify official d.tech policy.</span></div>
+        <dl className="gpa-method-summary"><div><dt>GPA credits</dt><dd>{gpa.gradedCredits}</dd></div><div><dt>Weighted credits</dt><dd>{gpa.weightedCredits}</dd></div><div><dt>Pass credits excluded</dt><dd>{gpa.passCredits}</dd></div></dl>
+        <div className="notice-strip"><Gauge size={19} /><span>A+, A, and A- are 4 points; B variants are 3; C variants are 2; D variants are 1. Every SMCCD and d.tech Honors course receives one added point. P is excluded from GPA.</span></div>
         <section className="content-section">
-          <header className="section-heading"><div><h2>Graded courses</h2><p>Edit grades and weighting in the four-year planner.</p></div><button className="quiet-button" onClick={() => navigate("planner")}>Open planner</button></header>
-          {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted ? "Weighted" : "Standard"}</span></div>)}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
+          <header className="section-heading"><div><h2>GPA courses</h2><p>Exact transcript marks are preserved even when the d.tech point value is the same.</p></div><button className="quiet-button" onClick={() => navigate("planner")}>Open planner</button></header>
+          {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
         </section>
       </>
     );
@@ -1246,8 +1302,12 @@ export default function PlanningWorkspace() {
     if (!profile) return null;
     const snapshots = versions.filter((version) => version.kind === "snapshot");
     const planGrades = selectedPlanGrades(profile);
+    const intersessionRows = planCourses.filter((row) =>
+      row.status === "completed" && row.letter_grade?.toUpperCase() === "P" && row.requirement_area_override === "personal_development"
+    );
+    const intersessionIds = new Set(intersessionRows.map((row) => row.id));
     const priorCompletedRows = planCourses.filter(
-      (row) => row.status === "completed" && !planGrades.includes(row.grade_level)
+      (row) => row.status === "completed" && !planGrades.includes(row.grade_level) && !intersessionIds.has(row.id)
     );
     const selectedSnapshot = snapshots.find((version) => version.id === compareVersionId) ?? null;
     const comparisonKey = (row: PlanCourse) => `${row.course_id ?? row.custom_course_name ?? row.id}:${row.grade_level}`;
@@ -1270,11 +1330,12 @@ export default function PlanningWorkspace() {
       <>
         <PageHeader title="Academic plan" description={`Your selected window runs from grade ${planGrades[0]} through grade ${planGrades.at(-1)}. Completed transcript courses still count outside this window.`} actions={<><button className="secondary-button" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Snapshot</button><button className="primary-button" onClick={() => void generatePlan()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Suggest plan</button></>} />
         {planExplanation && <div className="notice-strip"><Sparkle size={19} /><span>{planExplanation}</span></div>}
+        {intersessionRows.length > 0 && <details className="content-section transcript-intersession"><summary><span><strong>Intersession pass credits</strong><small>{intersessionRows.reduce((total, row) => total + Number(row.credits ?? 0), 0)} Personal Development credits across {intersessionRows.length} classes. Excluded from GPA.</small></span><span>View classes</span></summary><div>{intersessionRows.map((row) => <article key={row.id}><span><strong>{courseDisplayName(row, courseMap)}</strong><small>Grade {row.grade_level}, pass</small></span><span>{row.credits ?? 0} credits</span></article>)}</div></details>}
         {priorCompletedRows.length > 0 && <section className="content-section transcript-history"><header className="section-heading"><div><h2>Earlier completed courses</h2><p>Imported transcript courses count toward GPA and graduation progress without extending the planning window.</p></div></header><div>{priorCompletedRows.map((row) => <article key={row.id}><span><strong>{courseDisplayName(row, courseMap)}</strong><small>Grade {row.grade_level}{row.letter_grade ? `, final grade ${row.letter_grade}` : ""}</small></span><span>{row.credits ? `${row.credits} credits` : "Credits need review"}</span></article>)}</div></section>}
         <section className="planner-board" style={{ gridTemplateColumns: `repeat(${planGrades.length}, minmax(230px, 1fr))` }}>
           {planGrades.map((grade) => {
-            const rows = planCourses.filter((row) => row.grade_level === grade);
-            return <div className="planner-year" key={grade}><header><span>Grade {grade}</span><small>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : "Set graduation year"}</small></header><div className="planner-year-body">{rows.map((row) => <article className="plan-course" key={row.id}><div className="plan-course-title"><strong>{courseDisplayName(row, courseMap)}</strong>{row.mapping_verified ? <CheckCircle size={17} weight="fill" aria-label="Verified mapping" /> : <Warning size={17} weight="fill" aria-label="Unverified mapping" />}</div><div className="plan-course-fields"><label><span>Status</span><select value={row.status} onChange={(event) => void updatePlanCourse(row.id, { status: event.target.value as PlanCourse["status"] })}><option value="completed">Completed</option><option value="current">Current</option><option value="planned">Planned</option></select></label><label><span>Grade</span><select value={row.letter_grade ?? ""} onChange={(event) => void updatePlanCourse(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((gradeValue) => <option value={gradeValue} key={gradeValue}>{gradeValue || "None"}</option>)}</select></label><label><span>Year</span><select value={row.grade_level} onChange={(event) => { const nextGrade = Number(event.target.value) as GradeLevel; void updatePlanCourse(row.id, { grade_level: nextGrade, school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, nextGrade) }); }}>{GRADE_LEVELS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label></div><label className="weight-check"><input type="checkbox" checked={row.is_weighted} onChange={(event) => void updatePlanCourse(row.id, { is_weighted: event.target.checked })} /><span>Weighted or honors</span></label><button className="icon-button danger" onClick={() => void removePlanCourse(row.id)} aria-label={`Remove ${courseDisplayName(row, courseMap)}`}><Trash size={16} /></button></article>)}{rows.length === 0 && <p className="year-empty">No courses yet.</p>}</div></div>;
+            const rows = planCourses.filter((row) => row.grade_level === grade && !intersessionIds.has(row.id));
+            return <div className="planner-year" key={grade}><header><span>Grade {grade}</span><small>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : "Set graduation year"}</small></header><div className="planner-year-body">{rows.map((row) => { const smccdWeighted = Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0); return <article className="plan-course" key={row.id}><div className="plan-course-title"><strong>{courseDisplayName(row, courseMap)}</strong>{row.mapping_verified ? <CheckCircle size={17} weight="fill" aria-label="Verified mapping" /> : <Warning size={17} weight="fill" aria-label="Unverified mapping" />}</div><div className="plan-course-fields"><label><span>Status</span><select value={row.status} onChange={(event) => void updatePlanCourse(row.id, { status: event.target.value as PlanCourse["status"] })}><option value="completed">Completed</option><option value="current">Current</option><option value="planned">Planned</option></select></label><label><span>Grade</span><select value={row.letter_grade ?? ""} onChange={(event) => void updatePlanCourse(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((gradeValue) => <option value={gradeValue} key={gradeValue}>{gradeValue || "None"}</option>)}</select></label><label><span>Year</span><select value={row.grade_level} onChange={(event) => { const nextGrade = Number(event.target.value) as GradeLevel; void updatePlanCourse(row.id, { grade_level: nextGrade, school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, nextGrade) }); }}>{GRADE_LEVELS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label></div><label className="weight-check"><input type="checkbox" checked={smccdWeighted || row.is_weighted} disabled={smccdWeighted} onChange={(event) => void updatePlanCourse(row.id, { is_weighted: event.target.checked })} /><span>{smccdWeighted ? "SMCCD weighted" : "Weighted or honors"}</span></label><button className="icon-button danger" onClick={() => void removePlanCourse(row.id)} aria-label={`Remove ${courseDisplayName(row, courseMap)}`}><Trash size={16} /></button></article>; })}{rows.length === 0 && <p className="year-empty">No courses yet.</p>}</div></div>;
           })}
         </section>
         <section className="content-section version-compare">
@@ -1356,14 +1417,14 @@ export default function PlanningWorkspace() {
         <PageHeader title="Plan simulator" description="Compare a scenario without changing the saved four-year plan." actions={simulationResult && <button className="secondary-button" onClick={() => void saveSimulation()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save simulation</button>} />
         <div className="simulator-layout">
           <section className="sim-controls">
-            <label className="form-field"><span>Major direction</span><select value={simulationConfig.majorDirection} onChange={(event) => setSimulationConfig({ ...simulationConfig, majorDirection: event.target.value as SimulationConfig["majorDirection"] })}><option value="undecided">Undecided</option><option value="stem">STEM</option><option value="business">Business</option><option value="humanities">Humanities</option><option value="health">Health</option></select></label>
-            <label className="form-field"><span>Path intensity</span><select value={simulationConfig.pathIntensity} onChange={(event) => setSimulationConfig({ ...simulationConfig, pathIntensity: event.target.value as SimulationConfig["pathIntensity"] })}><option value="lower_stress">Lower stress</option><option value="balanced">Balanced</option><option value="competitive">Competitive</option></select></label>
-            <label className="form-field"><span>Course style</span><select value={simulationConfig.courseStyle} onChange={(event) => setSimulationConfig({ ...simulationConfig, courseStyle: event.target.value as SimulationConfig["courseStyle"] })}><option value="more_regular">More regular</option><option value="more_honors">More honors</option><option value="more_dual_enrollment">More dual enrollment</option></select></label>
-            <label className="form-field"><span>Activity load</span><select value={simulationConfig.activityLoad} onChange={(event) => setSimulationConfig({ ...simulationConfig, activityLoad: event.target.value as SimulationConfig["activityLoad"] })}><option value="lower">Lower</option><option value="same">Same</option><option value="higher">Higher</option></select></label>
+            <label className="form-field"><span>Planning direction</span><select value={simulationConfig.majorDirection} onChange={(event) => setSimulationConfig({ ...simulationConfig, majorDirection: event.target.value as SimulationConfig["majorDirection"] })}>{MAJOR_DIRECTION_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select><small className="form-hint">Changes profile matching only. It does not invent major requirements.</small></label>
+            <label className="form-field"><span>Path intensity</span><select value={simulationConfig.pathIntensity} onChange={(event) => setSimulationConfig({ ...simulationConfig, pathIntensity: event.target.value as SimulationConfig["pathIntensity"] })}><option value="lower_stress">One fewer demanding course</option><option value="balanced">Keep current target</option><option value="competitive">One more demanding course</option></select></label>
+            <label className="form-field"><span>Course style</span><select value={simulationConfig.courseStyle} onChange={(event) => setSimulationConfig({ ...simulationConfig, courseStyle: event.target.value as SimulationConfig["courseStyle"] })}><option value="more_regular">One fewer weighted course</option><option value="more_honors">Add one Honors course</option><option value="more_dual_enrollment">Add one 3-unit SMCCD course</option></select><small className="form-hint">The SMCCD scenario adds 9 weekly student-work hours.</small></label>
+            <label className="form-field"><span>Activity load</span><select value={simulationConfig.activityLoad} onChange={(event) => setSimulationConfig({ ...simulationConfig, activityLoad: event.target.value as SimulationConfig["activityLoad"] })}><option value="lower">3 fewer hours per week</option><option value="same">No change</option><option value="higher">4 more hours per week</option></select></label>
             <button className="primary-button" onClick={() => void runSimulation()} disabled={Boolean(busyLabel)}><Scales size={17} /> Run comparison</button>
           </section>
           <section className="simulation-output">
-            {simulationResult ? <><div className="comparison-table"><div className="comparison-head"><span>Measure</span><strong>Current</strong><strong>Simulated</strong></div><div><span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span><strong>{simulationResult.current.graduationPercent}%</strong><strong>{simulationResult.simulated.graduationPercent}%</strong></div><div><span>Projected weighted GPA</span><strong>{formatGpa(simulationResult.current.projectedWeightedGpa)}</strong><strong>{formatGpa(simulationResult.simulated.projectedWeightedGpa)}</strong></div><div><span>Workload score</span><strong>{simulationResult.current.workloadScore}</strong><strong>{simulationResult.simulated.workloadScore}</strong></div><div><span>Stress estimate</span><strong>{simulationResult.current.stressLevel} / 5</strong><strong>{simulationResult.simulated.stressLevel} / 5</strong></div><div><span>Activity hours</span><strong>{simulationResult.current.activityHours}</strong><strong>{simulationResult.simulated.activityHours}</strong></div></div>{simulationExplanation && <div className="simulation-explanation"><h2>What changed and why</h2><p>{simulationExplanation}</p></div>}<div className="simulation-notes"><div><h3>Changes</h3><ul>{simulationResult.changes.map((change) => <li key={change}>{change}</li>)}</ul></div><div><h3>Risks to verify</h3><ul>{simulationResult.risks.length ? simulationResult.risks.map((risk) => <li key={risk}>{risk}</li>) : <li>No additional risk was identified by the deterministic comparison.</li>}</ul></div></div></> : <EmptyState title="No simulation yet" body="Adjust the four fixed controls and run a comparison." />}
+            {simulationResult ? <><div className="comparison-table"><div className="comparison-head"><span>Measure</span><strong>Current</strong><strong>Simulated</strong></div><div><span>Planning direction</span><strong>{majorDirectionLabel(profile.major_direction)}</strong><strong>{majorDirectionLabel(simulationConfig.majorDirection)}</strong></div><div><span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span><strong>{simulationResult.current.graduationPercent}%</strong><strong>{simulationResult.simulated.graduationPercent}%</strong></div><div><span>Projected weighted GPA</span><strong>{formatGpa(simulationResult.current.projectedWeightedGpa)}</strong><strong>{formatGpa(simulationResult.simulated.projectedWeightedGpa)}</strong></div><div><span>Known weekly hours</span><strong>{simulationResult.current.workloadScore}</strong><strong>{simulationResult.simulated.workloadScore}</strong></div><div><span>Demanding courses</span><strong>{simulationResult.current.demandingCourseCount}</strong><strong>{simulationResult.simulated.demandingCourseCount}</strong></div><div><span>Stress baseline</span><strong>{simulationResult.current.stressLevel} / 5</strong><strong>{simulationResult.simulated.stressLevel} / 5</strong></div><div><span>Activity hours</span><strong>{simulationResult.current.activityHours}</strong><strong>{simulationResult.simulated.activityHours}</strong></div></div>{simulationExplanation && <div className="simulation-explanation"><h2>What changed and why</h2><p>{simulationExplanation}</p></div>}<div className="simulation-notes"><div><h3>Changes</h3><ul>{simulationResult.changes.map((change) => <li key={change}>{change}</li>)}</ul></div><div><h3>Limits and checks</h3><ul>{simulationResult.risks.length ? simulationResult.risks.map((risk) => <li key={risk}>{risk}</li>) : <li>The scenario stays inside the limits currently saved in the profile.</li>}</ul></div></div></> : <EmptyState title="No simulation yet" body="Adjust the four controls and run a transparent comparison." />}
           </section>
         </div>
         <div className="notice-strip"><ShieldCheckIcon /><span>Running or saving a simulation never overwrites the active plan.</span></div>

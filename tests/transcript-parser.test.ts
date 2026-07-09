@@ -22,7 +22,7 @@ describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.0.0");
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.1.0");
     expect(result.courses).toHaveLength(5);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
@@ -32,7 +32,14 @@ describe("deterministic d.tech transcript parser", () => {
       institution_name: "College of San Mateo",
       grade_level: 11,
       letter_grade: "A",
-      credits: 5
+      credits: 5,
+      weighted: true
+    });
+    expect(result.courses.find((course) => course.course_name.includes("Internship"))).toMatchObject({
+      letter_grade: "P",
+      subject: "Personal Development",
+      credits: 2.5,
+      weighted: null
     });
   });
 
@@ -47,8 +54,8 @@ describe("deterministic d.tech transcript parser", () => {
       letter_grade: "A",
       credits: 10
     });
-    expect(dlab).toMatchObject({ letter_grade: "A-", credits: 10, confidence: "uncertain" });
-    expect(result.conflicts[0]).toContain("multiple semester grades");
+    expect(dlab).toMatchObject({ letter_grade: "A-", credits: 10, confidence: "likely", weighted: true });
+    expect(result.conflicts).toEqual([]);
   });
 
   it("does not invent a completed row when no final grade is printed", () => {

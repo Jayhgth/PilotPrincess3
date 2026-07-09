@@ -6,13 +6,13 @@ Last run: 2026-07-09
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 21/21 unit tests passing
+- [x] `pnpm test` with 30/30 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
 - [x] `pnpm peers check`
 - [x] `supabase db lint --linked` with no schema errors
-- [x] Migration and seed applied to linked Supabase project
+- [x] All six migrations and seed applied to linked Supabase project; local and remote migration histories match
 - [x] `pnpm smccd:validate` with 2,461 courses and 131 AA/AS programs
 
 ## Authentication and Security
@@ -32,7 +32,7 @@ Last run: 2026-07-09
 ## Student Flow
 
 - [x] Sign-in screen renders official counts and 2025-26 source label
-- [x] Onboarding saves grade, graduation year, planning pace, plan start/end grades, tracker mode/areas, and school confirmation
+- [x] Onboarding saves grade, graduation year, academic direction/interests, career ideas, planning pace, workload/stress limits, plan start/end grades, tracker mode/areas, and school confirmation
 - [x] Plan length is constrained to the years available through grade 12
 - [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
@@ -40,6 +40,10 @@ Last run: 2026-07-09
 - [x] Official catalog paginates 12 courses per page and exposes one status selector plus one add action per row
 - [x] Graduation tracker excludes unverified mappings
 - [x] GPA calculations separate current/projected and weighted/unweighted results
+- [x] Exact d.tech method reproduces 4.00 unweighted and 4.74 weighted from the supplied PDF
+- [x] `P` is excluded from GPA and separated as intersession/Personal Development credit
+- [x] `A-` remains visible but uses the same four-point band as `A`
+- [x] Every exact or unmatched SMCCD course is weighted, including rows stored with an older false flag
 - [x] Suggested plan is generated without overwriting manual rows
 - [x] Suggested plan generates only grades inside the selected onboarding window
 - [x] Completed courses before the selected window remain visible in transcript history
@@ -47,9 +51,12 @@ Last run: 2026-07-09
 - [x] Snapshot preserves a read-only course copy
 - [x] Snapshot comparison shows counts, coverage, GPA, and added/removed/changed rows
 - [x] Timeline, activity, SMCCD concurrent-enrollment, and simulator mutations are wired to user-owned tables
+- [x] Workload uses only the current plan year, applies three total weekly hours per SMCCD unit, includes activity hours, and warns against the saved weekly and demanding-course limits
+- [x] Academic interests, major direction, and career ideas produce visible course and degree match reasons
 - [x] SMCCD catalog searches and filters 2,461 source-backed records across all three district colleges
 - [x] Exact SMCCD course selection persists the district foreign key, college units, plan status, and proposed d.tech credit
-- [x] AA/AS goal selection persists per student and computes parsed major-requirement progress deterministically
+- [x] AA/AS discovery searches and ranks all 131 programs by profile fit or existing-course progress, exposes match reasons, persists a goal, and computes parsed major-requirement progress deterministically
+- [x] Computer Science interest does not create a false Political Science match
 - [x] SMCCD browser flow and AI connection browser flow pass with no console errors
 - [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
 - [x] Mobile overview, navigation, catalog, SMCCD planner, and graduation tracker visually pass at 390x844
@@ -62,7 +69,8 @@ Last run: 2026-07-09
 - [x] Authenticated Codex parse returns structured output
 - [x] Parse creates review items and sets the source to `needs_review`
 - [x] Transcript parser extracts only completed/final-grade course rows
-- [x] Actual d.tech text-layer PDF parses 50 completed rows deterministically with `aiUsed: false`
+- [x] Actual d.tech text-layer PDF parses 50 completed rows with no parser conflicts and `aiUsed: false`
+- [x] Actual d.tech PDF produces 270 GPA credits, 200 weighted credits, and 45 excluded pass credits
 - [x] All 17 college rows in the regression PDF match exact SMCCD records
 - [x] Exact transcript course names and aliases match official catalog records deterministically
 - [x] Supplied d.tech PDF aliases produce 30/40 Design Lab and 10/25 Personal Development credits with verified mappings

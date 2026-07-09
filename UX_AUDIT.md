@@ -23,6 +23,8 @@ Strict final grade: **94/100**. The workspace is calm, readable, and usable on d
 - Each d.tech catalog result offered three competing action buttons. Each row now has one status selector and one `Add` action, with descriptions and prerequisites disclosed on demand.
 - The d.tech catalog produced a 4,395 px page and the transcript review queue produced a 10,657 px page. Pagination reduces the catalog to about 1,553 px and bounds review work to ten records per page.
 - SMCCD browsing mixed discovery, configuration, planning, goals, and manual fallback in one continuous stack. The course catalog now uses a stable list-and-detail layout, with saved plans and degree goals presented afterward.
+- The 131-program AA/AS native select offered little discovery help. It is now a searchable ranked browser with profile matches, existing-course progress, complete-catalog modes, visible match reasons, and compact progress summaries.
+- Major direction, interests, career ideas, workload tolerance, and stress were unexplained form fields. The profile now groups them by purpose, states the output each answer changes, and shows a live downstream-effects summary.
 - Graduation rows reported partial progress as `Missing`. They now use `N credits left`, while completed and projected-complete states remain explicit.
 - The AI page was a binary connection button. It is now a bounded conversation that reports model and latency, explains what the test proves, and states that it cannot access student records or files.
 - Narrow screens stacked three oversized overview metrics. The first two now share a row and the workload summary spans the width below them.
@@ -37,6 +39,7 @@ Strict final grade: **94/100**. The workspace is calm, readable, and usable on d
 - Transcript review: 10 records per page.
 - Browser console errors observed during the authenticated walkthrough: zero.
 - Live transcript totals from the supplied d.tech PDF: Design Lab 30/40 and Personal Development 10/25.
+- Live transcript GPA from the supplied d.tech PDF: 4.00 unweighted and 4.74 weighted, with 45 pass credits visibly excluded.
 - Live AI conversation: authenticated structured response from `gpt-5.4`, including per-response latency.
 
 ## Rubric
@@ -54,6 +57,6 @@ Strict final grade: **94/100**. The workspace is calm, readable, and usable on d
 
 ## Remaining improvements
 
-- The 131-program AA/AS native select is reliable and keyboard-accessible, but an accessible searchable combobox would be faster for students who already know their program.
+- Degree and course relevance reasons are deterministic discovery cues, not predictions of student fit or outcomes; future usability research should test whether students understand that boundary without explanation.
 - The transcript review queue is now bounded, but a future bulk-review mode could accelerate very large imports without weakening per-record confirmation.
 - A formal production accessibility audit should be repeated on the deployed origin with the final hosting, font-loading, and browser environment.

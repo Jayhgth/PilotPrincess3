@@ -35,6 +35,7 @@ export interface StudentProfile {
   workload_tolerance: "light" | "balanced" | "high";
   stress_level: number;
   activity_load_hours: number;
+  weekly_commitment_limit: number | null;
   school_confirmed: boolean;
   onboarding_complete: boolean;
   plan_start_grade: GradeLevel | null;
@@ -142,6 +143,7 @@ export interface PlanCourse {
   sort_order: number;
   source_review_item_id: string | null;
   smccd_course_id: string | null;
+  requirement_area_override: RequirementArea | null;
 }
 
 export interface SmccdCollege {
@@ -270,14 +272,22 @@ export interface GpaSummary {
   projectedUnweighted: number | null;
   projectedWeighted: number | null;
   gradedCredits: number;
+  weightedCredits: number;
+  passCredits: number;
   isEstimate: true;
 }
 
 export interface WorkloadSummary {
   weeklyActivityHours: number;
+  collegeWeeklyHours: number;
+  knownWeeklyHours: number;
+  demandingCourseCount: number;
+  demandingCourseLimit: number;
+  capacityHours: number | null;
+  capacityRemaining: number | null;
   academicLoad: number;
   totalScore: number;
-  level: "light" | "balanced" | "high";
+  level: "within_limit" | "near_limit" | "over_limit" | "needs_input";
   warning: string | null;
 }
 
@@ -286,6 +296,7 @@ export interface SimulationResult {
     graduationPercent: number;
     projectedWeightedGpa: number | null;
     workloadScore: number;
+    demandingCourseCount: number;
     stressLevel: number;
     activityHours: number;
   };
@@ -293,6 +304,7 @@ export interface SimulationResult {
     graduationPercent: number;
     projectedWeightedGpa: number | null;
     workloadScore: number;
+    demandingCourseCount: number;
     stressLevel: number;
     activityHours: number;
   };

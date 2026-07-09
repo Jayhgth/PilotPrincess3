@@ -69,7 +69,12 @@ export function transcriptPlanCourseDraft(
   const fallbackGrade = Math.max(9, Math.min(12, (profile.grade_level ?? 9) - 1)) as GradeLevel;
   const grade = Math.max(9, Math.min(12, Number(payload.grade_level ?? fallbackGrade))) as GradeLevel;
   const credits = payload.credits ?? matched?.credits ?? null;
-  const verifiedMapping = Boolean(
+  const isSmccdCourse = Boolean(
+    payload.matched_smccd_course_id ||
+    /College of San Mateo|Skyline College|Cañada College|Canada College/i.test(payload.institution_name ?? "")
+  );
+  const isIntersessionPass = !matched && payload.letter_grade?.toUpperCase() === "P" && payload.subject === "Personal Development";
+  const verifiedMapping = isIntersessionPass || Boolean(
     matched && mappings.some((mapping) => mapping.course_id === matched.id && mapping.confidence === "verified")
   );
 
@@ -83,7 +88,7 @@ export function transcriptPlanCourseDraft(
     credits,
     college_units: payload.college_units ?? matched?.college_units ?? null,
     letter_grade: payload.letter_grade?.trim().toUpperCase() || null,
-    is_weighted: payload.weighted ?? matched?.is_weighted ?? false,
+    is_weighted: isSmccdCourse ? true : payload.weighted ?? matched?.is_weighted ?? false,
     mapping_verified: verifiedMapping,
     user_edited: true,
     notes: payload.institution_name
@@ -91,6 +96,7 @@ export function transcriptPlanCourseDraft(
       : "Imported from a reviewed transcript.",
     sort_order: 0,
     source_review_item_id: reviewItemId,
-    smccd_course_id: payload.matched_smccd_course_id ?? null
+    smccd_course_id: payload.matched_smccd_course_id ?? null,
+    requirement_area_override: isIntersessionPass ? "personal_development" : null
   };
 }
