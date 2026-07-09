@@ -224,7 +224,10 @@ export default function OnboardingFlow({
       );
       setTranscriptItems(items);
       setSelectedTranscriptIds(new Set(items.map((item) => item.id)));
-      setTranscriptSummary(String(result.summary ?? "Transcript review ready."));
+      const parserNote = result.aiUsed === true
+        ? "This source had no usable text layer, so Codex vision was used for extraction."
+        : "Parsed deterministically from the document text. Codex was not used.";
+      setTranscriptSummary(`${String(result.summary ?? "Transcript review ready.")} ${parserNote}`);
       if (items.length === 0) {
         setError("No completed courses were extracted. The source is saved for manual review.");
       }

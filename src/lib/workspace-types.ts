@@ -13,6 +13,12 @@ export type {
   School,
   SimulationConfig,
   SimulationResult,
+  SmccdCollege,
+  SmccdCourse,
+  SmccdProgram,
+  SmccdProgramRequirement,
+  SmccdRequirementCourse,
+  StudentSmccdGoal,
   StudentProfile,
   TimelineTask
 } from "@/lib/models";

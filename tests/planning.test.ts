@@ -75,6 +75,7 @@ function planCourse(overrides: Partial<PlanCourse> = {}): PlanCourse {
     notes: null,
     sort_order: 0,
     source_review_item_id: null,
+    smccd_course_id: null,
     ...overrides
   };
 }

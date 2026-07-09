@@ -117,6 +117,8 @@ const transcriptCourseSchema = z.object({
   letter_grade: z.string().max(12).nullable(),
   credits: z.number().min(0).max(100).nullable(),
   weighted: z.boolean().nullable(),
+  institution_name: z.string().max(180).nullable(),
+  college_units: z.number().min(0).max(30).nullable(),
   confidence: confidenceSchema,
   evidence: z.string().max(600)
 });
@@ -147,7 +149,7 @@ export const parsedTranscriptJsonSchema = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["course_name", "course_code", "subject", "grade_level", "school_year", "term", "letter_grade", "credits", "weighted", "confidence", "evidence"],
+        required: ["course_name", "course_code", "subject", "grade_level", "school_year", "term", "letter_grade", "credits", "weighted", "institution_name", "college_units", "confidence", "evidence"],
         properties: {
           course_name: { type: "string" },
           course_code: { type: ["string", "null"] },
@@ -158,6 +160,8 @@ export const parsedTranscriptJsonSchema = {
           letter_grade: { type: ["string", "null"] },
           credits: { type: ["number", "null"] },
           weighted: { type: ["boolean", "null"] },
+          institution_name: { type: ["string", "null"] },
+          college_units: { type: ["number", "null"] },
           confidence: { type: "string", enum: ["verified", "likely", "uncertain"] },
           evidence: { type: "string" }
         }

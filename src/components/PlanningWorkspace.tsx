@@ -8,6 +8,7 @@ import {
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
   CompassIcon as Compass,
+  CpuIcon as Cpu,
   FileArrowUpIcon as FileArrowUp,
   FlagIcon as Flag,
   FloppyDiskIcon as FloppyDisk,
@@ -53,6 +54,8 @@ import {
 import { requirementsForProfile, selectedPlanGrades } from "@/lib/planning";
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
+import AiStatusPanel from "@/components/AiStatusPanel";
+import SmccdPlanner from "@/components/SmccdPlanner";
 import type {
   Activity,
   CatalogReviewItem,
@@ -86,7 +89,8 @@ type ViewId =
   | "dual_credit"
   | "activities"
   | "timeline"
-  | "simulator";
+  | "simulator"
+  | "ai_status";
 
 const NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
@@ -96,10 +100,11 @@ const NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "graduation", label: "Graduation", icon: GraduationCap },
   { id: "gpa", label: "GPA", icon: ChartLineUp },
   { id: "planner", label: "Academic plan", icon: CalendarCheck },
-  { id: "dual_credit", label: "Dual enrollment", icon: Compass },
+  { id: "dual_credit", label: "SMCCD planning", icon: Compass },
   { id: "activities", label: "Activities", icon: ActivityIcon },
   { id: "timeline", label: "Timeline", icon: ListChecks },
-  { id: "simulator", label: "Simulator", icon: Scales }
+  { id: "simulator", label: "Simulator", icon: Scales },
+  { id: "ai_status", label: "AI status", icon: Cpu }
 ];
 
 const DEFAULT_SIMULATION: SimulationConfig = {
@@ -215,13 +220,6 @@ export default function PlanningWorkspace() {
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [activityForm, setActivityForm] = useState({ name: "", kind: "club", role: "", weeklyHours: 2 });
   const [taskForm, setTaskForm] = useState({ title: "", category: "admin", dueLabel: "" });
-  const [dualForm, setDualForm] = useState({
-    name: "",
-    collegeUnits: 3,
-    dtechCredits: 10,
-    gradeLevel: 11 as GradeLevel,
-    associateGoal: ""
-  });
   const [simulationConfig, setSimulationConfig] = useState<SimulationConfig>(DEFAULT_SIMULATION);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [simulationExplanation, setSimulationExplanation] = useState<string | null>(null);
@@ -651,7 +649,10 @@ export default function PlanningWorkspace() {
           { sourceId: source.id }
         );
         await loadWorkspace();
-        setToast(String(payload.summary ?? "Source parsing completed."));
+        const parserNote = source.document_type === "transcript"
+          ? payload.aiUsed === true ? " Codex vision was used because no text layer was available." : " Parsed from text without Codex."
+          : "";
+        setToast(`${String(payload.summary ?? "Source parsing completed.")}${parserNote}`);
       }
     );
   }
@@ -856,48 +857,6 @@ export default function PlanningWorkspace() {
     }
     setTasks((current) => current.map((task) => (task.id === id ? { ...task, ...patch } : task)));
     if (patch.is_completed) await logEvent("timeline_task_completed", { task_id: id });
-  }
-
-  async function addDualEnrollment(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
-    event.preventDefault();
-    if (!supabase || !session || !activeVersion || !profile) return;
-    if (!dualForm.name.trim()) {
-      setToast("Enter the exact college course name and number.");
-      return;
-    }
-    await runAction(
-      "Adding dual-enrollment course",
-      async () => {
-        const { data, error } = await supabase
-          .from("plan_courses")
-          .insert({
-            plan_version_id: activeVersion.id,
-            user_id: session.user.id,
-            custom_course_name: dualForm.name.trim(),
-            grade_level: dualForm.gradeLevel,
-            school_year: schoolYearForGrade(
-              profile.graduation_year ?? new Date().getFullYear() + 3,
-              dualForm.gradeLevel
-            ),
-            term: "fall",
-            status: "planned",
-            credits: dualForm.dtechCredits,
-            college_units: dualForm.collegeUnits,
-            is_weighted: false,
-            mapping_verified: false,
-            user_edited: true,
-            notes: dualForm.associateGoal.trim()
-              ? `Associate-degree goal: ${dualForm.associateGoal.trim()}. Verify course fit and d.tech approval.`
-              : "Verify d.tech approval, prerequisites, schedule, and transcript delivery."
-          })
-          .select("*")
-          .single();
-        if (error) throw error;
-        setPlanCourses((current) => [...current, data as unknown as PlanCourse]);
-        setDualForm({ name: "", collegeUnits: 3, dtechCredits: 10, gradeLevel: dualForm.gradeLevel, associateGoal: "" });
-      },
-      "Dual-enrollment course added as unverified."
-    );
   }
 
   async function runSimulation() {
@@ -1286,25 +1245,20 @@ export default function PlanningWorkspace() {
   }
 
   function renderDualCredit() {
-    const dualRows = planCourses.filter((row) => Number(row.college_units ?? 0) > 0);
-    return (
-      <>
-        <PageHeader title="Dual enrollment" description="Plan exact community-college courses and associate-degree goals without treating them as pre-approved." />
-        <div className="notice-strip warning"><Warning size={19} /><span>Confirm d.tech approval, college prerequisites, schedule fit, and official transcript delivery before relying on any course.</span></div>
-        <div className="source-layout">
-          <form className="form-section" onSubmit={addDualEnrollment}>
-            <h2>Add an exact college course</h2>
-            <label className="form-field"><span>Course name and number</span><input value={dualForm.name} onChange={(event) => setDualForm({ ...dualForm, name: event.target.value })} placeholder="Example: department number and title" required /></label>
-            <div className="form-grid two"><label className="form-field"><span>College units</span><input type="number" min={0.5} max={11} step={0.5} value={dualForm.collegeUnits} onChange={(event) => setDualForm({ ...dualForm, collegeUnits: Number(event.target.value) })} /></label><label className="form-field"><span>Proposed d.tech credits</span><input type="number" min={0} max={30} step={0.5} value={dualForm.dtechCredits} onChange={(event) => setDualForm({ ...dualForm, dtechCredits: Number(event.target.value) })} /></label><label className="form-field"><span>Grade</span><select value={dualForm.gradeLevel} onChange={(event) => setDualForm({ ...dualForm, gradeLevel: Number(event.target.value) as GradeLevel })}>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>{grade}</option>)}</select></label><label className="form-field"><span>Associate-degree goal</span><input value={dualForm.associateGoal} onChange={(event) => setDualForm({ ...dualForm, associateGoal: event.target.value })} placeholder="Optional and customizable" /></label></div>
-            <button className="primary-button" type="submit"><Plus size={17} /> Add as unverified</button>
-          </form>
-          <section className="content-section">
-            <header className="section-heading"><div><h2>Planned college courses</h2><p>Custom entries stay visibly unverified.</p></div></header>
-            {dualRows.length ? <div className="source-list">{dualRows.map((row) => <article className="source-row" key={row.id}><div><strong>{courseDisplayName(row, courseMap)}</strong><span>{row.college_units} college units · Grade {row.grade_level}</span></div><ConfidenceTag value={row.mapping_verified ? "verified" : "uncertain"} />{row.notes && <p>{row.notes}</p>}</article>)}</div> : <EmptyState title="No college courses planned" body="Enter an exact course from the current SMCCCD schedule after checking availability." />}
-          </section>
-        </div>
-      </>
-    );
+    if (!supabase || !session || !profile || !activeVersion) return null;
+    return <SmccdPlanner
+      supabase={supabase}
+      session={session}
+      profile={profile}
+      activeVersion={activeVersion}
+      planCourses={planCourses}
+      onCourseAdded={(course) => setPlanCourses((current) => [...current, course])}
+      onCourseRemoved={(id) => setPlanCourses((current) => current.filter((row) => row.id !== id))}
+    />;
+  }
+
+  function renderAiStatus() {
+    return session ? <AiStatusPanel session={session} /> : null;
   }
 
   function renderActivities() {
@@ -1382,6 +1336,7 @@ export default function PlanningWorkspace() {
       case "activities": return renderActivities();
       case "timeline": return renderTimeline();
       case "simulator": return renderSimulator();
+      case "ai_status": return renderAiStatus();
     }
   }
 

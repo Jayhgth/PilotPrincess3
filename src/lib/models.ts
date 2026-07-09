@@ -141,6 +141,71 @@ export interface PlanCourse {
   notes: string | null;
   sort_order: number;
   source_review_item_id: string | null;
+  smccd_course_id: string | null;
+}
+
+export interface SmccdCollege {
+  code: "CSM" | "SKY" | "CAN";
+  name: string;
+  catalog_year: string;
+  courses_url: string;
+  programs_url: string;
+  concurrent_enrollment_url: string;
+}
+
+export interface SmccdCourse {
+  id: string;
+  college_code: SmccdCollege["code"];
+  course_code: string;
+  subject: string;
+  course_number: string;
+  title: string;
+  units_min: number;
+  units_max: number | null;
+  degree_applicable: boolean;
+  transfer_credit: "CSU" | "UC" | "CSU/UC" | null;
+  attributes: string[];
+  catalog_url: string;
+  source_year: string;
+}
+
+export interface SmccdProgram {
+  id: string;
+  college_code: SmccdCollege["code"];
+  program_code: string;
+  title: string;
+  award_type: "AA" | "AS";
+  total_degree_units: number;
+  total_major_units_text: string;
+  catalog_url: string;
+  source_year: string;
+}
+
+export interface SmccdProgramRequirement {
+  id: string;
+  program_id: string;
+  label: string;
+  kind: "all" | "choose_units" | "choose_count" | "or_group" | "text_rule";
+  min_units: number | null;
+  min_count: number | null;
+  raw_text: string | null;
+  sort_order: number;
+}
+
+export interface SmccdRequirementCourse {
+  id: string;
+  requirement_id: string;
+  course_code: string;
+  units_text: string;
+  note: string | null;
+}
+
+export interface StudentSmccdGoal {
+  id: string;
+  user_id: string;
+  program_id: string;
+  is_primary: boolean;
+  notes: string;
 }
 
 export interface Activity {

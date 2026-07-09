@@ -5,7 +5,8 @@ import { basename, join } from "node:path";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { findTranscriptCatalogMatch } from "@/lib/transcript";
-import type { Course } from "@/lib/models";
+import { normalizeSmccdCourseCode, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
+import type { Course, SmccdCourse } from "@/lib/models";
 import {
   parsedTranscriptJsonSchema,
   parsedTranscriptSchema,
@@ -13,6 +14,7 @@ import {
 } from "@/server/ai-schemas";
 import { runCodexStructured } from "@/server/codex";
 import { extractSource } from "@/server/source-extraction";
+import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
 
 export const prerender = false;
 
@@ -24,12 +26,22 @@ function transcriptReviewRows(
   userId: string,
   sourceId: string,
   result: ParsedTranscriptResult,
-  courses: Course[]
+  courses: Course[],
+  smccdCourses: SmccdCourse[]
 ) {
   const courseRows = result.courses.map((course) => {
-    const match = findTranscriptCatalogMatch(course.course_name, courses);
+    const institutionCode = Object.entries(SMCCD_COLLEGE_NAMES).find(([, name]) => name === course.institution_name)?.[0];
+    const isCollegeCourse = Boolean(course.course_code && institutionCode);
+    const normalizedCollegeCode = course.course_code ? normalizeSmccdCourseCode(course.course_code) : null;
+    const collegeMatches = normalizedCollegeCode
+      ? smccdCourses.filter((candidate) => candidate.course_code === normalizedCollegeCode)
+      : [];
+    const smccdMatch = collegeMatches.find((candidate) => candidate.college_code === institutionCode)
+      ?? (collegeMatches.length === 1 ? collegeMatches[0] : null);
+    const match = isCollegeCourse ? null : findTranscriptCatalogMatch(course.course_name, courses);
     const uncertaintyNotes = [
-      ...(!match ? ["No exact official catalog match was found. This course will remain custom until reviewed."] : []),
+      ...(!isCollegeCourse && !match ? ["No exact d.tech catalog match was found. This course will remain custom until reviewed."] : []),
+      ...(isCollegeCourse && !smccdMatch ? ["No exact SMCCD catalog match was found for this college course code."] : []),
       ...(course.grade_level === null ? ["Grade level was not explicit in the transcript."] : []),
       ...(course.credits === null && match?.credits === null ? ["Credits need manual confirmation."] : [])
     ];
@@ -41,9 +53,13 @@ function transcriptReviewRows(
         ...course,
         matched_course_id: match?.id ?? null,
         matched_course_name: match?.name ?? null,
+        matched_smccd_course_id: smccdMatch?.id ?? null,
+        matched_smccd_course_name: smccdMatch ? `${smccdMatch.course_code} ${smccdMatch.title}` : null,
+        college_units: smccdMatch ? Number(smccdMatch.units_max ?? smccdMatch.units_min) : course.college_units,
         import_status: "completed"
       },
       confidence: uncertaintyNotes.length > 0 ? "uncertain" : course.confidence,
+      status: "pending",
       uncertainty_notes: uncertaintyNotes
     };
   });
@@ -130,35 +146,57 @@ export const POST: APIRoute = async ({ request }) => {
 
     if (!extractedText && attachments.length === 0) throw new Error("No readable transcript content was found.");
 
-    const prompt = [
-      "Read this high-school transcript and extract only courses explicitly shown as completed or carrying a final grade.",
-      "For every course, preserve the printed course name, grade level, school year, term, final letter grade, credits, and weighting when present.",
-      "Do not treat in-progress, requested, or planned courses as completed. Omit them from courses and mention them in conflicts when relevant.",
-      "Use verified only when the field is explicit and legible. Use uncertain for inferred, incomplete, or conflicting values.",
-      "Evidence must be a short location or wording from the transcript, not invented context.",
-      extractionNote,
-      extractedText ? `TRANSCRIPT TEXT:\n${extractedText}` : "The transcript is provided as attached images."
-    ].join("\n\n");
-    const codexResult = await runCodexStructured({
-      feature: "transcript_parse",
-      prompt,
-      input: attachments,
-      schema: parsedTranscriptSchema,
-      outputSchema: parsedTranscriptJsonSchema,
-      workingDirectory: scratchDirectory,
-      timeoutMs: 30000
-    });
+    let parsedResult: ParsedTranscriptResult;
+    let parserMethod: "deterministic_text" | "codex_vision";
+    let model: string | null = null;
+    let parserLatencyMs: number;
+    if (extractedText.trim()) {
+      const parserStartedAt = Date.now();
+      parsedResult = parseDtechTranscriptText(extractedText);
+      parserLatencyMs = Date.now() - parserStartedAt;
+      parserMethod = "deterministic_text";
+    } else {
+      const prompt = [
+        "This transcript has no usable text layer and is provided as images. Extract only courses explicitly shown as completed or carrying a final grade.",
+        "For every course, preserve the printed course name, institution, grade level, school year, term, final letter grade, high-school credits, college units, and weighting when present.",
+        "Do not treat in-progress, requested, or planned courses as completed. Omit them from courses and mention them in conflicts when relevant.",
+        "Use verified only when the field is explicit and legible. Use uncertain for inferred, incomplete, or conflicting values.",
+        "Evidence must be a short location or wording from the transcript, not invented context.",
+        extractionNote
+      ].join("\n\n");
+      const codexResult = await runCodexStructured({
+        feature: "transcript_image_ocr",
+        prompt,
+        input: attachments,
+        schema: parsedTranscriptSchema,
+        outputSchema: parsedTranscriptJsonSchema,
+        workingDirectory: scratchDirectory,
+        timeoutMs: 45000
+      });
+      parsedResult = codexResult.value;
+      parserLatencyMs = codexResult.latencyMs;
+      parserMethod = "codex_vision";
+      model = codexResult.model;
+    }
 
     const { data: catalogData, error: catalogError } = await auth.supabase
       .from("courses")
       .select("*")
       .eq("review_status", "approved");
     if (catalogError) throw catalogError;
+    const collegeCourseCodes = [...new Set(parsedResult.courses
+      .map((course) => course.course_code ? normalizeSmccdCourseCode(course.course_code) : null)
+      .filter((value): value is string => Boolean(value)))];
+    const smccdResult = collegeCourseCodes.length > 0
+      ? await auth.supabase.from("smccd_courses").select("*").in("course_code", collegeCourseCodes)
+      : { data: [], error: null };
+    if (smccdResult.error) throw smccdResult.error;
     const rows = transcriptReviewRows(
       auth.user.id,
       source.id,
-      codexResult.value,
-      (catalogData ?? []) as unknown as Course[]
+      parsedResult,
+      (catalogData ?? []) as unknown as Course[],
+      (smccdResult.data ?? []) as unknown as SmccdCourse[]
     );
     await auth.supabase
       .from("catalog_review_items")
@@ -180,10 +218,10 @@ export const POST: APIRoute = async ({ request }) => {
       .from("parse_jobs")
       .update({
         status: "needs_review",
-        model: codexResult.model,
-        output: codexResult.value,
-        latency_ms: codexResult.latencyMs,
-        fallback_used: false,
+        model,
+        output: { ...parsedResult, parser_method: parserMethod, parser_version: TRANSCRIPT_PARSER_VERSION },
+        latency_ms: parserLatencyMs,
+        fallback_used: parserMethod === "codex_vision",
         uncertainty_involved: uncertaintyInvolved,
         completed_at: new Date().toISOString()
       })
@@ -193,23 +231,35 @@ export const POST: APIRoute = async ({ request }) => {
       event_name: "transcript_parsed",
       feature_name: "transcript_parse",
       source_used: source.kind,
-      latency_ms: codexResult.latencyMs,
+      latency_ms: parserLatencyMs,
       success: true,
-      fallback_used: false,
+      fallback_used: parserMethod === "codex_vision",
       uncertainty_involved: uncertaintyInvolved,
-      properties: { source_id: source.id, completed_course_count: codexResult.value.courses.length }
+      properties: {
+        source_id: source.id,
+        completed_course_count: parsedResult.courses.length,
+        parser_method: parserMethod,
+        parser_version: TRANSCRIPT_PARSER_VERSION
+      }
     });
     return new Response(
       JSON.stringify({
-        summary: codexResult.value.summary,
-        courseCount: codexResult.value.courses.length,
+        summary: parsedResult.summary,
+        courseCount: parsedResult.courses.length,
         reviewItems: insertedRows ?? [],
-        fallbackUsed: false
+        fallbackUsed: parserMethod === "codex_vision",
+        parserMethod,
+        parserVersion: TRANSCRIPT_PARSER_VERSION,
+        aiUsed: parserMethod === "codex_vision"
       }),
       { headers: { "content-type": "application/json" } }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Transcript parsing failed.";
+    const message = error instanceof Error
+      ? error.message
+      : error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : "Transcript parsing failed.";
     const fallbackPayload = {
       summary: "Automatic transcript parsing was unavailable. The uploaded transcript is preserved for manual review.",
       raw_excerpt: (source.raw_text ?? "").slice(0, 2500),

@@ -40,8 +40,12 @@ export interface TranscriptCoursePayload {
   letter_grade?: string | null;
   credits?: number | null;
   weighted?: boolean | null;
+  institution_name?: string | null;
+  college_units?: number | null;
   matched_course_id?: string | null;
   matched_course_name?: string | null;
+  matched_smccd_course_id?: string | null;
+  matched_smccd_course_name?: string | null;
 }
 
 export function transcriptPlanCourseDraft(
@@ -63,19 +67,22 @@ export function transcriptPlanCourseDraft(
 
   return {
     course_id: matched?.id ?? null,
-    custom_course_name: matched ? null : payload.course_name,
+    custom_course_name: matched ? null : payload.matched_smccd_course_name ?? payload.course_name,
     grade_level: grade,
     school_year: payload.school_year ?? schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade),
     term: payload.term ?? (matched?.term_type === "semester" ? "fall" : "full_year"),
     status: "completed",
     credits,
-    college_units: matched?.college_units ?? null,
+    college_units: payload.college_units ?? matched?.college_units ?? null,
     letter_grade: payload.letter_grade?.trim().toUpperCase() || null,
     is_weighted: payload.weighted ?? matched?.is_weighted ?? false,
     mapping_verified: verifiedMapping,
     user_edited: true,
-    notes: "Imported from a reviewed transcript.",
+    notes: payload.institution_name
+      ? `Imported from a reviewed transcript (${payload.institution_name}).`
+      : "Imported from a reviewed transcript.",
     sort_order: 0,
-    source_review_item_id: reviewItemId
+    source_review_item_id: reviewItemId,
+    smccd_course_id: payload.matched_smccd_course_id ?? null
   };
 }

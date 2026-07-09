@@ -42,7 +42,47 @@ export interface StructuredRunOptions<T> {
   outputSchema: Record<string, unknown>;
   workingDirectory?: string;
   timeoutMs?: number;
+  reasoningEffort?: "low" | "medium" | "high";
 }
+
+export const CODEX_FEATURES = [
+  {
+    id: "plain_language_explanations",
+    label: "Plan and simulator explanations",
+    usesCodex: true,
+    condition: "Only when the student requests a generated explanation; deterministic results remain available."
+  },
+  {
+    id: "lightweight_summaries",
+    label: "Lightweight student summaries",
+    usesCodex: true,
+    condition: "Codex improves wording; a deterministic summary is always available."
+  },
+  {
+    id: "unstructured_source_review",
+    label: "Unstructured policy and catalog review",
+    usesCodex: true,
+    condition: "Only for student-added unstructured sources that need semantic extraction."
+  },
+  {
+    id: "image_transcript_ocr",
+    label: "Scanned transcript image extraction",
+    usesCodex: true,
+    condition: "Only when a transcript has no usable PDF or document text layer."
+  },
+  {
+    id: "structured_transcripts",
+    label: "Text-based PDF transcript parsing",
+    usesCodex: false,
+    condition: "Deterministic parser only."
+  },
+  {
+    id: "planning_math",
+    label: "Graduation, GPA, workload, and SMCCD progress",
+    usesCodex: false,
+    condition: "Deterministic calculations only."
+  }
+] as const;
 
 function createCodex() {
   const apiKey = process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY;
@@ -55,11 +95,14 @@ function createCodex() {
 }
 
 export function codexRuntimeStatus() {
+  const apiKeyConfigured = Boolean(process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY);
   return {
-    configured: Boolean(process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY),
-    localAuthFallbackAvailable: !(process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY),
+    configured: apiKeyConfigured,
+    credentialMode: apiKeyConfigured ? "server_api_key" : "local_codex_login",
+    localAuthFallbackAvailable: !apiKeyConfigured,
     model: process.env.CODEX_MODEL ?? DEFAULT_MODEL,
-    maxConcurrentTurns: MAX_CONCURRENT_TURNS
+    maxConcurrentTurns: MAX_CONCURRENT_TURNS,
+    features: CODEX_FEATURES
   };
 }
 
@@ -78,7 +121,7 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
     const model = process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
-      modelReasoningEffort: "medium",
+      modelReasoningEffort: options.reasoningEffort ?? "medium",
       sandboxMode: "read-only",
       approvalPolicy: "never",
       networkAccessEnabled: false,
