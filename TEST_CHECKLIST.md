@@ -63,10 +63,14 @@ Last run: 2026-07-09
 - [x] Computer Science interest does not create a false Political Science match
 - [x] d.tech add-to-Planned and Planned-to-In-progress browser flows pass with live count updates
 - [x] Overview course summary and transcript-import handoff open the correct destination and state
+- [x] Transcript import uses one file row, an optional paste-text disclosure, and one parse action
+- [x] Deterministic pasted-text parsing populates the compact ledger without Codex
+- [x] Select-all imports five reviewed rows to Done in one action and the completed state opens the Done list
 - [x] Unified Courses, SMCCD, and AI connection browser flows pass with no console errors
 - [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
 - [x] Mobile Courses status lists, inline editor, d.tech discovery, SMCCD search, overview, navigation, and graduation visually pass at 390x844
 - [x] Unified Courses workspace visually passes in both light and dark themes
+- [x] Transcript empty, populated, and completed states visually pass at desktop and 390x844 in light and dark themes
 - [x] Lightweight summary works with deterministic fallback
 - [x] Desktop dark-theme UI visually reviewed in the in-app browser
 

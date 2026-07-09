@@ -247,14 +247,12 @@ export default function PlanningWorkspace() {
   const [catalogSubject, setCatalogSubject] = useState("all");
   const [catalogGrade, setCatalogGrade] = useState<GradeLevel | "all">("all");
   const [catalogPage, setCatalogPage] = useState(0);
-  const [reviewPage, setReviewPage] = useState(0);
   const [sourceForm, setSourceForm] = useState({
-    title: "",
     rawText: "",
-    file: null as File | null,
-    documentType: "general" as "general" | "transcript"
+    file: null as File | null
   });
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
+  const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
   const [activityForm, setActivityForm] = useState({ name: "", kind: "club", role: "", weeklyHours: 2 });
   const [taskForm, setTaskForm] = useState({ title: "", category: "admin", dueLabel: "" });
   const [simulationConfig, setSimulationConfig] = useState<SimulationConfig>(DEFAULT_SIMULATION);
@@ -364,10 +362,21 @@ export default function PlanningWorkspace() {
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
       setPlan(loadedPlan);
       setVersions(loadedVersions);
-      setPlanCourses((planCourseResult.data ?? []) as unknown as PlanCourse[]);
+      const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
+      const loadedReviewItems = (reviewResult.data ?? []) as unknown as CatalogReviewItem[];
+      setPlanCourses(loadedPlanCourses);
       setActivities((activityResult.data ?? []) as unknown as Activity[]);
       setTasks((taskResult.data ?? []) as unknown as TimelineTask[]);
-      setReviewItems((reviewResult.data ?? []) as unknown as CatalogReviewItem[]);
+      setReviewItems(loadedReviewItems);
+      setSelectedTranscriptIds((current) => {
+        const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
+        const availableIds = loadedReviewItems
+          .filter((item) => item.entity_type === "transcript_course" && item.status !== "rejected" && !importedIds.has(item.id))
+          .map((item) => item.id);
+        const availableSet = new Set(availableIds);
+        const preserved = new Set([...current].filter((id) => availableSet.has(id)));
+        return preserved.size > 0 || current.size > 0 ? preserved : new Set(availableIds);
+      });
       setSummaries((summaryResult.data ?? []) as unknown as GeneratedSummary[]);
     } catch (caught) {
       setFatalError(caught instanceof Error ? caught.message : "The workspace could not be loaded.");
@@ -642,15 +651,16 @@ export default function PlanningWorkspace() {
     );
   }
 
-  async function submitSource(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function submitTranscript(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!supabase || !session || !school) return;
     if (!sourceForm.file && !sourceForm.rawText.trim()) {
-      setToast("Choose a file or paste official source text.");
+      setToast("Choose a transcript file or paste its text.");
       return;
     }
+    const form = event.currentTarget;
     await runAction(
-      "Adding source",
+      "Reading transcript",
       async () => {
         let storagePath: string | null = null;
         let mimeType: string | null = null;
@@ -670,7 +680,7 @@ export default function PlanningWorkspace() {
           .insert({
             school_id: school.id,
             user_id: session.user.id,
-            title: sourceForm.title.trim() || sourceForm.file?.name || "Student source",
+            title: sourceForm.file?.name || "Pasted transcript",
             kind,
             storage_path: storagePath,
             raw_text: sourceForm.rawText.trim() || null,
@@ -679,16 +689,28 @@ export default function PlanningWorkspace() {
             is_official: false,
             parse_status: "pending",
             confidence: "uncertain",
-            document_type: sourceForm.documentType
+            document_type: "transcript"
           })
           .select("*")
           .single();
         if (error) throw error;
-        setSources((current) => [data as unknown as OfficialSource, ...current]);
-        setSourceForm({ title: "", rawText: "", file: null, documentType: "general" });
+        setSourceForm({ rawText: "", file: null });
+        form.reset();
         await logEvent("source_added", { kind });
+        let payload: Record<string, unknown>;
+        try {
+          payload = await authorizedPost("/api/ai/parse-transcript", { sourceId: data.id });
+        } finally {
+          await loadWorkspace();
+        }
+        const parsedItems = ((payload.reviewItems ?? []) as CatalogReviewItem[])
+          .filter((item) => item.entity_type === "transcript_course");
+        setSelectedTranscriptIds(new Set(parsedItems.map((item) => item.id)));
+        const parserNote = payload.aiUsed === true
+          ? " Codex vision was used because the file had no readable text layer."
+          : " Parsed from document text without Codex.";
+        setToast(`${String(payload.summary ?? "Transcript review ready.")}${parserNote}`);
       },
-      "Source added. Review or parse it next."
     );
   }
 
@@ -726,84 +748,98 @@ export default function PlanningWorkspace() {
             candidate.id === item.id ? { ...candidate, corrected_payload: corrected, status } : candidate
           )
         );
+        if (status === "rejected") {
+          setSelectedTranscriptIds((current) => {
+            const next = new Set(current);
+            next.delete(item.id);
+            return next;
+          });
+        }
       },
       status === "approved" ? "Correction approved." : "Item rejected."
     );
   }
 
-  async function addReviewedCourse(item: CatalogReviewItem) {
+  async function importSelectedTranscriptCourses(sourceId: string | null) {
     if (!supabase || !session || !activeVersion || !profile) return;
-    const payload = item.corrected_payload ?? item.proposed_payload;
-    const isTranscript = item.entity_type === "transcript_course";
-    const name = String(isTranscript ? payload.course_name ?? "" : payload.name ?? "").trim();
-    if (!name) {
-      setToast("Add a course name before using this item.");
+    const importedIds = new Set(planCourses.map((row) => row.source_review_item_id).filter(Boolean));
+    const candidates = reviewItems.filter(
+      (item) => item.entity_type === "transcript_course"
+        && item.status !== "rejected"
+        && (!sourceId || item.source_id === sourceId)
+        && selectedTranscriptIds.has(item.id)
+        && !importedIds.has(item.id)
+    );
+    if (candidates.length === 0) {
+      setToast("Select at least one course to import.");
       return;
     }
-    const grade = (profile.grade_level ?? 9) as GradeLevel;
+
+    let prepared: Array<{ item: CatalogReviewItem; payload: Record<string, unknown> }>;
+    try {
+      prepared = candidates.map((item) => {
+        const payload = reviewDrafts[item.id]
+          ? JSON.parse(reviewDrafts[item.id]) as Record<string, unknown>
+          : item.corrected_payload ?? item.proposed_payload;
+        if (!String(payload.course_name ?? "").trim()) {
+          throw new Error("Every selected row needs a course name before import.");
+        }
+        return { item, payload };
+      });
+    } catch (caught) {
+      setToast(caught instanceof Error ? caught.message : "One corrected row is not valid JSON.");
+      return;
+    }
+
     await runAction(
-      "Adding reviewed course",
+      "Importing transcript courses",
       async () => {
-        if (isTranscript) {
-          const draft = transcriptPlanCourseDraft(
-            payload as unknown as TranscriptCoursePayload,
-            profile,
-            courses,
-            mappings,
-            item.id
-          );
+        const ids = prepared.map(({ item }) => item.id);
+        const { error: approveError } = await supabase
+          .from("catalog_review_items")
+          .update({ status: "approved" })
+          .in("id", ids);
+        if (approveError) throw approveError;
+
+        for (const { item, payload } of prepared) {
+          if (!reviewDrafts[item.id]) continue;
+          const { error: correctionError } = await supabase
+            .from("catalog_review_items")
+            .update({ corrected_payload: payload })
+            .eq("id", item.id);
+          if (correctionError) throw correctionError;
+        }
+
+        const inserts: Array<Record<string, unknown>> = [];
+        for (const { item, payload } of prepared) {
+          const draft = transcriptPlanCourseDraft(payload as unknown as TranscriptCoursePayload, profile, courses, mappings, item.id);
           const existing = draft.course_id
             ? planCourses.find((row) => row.course_id === draft.course_id)
             : null;
           if (existing) {
-            const { data, error } = await supabase
+            const { error } = await supabase
               .from("plan_courses")
               .update(draft)
-              .eq("id", existing.id)
-              .select("*")
-              .single();
+              .eq("id", existing.id);
             if (error) throw error;
-            setPlanCourses((current) => current.map((row) => row.id === existing.id ? data as unknown as PlanCourse : row));
-            await logEvent("transcript_course_imported", { review_item_id: item.id, reconciled: true });
-            return;
+            continue;
           }
-          const { data, error } = await supabase
-            .from("plan_courses")
-            .insert({
-              ...draft,
-              plan_version_id: activeVersion.id,
-              user_id: session.user.id,
-              sort_order: planCourses.length
-            })
-            .select("*")
-            .single();
-          if (error) throw error;
-          setPlanCourses((current) => [...current, data as unknown as PlanCourse]);
-          await logEvent("transcript_course_imported", { review_item_id: item.id });
-          return;
-        }
-        const { data, error } = await supabase
-          .from("plan_courses")
-          .insert({
+          inserts.push({
+            ...draft,
             plan_version_id: activeVersion.id,
             user_id: session.user.id,
-            custom_course_name: name,
-            grade_level: grade,
-            school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade),
-            term: payload.term_type === "semester" ? "fall" : "full_year",
-            status: "planned",
-            credits: numberValue(payload.credits),
-            is_weighted: payload.weighted === true,
-            mapping_verified: item.status === "approved",
-            user_edited: true,
-            notes: "Added from a student-reviewed source import."
-          })
-          .select("*")
-          .single();
-        if (error) throw error;
-        setPlanCourses((current) => [...current, data as unknown as PlanCourse]);
+            sort_order: planCourses.length + inserts.length
+          });
+        }
+        if (inserts.length > 0) {
+          const { error: insertError } = await supabase.from("plan_courses").insert(inserts);
+          if (insertError) throw insertError;
+        }
+        await logEvent("transcript_courses_imported", { review_item_ids: ids, course_count: prepared.length });
+        await loadWorkspace();
+        setSelectedTranscriptIds(new Set());
       },
-      isTranscript ? "Completed course imported from transcript." : "Reviewed course added to the plan."
+      `${prepared.length} ${prepared.length === 1 ? "course" : "courses"} imported to Done.`
     );
   }
 
@@ -1049,7 +1085,14 @@ export default function PlanningWorkspace() {
     );
   }).sort((a, b) => (courseFits.get(b.id)?.score ?? 0) - (courseFits.get(a.id)?.score ?? 0) || a.name.localeCompare(b.name));
   const subjects = [...new Set(courses.map((course) => course.subject))];
-  const pendingReviewCount = reviewItems.filter((item) => item.status === "pending").length;
+  const latestTranscriptSource = sources.find(
+    (source) => !source.is_official && source.document_type === "transcript"
+  );
+  const pendingReviewCount = reviewItems.filter(
+    (item) => item.entity_type === "transcript_course"
+      && item.status === "pending"
+      && item.source_id === latestTranscriptSource?.id
+  ).length;
   const courseCounts = {
     completed: planCourses.filter((row) => row.status === "completed").length,
     current: planCourses.filter((row) => row.status === "current").length,
@@ -1197,44 +1240,87 @@ export default function PlanningWorkspace() {
   }
 
   function renderSources() {
-    const userSources = sources.filter((source) => !source.is_official);
-    const officialSources = sources.filter((source) => source.is_official);
-    const reviewPageSize = 10;
-    const reviewPageCount = Math.max(1, Math.ceil(reviewItems.length / reviewPageSize));
-    const safeReviewPage = Math.min(reviewPage, reviewPageCount - 1);
-    const visibleReviewItems = reviewItems.slice(safeReviewPage * reviewPageSize, (safeReviewPage + 1) * reviewPageSize);
+    const latestTranscript = sources.find((source) => !source.is_official && source.document_type === "transcript") ?? null;
+    const importedIds = new Set(planCourses.map((row) => row.source_review_item_id).filter(Boolean));
+    const transcriptItems = reviewItems.filter(
+      (item) => item.entity_type === "transcript_course"
+        && item.status !== "rejected"
+        && (!latestTranscript || item.source_id === latestTranscript.id)
+    );
+    const transcriptNote = reviewItems.find(
+      (item) => item.entity_type === "transcript_note" && item.source_id === latestTranscript?.id
+    );
+    const transcriptSummary = String((transcriptNote?.corrected_payload ?? transcriptNote?.proposed_payload)?.summary ?? "").trim();
+    const availableItems = transcriptItems.filter((item) => !importedIds.has(item.id));
+    const selectedCount = availableItems.filter((item) => selectedTranscriptIds.has(item.id)).length;
+    const allSelected = availableItems.length > 0 && selectedCount === availableItems.length;
+    const toggleAll = () => setSelectedTranscriptIds((current) => {
+      const next = new Set(current);
+      if (allSelected) availableItems.forEach((item) => next.delete(item.id));
+      else availableItems.forEach((item) => next.add(item.id));
+      return next;
+    });
     return (
-      <>
-        <PageHeader title="Transcript import" description="Add a transcript, review every extracted course, then send approved records to Done." />
-        <div className="source-layout">
-          <form className="form-section source-form" onSubmit={submitSource}>
-            <h2>Add transcript or source</h2>
-            <label className="form-field"><span>Source type</span><select value={sourceForm.documentType} onChange={(event) => setSourceForm({ ...sourceForm, documentType: event.target.value as "general" | "transcript" })}><option value="general">Course, policy, or requirement source</option><option value="transcript">Student transcript</option></select><small className="form-hint">Transcripts use a dedicated completed-course parser.</small></label>
-            <label className="form-field"><span>Title</span><input value={sourceForm.title} onChange={(event) => setSourceForm({ ...sourceForm, title: event.target.value })} placeholder="Transcript, policy, or catalog" /></label>
-            <label className="form-field"><span>Official file or screenshot</span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setSourceForm({ ...sourceForm, file: event.target.files?.[0] ?? null })} /><small className="form-hint">PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></label>
-            <div className="or-divider"><span>or paste text</span></div>
-            <label className="form-field"><span>Source text</span><textarea value={sourceForm.rawText} onChange={(event) => setSourceForm({ ...sourceForm, rawText: event.target.value })} placeholder="Paste official course, policy, or transcript text." /></label>
-            <button className="primary-button" type="submit" disabled={Boolean(busyLabel)}><Plus size={17} /> Add source</button>
-          </form>
-          <section className="content-section">
-            <header className="section-heading"><div><h2>Your sources</h2><p>Raw content remains available if any extraction method fails. Text-based transcripts never use Codex.</p></div></header>
-            {userSources.length ? <div className="source-list">{userSources.map((source) => <article className="source-row" key={source.id}><div><strong>{source.title}</strong><span>{source.document_type === "transcript" ? "Transcript" : titleCase(source.kind)} · {source.source_year}</span></div><div className="source-actions"><ConfidenceTag value={source.confidence} /><span className={`status-label ${source.parse_status}`}>{titleCase(source.parse_status)}</span>{source.parse_status !== "processing" && <button className="secondary-button small" onClick={() => void parseSource(source)} disabled={Boolean(busyLabel)}>{source.document_type === "transcript" ? <FileArrowUp size={15} /> : <Sparkle size={15} />} {source.document_type === "transcript" ? "Read transcript" : "AI parse"}</button>}</div>{source.error_message && <p className="row-error">{source.error_message}</p>}</article>)}</div> : <EmptyState title="No uploaded sources" body="Add a transcript, screenshot, or official document to start a review queue." />}
-          </section>
-        </div>
-        <section className="content-section review-section">
-          <header className="section-heading"><div><h2>Manual review queue</h2><p>{pendingReviewCount} items still need a decision.</p></div></header>
-          {reviewItems.length ? <><div className="review-list">{visibleReviewItems.map((item) => {
+      <div className="transcript-import-page">
+        <PageHeader title="Transcript import" description="Upload a transcript, check the courses, then import them to Done." />
+        <form className="transcript-upload" onSubmit={submitTranscript}>
+          <div className="transcript-upload-row">
+            <label className="transcript-upload-control" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSourceForm((current) => ({ ...current, file: event.dataTransfer.files.item(0) })); }}>
+              <span className="transcript-file-name">{sourceForm.file?.name ?? "Drop transcript here"}</span>
+              <span className="transcript-file-action">Choose file</span>
+              <input aria-label="Transcript file" type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setSourceForm((current) => ({ ...current, file: event.target.files?.[0] ?? null }))} />
+            </label>
+            <button className="primary-button transcript-read-button" type="submit" disabled={Boolean(busyLabel) || (!sourceForm.file && !sourceForm.rawText.trim())}>
+              <FileArrowUp size={17} /> {busyLabel === "Reading transcript" ? "Reading" : "Read transcript"}
+            </button>
+          </div>
+          <details className="transcript-paste">
+            <summary>Paste transcript text instead</summary>
+            <label className="form-field"><span>Transcript text</span><textarea value={sourceForm.rawText} onChange={(event) => setSourceForm((current) => ({ ...current, rawText: event.target.value }))} placeholder="Paste completed course rows, grades, credits, and school years." /></label>
+          </details>
+          <p className="transcript-parser-note">Readable document text is parsed locally. Codex is only used for image-only files. <button type="button" onClick={() => navigate("ai_status")}>Check AI connection</button></p>
+        </form>
+
+        {latestTranscript && <div className={`transcript-source-status ${latestTranscript.error_message ? "error" : ""}`}>
+          <span><strong>{latestTranscript.title}</strong><small>{latestTranscript.parse_status === "processing" ? "Reading transcript" : latestTranscript.parse_status === "needs_review" || latestTranscript.parse_status === "complete" ? "Ready to review" : titleCase(latestTranscript.parse_status)}</small></span>
+          {latestTranscript.error_message && <small>{latestTranscript.error_message}</small>}
+          {latestTranscript.parse_status !== "processing" && transcriptItems.length === 0 && <button className="secondary-button small" type="button" onClick={() => void parseSource(latestTranscript)} disabled={Boolean(busyLabel)}><ArrowClockwise size={15} /> Read again</button>}
+        </div>}
+        {transcriptItems.length > 0 ? <section className="transcript-results" aria-labelledby="transcript-results-title">
+          {transcriptSummary && <p className="transcript-result-summary">{transcriptSummary}</p>}
+          <header className="transcript-results-heading">
+            <div><h2 id="transcript-results-title">Courses found</h2><p>{availableItems.length ? `${selectedCount} of ${availableItems.length} selected` : "All courses imported"}</p></div>
+            {availableItems.length > 0
+              ? <button className="primary-button" type="button" onClick={() => void importSelectedTranscriptCourses(latestTranscript?.id ?? null)} disabled={Boolean(busyLabel) || selectedCount === 0}><Check size={17} /> Import selected</button>
+              : <button className="secondary-button" type="button" onClick={() => openCourses("mine", "completed")}><BookOpen size={17} /> Open Done</button>}
+          </header>
+          <div className="transcript-course-table" role="table" aria-label="Extracted transcript courses">
+            <div className="transcript-course-head" role="row">
+              <span role="columnheader"><input type="checkbox" aria-label="Select all courses" checked={allSelected} onChange={toggleAll} disabled={availableItems.length === 0} /> Course</span>
+              <span role="columnheader">Grade</span><span role="columnheader">Credits</span><span role="columnheader">Year</span><span role="columnheader">Status</span>
+            </div>
+            <div className="transcript-course-rows">{transcriptItems.map((item) => {
             const draft = reviewDrafts[item.id] ?? JSON.stringify(item.corrected_payload ?? item.proposed_payload, null, 2);
             const displayPayload = item.corrected_payload ?? item.proposed_payload;
-            const isTranscriptCourse = item.entity_type === "transcript_course";
-            return <article className="review-item" key={item.id}><header><div><span>{isTranscriptCourse ? "Transcript course" : titleCase(item.entity_type)}</span><ConfidenceTag value={item.confidence} /></div><strong>{String(displayPayload.name ?? displayPayload.course_name ?? displayPayload.title ?? displayPayload.summary ?? "Parsed source item")}</strong></header>{item.uncertainty_notes.length > 0 && <ul className="uncertainty-list">{item.uncertainty_notes.map((note) => <li key={note}>{note}</li>)}</ul>}<details className="review-data"><summary>Review or correct extracted data</summary><label className="form-field"><span>Structured data</span><textarea className="code-editor" value={draft} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} /></label></details><footer><span className={`review-status ${item.status}`}>{titleCase(item.status)}</span><div><button className="danger-button small" onClick={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)}><X size={15} /> Reject</button><button className="secondary-button small" onClick={() => void saveReview(item, "approved")} disabled={Boolean(busyLabel)}><Check size={15} /> Approve</button>{(item.entity_type === "course" || isTranscriptCourse) && item.status === "approved" && <button className="primary-button small" onClick={() => void addReviewedCourse(item)} disabled={Boolean(busyLabel)}><Plus size={15} /> {isTranscriptCourse ? "Add completed" : "Use in plan"}</button>}</div></footer></article>;
-          })}</div><PaginationControls page={safeReviewPage} pageCount={reviewPageCount} onChange={setReviewPage} label="Review queue pages" /></> : <EmptyState title="Nothing to review" body="Parsed courses, requirements, conflicts, and policy notes appear here." />}
-        </section>
-        <section className="content-section">
-          <header className="section-heading"><div><h2>Official source register</h2><p>Current seed data remains visibly tied to its publication year.</p></div></header>
-          <div className="source-register">{officialSources.map((source) => <a href={source.source_url ?? "#"} target="_blank" rel="noreferrer" key={source.id}><span><strong>{source.title}</strong><small>{source.source_year}</small></span><ConfidenceTag value={source.confidence} /></a>)}</div>
-        </section>
-      </>
+            const imported = importedIds.has(item.id);
+            const selected = selectedTranscriptIds.has(item.id);
+            const name = String(displayPayload.matched_course_name ?? displayPayload.matched_smccd_course_name ?? displayPayload.course_name ?? "Course name needs review");
+            const institution = String(displayPayload.institution_name ?? "").trim();
+            const grade = String(displayPayload.letter_grade ?? "Review");
+            const credits = displayPayload.credits ?? displayPayload.college_units ?? "Review";
+            const year = String(displayPayload.school_year ?? (displayPayload.grade_level ? `Grade ${displayPayload.grade_level}` : "Review"));
+            return <article className="transcript-course-item" role="rowgroup" key={item.id}>
+              <div className="transcript-course-row" role="row">
+                <span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${name}`} checked={imported || selected} disabled={imported} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{name}</strong>{institution && <small>{institution}</small>}</span></span>
+                <span role="cell" data-label="Grade">{grade}</span><span role="cell" data-label="Credits">{String(credits)}</span><span role="cell" data-label="Year">{year}</span><span role="cell" data-label="Status" className={imported ? "transcript-imported" : item.confidence === "uncertain" ? "transcript-review-needed" : ""}>{imported ? "Imported" : item.confidence === "uncertain" ? "Review" : "Ready"}</span>
+              </div>
+              {item.uncertainty_notes.length > 0 && <p className="transcript-row-warning">{item.uncertainty_notes.join(" ")}</p>}
+              {!imported && <details className="transcript-row-editor"><summary>Edit extracted data</summary><label className="form-field"><span>Structured transcript data</span><textarea className="code-editor" value={draft} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} /><small className="form-hint">Changes are saved when this row is imported.</small></label><button className="quiet-button small" type="button" onClick={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)}><X size={15} /> Ignore row</button></details>}
+            </article>;
+          })}</div>
+          </div>
+        </section> : <p className="transcript-empty">Upload a transcript to review completed courses here.</p>}
+      </div>
     );
   }
 
@@ -1418,7 +1504,7 @@ export default function PlanningWorkspace() {
   function renderCourses() {
     if (!supabase || !session || !profile || !activeVersion) return null;
     return <div className="courses-page">
-      <PageHeader title="Courses" description="One place for what you are taking, what comes next, and what you already finished." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => { setSourceForm((current) => ({ ...current, documentType: "transcript" })); navigate("sources"); }}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
+      <PageHeader title="Courses" description="One place for what you are taking, what comes next, and what you already finished." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
       <nav className="course-area-tabs" aria-label="Courses workspace">
         <button type="button" className={courseArea === "mine" ? "active" : ""} onClick={() => setCourseArea("mine")}>My courses</button>
         <button type="button" className={courseArea === "dtech" ? "active" : ""} onClick={() => setCourseArea("dtech")}>d.tech catalog</button>
@@ -1535,7 +1621,8 @@ export default function PlanningWorkspace() {
           <button className={`sidebar-more-toggle ${moreNavOpen ? "open" : ""}`} onClick={() => setMoreNavOpen((current) => !current)} type="button" aria-expanded={moreNavOpen}><CaretDown size={17} /><span>More tools</span></button>
           {moreNavOpen && <div className="sidebar-secondary">{SECONDARY_NAV_ITEMS.map((item) => {
             const NavIcon = item.icon;
-            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={17} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span></button>;
+            const badge = item.id === "sources" && pendingReviewCount > 0 ? pendingReviewCount : null;
+            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={17} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span>{badge && <b>{badge}</b>}</button>;
           })}</div>}
         </nav>
         <div className="sidebar-footer">

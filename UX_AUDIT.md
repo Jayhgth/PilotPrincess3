@@ -4,7 +4,7 @@ Last reviewed: 2026-07-09
 
 ## Outcome
 
-Strict final grade: **97/100**. The workspace is calm, readable, and usable on desktop and mobile. Course status, discovery, and editing now share one predictable structure.
+Strict final grade: **98/100**. The workspace is calm, readable, and usable on desktop and mobile. Course status, discovery, transcript import, and editing now share one predictable structure.
 
 ## Evidence reviewed
 
@@ -23,7 +23,7 @@ Strict final grade: **97/100**. The workspace is calm, readable, and usable on d
 - Courses were split across Academic plan, Course catalog, SMCCD planning, transcript history, and GPA. One Courses destination now owns the editable records, with separate `In progress`, `Planned`, and `Done` lists and read-only links from outcome views.
 - Repeated full-width course cards exposed status, grade, year, weighting, verification, and delete controls at once. Compact rows now show only identity, useful metadata, result, and Edit; the full editor is disclosed per record.
 - Each d.tech catalog result offered competing status and add controls. Each row now has one `Add to Planned` action and an explicit existing-status label.
-- The d.tech catalog produced a 4,395 px page and the transcript review queue produced a 10,657 px page. Pagination reduces the catalog to about 1,553 px and bounds review work to ten records per page.
+- The transcript tab mixed generic sources, title and type fields, a separate parse step, full-width review cards, and the official source register. It now follows the restrained DegreeDoesntWorks interaction model: one file row, one parse action, a compact results ledger, and one bulk import action, while keeping corrections behind disclosure.
 - SMCCD browsing mixed discovery, configuration, planning, goals, and manual fallback in one continuous stack. Search and associate-degree planning are now separate tabs, and the 2,461-course result list stays empty until the student searches.
 - The 131-program AA/AS native select offered little discovery help. It is now a searchable ranked browser with profile matches, existing-course progress, complete-catalog modes, visible match reasons, and compact progress summaries.
 - Major direction, interests, career ideas, workload tolerance, and stress were unexplained form fields. The profile now groups them by purpose, states the output each answer changes, and shows a live downstream-effects summary.
@@ -38,7 +38,7 @@ Strict final grade: **97/100**. The workspace is calm, readable, and usable on d
 - Visible text below 10 px: zero across every audited destination and zero remaining CSS declarations.
 - Undersized actionable controls: zero, excluding 16 px native checkboxes inside full-size clickable labels.
 - d.tech catalog: 12 records per page.
-- Transcript review: 10 records per page.
+- Transcript review: one 860 px-wide ledger with 57 px primary rows and no full-width cards.
 - Browser console errors observed during the authenticated walkthrough: zero.
 - Course navigation entries removed: three (`Academic plan`, `Course catalog`, and `SMCCD planning`) consolidated into `Courses`.
 - Populated course QA: 12 Done, 7 Planned, and 4 In progress records remained distinguishable without horizontal overflow; add and status-move mutations updated counts immediately.
@@ -62,5 +62,5 @@ Strict final grade: **97/100**. The workspace is calm, readable, and usable on d
 ## Remaining improvements
 
 - Degree and course relevance reasons are deterministic discovery cues, not predictions of student fit or outcomes; future usability research should test whether students understand that boundary without explanation.
-- The transcript review queue is now bounded, but a future bulk-review mode could accelerate very large imports without weakening per-record confirmation.
+- A future transcript archive picker could expose older preserved uploads without adding clutter to the default latest-transcript flow.
 - A formal production accessibility audit should be repeated on the deployed origin with the final hosting, font-loading, and browser environment.
