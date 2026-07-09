@@ -1,0 +1,230 @@
+export type Confidence = "verified" | "likely" | "uncertain";
+export type ReviewStatus = "pending" | "approved" | "rejected";
+export type CourseStatus = "completed" | "current" | "planned";
+export type GradeLevel = 9 | 10 | 11 | 12;
+export type RequirementArea =
+  | "english"
+  | "social_science"
+  | "math"
+  | "lab_science"
+  | "world_language"
+  | "design_lab"
+  | "visual_performing_arts"
+  | "personal_development";
+
+export interface School {
+  id: string;
+  slug: string;
+  name: string;
+  short_name: string;
+  website_url: string | null;
+  source_year: string | null;
+}
+
+export interface StudentProfile {
+  id: string;
+  school_id: string | null;
+  preferred_name: string;
+  age: number | null;
+  grade_level: number | null;
+  graduation_year: number | null;
+  academic_interests: string[];
+  major_direction: string;
+  career_direction: string;
+  goal_intensity: "lower_stress" | "balanced" | "competitive";
+  workload_tolerance: "light" | "balanced" | "high";
+  stress_level: number;
+  activity_load_hours: number;
+  school_confirmed: boolean;
+  onboarding_complete: boolean;
+}
+
+export interface OfficialSource {
+  id: string;
+  school_id: string;
+  user_id: string | null;
+  title: string;
+  kind: "official_url" | "upload" | "pasted_text" | "screenshot";
+  source_url: string | null;
+  storage_path: string | null;
+  raw_text: string | null;
+  mime_type: string | null;
+  source_year: string | null;
+  is_official: boolean;
+  parse_status: "pending" | "processing" | "complete" | "needs_review" | "failed";
+  confidence: Confidence;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface Course {
+  id: string;
+  school_id: string;
+  catalog_version_id: string;
+  source_id: string | null;
+  course_code: string | null;
+  name: string;
+  subject: string;
+  course_type: string;
+  grade_levels: number[];
+  credits: number | null;
+  college_units: number | null;
+  term_type: "semester" | "year" | "variable";
+  uc_ag_area: string | null;
+  prerequisites: string[];
+  description: string | null;
+  is_honors: boolean;
+  is_weighted: boolean;
+  confidence: Confidence;
+  review_status: ReviewStatus;
+}
+
+export interface GraduationRequirement {
+  id: string;
+  area: RequirementArea;
+  name: string;
+  credits_required: number;
+  years_required: number | null;
+  notes: string | null;
+  confidence: Confidence;
+  review_status: ReviewStatus;
+}
+
+export interface CourseRequirementMapping {
+  id: string;
+  course_id: string;
+  requirement_id: string;
+  confidence: Confidence;
+  is_user_override: boolean;
+}
+
+export interface FourYearPlan {
+  id: string;
+  user_id: string;
+  school_id: string;
+  title: string;
+  is_active: boolean;
+}
+
+export interface PlanVersion {
+  id: string;
+  plan_id: string;
+  user_id: string;
+  label: string;
+  kind: "active" | "snapshot" | "simulation";
+  generation_config: Record<string, unknown>;
+  ai_summary: string | null;
+  created_at: string;
+}
+
+export interface PlanCourse {
+  id: string;
+  plan_version_id: string;
+  user_id: string;
+  course_id: string | null;
+  custom_course_name: string | null;
+  grade_level: GradeLevel;
+  school_year: string;
+  term: "fall" | "spring" | "summer" | "full_year";
+  status: CourseStatus;
+  credits: number | null;
+  college_units: number | null;
+  letter_grade: string | null;
+  is_weighted: boolean;
+  mapping_verified: boolean;
+  user_edited: boolean;
+  notes: string | null;
+  sort_order: number;
+}
+
+export interface Activity {
+  id: string;
+  user_id: string;
+  name: string;
+  kind: "club" | "athletics" | "service" | "work" | "family" | "internship" | "other";
+  role: string | null;
+  weekly_hours: number;
+  start_grade: number | null;
+  end_grade: number | null;
+  notes: string | null;
+}
+
+export interface TimelineTask {
+  id: string;
+  user_id: string;
+  plan_version_id: string | null;
+  title: string;
+  category: "academics" | "activities" | "college" | "summer" | "admin";
+  due_date: string | null;
+  due_label: string | null;
+  is_completed: boolean;
+  is_generated: boolean;
+  explanation: string | null;
+}
+
+export interface CatalogReviewItem {
+  id: string;
+  user_id: string;
+  source_id: string;
+  entity_type: "course" | "requirement" | "policy" | "source_note";
+  proposed_payload: Record<string, unknown>;
+  corrected_payload: Record<string, unknown> | null;
+  status: ReviewStatus;
+  confidence: Confidence;
+  uncertainty_notes: string[];
+  created_at: string;
+}
+
+export interface SimulationConfig {
+  majorDirection: "stem" | "business" | "humanities" | "health" | "undecided";
+  pathIntensity: "lower_stress" | "balanced" | "competitive";
+  courseStyle: "more_honors" | "more_dual_enrollment" | "more_regular";
+  activityLoad: "lower" | "same" | "higher";
+}
+
+export interface RequirementProgress {
+  requirement: GraduationRequirement;
+  completedCredits: number;
+  currentCredits: number;
+  plannedCredits: number;
+  verifiedProjectedCredits: number;
+  unverifiedCredits: number;
+  percent: number;
+  status: "complete" | "on_track" | "missing";
+}
+
+export interface GpaSummary {
+  currentUnweighted: number | null;
+  currentWeighted: number | null;
+  projectedUnweighted: number | null;
+  projectedWeighted: number | null;
+  gradedCredits: number;
+  isEstimate: true;
+}
+
+export interface WorkloadSummary {
+  weeklyActivityHours: number;
+  academicLoad: number;
+  totalScore: number;
+  level: "light" | "balanced" | "high";
+  warning: string | null;
+}
+
+export interface SimulationResult {
+  current: {
+    graduationPercent: number;
+    projectedWeightedGpa: number | null;
+    workloadScore: number;
+    stressLevel: number;
+    activityHours: number;
+  };
+  simulated: {
+    graduationPercent: number;
+    projectedWeightedGpa: number | null;
+    workloadScore: number;
+    stressLevel: number;
+    activityHours: number;
+  };
+  changes: string[];
+  risks: string[];
+}

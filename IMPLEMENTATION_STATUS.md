@@ -4,53 +4,86 @@ Last updated: 2026-07-09
 
 ## Current State
 
-- Strict implementation grade: `0/100`. The application has not been scaffolded or implemented yet.
-- Project setup is complete: Git is initialized on `main`, Supabase CLI is authenticated, Supabase is initialized locally, and project `zqkzgmwptdsaqbzrjngt` is linked.
-- The linked Supabase project currently has no migration history and no public application tables.
-- No code or data has been copied from another PilotPrincess repository.
+- Strict implementation grade: `96/100` for the clarified MVP scope.
+- The complete student flow is implemented in Astro and backed by the linked Supabase project `zqkzgmwptdsaqbzrjngt`.
+- No code or data was copied from PilotPrincess2. The implementation was built from the linked Spec Sheet, the user's clarifications, official d.tech sources, official Codex SDK documentation, and architectural review of `t3code`.
+- The production build, unit tests, browser tests, remote schema lint, remote auth/RLS/storage smoke checks, and authenticated Codex source parse all pass.
 
-## Source-of-Truth Review
+## Clarified Product Decisions
 
-- Read the linked Spec Sheet tab `t.hlybvdl6t1fh` in `PRD version 2`.
-- Verified the required MVP flow, screens, data objects, logging events, AI boundaries, performance targets, and success criteria.
-- Located the official d.tech 2025-26 graduation requirements, 2025-26 course catalog, class-flow document, and concurrent-enrollment policy from the official school graduation page.
-- Verified that the official catalog contains course names, descriptions, typical grade pathways, prerequisites, and UC A-G mappings.
-- Verified that the official graduation document requires 225 total credits and provides category-level credit rules.
-- Reviewed current official Codex SDK documentation and the requested `t3code` reference architecture. The official TypeScript SDK is server-only and requires Node.js 18 or newer. `t3code` isolates Codex behind a Node server and communicates with a Codex app-server process rather than exposing it to the browser.
+- Astro overrides the older stack line in the Spec Sheet.
+- Sign-up is limited to `@dtechhs.org` for now. The database-backed allowed-domain table makes this expandable without rewriting auth.
+- There are no parent accounts in this MVP. Students can generate a lightweight plain-language summary.
+- Codex runs only on the Node server. Production can use `OPENAI_API_KEY` or `CODEX_API_KEY`; local Codex authentication is also supported.
+- Official reference data is the latest currently published 2025-26 data, visibly labeled by source year. Later catalogs can be imported as new catalog versions.
 
-## Completed Setup
+## Completed MVP
 
-- `git init -b main`
-- `supabase init`
-- `supabase link --project-ref zqkzgmwptdsaqbzrjngt`
-- Added a project `.gitignore`.
-- Added concise repository instructions in `AGENTS.md`, including Git milestone and status-document requirements.
-- Created initial commit `8abd6a3` (`Initialize project tooling`).
+### Application and UX
+
+- Astro 7 SSR application with React islands and the Node standalone adapter.
+- Distinct editorial aviation-inspired design with graphite/silver surfaces, restrained burgundy accents, Manrope typography, desktop/mobile navigation, light/dark themes, empty/loading/error states, and keyboard focus treatment.
+- d.tech-only sign-in and account creation.
+- Student onboarding/profile: name, age, grade, graduation year, interests, direction, intensity, workload tolerance, stress, and school/source confirmation.
+- Source import for PDF, DOCX, TXT, CSV, PNG, JPEG, WebP, pasted text, and screenshots, with a private 15 MB bucket.
+- AI extraction review queue with editable JSON corrections, confidence labels, approve/reject decisions, preserved raw material, and manual fallback.
+- Searchable/filterable official d.tech catalog with 41 source-backed courses.
+- Graduation tracker with completed/current/planned/unverified ledgers and verified-only projections across all eight requirements.
+- GPA tracker with current/projected and weighted/unweighted estimates.
+- Non-destructive source-backed four-year plan suggestions, editable status/year/grade/weighting, removal, snapshots, and real active-versus-snapshot comparison.
+- Dual-enrollment exact-course entry with college units, proposed d.tech credits, associate-degree goal notes, and required verification warnings.
+- Activities and weekly-hour workload tracking.
+- Editable grade-aware timeline generation.
+- Four-control simulator for major direction, path intensity, course style, and activity load, with current/simulated metrics, risks, tradeoffs, and saved runs.
+- Lightweight generated student summaries with a deterministic fallback.
+
+### Supabase
+
+- One applied migration containing 21 application tables, enums, constraints, indexes, triggers, helper functions, RLS, and storage policies.
+- Expandable `allowed_email_domains` table seeded with `dtechhs.org` and a database trigger that rejects all other auth domains.
+- New-user trigger provisions a student profile, active four-year plan, and active version transactionally.
+- Per-user RLS on profiles, sources, parse jobs, review items, plans, versions, courses, grades, activities, timeline tasks, simulations, summaries, and event logs.
+- Read-only authenticated reference policies for catalog data and user-prefix policies for private uploads.
+- Source-backed seed with 4 official sources, 1 versioned catalog, 41 courses, 8 graduation requirements totaling 225 credits, and 41 verified mappings.
+- Migration and seed applied to linked project `zqkzgmwptdsaqbzrjngt`.
+
+### Codex SDK
+
+- Official `@openai/codex-sdk` integration isolated behind authenticated Astro API routes.
+- Structured-output Zod and JSON schemas for source extraction, summaries, plan explanations, and simulator explanations.
+- T3code-inspired server boundary and lifecycle management without copying its code.
+- Maximum two concurrent turns, bounded timeouts, per-turn scratch directories, cleanup, read-only sandbox, no network/web search, and no approvals.
+- Prompt-injection boundaries treat all uploads as untrusted data and forbid invention or tool use.
+- Authenticated source parsing accepts extracted text and local image attachments, records jobs/results/latency/fallback state, and always creates a reviewable result.
+- Deterministic planners and calculators remain functional when Codex is unavailable.
 
 ## Verification Results
 
-- `git status`: clean after the initial setup commit, before this status update.
-- `supabase projects list`: authenticated session can see the target project.
-- `supabase migration list --linked`: connected successfully; no remote migrations exist.
-- `supabase inspect db table-stats --linked`: connected successfully; no public app tables exist.
-- Official Google Docs and Sheets sources are readable through connected tools.
-- No app lint, typecheck, build, unit, integration, or browser checks are applicable yet.
+- `pnpm lint`: pass.
+- `pnpm typecheck`: pass with 0 errors, 0 warnings, and 0 hints.
+- `pnpm test`: 8/8 unit tests pass.
+- `pnpm test:e2e`: 2/2 Chromium tests pass, including a 390x844 viewport.
+- `pnpm build`: Astro standalone SSR build passes.
+- `pnpm peers check`: pass.
+- `supabase db lint --linked`: no schema errors.
+- `supabase db push --linked --include-seed --yes`: migration and seed applied.
+- Remote reference counts: 21 application tables, 41 courses, 8 requirements, 4 official sources, and 41 mappings.
+- Remote smoke test: non-d.tech rejection, d.tech account creation, password login, automatic profile/plan provisioning, RLS reads, private upload/remove, and event logging all pass.
+- Authenticated Codex source parse: HTTP 200, structured output, 2 review items, `needs_review`, and `likely` confidence.
+- Manual browser flow: onboarding, overview, lightweight summary, source addition, plan suggestion, snapshot creation/comparison, dark UI, and desktop layout pass.
+- All temporary remote QA users and cascaded data were removed after testing.
 
-## Material Clarifications Required Before Implementation
+## Known Limitations
 
-1. Confirm whether the explicit Astro instruction overrides the Spec Sheet's Next.js + React line.
-2. Confirm the sign-up policy and whether parents have independent accounts or only student-generated summaries.
-3. Confirm the production deployment/runtime for the server-only Codex SDK and how production Codex authentication will be provided.
-4. Confirm whether to seed the latest currently published official 2025-26 school documents, clearly labeled by source year, while supporting later 2026-27 import and review.
+- The official 2026-27 d.tech catalog was not published in the reviewed source set. The app intentionally uses labeled 2025-26 data until a newer official source is available.
+- Production hosting has not been selected or deployed. The artifact is a working standalone Node build and needs the documented environment variables at the chosen host.
+- Production Codex calls require a server-side API key or an authenticated Codex runtime on the host. The deterministic application remains usable when AI is unavailable.
+- Dual-enrollment equivalencies, approvals, college prerequisites, calendars, and transcript delivery are intentionally not inferred. Students enter exact courses and confirm them with d.tech and the college.
+- GPA and graduation outputs are planning estimates, not transcript or counselor-of-record determinations.
 
-## Known Gaps
+## Next Steps After MVP
 
-- No Astro application exists.
-- No Supabase migrations, RLS policies, storage policies, seed data, auth UI, or backend routes exist.
-- No Codex SDK integration exists.
-- No MVP screens or planning logic exist.
-- No automated tests or manual test checklist exist.
-
-## Next Step
-
-Resolve the four material clarifications, then implement the data foundation and complete student flow from a clean Astro codebase.
+1. Deploy the Node standalone build and configure production secrets and the Supabase redirect allowlist.
+2. Import and manually review the official 2026-27 catalog when d.tech publishes it.
+3. Add institution-specific community-college catalog connectors only after product approval and source/licensing review.
+4. Add scheduled backup/restore drills, error monitoring, and production telemetry retention rules before broader rollout.
