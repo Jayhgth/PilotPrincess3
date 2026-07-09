@@ -6,7 +6,7 @@ Last run: 2026-07-09
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 8/8 unit tests passing
+- [x] `pnpm test` with 12/12 unit tests passing
 - [x] `pnpm test:e2e` with 2/2 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
@@ -28,12 +28,16 @@ Last run: 2026-07-09
 ## Student Flow
 
 - [x] Sign-in screen renders official counts and 2025-26 source label
-- [x] Onboarding/profile saves grade, graduation year, preferences, stress, and school confirmation
+- [x] Onboarding saves grade, graduation year, planning pace, plan start/end grades, tracker mode/areas, and school confirmation
+- [x] Plan length is constrained to the years available through grade 12
+- [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
 - [x] Official catalog loads 41 courses and supports search/filter/add status
 - [x] Graduation tracker excludes unverified mappings
 - [x] GPA calculations separate current/projected and weighted/unweighted results
 - [x] Suggested plan is generated without overwriting manual rows
+- [x] Suggested plan generates only grades inside the selected onboarding window
+- [x] Completed courses before the selected window remain visible in transcript history
 - [x] Plan rows can change status, grade, year, and weighting
 - [x] Snapshot preserves a read-only course copy
 - [x] Snapshot comparison shows counts, coverage, GPA, and added/removed/changed rows
@@ -46,6 +50,11 @@ Last run: 2026-07-09
 - [x] Pasted source is preserved before parsing
 - [x] Authenticated Codex parse returns structured output
 - [x] Parse creates review items and sets the source to `needs_review`
+- [x] Transcript parser extracts only completed/final-grade course rows
+- [x] Exact transcript course names and aliases match official catalog records deterministically
+- [x] Unmatched transcript courses remain custom and unverified
+- [x] Reviewed transcript rows import as completed with final grade, credits, grade level, and source provenance
+- [x] Existing planned catalog rows reconcile to completed instead of duplicating
 - [x] Confidence and review state remain visible and editable
 - [x] Codex runs server-side with structured schema validation
 - [x] Upload content is treated as untrusted data with no network/tool access

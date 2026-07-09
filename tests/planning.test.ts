@@ -15,9 +15,12 @@ import {
   generateSuggestedPlan,
   generateTimeline,
   overallGraduationPercent,
+  requirementsForProfile,
   schoolYearForGrade,
+  selectedPlanGrades,
   simulatePlan
 } from "@/lib/planning";
+import { findTranscriptCatalogMatch, transcriptPlanCourseDraft } from "@/lib/transcript";
 
 const profile: StudentProfile = {
   id: "student-1",
@@ -34,7 +37,11 @@ const profile: StudentProfile = {
   stress_level: 3,
   activity_load_hours: 4,
   school_confirmed: true,
-  onboarding_complete: true
+  onboarding_complete: true,
+  plan_start_grade: 10,
+  plan_end_grade: 12,
+  tracker_mode: "full",
+  tracked_requirement_areas: ["english", "social_science", "math", "lab_science", "world_language", "design_lab", "visual_performing_arts", "personal_development"]
 };
 
 const englishRequirement: GraduationRequirement = {
@@ -67,6 +74,7 @@ function planCourse(overrides: Partial<PlanCourse> = {}): PlanCourse {
     user_edited: false,
     notes: null,
     sort_order: 0,
+    source_review_item_id: null,
     ...overrides
   };
 }
@@ -196,6 +204,32 @@ describe("planning and simulation", () => {
     expect(schoolYearForGrade(2028, 12)).toBe("2027-2028");
   });
 
+  it("limits plan generation to the onboarding plan window", () => {
+    const shortenedProfile = { ...profile, plan_start_grade: 10 as const, plan_end_grade: 11 as const };
+    const catalog = [
+      course({ id: "english-2", name: "English 2 / English 2 Honors", grade_levels: [10] }),
+      course({ id: "english-3", name: "English 3 / English 3 Honors", grade_levels: [11] }),
+      course({ id: "english-4", name: "English 4 / English 4 Honors", grade_levels: [12] })
+    ];
+
+    expect(selectedPlanGrades(shortenedProfile)).toEqual([10, 11]);
+    expect(generateSuggestedPlan(shortenedProfile, catalog, []).map((row) => row.course_id)).toEqual(["english-2", "english-3"]);
+  });
+
+  it("filters the tracker to onboarding-selected requirement areas", () => {
+    const mathRequirement: GraduationRequirement = {
+      ...englishRequirement,
+      id: "requirement-math",
+      area: "math",
+      name: "Mathematics"
+    };
+
+    expect(requirementsForProfile(
+      [englishRequirement, mathRequirement],
+      { ...profile, tracker_mode: "selected", tracked_requirement_areas: ["math"] }
+    )).toEqual([mathRequirement]);
+  });
+
   it("produces grade-aware timeline tasks from missing verified coverage", () => {
     const progress = calculateRequirementProgress([englishRequirement], [], []);
     const tasks = generateTimeline(profile, progress);
@@ -226,5 +260,58 @@ describe("planning and simulation", () => {
     expect(result.simulated.stressLevel).toBe(5);
     expect(result.simulated.activityHours).toBe(4);
     expect(result.risks.length).toBeGreaterThan(0);
+  });
+});
+
+describe("transcript import", () => {
+  it("matches an exact catalog alias and creates a verified completed course", () => {
+    const catalogCourse = course({
+      id: "english-2",
+      name: "English 2 / English 2 Honors",
+      grade_levels: [10],
+      is_honors: true,
+      is_weighted: true
+    });
+    const mapping = { ...verifiedMapping, course_id: catalogCourse.id };
+
+    expect(findTranscriptCatalogMatch("English 2 Honors", [catalogCourse])?.id).toBe(catalogCourse.id);
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "English 2 Honors",
+        grade_level: 10,
+        school_year: "2025-2026",
+        term: "full_year",
+        letter_grade: "a-",
+        credits: 10,
+        weighted: true,
+        matched_course_id: catalogCourse.id,
+        matched_course_name: catalogCourse.name
+      },
+      profile,
+      [catalogCourse],
+      [mapping],
+      "review-1"
+    );
+
+    expect(draft.course_id).toBe(catalogCourse.id);
+    expect(draft.status).toBe("completed");
+    expect(draft.letter_grade).toBe("A-");
+    expect(draft.mapping_verified).toBe(true);
+    expect(draft.source_review_item_id).toBe("review-1");
+  });
+
+  it("keeps an unmatched transcript row custom and unverified", () => {
+    const draft = transcriptPlanCourseDraft(
+      { course_name: "Independent Study in Robotics", grade_level: 9, credits: 5 },
+      profile,
+      [],
+      [],
+      "review-2"
+    );
+
+    expect(draft.course_id).toBeNull();
+    expect(draft.custom_course_name).toBe("Independent Study in Robotics");
+    expect(draft.mapping_verified).toBe(false);
+    expect(draft.status).toBe("completed");
   });
 });

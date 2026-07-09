@@ -57,6 +57,18 @@ export function schoolYearForGrade(graduationYear: number, grade: GradeLevel) {
   return `${endYear - 1}-${endYear}`;
 }
 
+export function selectedPlanGrades(profile: StudentProfile) {
+  const start = (profile.plan_start_grade ?? profile.grade_level ?? 9) as GradeLevel;
+  const end = (profile.plan_end_grade ?? 12) as GradeLevel;
+  return GRADE_LEVELS.filter((grade) => grade >= start && grade <= end);
+}
+
+export function requirementsForProfile(requirements: GraduationRequirement[], profile: StudentProfile) {
+  if (profile.tracker_mode !== "selected") return requirements;
+  const selected = new Set(profile.tracked_requirement_areas);
+  return requirements.filter((requirement) => selected.has(requirement.area));
+}
+
 export function courseDisplayName(planCourse: PlanCourse, courseMap: Map<string, Course>) {
   return planCourse.course_id ? courseMap.get(planCourse.course_id)?.name ?? "Unavailable course" : planCourse.custom_course_name ?? "Custom course";
 }
@@ -210,7 +222,7 @@ export function generateSuggestedPlan(
   const existingIds = new Set(existing.map((row) => row.course_id).filter(Boolean));
   const generated: GeneratedPlanCourse[] = [];
 
-  for (const grade of GRADE_LEVELS) {
+  for (const grade of selectedPlanGrades(profile)) {
     if (grade < currentGrade) continue;
     for (const courseName of FLOW_BY_GRADE[grade]) {
       const course = courses.find((candidate) => candidate.name.toLowerCase().startsWith(courseName.toLowerCase()));

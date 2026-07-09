@@ -37,6 +37,10 @@ export interface StudentProfile {
   activity_load_hours: number;
   school_confirmed: boolean;
   onboarding_complete: boolean;
+  plan_start_grade: GradeLevel | null;
+  plan_end_grade: GradeLevel | null;
+  tracker_mode: "full" | "selected";
+  tracked_requirement_areas: RequirementArea[];
 }
 
 export interface OfficialSource {
@@ -54,6 +58,7 @@ export interface OfficialSource {
   parse_status: "pending" | "processing" | "complete" | "needs_review" | "failed";
   confidence: Confidence;
   error_message: string | null;
+  document_type: "general" | "transcript";
   created_at: string;
 }
 
@@ -135,6 +140,7 @@ export interface PlanCourse {
   user_edited: boolean;
   notes: string | null;
   sort_order: number;
+  source_review_item_id: string | null;
 }
 
 export interface Activity {
@@ -166,7 +172,7 @@ export interface CatalogReviewItem {
   id: string;
   user_id: string;
   source_id: string;
-  entity_type: "course" | "requirement" | "policy" | "source_note";
+  entity_type: "course" | "requirement" | "policy" | "source_note" | "transcript_course" | "transcript_note";
   proposed_payload: Record<string, unknown>;
   corrected_payload: Record<string, unknown> | null;
   status: ReviewStatus;

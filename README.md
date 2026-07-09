@@ -1,6 +1,6 @@
 # Pilot Princess
 
-Pilot Princess is a source-backed four-year planning workspace for Design Tech High School students. It combines official course and graduation data, editable planning tools, workload simulation, and a server-side Codex review layer without treating uncertain information as verified.
+Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines a guided 1-4 year plan setup, configurable graduation tracking, transcript import, editable planning tools, workload simulation, and a server-side Codex review layer without treating uncertain information as verified.
 
 The MVP is intentionally limited to d.tech students and currently uses clearly labeled 2025-26 official data.
 
@@ -81,8 +81,10 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 
 ## Architecture
 
+- `src/components/OnboardingFlow.tsx` owns the guided student, plan-window, tracker, and transcript setup flow.
 - `src/components/PlanningWorkspace.tsx` contains the authenticated planning workspace and Supabase mutations.
 - `src/lib/planning.ts` contains deterministic graduation, GPA, workload, timeline, plan generation, and simulation logic.
+- `src/lib/transcript.ts` contains deterministic catalog matching and reviewed transcript-to-plan conversion.
 - `src/pages/api/ai/` contains bearer-authenticated Node routes for Codex parsing and explanations.
 - `src/server/codex.ts` owns Codex isolation, structured runs, concurrency, timeouts, and cleanup.
 - `supabase/migrations/` is the source of truth for schema, triggers, RLS, and storage.
