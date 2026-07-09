@@ -1,4 +1,5 @@
 import {
+  ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   CheckCircleIcon as CheckCircle,
   ShieldCheckIcon as ShieldCheck
@@ -7,7 +8,27 @@ import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
-type AuthMode = "sign-in" | "sign-up";
+type AuthMode = "sign-in" | "sign-up" | "forgot-password";
+
+function authenticationMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "Authentication failed.";
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("invalid login credentials")) {
+    return "That email and password do not match. Check both fields or reset your password.";
+  }
+  if (normalized.includes("email not confirmed")) {
+    return "Confirm your email before signing in.";
+  }
+  if (normalized.includes("user already registered") || normalized.includes("already been registered")) {
+    return "An account already exists for this email. Sign in or reset your password.";
+  }
+  if (normalized.includes("rate limit") || normalized.includes("too many requests")) {
+    return "Too many attempts were made. Wait a few minutes, then try again.";
+  }
+
+  return message;
+}
 
 export default function AuthExperience() {
   const configured = hasPublicEnv();
@@ -18,7 +39,12 @@ export default function AuthExperience() {
   const [preferredName, setPreferredName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("password_reset") === "success"
+      ? "Your password was updated. Sign in with your new password."
+      : null;
+  });
 
   useEffect(() => {
     if (!supabase) return;
@@ -26,6 +52,12 @@ export default function AuthExperience() {
       if (data.session) window.location.assign("/app");
     });
   }, [supabase]);
+
+  function changeMode(nextMode: AuthMode) {
+    setMode(nextMode);
+    setError(null);
+    setNotice(null);
+  }
 
   async function submit(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
@@ -36,18 +68,20 @@ export default function AuthExperience() {
       return;
     }
     const normalizedEmail = email.trim().toLowerCase();
-    if (mode === "sign-up" && !normalizedEmail.endsWith("@dtechhs.org")) {
-      setError("Registration currently requires a dtechhs.org email address.");
-      return;
-    }
-    if (password.length < 8) {
+    if (mode !== "forgot-password" && password.length < 8) {
       setError("Use a password with at least eight characters.");
       return;
     }
 
     setBusy(true);
     try {
-      if (mode === "sign-up") {
+      if (mode === "forgot-password") {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+          redirectTo: `${window.location.origin}/reset-password`
+        });
+        if (resetError) throw resetError;
+        setNotice("If an account exists for that email, a reset link is on its way.");
+      } else if (mode === "sign-up") {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: normalizedEmail,
           password,
@@ -58,10 +92,10 @@ export default function AuthExperience() {
         });
         if (signUpError) throw signUpError;
         if (data.session) {
-          await supabase.rpc("log_app_event", { event_name: "user_signed_up", properties: { domain: "dtechhs.org" } });
+          await supabase.rpc("log_app_event", { event_name: "user_signed_up", properties: { registration: "open_email" } });
           window.location.assign("/app");
         } else {
-          setNotice("Check your d.tech inbox to confirm your account, then return here to sign in.");
+          setNotice("Check your inbox to confirm your account, then return here to sign in.");
         }
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -72,7 +106,7 @@ export default function AuthExperience() {
         window.location.assign("/app");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Authentication failed.");
+      setError(authenticationMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -102,20 +136,43 @@ export default function AuthExperience() {
         </p>
       </section>
 
-      <section className="auth-panel" aria-label={mode === "sign-in" ? "Sign in" : "Create account"}>
+      <section
+        className="auth-panel"
+        aria-label={mode === "sign-in" ? "Sign in" : mode === "sign-up" ? "Create account" : "Reset password"}
+      >
         <div className="auth-panel-inner">
           <div className="auth-switch" role="tablist" aria-label="Authentication mode">
-            <button className={mode === "sign-in" ? "active" : ""} onClick={() => setMode("sign-in")} type="button" role="tab">
+            <button
+              className={mode === "sign-in" || mode === "forgot-password" ? "active" : ""}
+              onClick={() => changeMode("sign-in")}
+              type="button"
+              role="tab"
+              aria-selected={mode === "sign-in" || mode === "forgot-password"}
+            >
               Sign in
             </button>
-            <button className={mode === "sign-up" ? "active" : ""} onClick={() => setMode("sign-up")} type="button" role="tab">
+            <button
+              className={mode === "sign-up" ? "active" : ""}
+              onClick={() => changeMode("sign-up")}
+              type="button"
+              role="tab"
+              aria-selected={mode === "sign-up"}
+            >
               Create account
             </button>
           </div>
 
           <header className="auth-form-header">
-            <h2>{mode === "sign-in" ? "Welcome back" : "Start a source-backed plan"}</h2>
-            <p>{mode === "sign-in" ? "Use your d.tech account to continue." : "Registration is currently limited to d.tech students."}</p>
+            <h2>
+              {mode === "sign-in" ? "Welcome back" : mode === "sign-up" ? "Start a source-backed plan" : "Reset your password"}
+            </h2>
+            <p>
+              {mode === "sign-in"
+                ? "Use the email connected to your account."
+                : mode === "sign-up"
+                  ? "Create an account with any valid email address."
+                  : "We will email a secure reset link to your account."}
+            </p>
           </header>
 
           {!configured && (
@@ -139,32 +196,53 @@ export default function AuthExperience() {
               </label>
             )}
             <label>
-              <span>d.tech email</span>
+              <span>Email</span>
               <input
                 type="email"
                 autoComplete="email"
-                placeholder="student@dtechhs.org"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
             </label>
-            <label>
-              <span>Password</span>
-              <input
-                type="password"
-                autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                minLength={8}
-                required
-              />
-              <small>At least eight characters.</small>
-            </label>
+            {mode !== "forgot-password" && (
+              <label>
+                <span>Password</span>
+                <input
+                  type="password"
+                  autoComplete={mode === "sign-in" ? "current-password" : "new-password"}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  minLength={8}
+                  required
+                />
+                <small>At least eight characters.</small>
+              </label>
+            )}
+            {mode === "sign-in" && (
+              <button className="auth-inline-action" type="button" onClick={() => changeMode("forgot-password")}>
+                Forgot password?
+              </button>
+            )}
             <button className="primary-button auth-submit" type="submit" disabled={busy || !configured}>
-              <span>{busy ? "Please wait" : mode === "sign-in" ? "Open workspace" : "Create account"}</span>
+              <span>
+                {busy
+                  ? "Please wait"
+                  : mode === "sign-in"
+                    ? "Open workspace"
+                    : mode === "sign-up"
+                      ? "Create account"
+                      : "Email reset link"}
+              </span>
               <ArrowRight size={18} weight="bold" aria-hidden />
             </button>
+            {mode === "forgot-password" && (
+              <button className="auth-back-action" type="button" onClick={() => changeMode("sign-in")}>
+                <ArrowLeft size={16} weight="bold" aria-hidden />
+                Back to sign in
+              </button>
+            )}
           </form>
 
           <div className="auth-guardrails">

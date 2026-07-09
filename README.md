@@ -2,7 +2,7 @@
 
 Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines a guided 1-4 year plan setup, configurable graduation tracking, transcript import, editable planning tools, workload simulation, and a server-side Codex review layer without treating uncertain information as verified.
 
-The MVP is intentionally limited to d.tech students and currently uses clearly labeled 2025-26 official data.
+The planning data is intentionally focused on d.tech and currently uses clearly labeled 2025-26 official sources. Account registration accepts any valid email address.
 
 ## Stack
 
@@ -61,7 +61,9 @@ The MVP is intentionally limited to d.tech students and currently uses clearly l
    pnpm dev
    ```
 
-   Open the URL printed by Astro. Registration currently requires an `@dtechhs.org` address; this is enforced in the database as well as the UI.
+   Open the URL printed by Astro. The linked MVP project accepts any valid email address and immediately activates new accounts because custom SMTP is not configured yet.
+
+6. For production email confirmation and password recovery, configure a custom SMTP provider in Supabase Authentication settings. Then enable email confirmation while keeping open email registration. Without custom SMTP, Supabase's hosted mailer only delivers to project team addresses and is limited to two messages per hour.
 
 ## Commands
 
@@ -90,7 +92,7 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 - `supabase/migrations/` is the source of truth for schema, triggers, RLS, and storage.
 - `supabase/seed.sql` contains official, source-labeled d.tech reference data.
 
-The browser never receives an AI key. User-owned tables and uploads are protected by Supabase RLS. An allowed-domain table and auth trigger currently enforce d.tech access while allowing future schools/domains to be added deliberately.
+The browser never receives an AI key. User-owned tables and uploads are protected by Supabase RLS. Registration is open to any valid email; the retained domain metadata table is not enforced and can support a future enrollment policy if the product scope changes.
 
 ## Official Seed Sources
 
@@ -102,7 +104,8 @@ The browser never receives an AI key. User-owned tables and uploads are protecte
 ## Production Checklist
 
 - Configure `PUBLIC_SUPABASE_URL`, `PUBLIC_SUPABASE_ANON_KEY`, and the server-only Codex key.
-- Add the production site URL and `/app` callback to the Supabase Auth redirect allowlist.
+- Add the production site URL, `/app`, and `/reset-password` callbacks to the Supabase Auth redirect allowlist.
+- Configure custom SMTP, test confirmation and recovery delivery, then enable email confirmation for production.
 - Run `supabase db push --linked --include-seed` against the intended project.
 - Run all commands in [TEST_CHECKLIST.md](./TEST_CHECKLIST.md).
 - Enable host-level HTTPS, logs, error monitoring, and backups.

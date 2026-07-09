@@ -7,7 +7,7 @@ Last run: 2026-07-09
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
 - [x] `pnpm test` with 12/12 unit tests passing
-- [x] `pnpm test:e2e` with 2/2 Chromium tests passing
+- [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
 - [x] `pnpm peers check`
@@ -16,8 +16,11 @@ Last run: 2026-07-09
 
 ## Authentication and Security
 
-- [x] Non-d.tech account rejected by the database auth trigger
-- [x] Confirmed `@dtechhs.org` account can sign in
+- [x] Any valid email domain can create an immediately active account in the linked MVP project
+- [x] Non-d.tech account receives automatic profile and plan provisioning
+- [x] Email/password account can sign out and sign back in
+- [x] Recovery redirect, token verification, password update, and replacement-password login pass remotely
+- [x] Forgot-password and expired-link states are covered in Chromium
 - [x] New account automatically receives its own profile, active plan, and active version
 - [x] Student reference reads work through authenticated RLS
 - [x] Private source file can be uploaded only under the signed-in user's folder
@@ -62,9 +65,10 @@ Last run: 2026-07-09
 
 ## Before Production Release
 
-- [ ] Add production URL and `/app` callback to Supabase Auth redirects
+- [ ] Add production URL, `/app`, and `/reset-password` callbacks to Supabase Auth redirects
+- [ ] Configure custom SMTP and re-enable email confirmation without restricting email domains
 - [ ] Configure production Codex secret and verify it is not exposed in browser assets
 - [ ] Run the full authenticated flow on the deployed HTTPS origin
-- [ ] Verify password reset and confirmation email templates on the production domain
+- [ ] Verify password reset and confirmation delivery on the production domain
 - [ ] Confirm backup, restore, monitoring, and log-retention policies
 - [ ] Re-run an accessibility audit with production browser tooling
