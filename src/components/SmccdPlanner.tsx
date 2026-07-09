@@ -25,6 +25,7 @@ import type {
 } from "@/lib/models";
 
 interface Props {
+  embedded?: boolean;
   supabase: SupabaseClient;
   session: Session;
   profile: StudentProfile;
@@ -32,25 +33,30 @@ interface Props {
   planCourses: PlanCourse[];
   onCourseAdded: (course: PlanCourse) => void;
   onCourseRemoved: (id: string) => void;
+  onOpenMyCourses?: () => void;
 }
 
 type CourseStatus = "completed" | "current" | "planned";
 type CollegeFilter = "all" | SmccdCollege["code"];
 type ProgramMode = "coursework" | "profile" | "all";
+type SmccdSection = "courses" | "degree";
 
 export default function SmccdPlanner({
+  embedded = false,
   supabase,
   session,
   profile,
   activeVersion,
   planCourses,
   onCourseAdded,
-  onCourseRemoved
+  onCourseRemoved,
+  onOpenMyCourses
 }: Props) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [section, setSection] = useState<SmccdSection>("courses");
   const [colleges, setColleges] = useState<SmccdCollege[]>([]);
   const [courses, setCourses] = useState<SmccdCourse[]>([]);
   const [programs, setPrograms] = useState<SmccdProgram[]>([]);
@@ -132,6 +138,7 @@ export default function SmccdPlanner({
 
   const visibleCourses = useMemo(() => {
     const query = search.trim().toLowerCase();
+    if (!query) return [];
     return courses
       .filter((course) => collegeFilter === "all" || course.college_code === collegeFilter)
       .filter((course) => transferFilter === "all" || (transferFilter === "uc" ? course.transfer_credit?.includes("UC") : Boolean(course.transfer_credit)))
@@ -290,17 +297,17 @@ export default function SmccdPlanner({
 
   return (
     <>
-      <header className="page-header">
+      <header className={embedded ? "course-source-heading" : "page-header"}>
         <div>
-          <h1>SMCCD concurrent enrollment</h1>
-          <p>Search district catalogs, plan exact courses, and track a source-backed AA or AS goal.</p>
+          {embedded ? <h2>SMCCD catalog and college goal</h2> : <h1>SMCCD concurrent enrollment</h1>}
+          <p>Search district catalogs, add exact courses, and track a source-backed AA or AS goal.</p>
         </div>
         <a className="secondary-button" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">Official K-12 steps <ArrowSquareOut size={16} /></a>
       </header>
 
       <div className="notice-strip warning"><Warning size={19} /><span>Catalog inclusion is not approval or a live course offering. Confirm counselor approval, prerequisites, schedule availability, d.tech credit, and transcript delivery.</span></div>
       {error && <div className="inline-alert error" role="alert">{error}</div>}
-      {notice && <div className="inline-alert success" role="status">{notice}</div>}
+      {notice && <div className="inline-alert success smccd-notice" role="status"><span>{notice}</span>{embedded && onOpenMyCourses && <button className="quiet-button" type="button" onClick={onOpenMyCourses}>View My courses</button>}</div>}
 
       <nav className="smccd-source-line" aria-label="SMCCD source catalogs">
         {colleges.map((college) => (
@@ -312,16 +319,21 @@ export default function SmccdPlanner({
         ))}
       </nav>
 
-      <section className="content-section smccd-catalog-section">
+      <nav className="smccd-section-tabs" aria-label="SMCCD tools">
+        <button type="button" className={section === "courses" ? "active" : ""} onClick={() => setSection("courses")}>Find courses</button>
+        <button type="button" className={section === "degree" ? "active" : ""} onClick={() => setSection("degree")}>Associate degree</button>
+      </nav>
+
+      {section === "courses" && <section className="content-section smccd-catalog-section">
         <header className="section-heading"><div><h2>Find a college course</h2><p>Search 2,461 official 2025-2026 catalog records. Select a result to review it before adding it.</p></div></header>
         <div className="smccd-filters">
-          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Course code or title" /></label>
+          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="For example, CIS 117 or calculus" /></label>
           <label className="form-field"><span>College</span><select value={collegeFilter} onChange={(event) => setCollegeFilter(event.target.value as CollegeFilter)}><option value="all">All colleges</option>{Object.entries(SMCCD_COLLEGE_NAMES).map(([code, name]) => <option value={code} key={code}>{name}</option>)}</select></label>
           <label className="form-field"><span>Transfer</span><select value={transferFilter} onChange={(event) => setTransferFilter(event.target.value)}><option value="all">All courses</option><option value="transferable">CSU or UC transferable</option><option value="uc">UC transferable</option></select></label>
         </div>
-        <div className="smccd-browser-grid">
+        <div className={`smccd-browser-grid ${selectedCourse ? "has-selection" : ""}`}>
           <div>
-            <p className="result-count">{visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} matches`}</p>
+            {search.trim() ? <><p className="result-count">{visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} matches`}</p>
             <div className="smccd-course-table" role="table" aria-label="SMCCD courses">
               <div className="smccd-course-row smccd-course-head" role="row"><span role="columnheader">Course</span><span role="columnheader">College</span><span role="columnheader">Units</span><span role="columnheader">Action</span></div>
               {visibleCourses.map((course) => (
@@ -333,10 +345,10 @@ export default function SmccdPlanner({
                 </div>
               ))}
             </div>
-            {visibleCourses.length === 80 && <p className="catalog-limit-note">Refine the search to see a shorter list.</p>}
+            {visibleCourses.length === 0 && <div className="smccd-search-empty"><strong>No matching courses</strong><p>Try a course code, title, or subject keyword.</p></div>}
+            {visibleCourses.length === 80 && <p className="catalog-limit-note">Refine the search to see a shorter list.</p>}</> : <div className="smccd-search-start"><MagnifyingGlass size={21} /><strong>Search the district catalog</strong><p>Enter a course code, title, or subject. Results stay empty until you search.</p></div>}
           </div>
-          <aside className="smccd-selection-panel" aria-live="polite">
-            {selectedCourse ? (
+          {selectedCourse && <aside className="smccd-selection-panel" aria-live="polite">
               <form className="smccd-course-draft" onSubmit={addCatalogCourse}>
                 <div className="smccd-selected-heading"><BookOpen size={20} /><div><h2>{selectedCourse.course_code}</h2><p>{selectedCourse.title}</p><small>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</small></div></div>
                 <div className="smccd-selection-fields">
@@ -348,19 +360,16 @@ export default function SmccdPlanner({
                 <button className="primary-button" type="submit" disabled={busy}><Plus size={17} /> Add to plan</button>
                 <button className="quiet-button" type="button" onClick={() => setSelectedCourse(null)}>Clear selection</button>
               </form>
-            ) : (
-              <div className="smccd-selection-empty"><BookOpen size={22} /><h3>Select a course</h3><p>Course settings appear here before anything is added to your plan.</p></div>
-            )}
-          </aside>
+          </aside>}
         </div>
-      </section>
+      </section>}
 
-      <section className="content-section smccd-plan-section">
+      {!embedded && <section className="content-section smccd-plan-section">
         <header className="section-heading"><div><h2>College courses in this plan</h2><p>Transcript imports and planned catalog courses use the same district record when matched.</p></div></header>
         {districtRows.length ? <div className="source-list">{districtRows.map((row) => <article className="source-row" key={row.id}><div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>)}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
-      </section>
+      </section>}
 
-      <section className="content-section smccd-goal-section">
+      {section === "degree" && <section className="content-section smccd-goal-section">
         <header className="section-heading"><div><h2>Choose an associate-degree goal</h2><p>Start with programs your completed and planned SMCCD courses already advance.</p></div></header>
         <div className="smccd-program-filters">
           <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Program, award, or college" /></label>
@@ -387,9 +396,9 @@ export default function SmccdPlanner({
             <a className="quiet-button smccd-catalog-link" href={goalProgram.catalog_url} target="_blank" rel="noreferrer">Official program requirements <ArrowSquareOut size={15} /></a>
           </div>
         )}
-      </section>
+      </section>}
 
-      <details className="smccd-manual-entry">
+      {section === "courses" && <details className="smccd-manual-entry">
         <summary>Course missing from the catalog?</summary>
         <form className="form-section compact-form" onSubmit={addManualCourse}>
           <h2>Add a manual course</h2>
@@ -397,7 +406,7 @@ export default function SmccdPlanner({
           <div className="form-grid three"><label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={manualDraft.collegeUnits} onChange={(event) => setManualDraft({ ...manualDraft, collegeUnits: Number(event.target.value) })} /></label><label className="form-field"><span>Proposed d.tech credits</span><input type="number" min={0} max={30} step={0.5} value={manualDraft.dtechCredits} onChange={(event) => setManualDraft({ ...manualDraft, dtechCredits: Number(event.target.value) })} /></label><label className="form-field"><span>Grade</span><select value={manualDraft.gradeLevel} onChange={(event) => setManualDraft({ ...manualDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{[9, 10, 11, 12].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label></div>
           <button className="secondary-button" type="submit" disabled={busy}><Plus size={17} /> Add manual course</button>
         </form>
-      </details>
+      </details>}
     </>
   );
 }

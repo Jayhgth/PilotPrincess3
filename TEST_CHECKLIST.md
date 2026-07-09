@@ -36,8 +36,11 @@ Last run: 2026-07-09
 - [x] Plan length is constrained to the years available through grade 12
 - [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
-- [x] Official catalog loads 41 courses and supports search/filter/add status
-- [x] Official catalog paginates 12 courses per page and exposes one status selector plus one add action per row
+- [x] One Courses destination replaces separate academic-plan, d.tech catalog, and SMCCD navigation entries
+- [x] My courses clearly separates `In progress`, `Planned`, and `Done`, with counts and grade-grouped compact rows
+- [x] Course editing stays hidden until requested and supports status, final grade, grade level, weighting, and removal
+- [x] Official d.tech catalog loads 41 courses and supports search/filter with one explicit `Add to Planned` action
+- [x] Official d.tech catalog paginates 12 courses per page and labels courses already in Done, In progress, or Planned
 - [x] Graduation tracker excludes unverified mappings
 - [x] GPA calculations separate current/projected and weighted/unweighted results
 - [x] Exact d.tech method reproduces 4.00 unweighted and 4.74 weighted from the supplied PDF
@@ -54,12 +57,16 @@ Last run: 2026-07-09
 - [x] Workload uses only the current plan year, applies three total weekly hours per SMCCD unit, includes activity hours, and warns against the saved weekly and demanding-course limits
 - [x] Academic interests, major direction, and career ideas produce visible course and degree match reasons
 - [x] SMCCD catalog searches and filters 2,461 source-backed records across all three district colleges
+- [x] SMCCD results stay empty before a search, and course search is separated from associate-degree planning
 - [x] Exact SMCCD course selection persists the district foreign key, college units, plan status, and proposed d.tech credit
 - [x] AA/AS discovery searches and ranks all 131 programs by profile fit or existing-course progress, exposes match reasons, persists a goal, and computes parsed major-requirement progress deterministically
 - [x] Computer Science interest does not create a false Political Science match
-- [x] SMCCD browser flow and AI connection browser flow pass with no console errors
+- [x] d.tech add-to-Planned and Planned-to-In-progress browser flows pass with live count updates
+- [x] Overview course summary and transcript-import handoff open the correct destination and state
+- [x] Unified Courses, SMCCD, and AI connection browser flows pass with no console errors
 - [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
-- [x] Mobile overview, navigation, catalog, SMCCD planner, and graduation tracker visually pass at 390x844
+- [x] Mobile Courses status lists, inline editor, d.tech discovery, SMCCD search, overview, navigation, and graduation visually pass at 390x844
+- [x] Unified Courses workspace visually passes in both light and dark themes
 - [x] Lightweight summary works with deterministic fallback
 - [x] Desktop dark-theme UI visually reviewed in the in-app browser
 

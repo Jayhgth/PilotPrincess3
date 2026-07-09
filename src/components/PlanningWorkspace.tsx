@@ -3,12 +3,10 @@ import {
   AirplaneTiltIcon as AirplaneTilt,
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
-  CalendarCheckIcon as CalendarCheck,
   CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
-  CompassIcon as Compass,
   CpuIcon as Cpu,
   FileArrowUpIcon as FileArrowUp,
   FlagIcon as Flag,
@@ -18,6 +16,7 @@ import {
   HouseIcon as House,
   ListChecksIcon as ListChecks,
   MoonIcon as Moon,
+  PencilSimpleIcon as PencilSimple,
   PlusIcon as Plus,
   ScalesIcon as Scales,
   SignOutIcon as SignOut,
@@ -53,7 +52,7 @@ import {
   schoolYearForGrade,
   simulatePlan
 } from "@/lib/planning";
-import { requirementsForProfile, selectedPlanGrades } from "@/lib/planning";
+import { requirementsForProfile } from "@/lib/planning";
 import {
   ACADEMIC_INTEREST_OPTIONS,
   courseProfileFit,
@@ -88,13 +87,11 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ViewId =
   | "dashboard"
+  | "courses"
   | "profile"
   | "sources"
-  | "catalog"
   | "graduation"
   | "gpa"
-  | "planner"
-  | "dual_credit"
   | "activities"
   | "timeline"
   | "simulator"
@@ -102,14 +99,12 @@ type ViewId =
 
 const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
-  { id: "planner", label: "Academic plan", icon: CalendarCheck },
-  { id: "graduation", label: "Graduation", icon: GraduationCap },
-  { id: "catalog", label: "Course catalog", icon: BookOpen },
-  { id: "sources", label: "Transcripts", icon: FileArrowUp },
-  { id: "dual_credit", label: "SMCCD planning", icon: Compass }
+  { id: "courses", label: "Courses", icon: BookOpen },
+  { id: "graduation", label: "Graduation", icon: GraduationCap }
 ];
 
 const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
+  { id: "sources", label: "Transcript import", icon: FileArrowUp },
   { id: "gpa", label: "GPA", icon: ChartLineUp },
   { id: "activities", label: "Activities", icon: ActivityIcon },
   { id: "timeline", label: "Timeline", icon: ListChecks },
@@ -119,6 +114,9 @@ const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
 ];
 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
+
+type CourseArea = "mine" | "dtech" | "smccd";
+type CourseStatusView = "current" | "planned" | "completed";
 
 const DEFAULT_SIMULATION: SimulationConfig = {
   majorDirection: "undecided",
@@ -227,6 +225,9 @@ export default function PlanningWorkspace() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [moreNavOpen, setMoreNavOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [courseArea, setCourseArea] = useState<CourseArea>("mine");
+  const [courseStatus, setCourseStatus] = useState<CourseStatusView>("current");
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
 
   const [school, setSchool] = useState<School | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -245,7 +246,6 @@ export default function PlanningWorkspace() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
   const [catalogGrade, setCatalogGrade] = useState<GradeLevel | "all">("all");
-  const [catalogStatuses, setCatalogStatuses] = useState<Record<string, PlanCourse["status"]>>({});
   const [catalogPage, setCatalogPage] = useState(0);
   const [reviewPage, setReviewPage] = useState(0);
   const [sourceForm, setSourceForm] = useState({
@@ -459,6 +459,13 @@ export default function PlanningWorkspace() {
     void logEvent("view_opened", { view: nextView });
   }
 
+  function openCourses(area: CourseArea = "mine", status?: CourseStatusView) {
+    setCourseArea(area);
+    if (status) setCourseStatus(status);
+    setEditingCourseId(null);
+    navigate("courses");
+  }
+
   function toggleTheme() {
     const nextTheme = theme === "light" ? "dark" : "light";
     setTheme(nextTheme);
@@ -533,7 +540,7 @@ export default function PlanningWorkspace() {
         setPlanCourses((current) => [...current, data as unknown as PlanCourse]);
         await logEvent("course_selected", { course_id: course.id, status });
       },
-      `${course.name} added.`
+      `${course.name} added to ${status === "completed" ? "Done" : status === "current" ? "In progress" : "Planned"}.`
     );
   }
 
@@ -1043,6 +1050,11 @@ export default function PlanningWorkspace() {
   }).sort((a, b) => (courseFits.get(b.id)?.score ?? 0) - (courseFits.get(a.id)?.score ?? 0) || a.name.localeCompare(b.name));
   const subjects = [...new Set(courses.map((course) => course.subject))];
   const pendingReviewCount = reviewItems.filter((item) => item.status === "pending").length;
+  const courseCounts = {
+    completed: planCourses.filter((row) => row.status === "completed").length,
+    current: planCourses.filter((row) => row.status === "current").length,
+    planned: planCourses.filter((row) => row.status === "planned").length
+  };
   const catalogPageSize = 12;
   const catalogPageCount = Math.max(1, Math.ceil(filteredCourses.length / catalogPageSize));
   const visibleCatalogCourses = filteredCourses.slice(catalogPage * catalogPageSize, (catalogPage + 1) * catalogPageSize);
@@ -1076,6 +1088,11 @@ export default function PlanningWorkspace() {
           </div>
         </section>
         {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
+        <button className="course-overview-row" type="button" onClick={() => openCourses("mine", courseCounts.current > 0 ? "current" : courseCounts.planned > 0 ? "planned" : "completed")}>
+          <span><strong>Courses</strong><small>Review the single source of truth for course status.</small></span>
+          <dl><div><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div><dt>Planned</dt><dd>{courseCounts.planned}</dd></div><div><dt>Done</dt><dd>{courseCounts.completed}</dd></div></dl>
+          <span>Open courses</span>
+        </button>
         <div className="dashboard-columns">
           <section className="content-section">
             <header className="section-heading"><div><h2>Requirement status</h2><p>Only verified mappings count toward the projection.</p></div><button className="quiet-button" onClick={() => navigate("graduation")}>Open tracker</button></header>
@@ -1165,7 +1182,7 @@ export default function PlanningWorkspace() {
           <aside className="profile-effects" aria-label="How this profile changes planning">
             <h2>Where these answers are used</h2>
             <dl>
-              <div><dt>Course catalog</dt><dd>{matchingCourseCount} courses currently match your direction, interests, or career keywords and sort first.</dd></div>
+              <div><dt>Course discovery</dt><dd>{matchingCourseCount} courses currently match your direction, interests, or career keywords and sort first.</dd></div>
               <div><dt>Associate degrees</dt><dd>Programs with matching transcript coursework rank first, followed by profile keyword matches.</dd></div>
               <div><dt>Workload</dt><dd>{workload ? `${workload.knownWeeklyHours} known weekly hours and ${workload.demandingCourseCount} demanding courses compared with your limits.` : "Calculated from active courses and activities."}</dd></div>
               <div><dt>Simulator</dt><dd>Starts from {majorDirectionLabel(profile.major_direction)}, stress {profile.stress_level}, and your saved capacity. No GPA change is invented.</dd></div>
@@ -1188,10 +1205,10 @@ export default function PlanningWorkspace() {
     const visibleReviewItems = reviewItems.slice(safeReviewPage * reviewPageSize, (safeReviewPage + 1) * reviewPageSize);
     return (
       <>
-        <PageHeader title="Source import and review" description="Upload official material, inspect structured results, and correct uncertainty before using it." />
+        <PageHeader title="Transcript import" description="Add a transcript, review every extracted course, then send approved records to Done." />
         <div className="source-layout">
           <form className="form-section source-form" onSubmit={submitSource}>
-            <h2>Add a source</h2>
+            <h2>Add transcript or source</h2>
             <label className="form-field"><span>Source type</span><select value={sourceForm.documentType} onChange={(event) => setSourceForm({ ...sourceForm, documentType: event.target.value as "general" | "transcript" })}><option value="general">Course, policy, or requirement source</option><option value="transcript">Student transcript</option></select><small className="form-hint">Transcripts use a dedicated completed-course parser.</small></label>
             <label className="form-field"><span>Title</span><input value={sourceForm.title} onChange={(event) => setSourceForm({ ...sourceForm, title: event.target.value })} placeholder="Transcript, policy, or catalog" /></label>
             <label className="form-field"><span>Official file or screenshot</span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setSourceForm({ ...sourceForm, file: event.target.files?.[0] ?? null })} /><small className="form-hint">PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></label>
@@ -1221,31 +1238,36 @@ export default function PlanningWorkspace() {
     );
   }
 
-  function renderCatalog() {
+  function renderDtechCatalog() {
     return (
       <>
-        <PageHeader title="Official d.tech catalog" description="Search the 2025-26 source-backed catalog and add courses by status." />
+        <header className="course-source-heading">
+          <div><h2>d.tech catalog</h2><p>New selections go to Planned. Change status later from My courses.</p></div>
+          <strong>41 official courses, 2025-26</strong>
+        </header>
         <section className="catalog-controls" aria-label="Catalog filters">
           <label><span>Search courses</span><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Name, subject, or prerequisite" /></label>
           <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
           <label><span>Grade</span><select value={catalogGrade} onChange={(event) => { setCatalogGrade(event.target.value === "all" ? "all" : Number(event.target.value) as GradeLevel); setCatalogPage(0); }}><option value="all">All grades</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
         </section>
-        <div className="catalog-list-heading"><strong>{filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length} courses` : "No courses"}</strong><span>Choose a status, then add the course once.</span></div>
+        <div className="catalog-list-heading"><strong>{filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length} courses` : "No courses"}</strong><span>Open details only when you need them.</span></div>
         <section className="catalog-list" aria-label="d.tech courses">
-          {visibleCatalogCourses.map((course) => (
-            <article className="course-row" key={course.id}>
+          {visibleCatalogCourses.map((course) => {
+            const existing = planCourses.find((row) => row.course_id === course.id);
+            const existingLabel = existing?.status === "completed" ? "Done" : existing?.status === "current" ? "In progress" : existing ? "Planned" : null;
+            const specificReasons = (courseFits.get(course.id)?.reasons ?? []).filter((reason) => !reason.toLowerCase().includes("subject match"));
+            return <article className="course-row" key={course.id}>
               <div className="course-main">
                 <div className="course-title-line"><h2>{course.name}</h2>{course.confidence !== "verified" && <ConfidenceTag value={course.confidence} />}</div>
-                <div className="course-meta"><span>{course.subject}</span><span>Grades {course.grade_levels.join(", ") || "verify"}</span><span>{course.credits ? formatCredits(course.credits) : "Credits need review"}</span>{course.is_honors && <span>Honors available</span>}{course.uc_ag_area && <span>{course.uc_ag_area}</span>}</div>
-                {(courseFits.get(course.id)?.reasons.length ?? 0) > 0 && <p className="profile-match-note">Profile match: {courseFits.get(course.id)?.reasons.join("; ")}</p>}
+                <div className="course-meta"><span>{course.subject}</span><span>Grades {course.grade_levels.join(", ") || "verify"}</span><span>{course.credits ? formatCredits(course.credits) : "Credits need review"}</span>{course.is_honors && <span>Honors available</span>}</div>
+                {specificReasons.length > 0 && <p className="profile-match-note">Matches your profile: {specificReasons.join("; ")}</p>}
                 <details className="course-details"><summary>Course details</summary><p>{course.description}</p>{course.prerequisites.length > 0 && <p className="prereq"><strong>Prerequisites:</strong> {course.prerequisites.join(", ")}</p>}</details>
               </div>
               <div className="course-actions">
-                <label><span className="sr-only">Status for {course.name}</span><select aria-label={`Status for ${course.name}`} value={catalogStatuses[course.id] ?? "planned"} onChange={(event) => setCatalogStatuses((current) => ({ ...current, [course.id]: event.target.value as PlanCourse["status"] }))}><option value="planned">Planned</option><option value="current">Current</option><option value="completed">Completed</option></select></label>
-                <button onClick={() => void addCatalogCourse(course, catalogStatuses[course.id] ?? "planned")} className="primary-button">Add</button>
+                <button onClick={() => void addCatalogCourse(course, "planned")} className={existing ? "secondary-button" : "primary-button"} disabled={Boolean(existing)}>{existingLabel ?? "Add to Planned"}</button>
               </div>
-            </article>
-          ))}
+            </article>;
+          })}
           {filteredCourses.length === 0 && <EmptyState title="No matching courses" body="Adjust the search or filters." />}
         </section>
         <PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />
@@ -1291,24 +1313,25 @@ export default function PlanningWorkspace() {
         <dl className="gpa-method-summary"><div><dt>GPA credits</dt><dd>{gpa.gradedCredits}</dd></div><div><dt>Weighted credits</dt><dd>{gpa.weightedCredits}</dd></div><div><dt>Pass credits excluded</dt><dd>{gpa.passCredits}</dd></div></dl>
         <div className="notice-strip"><Gauge size={19} /><span>A+, A, and A- are 4 points; B variants are 3; C variants are 2; D variants are 1. Every SMCCD and d.tech Honors course receives one added point. P is excluded from GPA.</span></div>
         <section className="content-section">
-          <header className="section-heading"><div><h2>GPA courses</h2><p>Exact transcript marks are preserved even when the d.tech point value is the same.</p></div><button className="quiet-button" onClick={() => navigate("planner")}>Open planner</button></header>
+          <header className="section-heading"><div><h2>GPA courses</h2><p>Exact transcript marks are preserved even when the d.tech point value is the same.</p></div><button className="quiet-button" onClick={() => openCourses("mine", "completed")}>Open Done courses</button></header>
           {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
         </section>
       </>
     );
   }
 
-  function renderPlanner() {
+  function renderMineCourses() {
     if (!profile) return null;
     const snapshots = versions.filter((version) => version.kind === "snapshot");
-    const planGrades = selectedPlanGrades(profile);
-    const intersessionRows = planCourses.filter((row) =>
-      row.status === "completed" && row.letter_grade?.toUpperCase() === "P" && row.requirement_area_override === "personal_development"
-    );
-    const intersessionIds = new Set(intersessionRows.map((row) => row.id));
-    const priorCompletedRows = planCourses.filter(
-      (row) => row.status === "completed" && !planGrades.includes(row.grade_level) && !intersessionIds.has(row.id)
-    );
+    const statusRows = planCourses.filter((row) => row.status === courseStatus);
+    const gradeGroups = GRADE_LEVELS
+      .filter((grade) => statusRows.some((row) => row.grade_level === grade))
+      .sort((a, b) => courseStatus === "completed" ? b - a : a - b);
+    const statusContent: Record<CourseStatusView, { label: string; description: string }> = {
+      current: { label: "In progress", description: "Courses you are taking now." },
+      planned: { label: "Planned", description: "Future courses that can still be changed." },
+      completed: { label: "Done", description: "Finished courses, transcript grades, and pass credits." }
+    };
     const selectedSnapshot = snapshots.find((version) => version.id === compareVersionId) ?? null;
     const comparisonKey = (row: PlanCourse) => `${row.course_id ?? row.custom_course_name ?? row.id}:${row.grade_level}`;
     const activeByKey = new Map(planCourses.map((row) => [comparisonKey(row), row]));
@@ -1326,20 +1349,55 @@ export default function PlanningWorkspace() {
     });
     const snapshotGpa = calculateGpa(compareCourses);
     const snapshotProgress = calculateRequirementProgress(requirements, compareCourses, mappings);
+
+    const renderCourseRecord = (row: PlanCourse) => {
+      const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
+      const isSmccd = Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0);
+      const isPass = row.letter_grade?.toUpperCase() === "P";
+      const weighted = isSmccd || row.is_weighted;
+      const result = row.status === "completed"
+        ? isPass ? "Pass" : row.letter_grade ? `Grade ${row.letter_grade}` : "Done"
+        : row.status === "current" ? "In progress" : "Planned";
+      const metadata = [
+        isSmccd ? "SMCCD" : catalogCourse?.subject ?? (row.requirement_area_override === "personal_development" ? "Personal Development" : "Custom course"),
+        row.credits ? formatCredits(Number(row.credits)) : "Credits need review",
+        weighted ? "Weighted" : null,
+        isPass ? "Not in GPA" : null,
+        !row.mapping_verified ? "Requirement needs verification" : null
+      ].filter(Boolean) as string[];
+      const editing = editingCourseId === row.id;
+      return <article className={`course-record ${editing ? "editing" : ""}`} key={row.id}>
+        <div className="course-record-summary">
+          <div className="course-record-name"><strong>{courseDisplayName(row, courseMap)}</strong><span>{metadata.map((item) => <span key={item}>{item}</span>)}</span></div>
+          <div className="course-record-result"><strong>{result}</strong><span>{row.school_year}</span></div>
+          <button className="quiet-button course-edit-button" type="button" onClick={() => setEditingCourseId(editing ? null : row.id)} aria-expanded={editing}><PencilSimple size={15} /> {editing ? "Close" : "Edit"}</button>
+        </div>
+        {editing && <div className="course-record-editor">
+          <label><span>Status</span><select value={row.status} onChange={(event) => void updatePlanCourse(row.id, { status: event.target.value as PlanCourse["status"] })}><option value="current">In progress</option><option value="planned">Planned</option><option value="completed">Done</option></select></label>
+          <label><span>Final grade</span><select value={row.letter_grade ?? ""} onChange={(event) => void updatePlanCourse(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((gradeValue) => <option value={gradeValue} key={gradeValue}>{gradeValue || "Not entered"}</option>)}</select></label>
+          <label><span>Grade level</span><select value={row.grade_level} onChange={(event) => { const nextGrade = Number(event.target.value) as GradeLevel; void updatePlanCourse(row.id, { grade_level: nextGrade, school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, nextGrade) }); }}>{GRADE_LEVELS.map((value) => <option value={value} key={value}>Grade {value}</option>)}</select></label>
+          <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => void updatePlanCourse(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "SMCCD courses are weighted" : "Weighted or honors"}</span></label>
+          <button className="danger-button small" type="button" onClick={() => void removePlanCourse(row.id)}><Trash size={15} /> Remove</button>
+        </div>}
+      </article>;
+    };
+
     return (
       <>
-        <PageHeader title="Academic plan" description={`Your selected window runs from grade ${planGrades[0]} through grade ${planGrades.at(-1)}. Completed transcript courses still count outside this window.`} actions={<><button className="secondary-button" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Snapshot</button><button className="primary-button" onClick={() => void generatePlan()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Suggest plan</button></>} />
         {planExplanation && <div className="notice-strip"><Sparkle size={19} /><span>{planExplanation}</span></div>}
-        {intersessionRows.length > 0 && <details className="content-section transcript-intersession"><summary><span><strong>Intersession pass credits</strong><small>{intersessionRows.reduce((total, row) => total + Number(row.credits ?? 0), 0)} Personal Development credits across {intersessionRows.length} classes. Excluded from GPA.</small></span><span>View classes</span></summary><div>{intersessionRows.map((row) => <article key={row.id}><span><strong>{courseDisplayName(row, courseMap)}</strong><small>Grade {row.grade_level}, pass</small></span><span>{row.credits ?? 0} credits</span></article>)}</div></details>}
-        {priorCompletedRows.length > 0 && <section className="content-section transcript-history"><header className="section-heading"><div><h2>Earlier completed courses</h2><p>Imported transcript courses count toward GPA and graduation progress without extending the planning window.</p></div></header><div>{priorCompletedRows.map((row) => <article key={row.id}><span><strong>{courseDisplayName(row, courseMap)}</strong><small>Grade {row.grade_level}{row.letter_grade ? `, final grade ${row.letter_grade}` : ""}</small></span><span>{row.credits ? `${row.credits} credits` : "Credits need review"}</span></article>)}</div></section>}
-        <section className="planner-board" style={{ gridTemplateColumns: `repeat(${planGrades.length}, minmax(230px, 1fr))` }}>
-          {planGrades.map((grade) => {
-            const rows = planCourses.filter((row) => row.grade_level === grade && !intersessionIds.has(row.id));
-            return <div className="planner-year" key={grade}><header><span>Grade {grade}</span><small>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : "Set graduation year"}</small></header><div className="planner-year-body">{rows.map((row) => { const smccdWeighted = Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0); return <article className="plan-course" key={row.id}><div className="plan-course-title"><strong>{courseDisplayName(row, courseMap)}</strong>{row.mapping_verified ? <CheckCircle size={17} weight="fill" aria-label="Verified mapping" /> : <Warning size={17} weight="fill" aria-label="Unverified mapping" />}</div><div className="plan-course-fields"><label><span>Status</span><select value={row.status} onChange={(event) => void updatePlanCourse(row.id, { status: event.target.value as PlanCourse["status"] })}><option value="completed">Completed</option><option value="current">Current</option><option value="planned">Planned</option></select></label><label><span>Grade</span><select value={row.letter_grade ?? ""} onChange={(event) => void updatePlanCourse(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((gradeValue) => <option value={gradeValue} key={gradeValue}>{gradeValue || "None"}</option>)}</select></label><label><span>Year</span><select value={row.grade_level} onChange={(event) => { const nextGrade = Number(event.target.value) as GradeLevel; void updatePlanCourse(row.id, { grade_level: nextGrade, school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, nextGrade) }); }}>{GRADE_LEVELS.map((value) => <option value={value} key={value}>{value}</option>)}</select></label></div><label className="weight-check"><input type="checkbox" checked={smccdWeighted || row.is_weighted} disabled={smccdWeighted} onChange={(event) => void updatePlanCourse(row.id, { is_weighted: event.target.checked })} /><span>{smccdWeighted ? "SMCCD weighted" : "Weighted or honors"}</span></label><button className="icon-button danger" onClick={() => void removePlanCourse(row.id)} aria-label={`Remove ${courseDisplayName(row, courseMap)}`}><Trash size={16} /></button></article>; })}{rows.length === 0 && <p className="year-empty">No courses yet.</p>}</div></div>;
-          })}
+        <nav className="course-status-tabs" aria-label="Course status">
+          {(["current", "planned", "completed"] as CourseStatusView[]).map((status) => <button type="button" role="tab" aria-selected={courseStatus === status} className={courseStatus === status ? "active" : ""} onClick={() => { setCourseStatus(status); setEditingCourseId(null); }} key={status}><span>{statusContent[status].label}</span><strong>{courseCounts[status]}</strong></button>)}
+        </nav>
+        <section className="course-status-panel">
+          <header className="course-list-heading"><div><h2>{statusContent[courseStatus].label}</h2><p>{statusContent[courseStatus].description}</p></div>{courseStatus === "planned" && <button className="quiet-button" type="button" onClick={() => void generatePlan()} disabled={Boolean(busyLabel)}><Sparkle size={15} /> Suggest courses</button>}</header>
+          {gradeGroups.length ? gradeGroups.map((grade) => {
+            const rows = statusRows.filter((row) => row.grade_level === grade);
+            return <section className="course-grade-group" key={grade}><header><h3>Grade {grade}</h3><span>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : rows[0]?.school_year} / {rows.length} {rows.length === 1 ? "course" : "courses"}</span></header><div className="course-record-list">{rows.map(renderCourseRecord)}</div></section>;
+          }) : <EmptyState title={`No ${statusContent[courseStatus].label.toLowerCase()} courses`} body={courseStatus === "completed" ? "Import a transcript when you are ready to add finished courses." : "Find a course or generate suggestions to start this section."} action={<button className="secondary-button" type="button" onClick={() => setCourseArea("dtech")}>Find courses</button>} />}
         </section>
-        <section className="content-section version-compare">
-          <header className="section-heading"><div><h2>Compare snapshots</h2><p>Snapshots preserve saved versions without changing the active plan.</p></div></header>
+        <details className="course-version-section">
+          <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
+          <div className="course-version-body"><button className="secondary-button small" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={15} /> Save snapshot</button>
           {snapshots.length ? <>
             <div className="compare-controls"><label className="form-field"><span>Saved version</span><select value={compareVersionId} onChange={(event) => setCompareVersionId(event.target.value)}><option value="">Choose a snapshot</option>{snapshots.map((version) => <option value={version.id} key={version.id}>{version.label}</option>)}</select></label><p>{compareVersionId ? "The saved copy stays read-only. Differences below are measured against your active plan." : "Choose a saved snapshot."}</p></div>
             {selectedSnapshot && !compareLoading && <div className="snapshot-comparison" aria-live="polite">
@@ -1351,23 +1409,33 @@ export default function PlanningWorkspace() {
               </div>
             </div>}
             {compareLoading && <p className="compare-loading"><ArrowClockwise className="spin" size={16} /> Loading saved courses</p>}
-          </> : <EmptyState title="No snapshots" body="Save a snapshot before a major plan change." />}
-        </section>
+          </> : <p className="course-version-empty">No saved versions yet.</p>}</div>
+        </details>
       </>
     );
   }
 
-  function renderDualCredit() {
+  function renderCourses() {
     if (!supabase || !session || !profile || !activeVersion) return null;
-    return <SmccdPlanner
-      supabase={supabase}
-      session={session}
-      profile={profile}
-      activeVersion={activeVersion}
-      planCourses={planCourses}
-      onCourseAdded={(course) => setPlanCourses((current) => [...current, course])}
-      onCourseRemoved={(id) => setPlanCourses((current) => current.filter((row) => row.id !== id))}
-    />;
+    return <div className="courses-page">
+      <PageHeader title="Courses" description="One place for what you are taking, what comes next, and what you already finished." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => { setSourceForm((current) => ({ ...current, documentType: "transcript" })); navigate("sources"); }}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
+      <nav className="course-area-tabs" aria-label="Courses workspace">
+        <button type="button" className={courseArea === "mine" ? "active" : ""} onClick={() => setCourseArea("mine")}>My courses</button>
+        <button type="button" className={courseArea === "dtech" ? "active" : ""} onClick={() => setCourseArea("dtech")}>d.tech catalog</button>
+        <button type="button" className={courseArea === "smccd" ? "active" : ""} onClick={() => setCourseArea("smccd")}>SMCCD catalog</button>
+      </nav>
+      {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
+        embedded
+        supabase={supabase}
+        session={session}
+        profile={profile}
+        activeVersion={activeVersion}
+        planCourses={planCourses}
+        onCourseAdded={(course) => setPlanCourses((current) => [...current, course])}
+        onCourseRemoved={(id) => setPlanCourses((current) => current.filter((row) => row.id !== id))}
+        onOpenMyCourses={() => setCourseArea("mine")}
+      />}
+    </div>;
   }
 
   function renderAiStatus() {
@@ -1439,13 +1507,11 @@ export default function PlanningWorkspace() {
   function renderView() {
     switch (view) {
       case "dashboard": return renderDashboard();
+      case "courses": return renderCourses();
       case "profile": return renderProfile();
       case "sources": return renderSources();
-      case "catalog": return renderCatalog();
       case "graduation": return renderGraduation();
       case "gpa": return renderGpa();
-      case "planner": return renderPlanner();
-      case "dual_credit": return renderDualCredit();
       case "activities": return renderActivities();
       case "timeline": return renderTimeline();
       case "simulator": return renderSimulator();

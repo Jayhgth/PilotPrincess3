@@ -94,11 +94,12 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 
 - `src/components/OnboardingFlow.tsx` owns the guided student, plan-window, tracker, and transcript setup flow.
 - `src/components/PlanningWorkspace.tsx` contains the authenticated planning workspace and Supabase mutations.
+- The `Courses` destination in `PlanningWorkspace.tsx` is the single course-management surface: My courses, d.tech discovery, and SMCCD discovery share one status model and navigation context.
 - `src/lib/planning.ts` contains deterministic graduation, GPA, workload, timeline, plan generation, and simulation logic.
 - `src/lib/profile-planning.ts` contains deterministic course and associate-degree fit scoring with visible match reasons.
 - `src/lib/transcript.ts` contains deterministic catalog matching and reviewed transcript-to-plan conversion.
 - `src/server/transcript-parser.ts` parses text-layer d.tech transcripts without AI and preserves ambiguous rows for review.
-- `src/components/SmccdPlanner.tsx` provides the official district catalog, exact-course planning, and deterministic AA/AS major-progress tracking.
+- `src/components/SmccdPlanner.tsx` provides the embedded official district search, exact-course planning, and separately disclosed AA/AS major-progress tracking.
 - `src/pages/api/ai/` contains bearer-authenticated Node routes for Codex parsing and explanations.
 - `src/server/codex.ts` owns Codex isolation, structured runs, concurrency, timeouts, and cleanup.
 - `supabase/migrations/` is the source of truth for schema, triggers, RLS, and storage.
