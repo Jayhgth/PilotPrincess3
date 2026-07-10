@@ -8,6 +8,16 @@ export {
 } from "./normalize";
 export { parsePrerequisites } from "./parser";
 export {
+  DTECH_PREREQUISITE_ALIASES,
+  dtechEquivalenciesForPrerequisites,
+  dtechPrerequisiteCatalog,
+  evaluateDtechPlannerPrerequisites,
+  evaluateSmccdPlannerPrerequisites,
+  plannerCourseInputs,
+  plannerTargetTermIndex,
+  smccdPrerequisiteCourse
+} from "./planner";
+export {
   auditSmccdPrerequisites,
   buildDtechPrerequisiteEquivalencies,
   buildReviewedDtechToSmccdPrerequisiteEquivalencies,
@@ -17,3 +27,4 @@ export {
 } from "./smccd";
 export type * from "./types";
 export type * from "./smccd";
+export type * from "./planner";
