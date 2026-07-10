@@ -9,7 +9,10 @@ import {
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
+import InstitutionMark from "@/components/InstitutionMark";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
+import FadeContent from "@/components/reactbits/FadeContent";
+import WorkspaceTabs from "@/components/WorkspaceTabs";
 import { calculateSmccdProgramProgress, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
 import { programProfileFit } from "@/lib/profile-planning";
 import { schoolYearForGrade } from "@/lib/planning";
@@ -212,6 +215,7 @@ export default function SmccdPlanner({
       metadata: [SMCCD_COLLEGE_NAMES[course.college_code], units, course.transfer_credit ?? "Transfer not listed"],
       readinessLabel: readiness.label,
       readinessTone: readiness.tone,
+      institution: course.college_code,
       ...(planStatus ? { planStatus } : {})
     };
   }), [courseDraft.gradeLevel, courseDraft.term, courses, planCourses, profile.grade_level, selectedCourse?.id, visibleCourses]);
@@ -240,6 +244,7 @@ export default function SmccdPlanner({
       .slice(0, 30);
   }, [goalProgramId, profile, programMode, programProgress, programSearch, programs]);
   const districtRows = planCourses.filter((row) => Number(row.college_units ?? 0) > 0 || row.smccd_course_id);
+  const smccdCourseMap = new Map(courses.map((course) => [course.id, course]));
   const selectedPlanCourse = selectedCourse ? planCourses.find((row) => row.smccd_course_id === selectedCourse.id) ?? null : null;
 
   function chooseCourse(course: SmccdCourse) {
@@ -372,7 +377,7 @@ export default function SmccdPlanner({
   if (loading) return <div className="smccd-loading" role="status">Loading 2025-2026 SMCCD curriculum...</div>;
 
   return (
-    <>
+    <div className="smccd-workspace">
       {!embedded && <header className="page-header">
         <div>
           <h1>SMCCD concurrent enrollment</h1>
@@ -387,18 +392,22 @@ export default function SmccdPlanner({
 
       <nav className="smccd-source-line" aria-label="SMCCD source catalogs">
         {colleges.map((college) => (
-          <a href={college.courses_url} target="_blank" rel="noreferrer" key={college.code}>
-            <strong>{college.name}</strong>
-            <span>{courses.filter((course) => course.college_code === college.code).length} courses</span>
+          <a className={`institution-${college.code.toLowerCase()}`} href={college.courses_url} target="_blank" rel="noreferrer" key={college.code}>
+            <InstitutionMark institution={college.code} size="rail" decorative />
+            <span><strong>{college.name}</strong><small>{courses.filter((course) => course.college_code === college.code).length} courses</small></span>
             <ArrowSquareOut size={14} />
           </a>
         ))}
       </nav>
 
-      <nav className="smccd-section-tabs" aria-label="SMCCD tools">
-        <button type="button" className={section === "courses" ? "active" : ""} onClick={() => setSection("courses")}>Find courses</button>
-        <button type="button" className={section === "degree" ? "active" : ""} onClick={() => setSection("degree")}>Associate degree</button>
-      </nav>
+      <WorkspaceTabs
+        className="dual-enrollment-tabs"
+        items={[{ id: "courses", label: "Find courses" }, { id: "degree", label: "Associate degree" }]}
+        value={section}
+        onChange={setSection}
+        label="SMCCD tools"
+        layoutId="smccd-section-indicator"
+      />
 
       {section === "courses" && <CourseCatalogBrowser
         source="smccd"
@@ -418,7 +427,11 @@ export default function SmccdPlanner({
         sourceAction={<a className="secondary-button small" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">K-12 enrollment <ArrowSquareOut size={14} /></a>}
         footer={visibleCourses.length === 80 ? <p className="catalog-limit-note">Refine the search to narrow these results.</p> : undefined}
         detail={selectedCourse && selectedPrerequisiteEvaluation ? <div className="catalog-course-detail">
-          <header className="catalog-detail-heading"><span>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span><h3><b>{selectedCourse.course_code}</b>{selectedCourse.title}</h3><a href={selectedCourse.catalog_url} target="_blank" rel="noreferrer">Official course page <ArrowSquareOut size={13} /></a></header>
+          <header className="catalog-detail-heading">
+            <span className="catalog-detail-institution"><InstitutionMark institution={selectedCourse.college_code} decorative />{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span>
+            <h3><b>{selectedCourse.course_code}</b>{selectedCourse.title}</h3>
+            <a href={selectedCourse.catalog_url} target="_blank" rel="noreferrer">Official course page <ArrowSquareOut size={13} /></a>
+          </header>
           <dl className="catalog-fact-grid">
             <div><dt>Units</dt><dd>{selectedCourse.units_max && selectedCourse.units_max !== selectedCourse.units_min ? `${selectedCourse.units_min}-${selectedCourse.units_max}` : selectedCourse.units_min}</dd></div>
             <div><dt>Transfer</dt><dd>{selectedCourse.transfer_credit ?? "Not listed"}</dd></div>
@@ -441,18 +454,18 @@ export default function SmccdPlanner({
 
       {!embedded && <section className="content-section smccd-plan-section">
         <header className="section-heading"><div><h2>College courses in this plan</h2><p>Transcript imports and planned catalog courses use the same district record when matched.</p></div></header>
-        {districtRows.length ? <div className="source-list">{districtRows.map((row) => <article className="source-row" key={row.id}><div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>)}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
+        {districtRows.length ? <div className="source-list">{districtRows.map((row) => { const catalogCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null; return <article className="source-row dual-enrollment-row" key={row.id}>{catalogCourse ? <InstitutionMark institution={catalogCourse.college_code} decorative /> : <InstitutionMark institution="smccd" decorative />}<div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>; })}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
       </section>}
 
-      {section === "degree" && <section className="content-section smccd-goal-section">
+      {section === "degree" && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
         <header className="section-heading"><div><h2>Choose an associate-degree goal</h2><p>Start with programs your completed and planned SMCCD courses already advance.</p></div></header>
         <div className="smccd-program-filters">
           <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Program, award, or college" /></label>
           <label className="form-field"><span>Show</span><select value={programMode} onChange={(event) => setProgramMode(event.target.value as ProgramMode)}><option value="coursework">Programs with course progress</option><option value="profile">Programs matching my profile</option><option value="all">All 131 programs</option></select></label>
         </div>
         <div className="smccd-program-browser">
-          {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult, fit }) => <button className={goalProgramId === program.id ? "selected" : ""} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
-            <span><strong>{program.title}</strong><small>{SMCCD_COLLEGE_NAMES[program.college_code]}, {program.award_type}</small>{fit.reasons.length > 0 && <small>{fit.reasons.join("; ")}</small>}</span>
+          {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult, fit }) => <button className={`${goalProgramId === program.id ? "selected" : ""} institution-${program.college_code.toLowerCase()}`} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
+            <span className="smccd-program-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{SMCCD_COLLEGE_NAMES[program.college_code]}, {program.award_type}</small>{fit.reasons.length > 0 && <small>{fit.reasons.join("; ")}</small>}</span></span>
             <span><strong>{programResult.projectedMajorUnits} / {programResult.requiredMajorUnits || "review"}</strong><small>major units in plan</small></span>
           </button>) : <div className="smccd-program-empty"><strong>No programs in this view</strong><p>{programMode === "coursework" ? "Add or import exact SMCCD courses, or switch to profile matches." : "Add profile interests or search all programs."}</p></div>}
         </div>
@@ -460,7 +473,7 @@ export default function SmccdPlanner({
         {goalProgram && progress && (
           <div className="smccd-progress">
             <div className="smccd-progress-summary">
-              <div><span>Program</span><strong>{goalProgram.title} {goalProgram.award_type}</strong><small>{SMCCD_COLLEGE_NAMES[goalProgram.college_code]}</small></div>
+              <div className="smccd-progress-program"><InstitutionMark institution={goalProgram.college_code} size="rail" decorative /><span>Program</span><strong>{goalProgram.title} {goalProgram.award_type}</strong><small>{SMCCD_COLLEGE_NAMES[goalProgram.college_code]}</small></div>
               <div><span>Projected major units</span><strong>{progress.projectedMajorUnits} / {progress.requiredMajorUnits || "review"}</strong><small>{progress.majorPercent}% of parsed rules</small></div>
               <div><span>College units</span><strong>{progress.completedCollegeUnits} completed</strong><small>{progress.projectedCollegeUnits} projected</small></div>
               <div><span>Requirement groups</span><strong>{progress.satisfiedRequirements} / {progress.totalRequirements}</strong><small>Catalog rules only</small></div>
@@ -471,7 +484,7 @@ export default function SmccdPlanner({
             <a className="quiet-button smccd-catalog-link" href={goalProgram.catalog_url} target="_blank" rel="noreferrer">Official program requirements <ArrowSquareOut size={15} /></a>
           </div>
         )}
-      </section>}
+      </section></FadeContent>}
 
       {section === "courses" && <details className="smccd-manual-entry">
         <summary>Course missing from the catalog?</summary>
@@ -482,6 +495,6 @@ export default function SmccdPlanner({
           <button className="secondary-button" type="submit" disabled={busy}><Plus size={17} /> Add manual course</button>
         </form>
       </details>}
-    </>
+    </div>
   );
 }

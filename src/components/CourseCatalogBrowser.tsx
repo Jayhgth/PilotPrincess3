@@ -3,6 +3,9 @@ import {
   CaretRightIcon as CaretRight
 } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import InstitutionMark from "@/components/InstitutionMark";
+import FadeContent from "@/components/reactbits/FadeContent";
+import type { InstitutionKey } from "@/lib/institutions";
 
 export type CatalogSourceKind = "dtech" | "smccd";
 export type CatalogReadinessTone = "ready" | "blocked" | "review" | "none";
@@ -15,6 +18,7 @@ export interface CatalogResultRow {
   readinessLabel: string;
   readinessTone: CatalogReadinessTone;
   planStatus?: string;
+  institution?: InstitutionKey;
 }
 
 interface Props {
@@ -52,7 +56,7 @@ export default function CourseCatalogBrowser({
     <section className={`unified-catalog source-${source}`}>
       <header className="catalog-source-header">
         <div className="catalog-source-identity">
-          <span className="catalog-source-monogram" aria-hidden>{source === "dtech" ? "DT" : "SM"}</span>
+          <InstitutionMark institution={source} size="header" decorative />
           <div>
             <h2>{title}</h2>
             <p>{description}</p>
@@ -71,14 +75,17 @@ export default function CourseCatalogBrowser({
               {results.map((result) => (
                 <button
                   aria-pressed={selectedId === result.id}
-                  className={`catalog-result-row ${selectedId === result.id ? "selected" : ""}`}
+                  className={`catalog-result-row ${selectedId === result.id ? "selected" : ""} ${result.institution ? `institution-${result.institution.toLowerCase()}` : ""}`}
                   key={result.id}
                   onClick={() => onSelect(result.id)}
                   type="button"
                 >
-                  <span className="catalog-result-course">
-                    <span className="catalog-result-title">{result.code && <b>{result.code}</b>}<strong>{result.title}</strong></span>
-                    <span className="catalog-result-metadata">{result.metadata.map((item) => <span key={item}>{item}</span>)}</span>
+                  <span className="catalog-result-identity">
+                    {result.institution && <InstitutionMark institution={result.institution} decorative />}
+                    <span className="catalog-result-course">
+                      <span className="catalog-result-title">{result.code && <b>{result.code}</b>}<strong>{result.title}</strong></span>
+                      <span className="catalog-result-metadata">{result.metadata.map((item) => <span key={item}>{item}</span>)}</span>
+                    </span>
                   </span>
                   <span className="catalog-result-state">
                     {result.planStatus && <strong>{result.planStatus}</strong>}
@@ -97,7 +104,9 @@ export default function CourseCatalogBrowser({
           )}
           {footer}
         </div>
-        <aside className="catalog-detail-panel" aria-live="polite">{detail}</aside>
+        <aside className="catalog-detail-panel" aria-live="polite">
+          <FadeContent className="catalog-detail-transition" key={selectedId ?? "empty"}>{detail}</FadeContent>
+        </aside>
       </div>
     </section>
   );

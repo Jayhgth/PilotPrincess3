@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "colors:validate": "node scripts/validate-color-palettes.mjs",
     "smccd:scrape": "node scripts/scrape-smccd-catalog.mjs",
     "smccd:migration": "node scripts/generate-smccd-migration.mjs",
     "equivalencies:generate": "node scripts/generate-equivalency-migration.mjs",

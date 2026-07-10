@@ -24,8 +24,10 @@ import {
   TrashIcon as Trash
 } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
+import InstitutionMark from "@/components/InstitutionMark";
+import { INSTITUTIONS } from "@/lib/institutions";
 import { courseDisplayName, GRADE_LEVELS, LETTER_GRADES, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
-import type { Course, CourseStatus, GradeLevel, PlanCourse, StudentProfile } from "@/lib/models";
+import type { Course, CourseStatus, GradeLevel, PlanCourse, SmccdCourse, StudentProfile } from "@/lib/models";
 
 const STATUS_ORDER: CourseStatus[] = ["completed", "current", "planned"];
 const STATUS_CONTENT = {
@@ -41,6 +43,7 @@ function formatCredits(value: number) {
 interface CourseKanbanProps {
   rows: PlanCourse[];
   courses: Course[];
+  smccdCourses: SmccdCourse[];
   profile: StudentProfile;
   editingCourseId: string | null;
   busy: boolean;
@@ -56,6 +59,7 @@ interface CourseKanbanProps {
 function CourseCard({
   row,
   courseMap,
+  smccdCourseMap,
   profile,
   editing,
   busy,
@@ -66,6 +70,7 @@ function CourseCard({
 }: {
   row: PlanCourse;
   courseMap: Map<string, Course>;
+  smccdCourseMap: Map<string, SmccdCourse>;
   profile: StudentProfile;
   editing: boolean;
   busy: boolean;
@@ -82,20 +87,22 @@ function CourseCard({
   });
   const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
   const isSmccd = Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0);
+  const smccdCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null;
+  const institution = smccdCourse?.college_code ?? (isSmccd ? "smccd" : null);
   const weighted = isSmccd || row.is_weighted;
   const isPass = row.letter_grade?.toUpperCase() === "P";
   const title = courseDisplayName(row, courseMap);
   const metadata = [
     `Grade ${row.grade_level}`,
     row.credits ? formatCredits(Number(row.credits)) : "Credits need review",
-    isSmccd ? "SMCCD" : catalogCourse?.subject ?? (row.requirement_area_override ? REQUIREMENT_LABELS[row.requirement_area_override] : "Custom"),
+    isSmccd ? null : catalogCourse?.subject ?? (row.requirement_area_override ? REQUIREMENT_LABELS[row.requirement_area_override] : "Custom"),
     weighted ? "Weighted" : null,
     isPass ? "Pass, outside GPA" : null,
     locked ? "Transcript" : null
   ].filter(Boolean) as string[];
 
   return (
-    <div ref={setNodeRef} className={`kanban-course ${editing ? "editing" : ""} ${isDragging ? "dragging" : ""} ${locked ? "locked" : "draggable"}`}>
+    <div ref={setNodeRef} className={`kanban-course ${editing ? "editing" : ""} ${isDragging ? "dragging" : ""} ${locked ? "locked" : "draggable"} ${isSmccd ? `dual-enrollment institution-${institution?.toLowerCase()}` : ""}`}>
       <article
         className="kanban-course-main"
         {...(locked || editing ? {} : listeners)}
@@ -106,6 +113,7 @@ function CourseCard({
           ? <span className="kanban-lock" title="Transcript records cannot move"><LockKey size={16} /><span>Transcript</span></span>
           : <span className="kanban-drag-affordance" title="Drag anywhere on this card"><DotsSixVertical size={18} /><span>Drag</span></span>}
         <div className="kanban-course-copy">
+          {institution && <span className="kanban-course-institution"><InstitutionMark institution={institution} decorative /><span>{INSTITUTIONS[institution].name}<small>Dual enrollment</small></span></span>}
           <strong>{title}</strong>
           <div className="kanban-course-meta">{metadata.map((item) => <span key={item}>{item}</span>)}</div>
           {row.status === "completed" && <small>{row.letter_grade ? `Final grade ${row.letter_grade}` : "Final grade not entered"}</small>}
@@ -169,6 +177,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
     useSensor(KeyboardSensor)
   );
   const courseMap = new Map(props.courses.map((course) => [course.id, course]));
+  const smccdCourseMap = new Map(props.smccdCourses.map((course) => [course.id, course]));
   const activeRow = activeId ? props.rows.find((row) => row.id === activeId) ?? null : null;
 
   function handleDragStart(event: DragStartEvent) {
@@ -194,7 +203,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
               .filter((row) => row.status === status)
               .sort((a, b) => status === "completed" ? b.grade_level - a.grade_level : a.grade_level - b.grade_level || a.sort_order - b.sort_order);
             return <KanbanColumn status={status} rows={rows} busy={props.busy} onGeneratePlan={props.onGeneratePlan} onImportTranscript={props.onImportTranscript} onBrowseCourses={props.onBrowseCourses} key={status}>
-              {rows.map((row) => <CourseCard row={row} courseMap={courseMap} profile={props.profile} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
+              {rows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} profile={props.profile} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
             </KanbanColumn>;
           })}
         </section>

@@ -30,6 +30,7 @@ import {
 import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
 import BrandMark from "@/components/BrandMark";
+import InstitutionMark from "@/components/InstitutionMark";
 import {
   useCallback,
   useEffect,
@@ -99,6 +100,7 @@ import type {
   TimelineTask
 } from "@/lib/workspace-types";
 import { hasPublicEnv } from "@/lib/env";
+import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -1469,6 +1471,7 @@ export default function PlanningWorkspace() {
             const selected = selectedTranscriptIds.has(item.id);
             const name = String(displayPayload.matched_course_name ?? displayPayload.matched_smccd_course_name ?? displayPayload.course_name ?? "Course name needs review");
             const institution = String(displayPayload.institution_name ?? "").trim();
+            const institutionKey = institutionKeyFromName(institution);
             const classificationDetail = resolution.classification === "dtech_intersession"
               ? "Intersession · Pass/fail · Personal Development"
               : resolution.classification === "dtech_catalog" && !displayPayload.matched_course_id
@@ -1482,7 +1485,7 @@ export default function PlanningWorkspace() {
             const status = imported ? "Imported" : resolution.classification === "dtech_intersession" ? "Intersession" : needsReview ? "Review" : "Ready";
             return <article className="transcript-course-item" role="rowgroup" key={item.id}>
               <div className="transcript-course-row" role="row">
-                <span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${name}`} checked={imported || selected} disabled={imported} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{name}</strong>{courseDetail && <small>{courseDetail}</small>}</span></span>
+                <span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${name}`} checked={imported || selected} disabled={imported} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} />{institutionKey && <InstitutionMark institution={institutionKey} decorative />}<span><strong>{name}</strong>{courseDetail && <small>{courseDetail}</small>}</span></span>
                 <span role="cell" data-label="Grade">{grade}</span><span role="cell" data-label="Credits">{String(credits)}</span><span role="cell" data-label="Year">{year}</span><span role="cell" data-label="Status" className={imported ? "transcript-imported" : needsReview ? "transcript-review-needed" : resolution.classification === "dtech_intersession" ? "transcript-intersession-ready" : ""}>{status}</span>
               </div>
               {visibleNotes.length > 0 && <p className="transcript-row-warning">{visibleNotes.join(" ")}</p>}
@@ -1695,6 +1698,7 @@ export default function PlanningWorkspace() {
         <CourseKanban
           rows={planCourses}
           courses={courses}
+          smccdCourses={plannedSmccdCourses}
           profile={profile}
           editingCourseId={editingCourseId}
           busy={Boolean(busyLabel)}
@@ -1730,7 +1734,7 @@ export default function PlanningWorkspace() {
     if (!supabase || !session || !profile || !activeVersion) return null;
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         supabase={supabase}
