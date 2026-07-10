@@ -154,7 +154,8 @@ export function evaluateSmccdPlannerPrerequisites(
   target: PlannerPrerequisiteTarget,
   smccdCourses: readonly SmccdCourse[],
   planCourses: readonly PlanCourse[],
-  dtechCourses: readonly Course[]
+  dtechCourses: readonly Course[],
+  equivalencies: readonly PrerequisiteEquivalencyInput[] = []
 ): PlannerPrerequisiteEvaluation {
   const prerequisiteCourses = smccdCourses.map(smccdPrerequisiteCourse);
   const parsed = parseSmccdCoursePrerequisites(smccdPrerequisiteCourse(course), prerequisiteCourses);
@@ -168,7 +169,8 @@ export function evaluateSmccdPlannerPrerequisites(
         termIndex: plannerTargetTermIndex(target.gradeLevel, target.term),
         gradeLevel: target.gradeLevel
       },
-      courses: plannerCourseInputs(planCourses, dtechCourses, smccdCourses)
+      courses: plannerCourseInputs(planCourses, dtechCourses, smccdCourses),
+      equivalencies
     }),
     originalTexts: parsed.originalTexts
   };

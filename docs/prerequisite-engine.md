@@ -155,6 +155,6 @@ The Courses area uses those adapters in both catalog browsers:
 - a course already in the plan shows its current plan state instead of another add action; and
 - the Timeline surfaces blocked and review-required planned courses as links back to the relevant catalog record.
 
-The d.tech adapter may use the published SMCCD-to-d.tech equivalency chart in that published direction. The SMCCD adapter does not assume the reverse. A d.tech course can satisfy an SMCCD prerequisite only after a separately reviewed SMCCD decision is supplied through `buildReviewedDtechToSmccdPrerequisiteEquivalencies` and connected to the planner adapter.
+The d.tech adapter may use the published SMCCD-to-d.tech equivalency chart in that published direction. The SMCCD adapter does not assume the reverse. A d.tech course can satisfy an SMCCD prerequisite only after a separately reviewed SMCCD decision is supplied through `buildReviewedDtechToSmccdPrerequisiteEquivalencies` and passed to `evaluateSmccdPlannerPrerequisites`.
 
 Do not convert `needs_review` to success in the UI. Show its source text and counselor question, and keep registration and graduation language explicitly advisory until the catalog language or a counselor resolves it. If catalog evaluation later becomes a measurable rendering bottleneck, cache parsed ASTs by catalog version at this adapter seam rather than weakening the matching rules.

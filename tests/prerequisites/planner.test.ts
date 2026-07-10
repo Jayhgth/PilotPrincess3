@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildReviewedDtechToSmccdPrerequisiteEquivalencies,
   evaluateDtechPlannerPrerequisites,
   evaluateSmccdPlannerPrerequisites,
   plannerCourseInputs,
@@ -132,6 +133,68 @@ describe("planner prerequisite adapters", () => {
 
     expect(evaluation.result.status).toBe("needs_review");
     expect(evaluation.result.evidence[0]).toMatchObject({ kind: "clearance", satisfied: null });
+  });
+
+  it("uses a d.tech course for an SMCCD prerequisite only through a reviewed reverse mapping", () => {
+    const algebra = dtechCourse({ id: "algebra-2", name: "Algebra 2", grade_levels: [9, 10, 11] });
+    const prerequisite = smccdCourse({
+      id: "CSM:MATH 120",
+      course_code: "MATH 120",
+      course_number: "120",
+      subject: "MATH",
+      title: "Intermediate Algebra",
+      prerequisites: []
+    });
+    const target = smccdCourse({
+      id: "CSM:MATH 200",
+      course_code: "MATH 200",
+      course_number: "200",
+      subject: "MATH",
+      title: "Statistics",
+      prerequisites: ["MATH 120"]
+    });
+    const completedAlgebra = planCourse({ course_id: algebra.id });
+    const reviewedMappings = buildReviewedDtechToSmccdPrerequisiteEquivalencies([
+      {
+        id: "reviewed-algebra",
+        from: { id: algebra.id, name: algebra.name },
+        toSmccdCourseId: prerequisite.id,
+        status: "approved",
+        verificationStatus: "approved",
+        authority: "SMCCD counselor"
+      }
+    ], [prerequisite, target].map((course) => ({
+      id: course.id,
+      collegeCode: course.college_code,
+      courseCode: course.course_code,
+      title: course.title,
+      prerequisites: course.prerequisites,
+      corequisites: course.corequisites,
+      recommendedPreparation: course.recommended_preparation,
+      catalogUrl: course.catalog_url,
+      sourceYear: course.source_year,
+      detailStatus: course.detail_status
+    })));
+
+    const withoutReview = evaluateSmccdPlannerPrerequisites(
+      target,
+      { gradeLevel: 11, term: "fall" },
+      [prerequisite, target],
+      [completedAlgebra],
+      [algebra]
+    );
+    const withReview = evaluateSmccdPlannerPrerequisites(
+      target,
+      { gradeLevel: 11, term: "fall" },
+      [prerequisite, target],
+      [completedAlgebra],
+      [algebra],
+      reviewedMappings
+    );
+
+    expect(withoutReview.result.status).toBe("blocked");
+    expect(withReview.result.status).toBe("satisfied");
+    expect(withReview.result.evidence[0]).toMatchObject({ matchedBy: "equivalency", satisfied: true });
   });
 
   it("assigns monotonically ordered planner term indexes", () => {
