@@ -34,6 +34,7 @@ import type {
 
 interface Props {
   embedded?: boolean;
+  initialSection?: SmccdSection;
   supabase: SupabaseClient;
   session: Session;
   profile: StudentProfile;
@@ -53,6 +54,7 @@ type SmccdSection = "courses" | "degree";
 
 export default function SmccdPlanner({
   embedded = false,
+  initialSection = "courses",
   supabase,
   session,
   profile,
@@ -68,7 +70,7 @@ export default function SmccdPlanner({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [section, setSection] = useState<SmccdSection>("courses");
+  const [section, setSection] = useState<SmccdSection>(initialSection);
   const [colleges, setColleges] = useState<SmccdCollege[]>([]);
   const [courses, setCourses] = useState<SmccdCourse[]>([]);
   const [programs, setPrograms] = useState<SmccdProgram[]>([]);

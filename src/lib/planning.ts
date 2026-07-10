@@ -148,7 +148,16 @@ export function calculateRequirementProgress(
     let currentCredits = 0;
     let plannedCredits = 0;
     let unverifiedCredits = 0;
-    const verifiedRows: Array<{ status: PlanCourse["status"]; credits: number; name: string; equivalent: string | null }> = [];
+    const verifiedRows: Array<{
+      id: string;
+      status: PlanCourse["status"];
+      credits: number;
+      name: string;
+      equivalent: string | null;
+      gradeLevel: PlanCourse["grade_level"];
+      institution: "dtech" | "smccd" | "CSM" | "SKY" | "CAN";
+    }> = [];
+    const unverifiedRows: typeof verifiedRows = [];
 
     for (const planCourse of planCourses) {
       const overrideMatches = planCourse.requirement_area_override === requirement.area;
@@ -162,15 +171,27 @@ export function calculateRequirementProgress(
       const credits = Number(planCourse.credits ?? 0);
       if ((!overrideMatches && mapping?.confidence === "uncertain") || !planCourse.mapping_verified) {
         unverifiedCredits += credits;
+        unverifiedRows.push({
+          id: planCourse.id,
+          status: planCourse.status,
+          credits,
+          name: courseDisplayName(planCourse, courseMap),
+          equivalent: null,
+          gradeLevel: planCourse.grade_level,
+          institution: institutionForPlanCourse(planCourse)
+        });
         continue;
       }
       if (planCourse.status === "completed") completedCredits += credits;
       if (planCourse.status === "current") currentCredits += credits;
       if (planCourse.status === "planned") plannedCredits += credits;
       verifiedRows.push({
+        id: planCourse.id,
         status: planCourse.status,
         credits,
         name: courseDisplayName(planCourse, courseMap),
+        gradeLevel: planCourse.grade_level,
+        institution: institutionForPlanCourse(planCourse),
         equivalent: planCourse.smccd_course_id
           ? equivalencyMap.get(planCourse.smccd_course_id.split(":").at(-1)?.toUpperCase() ?? "")?.high_school_equivalent ?? null
           : null
@@ -178,6 +199,9 @@ export function calculateRequirementProgress(
     }
 
     const ruleWarnings: string[] = [];
+    const appliedById = new Map<string, number>();
+    const contributionNotes = new Map<string, string>();
+    let usesRuleAllocation = false;
     if (requirement.area === "world_language") {
       const proficiencyRows = verifiedRows.filter((row) => {
         const evidence = row.equivalent ?? row.name;
@@ -186,21 +210,29 @@ export function calculateRequirementProgress(
       const qualifyingStatus = (["completed", "current", "planned"] as PlanCourse["status"][])
         .find((status) => proficiencyRows.some((row) => row.status === status));
       if (qualifyingStatus) {
+        usesRuleAllocation = true;
         const requiredCredits = Number(requirement.credits_required);
+        const qualifyingRow = proficiencyRows.find((row) => row.status === qualifyingStatus)!;
         completedCredits = Math.min(completedCredits, requiredCredits);
         if (qualifyingStatus === "completed") {
           completedCredits = requiredCredits;
           currentCredits = 0;
           plannedCredits = 0;
+          appliedById.set(qualifyingRow.id, requiredCredits);
         } else {
+          allocateEvidenceByStatus(verifiedRows, "completed", completedCredits, appliedById);
           currentCredits = Math.min(currentCredits, Math.max(0, requiredCredits - completedCredits));
           if (qualifyingStatus === "current") {
             currentCredits = Math.max(0, requiredCredits - completedCredits);
             plannedCredits = 0;
+            appliedById.set(qualifyingRow.id, currentCredits);
           } else {
+            allocateEvidenceByStatus(verifiedRows, "current", currentCredits, appliedById);
             plannedCredits = Math.max(0, requiredCredits - completedCredits - currentCredits);
+            appliedById.set(qualifyingRow.id, plannedCredits);
           }
         }
+        contributionNotes.set(qualifyingRow.id, "Verified Level 3 proficiency satisfies the full sequence.");
       } else if (verifiedRows.length > 0 && completedCredits + currentCredits + plannedCredits < requirement.credits_required) {
         ruleWarnings.push(
           `A verified Level 3 language course satisfies the full sequence; otherwise ${requirement.credits_required} credits are needed.`
@@ -208,6 +240,7 @@ export function calculateRequirementProgress(
       }
     }
     if (requirement.area === "lab_science") {
+      usesRuleAllocation = true;
       const allocation = { completed: 0, current: 0, planned: 0 };
       const statusOrder: PlanCourse["status"][] = ["completed", "current", "planned"];
       const classify = (name: string) => /\bbiol(?:ogy)?\b|biological/i.test(name)
@@ -222,6 +255,7 @@ export function calculateRequirementProgress(
           for (const row of candidates.filter((candidate) => candidate.status === status)) {
             const applied = Math.min(row.remaining, remaining);
             allocation[status] += applied;
+            appliedById.set(row.id, (appliedById.get(row.id) ?? 0) + applied);
             row.remaining -= applied;
             remaining -= applied;
             if (remaining <= 0) return limit;
@@ -237,6 +271,18 @@ export function calculateRequirementProgress(
       plannedCredits = allocation.planned;
       if (biologyApplied < 10) ruleWarnings.push(`${10 - biologyApplied} Biology credits still need coverage.`);
       if (chemistryApplied < 10) ruleWarnings.push(`${10 - chemistryApplied} Chemistry credits still need coverage.`);
+    }
+
+    if (!usesRuleAllocation) {
+      const applied = appliedCreditBreakdown({
+        required: Number(requirement.credits_required),
+        completed: completedCredits,
+        current: currentCredits,
+        planned: plannedCredits
+      });
+      allocateEvidenceByStatus(verifiedRows, "completed", applied.completed, appliedById);
+      allocateEvidenceByStatus(verifiedRows, "current", applied.current, appliedById);
+      allocateEvidenceByStatus(verifiedRows, "planned", applied.planned, appliedById);
     }
 
     const verifiedProjectedCredits = completedCredits + currentCredits + plannedCredits;
@@ -257,9 +303,70 @@ export function calculateRequirementProgress(
       unverifiedCredits: round(unverifiedCredits, 1),
       percent,
       status,
-      ruleWarnings
+      ruleWarnings,
+      contributions: verifiedRows
+        .filter((row) => (appliedById.get(row.id) ?? 0) > 0)
+        .map((row) => requirementEvidence(row, appliedById.get(row.id) ?? 0, contributionNotes.get(row.id) ?? null)),
+      unusedCourses: verifiedRows
+        .filter((row) => row.credits - Math.min(row.credits, appliedById.get(row.id) ?? 0) > 0)
+        .map((row) => requirementEvidence(
+          row,
+          Math.min(row.credits, appliedById.get(row.id) ?? 0),
+          "Verified credit is not applied because this requirement is already covered."
+        )),
+      unverifiedCourses: unverifiedRows.map((row) => requirementEvidence(
+        row,
+        0,
+        "Excluded because the requirement mapping is not verified."
+      ))
     };
   });
+}
+
+function institutionForPlanCourse(planCourse: PlanCourse): "dtech" | "smccd" | "CSM" | "SKY" | "CAN" {
+  const college = planCourse.smccd_course_id?.split(":", 1)[0];
+  return college === "CSM" || college === "SKY" || college === "CAN" ? college : planCourse.smccd_course_id ? "smccd" : "dtech";
+}
+
+function allocateEvidenceByStatus(
+  rows: Array<{ id: string; status: PlanCourse["status"]; credits: number }>,
+  status: PlanCourse["status"],
+  target: number,
+  appliedById: Map<string, number>
+) {
+  let remaining = target;
+  for (const row of rows.filter((candidate) => candidate.status === status)) {
+    const alreadyApplied = appliedById.get(row.id) ?? 0;
+    const available = Math.max(0, row.credits - Math.min(row.credits, alreadyApplied));
+    const applied = Math.min(available, remaining);
+    if (applied > 0) appliedById.set(row.id, alreadyApplied + applied);
+    remaining -= applied;
+    if (remaining <= 0) break;
+  }
+}
+
+function requirementEvidence(
+  row: {
+    id: string;
+    status: PlanCourse["status"];
+    credits: number;
+    name: string;
+    gradeLevel: PlanCourse["grade_level"];
+    institution: "dtech" | "smccd" | "CSM" | "SKY" | "CAN";
+  },
+  creditsApplied: number,
+  note: string | null
+) {
+  return {
+    planCourseId: row.id,
+    courseName: row.name,
+    status: row.status,
+    creditsApplied: round(creditsApplied, 1),
+    creditsAvailable: round(row.credits, 1),
+    gradeLevel: row.gradeLevel,
+    institution: row.institution,
+    note
+  };
 }
 
 function gpaForRows(rows: PlanCourse[], includePlanned: boolean) {

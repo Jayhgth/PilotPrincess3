@@ -10,6 +10,9 @@ export default function InstitutionMark({
   decorative?: boolean;
 }) {
   const identity = INSTITUTIONS[institution];
+  const useWideAsset = size !== "compact" && Boolean(identity.wideLightAsset);
+  const lightAsset = useWideAsset ? identity.wideLightAsset! : identity.lightAsset;
+  const darkAsset = useWideAsset ? identity.wideDarkAsset ?? identity.wideLightAsset! : identity.darkAsset;
 
   return (
     <span
@@ -18,8 +21,8 @@ export default function InstitutionMark({
       aria-label={decorative ? undefined : `${identity.name} logo`}
       role={decorative ? undefined : "img"}
     >
-      <img className="institution-logo-light" src={identity.lightAsset} alt="" loading="lazy" decoding="async" />
-      <img className="institution-logo-dark" src={identity.darkAsset} alt="" loading="lazy" decoding="async" />
+      <img className="institution-logo-light" src={lightAsset} alt="" loading="lazy" decoding="async" />
+      <img className="institution-logo-dark" src={darkAsset} alt="" loading="lazy" decoding="async" />
     </span>
   );
 }

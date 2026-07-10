@@ -8,6 +8,8 @@ export interface InstitutionIdentity {
   shortName: string;
   lightAsset: string;
   darkAsset: string;
+  wideLightAsset?: string;
+  wideDarkAsset?: string;
   className: string;
 }
 
@@ -16,8 +18,10 @@ export const INSTITUTIONS: Record<InstitutionKey, InstitutionIdentity> = {
     key: "dtech",
     name: "Design Tech High School",
     shortName: "d.tech",
-    lightAsset: "/institutions/dtech-mark.webp",
-    darkAsset: "/institutions/dtech-mark.webp",
+    lightAsset: "/institutions/dtech-wordmark.png",
+    darkAsset: "/institutions/dtech-wordmark.png",
+    wideLightAsset: "/institutions/dtech-wordmark.png",
+    wideDarkAsset: "/institutions/dtech-wordmark.png",
     className: "dtech"
   },
   smccd: {

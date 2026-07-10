@@ -299,6 +299,20 @@ export interface RequirementProgress {
   percent: number;
   status: "complete" | "on_track" | "missing";
   ruleWarnings: string[];
+  contributions: RequirementCourseEvidence[];
+  unusedCourses: RequirementCourseEvidence[];
+  unverifiedCourses: RequirementCourseEvidence[];
+}
+
+export interface RequirementCourseEvidence {
+  planCourseId: string;
+  courseName: string;
+  status: CourseStatus;
+  creditsApplied: number;
+  creditsAvailable: number;
+  gradeLevel: GradeLevel;
+  institution: "dtech" | "smccd" | SmccdCollege["code"];
+  note: string | null;
 }
 
 export interface GpaSummary {

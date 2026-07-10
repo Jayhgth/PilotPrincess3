@@ -130,3 +130,31 @@ Applied here:
 5. **Desktop, light:** verified hierarchy and contrast with five structural borders on Overview, no decorative side bars, legible status colors, an obvious Course plan destination, and exact calculated values on first paint.
 
 The final structure deliberately uses surfaces and alignment for grouping. Lines remain only around the primary summary, actionable Course plan control, and focus/control boundaries.
+
+## Unified eligibility pass
+
+The graduation route now answers three distinct student questions without pretending they are one calculation:
+
+1. **d.tech diploma:** Which of the eight local credit requirements are earned, scheduled, still open, or supported only by unverified evidence?
+2. **UC/CSU A-G:** Which minimum course-year areas are complete with eligible grades, covered only by current/planned courses, duplicated, or not connected to an official A-G course?
+3. **Selected SMCCD AA/AS:** Which parsed major groups contain an exact course from the plan, and which catalog groups or prose rules still need action?
+
+Each view uses the same interaction grammar: one outcome statement, four supporting measures, an official-source line, a comparable requirement index, and one selected evidence panel. This preserves consistency while keeping diploma credits, A-G course-years, and college units semantically separate.
+
+### Accuracy boundaries
+
+- Earned and scheduled work never share one number.
+- A diploma course contributes only the credit the selected requirement can accept; overflow appears as unused evidence.
+- Level 3 language proficiency is visibly explained when it supplies the full sequence rather than being presented as ordinary raw credit.
+- A-G completion requires a verified official d.tech A-G area and an eligible grade. SMCCD work requires UC transfer status, at least three semester units, and an exact reviewed d.tech equivalency before it can count.
+- A-G sequence details and admission eligibility remain explicitly subject to official review; the product does not make an admission claim.
+- AA/AS progress is labeled as parsed major progress only. General education, residency, substitutions, catalog rights, and final award eligibility are excluded.
+- Student-created substitution or equivalency claims are not available in this workflow.
+
+### Final five-loop review
+
+1. **Diploma hierarchy:** the open-credit answer, official d.tech identity, and exact requirement columns passed at desktop light.
+2. **Evidence interaction:** selecting World Language showed the exact Spanish 3 course, its earned state, and the Level 3 sequence rule without inflating the underlying course record.
+3. **A-G separation:** the interface showed course-years, the 11-before-grade-12 checkpoint, source links, and conservative excluded/duplicate handling rather than reusing diploma credits.
+4. **Associate-degree separation:** campus identity, major units, exact catalog options, incomplete rules, and the direct degree-planner action remained visually and semantically distinct from d.tech work.
+5. **Themes and responsive structure:** desktop light, desktop dark, and 390×844 states retained one-column mobile summaries, labeled mobile values, keyboard-selectable rows, and zero document overflow.

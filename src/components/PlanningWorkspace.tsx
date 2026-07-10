@@ -75,6 +75,7 @@ import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import CountUp from "@/components/reactbits/CountUp";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
+import GraduationWorkspace from "@/components/GraduationWorkspace";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import SmccdPlanner from "@/components/SmccdPlanner";
 import SummaryGenerateButton from "@/components/SummaryGenerateButton";
@@ -257,9 +258,9 @@ export default function PlanningWorkspace() {
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
+  const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">("courses");
   const [profileSection, setProfileSection] = useState<ProfileSection>("basics");
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
-  const [expandedRequirementIds, setExpandedRequirementIds] = useState<Set<string>>(new Set());
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
   const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
@@ -516,10 +517,28 @@ export default function PlanningWorkspace() {
     void logEvent("view_opened", { view: nextView });
   }
 
-  function openCourses(area: CourseArea = "mine") {
+  function openCourses(area: CourseArea = "mine", smccdSection: "courses" | "degree" = "courses") {
     setCourseArea(area);
+    if (area === "smccd") setSmccdInitialSection(smccdSection);
     setEditingCourseId(null);
     navigate("courses");
+  }
+
+  function openRequirementCourses(area: GraduationRequirement["area"]) {
+    const subjectByArea: Record<GraduationRequirement["area"], string> = {
+      english: "English",
+      social_science: "Social Science",
+      math: "Mathematics",
+      lab_science: "Laboratory Science",
+      world_language: "World Language",
+      design_lab: "Design Lab",
+      visual_performing_arts: "Visual and Performing Arts",
+      personal_development: "Personal Development"
+    };
+    setCatalogSubject(subjectByArea[area]);
+    setCatalogSearch("");
+    setCatalogPage(0);
+    openCourses("dtech");
   }
 
   function toggleTheme() {
@@ -1535,7 +1554,7 @@ export default function PlanningWorkspace() {
     return (
       <CourseCatalogBrowser
         source="dtech"
-        title="d.tech course catalog"
+        title="Course catalog"
         description="Official 2025-26 courses with plan-aware prerequisite checks."
         countLabel={filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length}` : "No courses"}
         filters={<>
@@ -1572,76 +1591,22 @@ export default function PlanningWorkspace() {
   }
 
   function renderGraduation() {
-    if (!profile) return null;
-    const trackedCredits = trackedRequirements.reduce((total, requirement) => total + Number(requirement.credits_required), 0);
-    const totals = progress.reduce((sum, item) => {
-      const applied = appliedCreditBreakdown({
-        required: Number(item.requirement.credits_required),
-        completed: item.completedCredits,
-        current: item.currentCredits,
-        planned: item.plannedCredits,
-        unverified: item.unverifiedCredits
-      });
-      return {
-        completed: sum.completed + applied.completed,
-        current: sum.current + applied.current,
-        planned: sum.planned + applied.planned,
-        unverified: sum.unverified + applied.unverified,
-        remaining: sum.remaining + applied.remaining
-      };
-    }, { completed: 0, current: 0, planned: 0, unverified: 0, remaining: 0 });
-    const scheduledCredits = totals.current + totals.planned;
-    const projectedCoveragePercent = trackedCredits > 0
-      ? Math.round(((totals.completed + scheduledCredits) / trackedCredits) * 100)
-      : 0;
+    if (!profile || !supabase || !session) return null;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="Earned credit first, with scheduled and unverified work kept separate." />
-        <AnimatedContent>
-          <section className="graduation-summary" aria-label="Graduation summary">
-            <div className="graduation-primary-result">
-              <span>Required credit earned</span>
-              <strong><CountUp from={graduationEarnedPercent} to={graduationEarnedPercent} suffix="%" /></strong>
-              <p>{totals.completed} of {trackedCredits} credits are complete.</p>
-            </div>
-            <dl className="graduation-summary-values">
-              <div><dt>Plan coverage</dt><dd><CountUp from={projectedCoveragePercent} to={projectedCoveragePercent} suffix="%" /></dd><span>Earned plus scheduled</span></div>
-              <div><dt>In progress</dt><dd>{totals.current}</dd><span>Applied credits</span></div>
-              <div><dt>Planned</dt><dd>{totals.planned}</dd><span>Applied credits</span></div>
-              <div><dt>Still open</dt><dd>{totals.remaining}</dd><span>Credits without coverage</span></div>
-            </dl>
-          </section>
-          <p className="graduation-method-note">2025-26 d.tech requirements. SMCCD equivalencies use the official chart last updated in 2021. {totals.unverified > 0 ? `${totals.unverified} unverified credits are excluded.` : "Only verified mappings count."}</p>
-        </AnimatedContent>
-        <section className="graduation-requirements" aria-labelledby="graduation-requirements-title">
-          <header className="graduation-section-heading"><div><h2 id="graduation-requirements-title">Requirements</h2><p>Values below are capped at the credit each area can accept.</p></div><button className="secondary-button small" type="button" onClick={() => openCourses("mine")}><BookOpen size={15} /> Manage courses</button></header>
-          <div className="graduation-column-heading" aria-hidden><span>Requirement</span><span><b>Earned</b><b>Scheduled</b><b>Open</b></span><span>Status</span></div>
-          <div className="graduation-requirement-list">
-          {progress.map((item) => {
-            const requiredCredits = Number(item.requirement.credits_required);
-            const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits, unverified: item.unverifiedCredits });
-            const statusText = item.status === "complete"
-              ? "Complete"
-              : item.status === "on_track"
-                ? "Covered"
-                : item.verifiedProjectedCredits > 0
-                  ? "Partly covered"
-                  : "Not started";
-            const StatusIcon = item.status === "complete" ? CheckCircle : item.status === "on_track" ? ChartLineUp : Warning;
-            const hasDetails = Boolean(item.requirement.notes || item.unverifiedCredits > 0 || item.ruleWarnings.length > 0);
-            const isExpanded = expandedRequirementIds.has(item.requirement.id);
-            const rowContent = <>
-              <span className="graduation-requirement-title"><strong>{item.requirement.name}</strong><span>{requiredCredits} credits required</span></span>
-              <span className="graduation-requirement-values"><span><span>Earned</span><b>{applied.completed}</b></span><span><span>Scheduled</span><b>{applied.current + applied.planned}</b></span><span><span>Open</span><b>{applied.remaining}</b></span></span>
-              <span className={`graduation-requirement-status ${item.status}`}><StatusIcon size={16} weight={item.status === "complete" ? "fill" : "regular"} /> {statusText}{hasDetails && <CaretDown className="graduation-requirement-caret" size={14} />}</span>
-            </>;
-            return <article className={`graduation-requirement-row ${item.status}`} key={item.requirement.id}>
-              {hasDetails ? <button className="graduation-requirement-main" type="button" aria-expanded={isExpanded} aria-controls={`requirement-details-${item.requirement.id}`} onClick={() => setExpandedRequirementIds((current) => { const next = new Set(current); if (next.has(item.requirement.id)) next.delete(item.requirement.id); else next.add(item.requirement.id); return next; })}>{rowContent}</button> : <div className="graduation-requirement-main">{rowContent}</div>}
-              {hasDetails && isExpanded && <div className="graduation-requirement-details" id={`requirement-details-${item.requirement.id}`}>{item.ruleWarnings.length > 0 && <ul className="requirement-rule-warnings">{item.ruleWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}{item.requirement.notes && <p>{item.requirement.notes}</p>}{item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={15} /> {item.unverifiedCredits} credits are excluded until their mapping is verified.</p>}</div>}
-            </article>;
-          })}
-          </div>
-        </section>
+        <PageHeader title="Graduation" description="One source-backed view of diploma progress, A-G readiness, and the selected associate degree." />
+        <GraduationWorkspace
+          supabase={supabase}
+          session={session}
+          progress={progress}
+          planCourses={planCourses}
+          courses={courses}
+          smccdCourses={plannedSmccdCourses}
+          equivalencies={equivalencies}
+          onFindDtechCourses={openRequirementCourses}
+          onOpenDtechCatalog={() => openCourses("dtech")}
+          onOpenSmccdDegree={() => openCourses("smccd", "degree")}
+        />
       </div>
     );
   }
@@ -1734,7 +1699,7 @@ export default function PlanningWorkspace() {
     if (!supabase || !session || !profile || !activeVersion) return null;
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); if (area === "smccd") setSmccdInitialSection("courses"); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         supabase={supabase}
@@ -1743,6 +1708,7 @@ export default function PlanningWorkspace() {
         activeVersion={activeVersion}
         planCourses={planCourses}
         equivalencies={equivalencies}
+        initialSection={smccdInitialSection}
         focusCourseId={focusedSmccdCourseId}
         onCourseAdded={(course, catalogCourse) => {
           setPlanCourses((current) => [...current, course]);

@@ -23,13 +23,15 @@ The first number in each contrast cell is light mode and the second is dark mode
 
 | Identity | UI color | Local asset source |
 | --- | --- | --- |
-| d.tech | official orange family, with a darker accessible UI orange | Official d.tech site mark: https://www.designtechhighschool.org/home |
+| d.tech | official signal orange `#EF5024` and charcoal `#20242C`; accessible text uses a darker/lighter derived orange by theme | Current full designtech HIGH SCHOOL wordmark from the official site: https://www.designtechhighschool.org/home |
 | SMCCCD | district blue `#002F65` | Official district horizontal logos: https://www.smccd.edu/ and https://downloads.smccd.edu/browse/districtinformation |
 | College of San Mateo | CSM blue `#004990` | Official CSM signature and style guide: https://collegeofsanmateo.edu/marketing/logos-styleguide.php |
 | Skyline College | Skyline red `#F03D3A`; accessible UI red is darker in light mode | Official Skyline logos and 2023 style guide: https://skylinecollege.edu/mcpr/styleguidelogos.php |
 | Cañada College | Cañada green `#205C40` | Official Cañada logos and style guide: https://canadacollege.edu/marketing/logos.php |
 
 Color values come from the official CSM, Skyline, Cañada, and district guides. Full-color marks are used on light surfaces. Approved white marks are used on dark surfaces. The logos remain the property of their institutions and are used only to identify course provenance.
+
+The previous d.tech treatment used a white glyph on an orange tile, which did not reproduce the current official mark. The implementation now uses the official orange-square/charcoal-glyph artwork directly for compact provenance and the complete current wordmark on a charcoal lockup for header and rail contexts. Diploma summaries and d.tech course actions use the official orange scope; the general Pilot Princess navigation and unrelated product actions retain Pilot mulberry.
 
 ## Application rules
 

@@ -174,6 +174,8 @@ describe("graduation requirement calculations", () => {
 
     expect(progress[0].percent).toBe(100);
     expect(overallGraduationPercent(progress)).toBe(100);
+    expect(progress[0].contributions[0].creditsApplied).toBe(40);
+    expect(progress[0].unusedCourses[0].creditsAvailable - progress[0].unusedCourses[0].creditsApplied).toBe(20);
   });
 
   it("counts a verified intersession override toward Personal Development", () => {
