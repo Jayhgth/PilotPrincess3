@@ -63,14 +63,15 @@ import {
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
+import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
 import { DataPair } from "@/components/AcademicVisuals";
+import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import SmccdPlanner from "@/components/SmccdPlanner";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   Activity,
   CatalogReviewItem,
-  Confidence,
   Course,
   CourseRequirementMapping,
   FourYearPlan,
@@ -81,6 +82,7 @@ import type {
   PlanCourse,
   PlanVersion,
   School,
+  SmccdCourse,
   SmccdHighSchoolEquivalency,
   SimulationConfig,
   SimulationResult,
@@ -88,6 +90,7 @@ import type {
   TimelineTask
 } from "@/lib/workspace-types";
 import { hasPublicEnv } from "@/lib/env";
+import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ViewId =
@@ -152,10 +155,6 @@ function formatCredits(value: number) {
 
 function formatGpa(value: number | null) {
   return value === null ? "Not available" : value.toFixed(2);
-}
-
-function ConfidenceTag({ value }: { value: Confidence }) {
-  return <span className={`confidence-tag ${value}`}>{titleCase(value)}</span>;
 }
 
 function PageHeader({
@@ -239,6 +238,9 @@ export default function PlanningWorkspace() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
+  const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
+  const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
 
   const [school, setSchool] = useState<School | null>(null);
   const [profile, setProfile] = useState<StudentProfile | null>(null);
@@ -247,6 +249,7 @@ export default function PlanningWorkspace() {
   const [requirements, setRequirements] = useState<GraduationRequirement[]>([]);
   const [mappings, setMappings] = useState<CourseRequirementMapping[]>([]);
   const [equivalencies, setEquivalencies] = useState<SmccdHighSchoolEquivalency[]>([]);
+  const [plannedSmccdCourses, setPlannedSmccdCourses] = useState<SmccdCourse[]>([]);
   const [plan, setPlan] = useState<FourYearPlan | null>(null);
   const [versions, setVersions] = useState<PlanVersion[]>([]);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
@@ -380,8 +383,14 @@ export default function PlanningWorkspace() {
       setPlan(loadedPlan);
       setVersions(loadedVersions);
       const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
+      const plannedSmccdIds = [...new Set(loadedPlanCourses.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
+      const plannedSmccdResult = plannedSmccdIds.length > 0
+        ? await supabase.from("smccd_courses").select("*").in("id", plannedSmccdIds)
+        : { data: [], error: null };
+      if (plannedSmccdResult.error) throw plannedSmccdResult.error;
       const loadedReviewItems = (reviewResult.data ?? []) as unknown as CatalogReviewItem[];
       setPlanCourses(loadedPlanCourses);
+      setPlannedSmccdCourses((plannedSmccdResult.data ?? []) as unknown as SmccdCourse[]);
       setActivities((activityResult.data ?? []) as unknown as Activity[]);
       setTasks((taskResult.data ?? []) as unknown as TimelineTask[]);
       setReviewItems(loadedReviewItems);
@@ -529,13 +538,29 @@ export default function PlanningWorkspace() {
     );
   }
 
-  async function addCatalogCourse(course: Course, status: "completed" | "current" | "planned") {
+  function defaultDtechPlacement(course: Course) {
+    const allowedGrades = course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12);
+    const currentGrade = (profile?.grade_level ?? 9) as GradeLevel;
+    const gradeLevel = allowedGrades.find((grade) => grade >= currentGrade) ?? allowedGrades.at(-1) ?? currentGrade;
+    return { gradeLevel, term: (course.term_type === "semester" ? "fall" : "full_year") as PlanCourse["term"] };
+  }
+
+  function chooseDtechCourse(course: Course) {
+    setSelectedDtechCourseId(course.id);
+    setDtechDraft(defaultDtechPlacement(course));
+  }
+
+  async function addCatalogCourse(
+    course: Course,
+    status: "completed" | "current" | "planned",
+    placement = defaultDtechPlacement(course)
+  ) {
     if (!supabase || !session || !activeVersion || !profile) return;
     if (planCourses.some((row) => row.course_id === course.id)) {
       setToast("That course is already in the current plan.");
       return;
     }
-    const grade = (profile.grade_level ?? course.grade_levels[0] ?? 9) as GradeLevel;
+    const grade = placement.gradeLevel;
     const mappingVerified = mappings.some(
       (mapping) => mapping.course_id === course.id && mapping.confidence === "verified"
     );
@@ -550,7 +575,7 @@ export default function PlanningWorkspace() {
             course_id: course.id,
             grade_level: grade,
             school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade),
-            term: course.term_type === "semester" ? "fall" : "full_year",
+            term: placement.term,
             status,
             credits: course.credits,
             college_units: course.college_units,
@@ -1139,6 +1164,55 @@ export default function PlanningWorkspace() {
   const catalogPageSize = 12;
   const catalogPageCount = Math.max(1, Math.ceil(filteredCourses.length / catalogPageSize));
   const visibleCatalogCourses = filteredCourses.slice(catalogPage * catalogPageSize, (catalogPage + 1) * catalogPageSize);
+  const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
+  const selectedDtechEvaluation = selectedDtechCourse
+    ? evaluateDtechPlannerPrerequisites(
+        selectedDtechCourse,
+        dtechDraft,
+        courses,
+        planCourses,
+        plannedSmccdCourses,
+        equivalencies
+      )
+    : null;
+  const plannedSmccdMap = new Map(plannedSmccdCourses.map((course) => [course.id, course]));
+  const prerequisitePlanChecks = planCourses
+    .filter((row) => row.status !== "completed")
+    .flatMap((row) => {
+      const dtech = row.course_id ? courseMap.get(row.course_id) : null;
+      const smccd = row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id) : null;
+      const evaluation = dtech
+        ? evaluateDtechPlannerPrerequisites(
+            dtech,
+            { gradeLevel: row.grade_level, term: row.term, instanceId: row.id },
+            courses,
+            planCourses,
+            plannedSmccdCourses,
+            equivalencies
+          )
+        : smccd
+          ? evaluateSmccdPlannerPrerequisites(
+              smccd,
+              { gradeLevel: row.grade_level, term: row.term, instanceId: row.id },
+              plannedSmccdCourses,
+              planCourses,
+              courses
+            )
+          : null;
+      if (!evaluation || evaluation.originalTexts.length === 0 || evaluation.result.status === "satisfied") return [];
+      const message = evaluation.result.missingCourses[0]?.message
+        ?? evaluation.result.orderingViolations[0]?.message
+        ?? evaluation.result.evidence.find((item) => item.satisfied !== true)?.message
+        ?? "The prerequisite needs review.";
+      return [{
+        row,
+        source: dtech ? "dtech" as const : "smccd" as const,
+        courseId: dtech?.id ?? smccd!.id,
+        name: dtech?.name ?? `${smccd!.course_code} ${smccd!.title}`,
+        status: evaluation.result.status,
+        message
+      }];
+    });
 
   function renderDashboard() {
     if (!profile) return null;
@@ -1361,41 +1435,75 @@ export default function PlanningWorkspace() {
   }
 
   function renderDtechCatalog() {
+    const results = visibleCatalogCourses.map((course) => {
+      const placement = course.id === selectedDtechCourse?.id ? dtechDraft : defaultDtechPlacement(course);
+      const evaluation = evaluateDtechPlannerPrerequisites(
+        course,
+        placement,
+        courses,
+        planCourses,
+        plannedSmccdCourses,
+        equivalencies
+      );
+      const readiness = prerequisiteDisplay(evaluation);
+      const existing = planCourses.find((row) => row.course_id === course.id);
+      const planStatus = existing?.status === "completed" ? "Done" : existing?.status === "current" ? "In progress" : existing ? "Planned" : undefined;
+      return {
+        id: course.id,
+        title: course.name,
+        metadata: [
+          course.subject,
+          `Grades ${course.grade_levels.join(", ") || "to verify"}`,
+          course.credits ? formatCredits(course.credits) : "Credits to verify"
+        ],
+        readinessLabel: readiness.label,
+        readinessTone: readiness.tone,
+        ...(planStatus ? { planStatus } : {})
+      };
+    });
+    const selectedExisting = selectedDtechCourse
+      ? planCourses.find((row) => row.course_id === selectedDtechCourse.id)
+      : null;
+    const selectedReasons = selectedDtechCourse
+      ? (courseFits.get(selectedDtechCourse.id)?.reasons ?? []).filter((reason) => !reason.toLowerCase().includes("subject match"))
+      : [];
+
     return (
-      <>
-        <header className="course-source-heading">
-          <div><h2>d.tech catalog</h2><p>New selections go to Planned. Change status later from My courses.</p></div>
-          <strong>41 official courses, 2025-26</strong>
-        </header>
-        <section className="catalog-controls" aria-label="Catalog filters">
-          <label><span>Search courses</span><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Name, subject, or prerequisite" /></label>
+      <CourseCatalogBrowser
+        source="dtech"
+        title="d.tech course catalog"
+        description="Official 2025-26 courses with plan-aware prerequisite checks."
+        countLabel={filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length}` : "No courses"}
+        filters={<>
+          <label><span>Search</span><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Course, subject, or prerequisite" /></label>
           <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
           <label><span>Grade</span><select value={catalogGrade} onChange={(event) => { setCatalogGrade(event.target.value === "all" ? "all" : Number(event.target.value) as GradeLevel); setCatalogPage(0); }}><option value="all">All grades</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
-        </section>
-        <div className="catalog-list-heading"><strong>{filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length} courses` : "No courses"}</strong><span>Open details only when you need them.</span></div>
-        <section className="catalog-list" aria-label="d.tech courses">
-          {visibleCatalogCourses.map((course) => {
-            const existing = planCourses.find((row) => row.course_id === course.id);
-            const existingLabel = existing?.status === "completed" ? "Done" : existing?.status === "current" ? "In progress" : existing ? "Planned" : null;
-            const specificReasons = (courseFits.get(course.id)?.reasons ?? []).filter((reason) => !reason.toLowerCase().includes("subject match"));
-            return <article className="course-row" key={course.id}>
-              <div className="course-main">
-                <div className="course-title-line"><h2>{course.name}</h2>{course.confidence !== "verified" && <ConfidenceTag value={course.confidence} />}</div>
-                <div className="course-meta"><span>{course.subject}</span><span>Grades {course.grade_levels.join(", ") || "verify"}</span><span>{course.credits ? formatCredits(course.credits) : "Credits need review"}</span>{course.is_honors && <span>Honors available</span>}</div>
-                {specificReasons.length > 0 && <p className="profile-match-note">Matches your profile: {specificReasons.join("; ")}</p>}
-                <details className="course-details"><summary>Course details</summary><p>{course.description}</p>{course.prerequisites.length > 0 && <p className="prereq"><strong>Prerequisites:</strong> {course.prerequisites.join(", ")}</p>}</details>
-              </div>
-              <div className="course-actions">
-                {existing
-                  ? <span className={`catalog-status ${existing.status}`}>{existingLabel}</span>
-                  : <button onClick={() => void addCatalogCourse(course, "planned")} className="primary-button">Add to Planned</button>}
-              </div>
-            </article>;
-          })}
-          {filteredCourses.length === 0 && <EmptyState title="No matching courses" body="Adjust the search or filters." />}
-        </section>
-        <PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />
-      </>
+        </>}
+        results={results}
+        selectedId={selectedDtechCourseId}
+        onSelect={(id) => { const course = courseMap.get(id); if (course) chooseDtechCourse(course); }}
+        emptyTitle="No matching courses"
+        emptyBody="Adjust the search, subject, or grade filter."
+        sourceAction={<strong className="catalog-source-count">{courses.length} courses</strong>}
+        footer={<PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />}
+        detail={selectedDtechCourse && selectedDtechEvaluation ? <div className="catalog-course-detail">
+          <header className="catalog-detail-heading"><span>d.tech</span><h3>{selectedDtechCourse.name}</h3></header>
+          <dl className="catalog-fact-grid">
+            <div><dt>Subject</dt><dd>{selectedDtechCourse.subject}</dd></div>
+            <div><dt>Credits</dt><dd>{selectedDtechCourse.credits ? formatCredits(selectedDtechCourse.credits) : "Verify"}</dd></div>
+            <div><dt>Grades</dt><dd>{selectedDtechCourse.grade_levels.join(", ") || "Verify"}</dd></div>
+            <div><dt>Course type</dt><dd>{selectedDtechCourse.is_honors ? "Honors option" : selectedDtechCourse.is_weighted ? "Weighted" : "Standard"}</dd></div>
+          </dl>
+          {selectedReasons.length > 0 && <p className="catalog-fit-note"><strong>Profile fit</strong>{selectedReasons.join("; ")}</p>}
+          {selectedDtechCourse.description && <p className="catalog-course-description">{selectedDtechCourse.description}</p>}
+          <PrerequisiteReadout evaluation={selectedDtechEvaluation} />
+          {selectedExisting ? <div className={`catalog-existing-state ${selectedExisting.status}`}><strong>{selectedExisting.status === "completed" ? "Done" : selectedExisting.status === "current" ? "In progress" : "Planned"}</strong><span>This course is already in your plan.</span></div> : <form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
+            <label><span>Grade</span><select value={dtechDraft.gradeLevel} onChange={(event) => setDtechDraft({ ...dtechDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{selectedDtechCourse.grade_levels.filter((grade) => grade >= 9 && grade <= 12).map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+            <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })} disabled={selectedDtechCourse.term_type !== "semester"}>{selectedDtechCourse.term_type === "semester" ? <><option value="fall">Fall</option><option value="spring">Spring</option></> : <option value="full_year">Full year</option>}</select></label>
+            <button className="primary-button" type="submit"><Plus size={16} /> Add to plan</button>
+          </form>}
+        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a d.tech course</strong><p>Review description, fit, prerequisite evidence, and placement before adding it.</p></div>}
+      />
     );
   }
 
@@ -1552,7 +1660,11 @@ export default function PlanningWorkspace() {
         activeVersion={activeVersion}
         planCourses={planCourses}
         equivalencies={equivalencies}
-        onCourseAdded={(course) => setPlanCourses((current) => [...current, course])}
+        focusCourseId={focusedSmccdCourseId}
+        onCourseAdded={(course, catalogCourse) => {
+          setPlanCourses((current) => [...current, course]);
+          if (catalogCourse) setPlannedSmccdCourses((current) => current.some((item) => item.id === catalogCourse.id) ? current : [...current, catalogCourse]);
+        }}
         onCourseRemoved={(id) => setPlanCourses((current) => current.filter((row) => row.id !== id))}
         onOpenMyCourses={() => setCourseArea("mine")}
       />}
@@ -1590,6 +1702,19 @@ export default function PlanningWorkspace() {
     return (
       <div className="timeline-page page-frame">
         <PageHeader title="Timeline" description="Keep planning tasks in one editable checklist." actions={<button className="secondary-button" onClick={() => void generateTasks()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Generate tasks</button>} />
+        {prerequisitePlanChecks.length > 0 && <section className="prerequisite-followups" aria-labelledby="course-checks-heading">
+          <header><div><h2 id="course-checks-heading">Course checks</h2><p>Deterministic prerequisite issues in the current sequence.</p></div><strong>{prerequisitePlanChecks.length} to review</strong></header>
+          <div>{prerequisitePlanChecks.slice(0, 6).map((check) => <button className={`prerequisite-followup-row ${check.status}`} key={check.row.id} type="button" onClick={() => {
+            if (check.source === "dtech") {
+              const course = courseMap.get(check.courseId);
+              if (course) chooseDtechCourse(course);
+            } else {
+              setFocusedSmccdCourseId(check.courseId);
+            }
+            setCourseArea(check.source);
+            setView("courses");
+          }}><span><strong>{check.name}</strong><small>{check.message}</small></span><span>{check.status === "blocked" ? "Missing requirement" : "Needs review"}</span></button>)}</div>
+        </section>}
         <div className="timeline-layout">
           <section className="timeline-register">
             <header className="register-heading"><div><h2>Open checklist</h2><p>{tasks.filter((task) => !task.is_completed).length} tasks still need attention.</p></div></header>

@@ -8,9 +8,12 @@ import {
 } from "@phosphor-icons/react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
+import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
+import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import { calculateSmccdProgramProgress, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
 import { programProfileFit } from "@/lib/profile-planning";
 import { schoolYearForGrade } from "@/lib/planning";
+import { evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import type {
   GradeLevel,
@@ -34,7 +37,8 @@ interface Props {
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
-  onCourseAdded: (course: PlanCourse) => void;
+  focusCourseId?: string | null;
+  onCourseAdded: (course: PlanCourse, catalogCourse?: SmccdCourse) => void;
   onCourseRemoved: (id: string) => void;
   onOpenMyCourses?: () => void;
 }
@@ -52,6 +56,7 @@ export default function SmccdPlanner({
   activeVersion,
   planCourses,
   equivalencies,
+  focusCourseId,
   onCourseAdded,
   onCourseRemoved,
   onOpenMyCourses
@@ -156,6 +161,60 @@ export default function SmccdPlanner({
   const selectedEquivalency = selectedCourse
     ? equivalencyMap.get(normalizeCollegeCourseCode(selectedCourse.course_code) ?? "") ?? null
     : null;
+  const selectedPrerequisiteEvaluation = useMemo(
+    () => selectedCourse
+      ? evaluateSmccdPlannerPrerequisites(
+          selectedCourse,
+          { gradeLevel: courseDraft.gradeLevel, term: courseDraft.term },
+          courses,
+          planCourses,
+          []
+        )
+      : null,
+    [courseDraft.gradeLevel, courseDraft.term, courses, planCourses, selectedCourse]
+  );
+
+  useEffect(() => {
+    if (!focusCourseId || courses.length === 0) return;
+    const course = courses.find((candidate) => candidate.id === focusCourseId);
+    if (!course) return;
+    const timeout = window.setTimeout(() => {
+      const equivalency = equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") ?? null;
+      setSection("courses");
+      setSearch(course.course_code);
+      setSelectedCourse(course);
+      setCourseDraft({
+        gradeLevel: (profile.grade_level ?? 11) as GradeLevel,
+        status: "planned",
+        term: "fall",
+        collegeUnits: Number(course.units_max ?? course.units_min),
+        dtechCredits: equivalency?.high_school_credits ?? 0
+      });
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [courses, equivalencyMap, focusCourseId, profile.grade_level]);
+
+  const visibleCourseResults = useMemo(() => visibleCourses.map((course) => {
+    const target = selectedCourse?.id === course.id
+      ? { gradeLevel: courseDraft.gradeLevel, term: courseDraft.term }
+      : { gradeLevel: (profile.grade_level ?? 11) as GradeLevel, term: "fall" as const };
+    const evaluation = evaluateSmccdPlannerPrerequisites(course, target, courses, planCourses, []);
+    const readiness = prerequisiteDisplay(evaluation);
+    const existing = planCourses.find((row) => row.smccd_course_id === course.id);
+    const planStatus = existing?.status === "completed" ? "Done" : existing?.status === "current" ? "In progress" : existing ? "Planned" : undefined;
+    const units = course.units_max && course.units_max !== course.units_min
+      ? `${course.units_min}-${course.units_max} units`
+      : `${course.units_min} units`;
+    return {
+      id: course.id,
+      code: course.course_code,
+      title: course.title,
+      metadata: [SMCCD_COLLEGE_NAMES[course.college_code], units, course.transfer_credit ?? "Transfer not listed"],
+      readinessLabel: readiness.label,
+      readinessTone: readiness.tone,
+      ...(planStatus ? { planStatus } : {})
+    };
+  }), [courseDraft.gradeLevel, courseDraft.term, courses, planCourses, profile.grade_level, selectedCourse?.id, visibleCourses]);
 
   const primaryGoal = goals.find((goal) => goal.is_primary) ?? null;
   const goalProgram = programs.find((program) => program.id === primaryGoal?.program_id) ?? null;
@@ -181,6 +240,7 @@ export default function SmccdPlanner({
       .slice(0, 30);
   }, [goalProgramId, profile, programMode, programProgress, programSearch, programs]);
   const districtRows = planCourses.filter((row) => Number(row.college_units ?? 0) > 0 || row.smccd_course_id);
+  const selectedPlanCourse = selectedCourse ? planCourses.find((row) => row.smccd_course_id === selectedCourse.id) ?? null : null;
 
   function chooseCourse(course: SmccdCourse) {
     const equivalency = equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") ?? null;
@@ -253,8 +313,7 @@ export default function SmccdPlanner({
         sort_order: planCourses.length
       }).select("*").single();
       if (insertError) throw insertError;
-      onCourseAdded(data as unknown as PlanCourse);
-      setSelectedCourse(null);
+      onCourseAdded(data as unknown as PlanCourse, selectedCourse);
       setNotice(selectedEquivalency
         ? `${selectedCourse.course_code} added with the source-backed d.tech equivalency. Confirm that the 2021 chart is still current.`
         : `${selectedCourse.course_code} added to the academic plan as unverified.`);
@@ -314,15 +373,15 @@ export default function SmccdPlanner({
 
   return (
     <>
-      <header className={embedded ? "course-source-heading" : "page-header"}>
+      {!embedded && <header className="page-header">
         <div>
-          {embedded ? <h2>SMCCD catalog and college goal</h2> : <h1>SMCCD concurrent enrollment</h1>}
+          <h1>SMCCD concurrent enrollment</h1>
           <p>Search district catalogs, add exact courses, and track a source-backed AA or AS goal.</p>
         </div>
         <a className="secondary-button" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">Official K-12 steps <ArrowSquareOut size={16} /></a>
-      </header>
+      </header>}
 
-      <div className="notice-strip warning"><Warning size={19} /><span>Catalog inclusion is not approval or a live course offering. Confirm counselor approval, prerequisites, schedule availability, d.tech credit, and transcript delivery.</span></div>
+      <div className="smccd-catalog-notice"><Warning size={17} /><span>Catalog entry does not confirm enrollment, schedule, or d.tech credit.</span></div>
       {error && <div className="inline-alert error" role="alert">{error}</div>}
       {notice && <div className="inline-alert success smccd-notice" role="status"><span>{notice}</span>{embedded && onOpenMyCourses && <button className="quiet-button" type="button" onClick={onOpenMyCourses}>View My courses</button>}</div>}
 
@@ -341,46 +400,44 @@ export default function SmccdPlanner({
         <button type="button" className={section === "degree" ? "active" : ""} onClick={() => setSection("degree")}>Associate degree</button>
       </nav>
 
-      {section === "courses" && <section className="content-section smccd-catalog-section">
-        <header className="section-heading"><div><h2>Find a college course</h2><p>Search 2,461 official 2025-2026 catalog records. Select a result to review it before adding it.</p></div></header>
-        <div className="smccd-filters">
-          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="For example, CIS 117 or calculus" /></label>
-          <label className="form-field"><span>College</span><select value={collegeFilter} onChange={(event) => setCollegeFilter(event.target.value as CollegeFilter)}><option value="all">All colleges</option>{Object.entries(SMCCD_COLLEGE_NAMES).map(([code, name]) => <option value={code} key={code}>{name}</option>)}</select></label>
-          <label className="form-field"><span>Transfer</span><select value={transferFilter} onChange={(event) => setTransferFilter(event.target.value)}><option value="all">All courses</option><option value="transferable">CSU or UC transferable</option><option value="uc">UC transferable</option></select></label>
-        </div>
-        <div className={`smccd-browser-grid ${selectedCourse ? "has-selection" : ""}`}>
-          <div>
-            {search.trim() ? <><p className="result-count">{visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} matches`}</p>
-            <div className="smccd-course-table" role="table" aria-label="SMCCD courses">
-              <div className="smccd-course-row smccd-course-head" role="row"><span role="columnheader">Course</span><span role="columnheader">College</span><span role="columnheader">Units</span><span role="columnheader">Action</span></div>
-              {visibleCourses.map((course) => (
-                <div className={`smccd-course-row ${selectedCourse?.id === course.id ? "selected" : ""}`} role="row" key={course.id}>
-                  <div role="cell"><a href={course.catalog_url} target="_blank" rel="noreferrer"><strong>{course.course_code}</strong> {course.title} <ArrowSquareOut size={13} /></a><small>{course.transfer_credit ?? "Transfer not listed"}{course.attributes.length > 0 ? `, ${course.attributes.slice(0, 1).join(", ")}` : ""}</small>{equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") && <small className="equivalency-match">d.tech equivalency available</small>}</div>
-                  <span role="cell">{course.college_code}</span>
-                  <span role="cell">{course.units_max && course.units_max !== course.units_min ? `${course.units_min}-${course.units_max}` : course.units_min}</span>
-                  <span role="cell"><button className="secondary-button small" type="button" onClick={() => chooseCourse(course)}>{selectedCourse?.id === course.id ? "Selected" : "Select"}</button></span>
-                </div>
-              ))}
-            </div>
-            {visibleCourses.length === 0 && <div className="smccd-search-empty"><strong>No matching courses</strong><p>Try a course code, title, or subject keyword.</p></div>}
-            {visibleCourses.length === 80 && <p className="catalog-limit-note">Refine the search to see a shorter list.</p>}</> : <div className="smccd-search-start"><MagnifyingGlass size={21} /><strong>Search the district catalog</strong><p>Enter a course code, title, or subject. Results stay empty until you search.</p></div>}
-          </div>
-          {selectedCourse && <aside className="smccd-selection-panel" aria-live="polite">
-              <form className="smccd-course-draft" onSubmit={addCatalogCourse}>
-                <div className="smccd-selected-heading"><BookOpen size={20} /><div><h2>{selectedCourse.course_code}</h2><p>{selectedCourse.title}</p><small>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</small></div></div>
-                {selectedEquivalency && <div className="equivalency-readout"><strong>{selectedEquivalency.high_school_credits} d.tech credits</strong><span>{selectedEquivalency.high_school_equivalent}</span><small>Official d.tech chart, updated 2021. Confirm it is still approved.</small></div>}
-                <div className="smccd-selection-fields">
-                  <label className="form-field"><span>Plan status</span><select value={courseDraft.status} onChange={(event) => setCourseDraft({ ...courseDraft, status: event.target.value as CourseStatus })}><option value="planned">Planned</option><option value="current">Current</option><option value="completed">Completed</option></select></label>
-                  <label className="form-field"><span>High-school grade</span><select value={courseDraft.gradeLevel} onChange={(event) => setCourseDraft({ ...courseDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{[9, 10, 11, 12].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-                  <label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={courseDraft.collegeUnits} onChange={(event) => setCourseDraft({ ...courseDraft, collegeUnits: Number(event.target.value) })} /></label>
-                  <label className="form-field"><span>{selectedEquivalency ? "d.tech credits" : "Proposed d.tech credits"}</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} readOnly={Boolean(selectedEquivalency)} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /><small>{selectedEquivalency ? "Filled from the official equivalency chart." : "Keep at 0 until d.tech confirms."}</small></label>
-                </div>
-                <button className="primary-button" type="submit" disabled={busy}><Plus size={17} /> Add to plan</button>
-                <button className="quiet-button" type="button" onClick={() => setSelectedCourse(null)}>Clear selection</button>
-              </form>
-          </aside>}
-        </div>
-      </section>}
+      {section === "courses" && <CourseCatalogBrowser
+        source="smccd"
+        title="SMCCD course catalog"
+        description="Official 2025-26 district courses with transfer, equivalency, and prerequisite context."
+        countLabel={!search.trim() ? "Search to begin" : visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} matches`}
+        filters={<>
+          <label><span>Search</span><div className="catalog-search-input"><MagnifyingGlass size={16} aria-hidden /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Course code or title" /></div></label>
+          <label><span>College</span><select value={collegeFilter} onChange={(event) => setCollegeFilter(event.target.value as CollegeFilter)}><option value="all">All colleges</option>{Object.entries(SMCCD_COLLEGE_NAMES).map(([code, name]) => <option value={code} key={code}>{name}</option>)}</select></label>
+          <label><span>Transfer</span><select value={transferFilter} onChange={(event) => setTransferFilter(event.target.value)}><option value="all">All courses</option><option value="transferable">CSU or UC</option><option value="uc">UC transferable</option></select></label>
+        </>}
+        results={search.trim() ? visibleCourseResults : []}
+        selectedId={selectedCourse?.id ?? null}
+        onSelect={(id) => { const course = courses.find((candidate) => candidate.id === id); if (course) chooseCourse(course); }}
+        emptyTitle={search.trim() ? "No matching courses" : "Search 2,461 district courses"}
+        emptyBody={search.trim() ? "Try a course code, title, or subject keyword." : "Start with an exact code such as ENGL C1000, or search by title."}
+        sourceAction={<a className="secondary-button small" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">K-12 enrollment <ArrowSquareOut size={14} /></a>}
+        footer={visibleCourses.length === 80 ? <p className="catalog-limit-note">Refine the search to narrow these results.</p> : undefined}
+        detail={selectedCourse && selectedPrerequisiteEvaluation ? <div className="catalog-course-detail">
+          <header className="catalog-detail-heading"><span>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span><h3><b>{selectedCourse.course_code}</b>{selectedCourse.title}</h3><a href={selectedCourse.catalog_url} target="_blank" rel="noreferrer">Official course page <ArrowSquareOut size={13} /></a></header>
+          <dl className="catalog-fact-grid">
+            <div><dt>Units</dt><dd>{selectedCourse.units_max && selectedCourse.units_max !== selectedCourse.units_min ? `${selectedCourse.units_min}-${selectedCourse.units_max}` : selectedCourse.units_min}</dd></div>
+            <div><dt>Transfer</dt><dd>{selectedCourse.transfer_credit ?? "Not listed"}</dd></div>
+            <div><dt>Degree credit</dt><dd>{selectedCourse.degree_applicable ? "Yes" : "No"}</dd></div>
+            <div><dt>Source</dt><dd>{selectedCourse.detail_status === "verified" ? "Course page" : "Needs review"}</dd></div>
+          </dl>
+          {(selectedCourse.attributes ?? []).length > 0 && <div className="catalog-attribute-list"><strong>General education</strong>{selectedCourse.attributes.map((attribute) => <span key={attribute}>{attribute}</span>)}</div>}
+          {selectedEquivalency && <dl className="catalog-equivalency-summary"><div><dt>d.tech credit</dt><dd>{selectedEquivalency.high_school_credits} credits</dd></div><div><dt>Counts as</dt><dd>{selectedEquivalency.high_school_equivalent}</dd></div></dl>}
+          <PrerequisiteReadout evaluation={selectedPrerequisiteEvaluation} recommendedPreparation={selectedCourse.recommended_preparation ?? []} />
+          {selectedPlanCourse ? <div className={`catalog-existing-state ${selectedPlanCourse.status}`}><strong>{selectedPlanCourse.status === "completed" ? "Done" : selectedPlanCourse.status === "current" ? "In progress" : "Planned"}</strong><span>This course is already in your plan.</span></div> : <form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
+            <label><span>Status</span><select value={courseDraft.status} onChange={(event) => setCourseDraft({ ...courseDraft, status: event.target.value as CourseStatus })}><option value="planned">Planned</option><option value="current">In progress</option><option value="completed">Done</option></select></label>
+            <label><span>Grade</span><select value={courseDraft.gradeLevel} onChange={(event) => setCourseDraft({ ...courseDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{[9, 10, 11, 12].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+            <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option><option value="summer">Summer</option></select></label>
+            <label><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={courseDraft.collegeUnits} onChange={(event) => setCourseDraft({ ...courseDraft, collegeUnits: Number(event.target.value) })} /></label>
+            <label><span>{selectedEquivalency ? "d.tech credits" : "Proposed d.tech credits"}</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} readOnly={Boolean(selectedEquivalency)} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /></label>
+            <button className="primary-button" type="submit" disabled={busy}><Plus size={16} /> Add to plan</button>
+          </form>}
+        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select an SMCCD course</strong><p>Review transfer status, general education, d.tech credit, and prerequisite evidence.</p></div>}
+      />}
 
       {!embedded && <section className="content-section smccd-plan-section">
         <header className="section-heading"><div><h2>College courses in this plan</h2><p>Transcript imports and planned catalog courses use the same district record when matched.</p></div></header>

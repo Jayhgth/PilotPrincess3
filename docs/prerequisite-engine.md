@@ -1,6 +1,6 @@
 # Deterministic prerequisite engine
 
-The prerequisite engine lives in `src/lib/prerequisites/`. It has no UI or planner-model dependency. Callers provide structurally typed catalog and plan records, so a later Courses-board integration can adapt application models without coupling the evaluator to them. The same engine evaluates d.tech and SMCCD rules.
+The prerequisite engine lives in `src/lib/prerequisites/`. Its parser and evaluator remain independent of application models. `planner.ts` is the explicit application adapter: it maps the current catalog and plan records into structurally typed engine inputs. The same deterministic engine evaluates d.tech and SMCCD rules.
 
 ## API
 
@@ -143,8 +143,18 @@ The checked-in SMCCD audit covers all 2,461 courses and currently finds 846 dete
 
 Examples intentionally left unresolved include the full `AJPS 107` PELLETB/physical-agility/fingerprint/license clause, `ART 352 ... minimum grade of C and/or portfolio review`, the multi-sequence `BIOL 240` biology-and-chemistry rule, and course-specific program/certificate admission prose. These require a catalog correction or counselor interpretation, not another parser guess.
 
-## Later planner integration seam
+## Planner and catalog integration
 
-The Courses board should add a small adapter, outside this module, that maps catalog rows to `CatalogCourse` and completed/current/planned rows to `PlannedCourseInput`. The adapter should assign a stable `termIndex`, preserve normalized IDs/codes/names, and load only reviewed aliases, clearances, and directional equivalencies. It can then parse each catalog prerequisite array once, cache the AST by catalog version, evaluate each planned course, and render the structured result.
+`planner.ts` maps application rows to `CatalogCourse` and `PlannedCourseInput`, assigns a stable term index, preserves normalized IDs/codes/names, and loads only reviewed aliases and directional equivalencies. Its main entry points are `evaluateDtechPlannerPrerequisites` and `evaluateSmccdPlannerPrerequisites`.
 
-Do not convert `needs_review` to success in the UI. Show its source text and counselor question, and keep registration/graduation language explicitly advisory until the catalog language or a counselor resolves it.
+The Courses area uses those adapters in both catalog browsers:
+
+- every result row exposes the plan-aware state as ready, missing a prerequisite, counselor review, or no prerequisite listed;
+- the selected-course panel shows verbatim catalog language, matched plan evidence, missing or out-of-order courses, and suggested counselor questions;
+- SMCCD recommended preparation and general-education attributes remain separate from enforced prerequisites;
+- a course already in the plan shows its current plan state instead of another add action; and
+- the Timeline surfaces blocked and review-required planned courses as links back to the relevant catalog record.
+
+The d.tech adapter may use the published SMCCD-to-d.tech equivalency chart in that published direction. The SMCCD adapter does not assume the reverse. A d.tech course can satisfy an SMCCD prerequisite only after a separately reviewed SMCCD decision is supplied through `buildReviewedDtechToSmccdPrerequisiteEquivalencies` and passed to `evaluateSmccdPlannerPrerequisites`.
+
+Do not convert `needs_review` to success in the UI. Show its source text and counselor question, and keep registration and graduation language explicitly advisory until the catalog language or a counselor resolves it. If catalog evaluation later becomes a measurable rendering bottleneck, cache parsed ASTs by catalog version at this adapter seam rather than weakening the matching rules.
