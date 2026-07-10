@@ -75,6 +75,33 @@ export function requirementsForProfile(requirements: GraduationRequirement[], pr
   return requirements.filter((requirement) => selected.has(requirement.area));
 }
 
+export function appliedCreditBreakdown({
+  required,
+  completed,
+  current,
+  planned,
+  unverified = 0
+}: {
+  required: number;
+  completed: number;
+  current: number;
+  planned: number;
+  unverified?: number;
+}) {
+  const appliedCompleted = Math.min(required, completed);
+  const appliedCurrent = Math.min(Math.max(0, required - appliedCompleted), current);
+  const appliedPlanned = Math.min(Math.max(0, required - appliedCompleted - appliedCurrent), planned);
+  const appliedTotal = appliedCompleted + appliedCurrent + appliedPlanned;
+  return {
+    completed: round(appliedCompleted, 1),
+    current: round(appliedCurrent, 1),
+    planned: round(appliedPlanned, 1),
+    remaining: round(Math.max(0, required - appliedTotal), 1),
+    total: round(appliedTotal, 1),
+    unverified: round(unverified, 1)
+  };
+}
+
 export function courseDisplayName(planCourse: PlanCourse, courseMap: Map<string, Course>) {
   return planCourse.course_id ? courseMap.get(planCourse.course_id)?.name ?? "Unavailable course" : planCourse.custom_course_name ?? "Custom course";
 }

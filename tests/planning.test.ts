@@ -10,6 +10,7 @@ import type {
   StudentProfile
 } from "@/lib/models";
 import {
+  appliedCreditBreakdown,
   calculateGpa,
   calculateRequirementProgress,
   calculateWorkload,
@@ -118,6 +119,24 @@ const verifiedMapping: CourseRequirementMapping = {
 };
 
 describe("graduation requirement calculations", () => {
+  it("applies completed, current, and planned credits without exceeding a requirement", () => {
+    expect(appliedCreditBreakdown({ required: 40, completed: 0, current: 40, planned: 50 })).toEqual({
+      completed: 0,
+      current: 40,
+      planned: 0,
+      remaining: 0,
+      total: 40,
+      unverified: 0
+    });
+    expect(appliedCreditBreakdown({ required: 30, completed: 70, current: 10, planned: 10 })).toMatchObject({
+      completed: 30,
+      current: 0,
+      planned: 0,
+      remaining: 0,
+      total: 30
+    });
+  });
+
   it("counts only verified mappings toward progress", () => {
     const rows = [
       planCourse(),

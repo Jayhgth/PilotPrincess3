@@ -38,6 +38,7 @@ import {
   type SyntheticEvent
 } from "react";
 import {
+  appliedCreditBreakdown,
   calculateGpa,
   calculateRequirementProgress,
   calculateWorkload,
@@ -62,7 +63,9 @@ import {
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
+import { CoverageSegments, CreditComposition, DataPair } from "@/components/AcademicVisuals";
 import SmccdPlanner from "@/components/SmccdPlanner";
+import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   Activity,
   CatalogReviewItem,
@@ -1050,9 +1053,7 @@ export default function PlanningWorkspace() {
         <Warning size={28} weight="duotone" />
         <h1>Workspace unavailable</h1>
         <p>{fatalError ?? "The planning profile is missing."}</p>
-        <button className="secondary-button" onClick={() => void loadWorkspace()} type="button">
-          <ArrowClockwise size={17} /> Try again
-        </button>
+        <div className="fatal-actions"><button className="secondary-button" onClick={() => void loadWorkspace()} type="button"><ArrowClockwise size={17} /> Try again</button><button className="quiet-button" onClick={() => void signOut()} type="button">Sign out</button></div>
       </main>
     );
   }
@@ -1106,52 +1107,48 @@ export default function PlanningWorkspace() {
     if (!profile) return null;
     const nextTasks = tasks.filter((task) => !task.is_completed).slice(0, 4);
     const missing = progress.filter((item) => item.status === "missing");
+    const coveredAreas = progress.filter((item) => item.status !== "missing").length;
     return (
-      <>
+      <div className="dashboard-page page-frame">
         <PageHeader
           title={profile.preferred_name ? `Good to see you, ${profile.preferred_name}` : "Planning overview"}
-          description="A source-backed view of progress, workload, and what needs attention next."
+          description="What is done, what needs attention, and how the current plan fits."
           actions={<button className="secondary-button" onClick={() => void generateSummary()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Generate summary</button>}
         />
-        <section className="overview-ledger" aria-label="Plan summary">
-          <div>
+        <section className="route-brief" aria-label="Plan summary">
+          <div className="route-coverage">
             <span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span>
-            <strong>{graduationPercent}%</strong>
-            <small>{progress.filter((item) => item.status !== "missing").length} of {trackedRequirements.length} tracked areas covered</small>
+            <strong>{graduationPercent}<small>%</small></strong>
+            <CoverageSegments items={progress.map((item) => ({ label: item.requirement.name, status: item.status }))} label={`${coveredAreas} of ${trackedRequirements.length} requirement areas covered`} />
+            <p>{coveredAreas} of {trackedRequirements.length} requirement areas have verified projected credit.</p>
+            <button className="quiet-button small" type="button" onClick={() => navigate("graduation")}>Open graduation map</button>
           </div>
-          <div>
-            <span>Projected weighted GPA</span>
-            <strong>{formatGpa(gpa.projectedWeighted)}</strong>
-            <small>{gpa.gradedCredits > 0 ? `${gpa.gradedCredits} graded credits` : "Add grades to calculate"}</small>
-          </div>
-          <div>
-            <span>Workload</span>
-            <strong>{workload ? titleCase(workload.level) : "Not available"}</strong>
-            <small>{workload ? `${workload.knownWeeklyHours} known weekly hours; ${workload.demandingCourseCount}/${workload.demandingCourseLimit} demanding courses` : "Complete profile"}</small>
+          <div className="route-readouts">
+            <DataPair label="Projected weighted GPA" value={formatGpa(gpa.projectedWeighted)} detail={gpa.gradedCredits > 0 ? `${gpa.gradedCredits} graded credits` : "Add grades to calculate"} />
+            <DataPair label="Current workload" value={workload ? titleCase(workload.level) : "Not available"} detail={workload ? `${workload.knownWeeklyHours} known weekly hours, ${workload.demandingCourseCount} demanding courses` : "Complete the student profile"} />
           </div>
         </section>
         {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
         <button className="course-overview-row" type="button" onClick={() => openCourses("mine", courseCounts.current > 0 ? "current" : courseCounts.planned > 0 ? "planned" : "completed")}>
-          <span><strong>Courses</strong><small>Review the single source of truth for course status.</small></span>
-          <dl><div><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div><dt>Planned</dt><dd>{courseCounts.planned}</dd></div><div><dt>Done</dt><dd>{courseCounts.completed}</dd></div></dl>
-          <span>Open courses</span>
+          <span><strong>Courses</strong><small>Everything currently in the plan</small></span>
+          <dl className="course-stage-strip"><div className="current"><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div className="planned"><dt>Planned</dt><dd>{courseCounts.planned}</dd></div><div className="completed"><dt>Done</dt><dd>{courseCounts.completed}</dd></div></dl>
+          <span>Open</span>
         </button>
-        <div className="dashboard-columns">
-          <section className="content-section">
-            <header className="section-heading"><div><h2>Requirement status</h2><p>Only verified mappings count toward the projection.</p></div><button className="quiet-button" onClick={() => navigate("graduation")}>Open tracker</button></header>
-            <div className="requirement-rows compact">
-              {progress.slice(0, 5).map((item) => (
-                <div className="requirement-row" key={item.requirement.id}>
-                  <div><strong>{item.requirement.name}</strong><span>{item.verifiedProjectedCredits} / {item.requirement.credits_required}</span></div>
-                  <div className="progress-track" aria-label={`${item.percent}% complete`}><span style={{ width: `${item.percent}%` }} /></div>
-                </div>
-              ))}
+        <div className="dashboard-focus-grid">
+          <section className="dashboard-section requirement-index">
+            <header className="section-heading"><div><h2>Requirement map</h2><p>Verified completed, current, and planned credits.</p></div><button className="quiet-button small" onClick={() => navigate("graduation")}>View all</button></header>
+            <div className="requirement-index-grid">
+              {progress.map((item) => {
+                const requiredCredits = Number(item.requirement.credits_required);
+                const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
+                return <article className={item.status} key={item.requirement.id}><span>{item.requirement.name}</span><strong>{applied.total}<small> / {item.requirement.credits_required}</small></strong><small>{item.status === "complete" ? "Complete" : item.status === "on_track" ? "On track" : `${applied.remaining} credits left`}</small></article>;
+              })}
             </div>
           </section>
-          <section className="content-section">
-            <header className="section-heading"><div><h2>Next tasks</h2><p>Generated tasks stay editable.</p></div><button className="quiet-button" onClick={() => navigate("timeline")}>Open timeline</button></header>
+          <section className="dashboard-section next-actions">
+            <header className="section-heading"><div><h2>Next actions</h2><p>{nextTasks.length ? `${nextTasks.length} open items` : "Nothing is waiting"}</p></div><button className="quiet-button small" onClick={() => navigate("timeline")}>Timeline</button></header>
             {nextTasks.length ? (
-              <div className="task-list compact">
+              <div className="task-list dashboard-tasks">
                 {nextTasks.map((task) => (
                   <label className="task-row" key={task.id}>
                     <input type="checkbox" checked={task.is_completed} onChange={() => void updateTask(task.id, { is_completed: true })} />
@@ -1162,12 +1159,11 @@ export default function PlanningWorkspace() {
             ) : <EmptyState title="No open tasks" body="Generate a timeline from your current grade and plan." action={<button className="secondary-button" onClick={() => void generateTasks()}>Generate timeline</button>} />}
           </section>
         </div>
-        <section className="content-section summary-section">
-          <header className="section-heading"><div><h2>Latest summary</h2><p>A short progress brief generated from saved plan data.</p></div></header>
-          {summaries[0] ? <blockquote>{summaries[0].content}</blockquote> : <EmptyState title="No summary yet" body="Generate a short, plain-language overview from saved data." />}
+        <section className="planning-note">
+          <header><h2>Latest plan note</h2><span>{missing.length > 0 ? `${missing.length} requirement ${missing.length === 1 ? "area" : "areas"} still need coverage` : "All tracked areas have projected coverage"}</span></header>
+          {summaries[0] ? <blockquote>{summaries[0].content}</blockquote> : <p>Generate a short summary when you want a plain-language review of the saved plan.</p>}
         </section>
-        {missing.length > 0 && <div className="notice-strip"><Flag size={19} /><span>{missing.length} requirement {missing.length === 1 ? "area needs" : "areas need"} verified course coverage.</span></div>}
-      </>
+      </div>
     );
   }
 
@@ -1183,7 +1179,7 @@ export default function PlanningWorkspace() {
       setProfile({ ...profile, academic_interests: [...selected] });
     };
     return (
-      <>
+      <div className="profile-page page-frame">
         <PageHeader title="Student profile" description="Each answer below changes a visible planning result." />
         <section className="form-section profile-form">
           <div className="profile-subsection">
@@ -1235,7 +1231,7 @@ export default function PlanningWorkspace() {
           <label className="confirmation-field"><input type="checkbox" checked={profile.school_confirmed} onChange={(event) => setProfile({ ...profile, school_confirmed: event.target.checked })} /><span><strong>I confirm this plan is for Design Tech High School.</strong><small>Course and graduation data are labeled for the 2025-26 source year.</small></span></label>
           <div className="form-footer"><button className="primary-button" onClick={() => void saveProfile()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save profile</button></div>
         </section>
-      </>
+      </div>
     );
   }
 
@@ -1350,7 +1346,9 @@ export default function PlanningWorkspace() {
                 <details className="course-details"><summary>Course details</summary><p>{course.description}</p>{course.prerequisites.length > 0 && <p className="prereq"><strong>Prerequisites:</strong> {course.prerequisites.join(", ")}</p>}</details>
               </div>
               <div className="course-actions">
-                <button onClick={() => void addCatalogCourse(course, "planned")} className={existing ? "secondary-button" : "primary-button"} disabled={Boolean(existing)}>{existingLabel ?? "Add to Planned"}</button>
+                {existing
+                  ? <span className={`catalog-status ${existing.status}`}>{existingLabel}</span>
+                  : <button onClick={() => void addCatalogCourse(course, "planned")} className="primary-button">Add to Planned</button>}
               </div>
             </article>;
           })}
@@ -1364,60 +1362,95 @@ export default function PlanningWorkspace() {
   function renderGraduation() {
     if (!profile) return null;
     const trackedCredits = trackedRequirements.reduce((total, requirement) => total + Number(requirement.credits_required), 0);
+    const totals = progress.reduce((sum, item) => {
+      const applied = appliedCreditBreakdown({
+        required: Number(item.requirement.credits_required),
+        completed: item.completedCredits,
+        current: item.currentCredits,
+        planned: item.plannedCredits,
+        unverified: item.unverifiedCredits
+      });
+      return {
+        completed: sum.completed + applied.completed,
+        current: sum.current + applied.current,
+        planned: sum.planned + applied.planned,
+        unverified: sum.unverified + applied.unverified
+      };
+    }, { completed: 0, current: 0, planned: 0, unverified: 0 });
     return (
-      <>
-        <PageHeader title="Graduation tracker" description={profile.tracker_mode === "selected" ? "This focused view uses the requirement areas chosen during onboarding. Completed, planned, and unverified credits remain distinct." : "Completed, current, planned, missing, and unverified credits remain distinct."} />
-        <section className="graduation-total"><div><span>Verified projected coverage</span><strong>{graduationPercent}%</strong></div><p>{profile.tracker_mode === "selected" ? `Showing ${trackedRequirements.length} selected areas totaling ${trackedCredits} credits. The complete d.tech diploma remains 225 credits.` : "d.tech lists 225 total credits for the 2025-26 source year."} This tracker is a planning estimate, not an official audit.</p></section>
-        <section className="requirement-rows">
+      <div className="graduation-page page-frame">
+        <PageHeader title="Graduation" description="A credit map for completed, current, planned, and unverified work." />
+        <section className="graduation-brief" aria-label="Graduation summary">
+          <div className="graduation-score">
+            <span>Verified projected coverage</span>
+            <strong>{graduationPercent}<small>%</small></strong>
+            <CoverageSegments items={progress.map((item) => ({ label: item.requirement.name, status: item.status }))} label={`${graduationPercent}% verified projected coverage`} />
+            <p>{profile.tracker_mode === "selected" ? `${trackedRequirements.length} selected areas, ${trackedCredits} required credits.` : `${trackedCredits} required credits across ${trackedRequirements.length} areas.`} Totals at right count only credits applied.</p>
+          </div>
+          <dl className="graduation-totals">
+            <div><dt>Completed</dt><dd>{totals.completed}</dd></div>
+            <div><dt>In progress</dt><dd>{totals.current}</dd></div>
+            <div><dt>Planned</dt><dd>{totals.planned}</dd></div>
+            <div><dt>Unverified</dt><dd>{totals.unverified}</dd></div>
+          </dl>
+        </section>
+        <p className="graduation-source-note">Based on labeled 2025-26 d.tech requirements. This is a planning estimate, not an official audit.</p>
+        <section className="graduation-map" aria-label="Graduation requirement map">
           {progress.map((item) => {
-            const creditsRemaining = Math.max(0, Number(item.requirement.credits_required) - item.verifiedProjectedCredits);
+            const requiredCredits = Number(item.requirement.credits_required);
+            const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
             const statusText = item.status === "complete"
               ? "Complete"
               : item.status === "on_track"
                 ? "On track"
                 : item.verifiedProjectedCredits > 0
-                  ? `${creditsRemaining} credits left`
+                  ? `${applied.remaining} credits left`
                   : "Not started";
-            return <article className="requirement-detail" key={item.requirement.id}>
-              <header><div><h2>{item.requirement.name}</h2><p>{item.requirement.notes}</p></div><span className={`requirement-status ${item.status}`}>{statusText}</span></header>
-              <div className="credit-ledger"><div><span>Completed</span><strong>{item.completedCredits}</strong></div><div><span>Current</span><strong>{item.currentCredits}</strong></div><div><span>Planned</span><strong>{item.plannedCredits}</strong></div><div><span>Unverified</span><strong>{item.unverifiedCredits}</strong></div><div><span>Required</span><strong>{item.requirement.credits_required}</strong></div></div>
-              <div className="progress-track large"><span style={{ width: `${item.percent}%` }} /></div>
-              {item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={16} /> {item.unverifiedCredits} credits are excluded until their mapping is manually verified.</p>}
+            return <article className={`graduation-requirement ${item.status}`} key={item.requirement.id}>
+              <header><h2>{item.requirement.name}</h2><span>{statusText}</span></header>
+              <div className="requirement-credit-total"><strong>{applied.total}</strong><span>of {item.requirement.credits_required} verified projected credits</span></div>
+              <CreditComposition completed={item.completedCredits} current={item.currentCredits} planned={item.plannedCredits} unverified={item.unverifiedCredits} required={Number(item.requirement.credits_required)} />
+              <dl className="requirement-credit-breakdown"><div><dt>Done</dt><dd>{item.completedCredits}</dd></div><div><dt>Current</dt><dd>{item.currentCredits}</dd></div><div><dt>Planned</dt><dd>{item.plannedCredits}</dd></div><div><dt>Unverified</dt><dd>{item.unverifiedCredits}</dd></div></dl>
+              {(item.requirement.notes || item.unverifiedCredits > 0) && <details className="requirement-notes"><summary>Details</summary>{item.requirement.notes && <p>{item.requirement.notes}</p>}{item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={15} /> {item.unverifiedCredits} credits stay outside the projection until their mapping is verified.</p>}</details>}
             </article>;
           })}
         </section>
-      </>
+      </div>
     );
   }
 
   function renderGpa() {
     const gradedRows = planCourses.filter((row) => row.letter_grade && !["IP", "P"].includes(row.letter_grade.toUpperCase()));
     return (
-      <>
-        <PageHeader title="GPA tracker" description="Uses the grading behavior shown on the d.tech transcript." />
-        <div className="gpa-ledger"><div><span>Current unweighted</span><strong>{formatGpa(gpa.currentUnweighted)}</strong></div><div><span>Current weighted</span><strong>{formatGpa(gpa.currentWeighted)}</strong></div><div><span>Projected unweighted</span><strong>{formatGpa(gpa.projectedUnweighted)}</strong></div><div><span>Projected weighted</span><strong>{formatGpa(gpa.projectedWeighted)}</strong></div></div>
-        <dl className="gpa-method-summary"><div><dt>GPA credits</dt><dd>{gpa.gradedCredits}</dd></div><div><dt>Weighted credits</dt><dd>{gpa.weightedCredits}</dd></div><div><dt>Pass credits excluded</dt><dd>{gpa.passCredits}</dd></div></dl>
+      <div className="gpa-page page-frame">
+        <PageHeader title="GPA" description="Current and projected values use the grading behavior printed on the d.tech transcript." />
+        <section className="gpa-comparison" aria-label="GPA comparison">
+          <div className="gpa-comparison-table">
+            <div className="gpa-comparison-head"><span>Method</span><strong>Current</strong><strong>Projected</strong></div>
+            <div><span>Unweighted</span><strong>{formatGpa(gpa.currentUnweighted)}</strong><strong>{formatGpa(gpa.projectedUnweighted)}</strong></div>
+            <div><span>Weighted</span><strong>{formatGpa(gpa.currentWeighted)}</strong><strong>{formatGpa(gpa.projectedWeighted)}</strong></div>
+          </div>
+          <dl className="gpa-credit-index"><div><dt>GPA credits</dt><dd>{gpa.gradedCredits}</dd></div><div><dt>Weighted credits</dt><dd>{gpa.weightedCredits}</dd></div><div><dt>Pass credits excluded</dt><dd>{gpa.passCredits}</dd></div></dl>
+        </section>
         <div className="notice-strip"><Gauge size={19} /><span>A+, A, and A- are 4 points; B variants are 3; C variants are 2; D variants are 1. Every SMCCD and d.tech Honors course receives one added point. P is excluded from GPA.</span></div>
-        <section className="content-section">
+        <section className="dashboard-section gpa-course-section">
           <header className="section-heading"><div><h2>GPA courses</h2><p>Exact transcript marks are preserved even when the d.tech point value is the same.</p></div><button className="quiet-button" onClick={() => openCourses("mine", "completed")}>Open Done courses</button></header>
           {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
         </section>
-      </>
+      </div>
     );
   }
 
   function renderMineCourses() {
     if (!profile) return null;
     const snapshots = versions.filter((version) => version.kind === "snapshot");
-    const statusRows = planCourses.filter((row) => row.status === courseStatus);
-    const gradeGroups = GRADE_LEVELS
-      .filter((grade) => statusRows.some((row) => row.grade_level === grade))
-      .sort((a, b) => courseStatus === "completed" ? b - a : a - b);
     const statusContent: Record<CourseStatusView, { label: string; description: string }> = {
       current: { label: "In progress", description: "Courses you are taking now." },
       planned: { label: "Planned", description: "Future courses that can still be changed." },
       completed: { label: "Done", description: "Finished courses, transcript grades, and pass credits." }
     };
+    const statusIcons = { current: Gauge, planned: ListChecks, completed: CheckCircle };
+    const statusOrder: CourseStatusView[] = ["current", "planned", "completed"];
     const selectedSnapshot = snapshots.find((version) => version.id === compareVersionId) ?? null;
     const comparisonKey = (row: PlanCourse) => `${row.course_id ?? row.custom_course_name ?? row.id}:${row.grade_level}`;
     const activeByKey = new Map(planCourses.map((row) => [comparisonKey(row), row]));
@@ -1456,7 +1489,7 @@ export default function PlanningWorkspace() {
         <div className="course-record-summary">
           <div className="course-record-name"><strong>{courseDisplayName(row, courseMap)}</strong><span>{metadata.map((item) => <span key={item}>{item}</span>)}</span></div>
           <div className="course-record-result"><strong>{result}</strong><span>{row.school_year}</span></div>
-          <button className="quiet-button course-edit-button" type="button" onClick={() => setEditingCourseId(editing ? null : row.id)} aria-expanded={editing}><PencilSimple size={15} /> {editing ? "Close" : "Edit"}</button>
+          <button className="icon-button course-edit-button" type="button" onClick={() => setEditingCourseId(editing ? null : row.id)} aria-expanded={editing} aria-label={`${editing ? "Close editor for" : "Edit"} ${courseDisplayName(row, courseMap)}`}><PencilSimple size={15} /></button>
         </div>
         {editing && <div className="course-record-editor">
           <label><span>Status</span><select value={row.status} onChange={(event) => void updatePlanCourse(row.id, { status: event.target.value as PlanCourse["status"] })}><option value="current">In progress</option><option value="planned">Planned</option><option value="completed">Done</option></select></label>
@@ -1471,15 +1504,35 @@ export default function PlanningWorkspace() {
     return (
       <>
         {planExplanation && <div className="notice-strip"><Sparkle size={19} /><span>{planExplanation}</span></div>}
-        <nav className="course-status-tabs" aria-label="Course status">
-          {(["current", "planned", "completed"] as CourseStatusView[]).map((status) => <button type="button" role="tab" aria-selected={courseStatus === status} className={courseStatus === status ? "active" : ""} onClick={() => { setCourseStatus(status); setEditingCourseId(null); }} key={status}><span>{statusContent[status].label}</span><strong>{courseCounts[status]}</strong></button>)}
-        </nav>
-        <section className="course-status-panel">
-          <header className="course-list-heading"><div><h2>{statusContent[courseStatus].label}</h2><p>{statusContent[courseStatus].description}</p></div>{courseStatus === "planned" && <button className="quiet-button" type="button" onClick={() => void generatePlan()} disabled={Boolean(busyLabel)}><Sparkle size={15} /> Suggest courses</button>}</header>
-          {gradeGroups.length ? gradeGroups.map((grade) => {
-            const rows = statusRows.filter((row) => row.grade_level === grade);
-            return <section className="course-grade-group" key={grade}><header><h3>Grade {grade}</h3><span>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : rows[0]?.school_year} / {rows.length} {rows.length === 1 ? "course" : "courses"}</span></header><div className="course-record-list">{rows.map(renderCourseRecord)}</div></section>;
-          }) : <EmptyState title={`No ${statusContent[courseStatus].label.toLowerCase()} courses`} body={courseStatus === "completed" ? "Import a transcript when you are ready to add finished courses." : "Find a course or generate suggestions to start this section."} action={<button className="secondary-button" type="button" onClick={() => setCourseArea("dtech")}>Find courses</button>} />}
+        <WorkspaceTabs
+          className="course-status-mobile-tabs"
+          items={statusOrder.map((status) => ({ id: status, label: statusContent[status].label, count: courseCounts[status] }))}
+          value={courseStatus}
+          onChange={(status) => { setCourseStatus(status); setEditingCourseId(null); }}
+          label="Course status"
+          layoutId="course-status-mobile-indicator"
+        />
+        <section className="course-stage-board" aria-label="Courses by status">
+          {statusOrder.map((status) => {
+            const StageIcon = statusIcons[status];
+            const rows = planCourses.filter((row) => row.status === status);
+            const grades = GRADE_LEVELS
+              .filter((grade) => rows.some((row) => row.grade_level === grade))
+              .sort((a, b) => status === "completed" ? b - a : a - b);
+            return <section className={`course-stage ${status} ${courseStatus === status ? "mobile-active" : ""}`} aria-labelledby={`course-stage-${status}`} key={status}>
+              <header className="course-stage-heading">
+                <div><StageIcon size={18} weight={status === "completed" ? "fill" : "regular"} /><div><h2 id={`course-stage-${status}`}>{statusContent[status].label}</h2><p>{statusContent[status].description}</p></div></div>
+                <strong>{rows.length}</strong>
+              </header>
+              {status === "planned" && <button className="course-stage-action" type="button" onClick={() => void generatePlan()} disabled={Boolean(busyLabel)}><Sparkle size={14} /> Suggest courses</button>}
+              <div className="course-stage-body">
+                {grades.length ? grades.map((grade) => {
+                  const gradeRows = rows.filter((row) => row.grade_level === grade);
+                  return <section className="course-grade-group" key={grade}><header><h3>Grade {grade}</h3><span>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : gradeRows[0]?.school_year}</span></header><div className="course-record-list">{gradeRows.map(renderCourseRecord)}</div></section>;
+                }) : <div className="course-stage-empty"><strong>No courses here</strong><p>{status === "completed" ? "Import a transcript to add finished classes." : status === "current" ? "Move a planned course here when it begins." : "Add courses from either catalog."}</p><button className="quiet-button small" type="button" onClick={() => status === "completed" ? navigate("sources") : setCourseArea("dtech")}>{status === "completed" ? "Import transcript" : "Find courses"}</button></div>}
+              </div>
+            </section>;
+          })}
         </section>
         <details className="course-version-section">
           <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
@@ -1503,13 +1556,9 @@ export default function PlanningWorkspace() {
 
   function renderCourses() {
     if (!supabase || !session || !profile || !activeVersion) return null;
-    return <div className="courses-page">
-      <PageHeader title="Courses" description="One place for what you are taking, what comes next, and what you already finished." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <nav className="course-area-tabs" aria-label="Courses workspace">
-        <button type="button" className={courseArea === "mine" ? "active" : ""} onClick={() => setCourseArea("mine")}>My courses</button>
-        <button type="button" className={courseArea === "dtech" ? "active" : ""} onClick={() => setCourseArea("dtech")}>d.tech catalog</button>
-        <button type="button" className={courseArea === "smccd" ? "active" : ""} onClick={() => setCourseArea("smccd")}>SMCCD catalog</button>
-      </nav>
+    return <div className="courses-page page-frame wide">
+      <PageHeader title="Courses" description="In progress, next, and finished courses stay visibly separate." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
+      <WorkspaceTabs items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         supabase={supabase}
@@ -1530,7 +1579,7 @@ export default function PlanningWorkspace() {
 
   function renderActivities() {
     return (
-      <>
+      <div className="activity-page page-frame">
         <PageHeader title="Activity planner" description="Weekly activity hours feed directly into workload and simulation estimates." />
         <div className="activity-layout">
           <form className="form-section" onSubmit={addActivity}>
@@ -1546,13 +1595,13 @@ export default function PlanningWorkspace() {
             {activities.length ? <div className="activity-list">{activities.map((activity) => <article key={activity.id}><div><strong>{activity.name}</strong><span>{titleCase(activity.kind)}{activity.role ? ` · ${activity.role}` : ""}</span></div><b>{activity.weekly_hours}h</b><button className="icon-button danger" onClick={() => void removeActivity(activity.id)} aria-label={`Remove ${activity.name}`}><Trash size={16} /></button></article>)}</div> : <EmptyState title="No activities yet" body="Add clubs, work, athletics, service, internships, or family responsibilities." />}
           </section>
         </div>
-      </>
+      </div>
     );
   }
 
   function renderTimeline() {
     return (
-      <>
+      <div className="timeline-page page-frame">
         <PageHeader title="Timeline and checklist" description="Generated tasks are editable, completable, and mixed with your own tasks." actions={<button className="primary-button" onClick={() => void generateTasks()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Generate timeline</button>} />
         <div className="timeline-layout">
           <section className="content-section">
@@ -1560,14 +1609,14 @@ export default function PlanningWorkspace() {
           </section>
           <form className="form-section compact-form" onSubmit={addCustomTask}><h2>Add a custom task</h2><label className="form-field"><span>Task</span><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required /></label><label className="form-field"><span>Category</span><select value={taskForm.category} onChange={(event) => setTaskForm({ ...taskForm, category: event.target.value })}><option value="academics">Academics</option><option value="activities">Activities</option><option value="college">College readiness</option><option value="summer">Summer</option><option value="admin">Admin</option></select></label><label className="form-field"><span>When</span><input value={taskForm.dueLabel} onChange={(event) => setTaskForm({ ...taskForm, dueLabel: event.target.value })} placeholder="Before registration" /></label><button className="secondary-button" type="submit"><Plus size={17} /> Add task</button></form>
         </div>
-      </>
+      </div>
     );
   }
 
   function renderSimulator() {
     if (!profile) return null;
     return (
-      <>
+      <div className="simulator-page page-frame">
         <PageHeader title="Plan simulator" description="Compare a scenario without changing the saved four-year plan." actions={simulationResult && <button className="secondary-button" onClick={() => void saveSimulation()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save simulation</button>} />
         <div className="simulator-layout">
           <section className="sim-controls">
@@ -1582,7 +1631,7 @@ export default function PlanningWorkspace() {
           </section>
         </div>
         <div className="notice-strip"><ShieldCheckIcon /><span>Running or saving a simulation never overwrites the active plan.</span></div>
-      </>
+      </div>
     );
   }
 

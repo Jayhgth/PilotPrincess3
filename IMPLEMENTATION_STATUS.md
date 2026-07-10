@@ -4,10 +4,10 @@ Last updated: 2026-07-09
 
 ## Current State
 
-- Strict implementation grade: `98/100` for the clarified MVP scope; the separate final UX audit is `97/100`.
+- Strict implementation grade: `98/100` for the clarified MVP scope; the separate final UX audit is `98/100`.
 - The complete student flow is implemented in Astro and backed by the linked Supabase project `zqkzgmwptdsaqbzrjngt`.
 - No code or data was copied from PilotPrincess2. The implementation was built from the linked Spec Sheet, the user's clarifications, official d.tech sources, official Codex SDK documentation, and architectural review of `t3code`.
-- The production build, 30 unit tests, four browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog validation, and Codex connectivity check all pass.
+- The production build, 31 unit tests, four browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog validation, and Codex connectivity check all pass.
 
 ## Clarified Product Decisions
 
@@ -26,15 +26,17 @@ Last updated: 2026-07-09
 - Astro 7 SSR application with React islands and the Node standalone adapter.
 - Calm utilitarian student workspace with neutral graphite/silver surfaces, one restrained burgundy accent, Manrope typography, compact desktop/mobile navigation, light/dark themes, empty/loading/error states, and keyboard focus treatment.
 - Three primary destinations (`Overview`, `Courses`, and `Graduation`) and seven secondary tools behind `More tools`, with a measured 1,044 px desktop content canvas, no audited horizontal overflow, and no visible text below 10 px.
+- A coherent academic-workspace visual system now replaces repeated full-width metric and record cards: Overview uses a compact route brief and requirement index, Courses uses a three-stage current/planned/done board, Graduation uses a source-labeled credit map, and GPA uses one current/projected comparison table.
+- Motion-powered workspace tabs provide one restrained shared-state transition, respect reduced-motion preferences, and support Left/Right/Home/End keyboard navigation. The rest of the UI remains static so motion communicates state instead of decorating the page.
 - Open email/password account creation, clear sign-in errors, forgot-password requests, and a secure password-update callback page.
 - Five-stage onboarding for student details, planning priorities, a 1-4 year planning window, full or selected graduation tracker areas, and optional transcript import.
 - Student profile editing for name, age, grade, graduation year, structured academic interests, other interests, major direction, career ideas, planning intensity, a demanding-course limit, a weekly commitment limit, stress baseline, plan window, and tracker scope. Every field states and exposes the planning output it changes.
 - Minimal transcript import for PDF, DOCX, TXT, CSV, PNG, JPEG, WebP, and pasted text, with a private 15 MB bucket. One file row and one `Read transcript` action replace the previous generic source-management form.
 - Compact transcript review ledger with useful course fields, select-all and per-row selection, editable structured corrections behind disclosure, one bulk import action, preserved raw material, manual fallback, and a direct handoff to Done after import.
 - Transcript-specific deterministic parsing for completed course names, institution, grade level, school year, term, exact final grade, high-school credits, college units, and weighting, with deterministic d.tech and SMCCD catalog matching. d.tech `P` intersession rows are separated from GPA and map to Personal Development; `A-` is preserved but uses the same four-point GPA band as `A`; every SMCCD row is weighted.
-- One consolidated Courses workspace replaces the separate academic-plan, d.tech catalog, and SMCCD destinations. `In progress`, `Planned`, and `Done` are count-backed primary states; records are grouped by grade, reduced to useful metadata, and expose editing controls only on request.
-- Searchable/filterable/paginated official d.tech catalog with 41 source-backed courses, one explicit `Add to Planned` action, existing-status labels, profile-specific match reasons only, and secondary details disclosed on demand.
-- Graduation tracker with completed/current/planned/unverified ledgers and verified-only projections across all eight requirements.
+- One consolidated Courses workspace replaces the separate academic-plan, d.tech catalog, and SMCCD destinations. Desktop shows `In progress`, `Planned`, and `Done` simultaneously as semantically distinct columns; mobile uses count-backed status tabs and one column at a time. Records are grouped by grade, reduced to useful metadata, and expose editing controls only on request.
+- Searchable/filterable/paginated official d.tech catalog with 41 source-backed courses, one explicit `Add to Planned` action, compact existing-status markers, profile-specific match reasons only, and secondary details disclosed on demand.
+- Graduation tracker with completed/current/planned/unverified breakdowns and verified-only projections across all eight requirements. Headline totals and segmented bars cap credits at the amount actually applied to each requirement, while raw mapped credits remain visible inside each requirement for transparency.
 - GPA tracker with current/projected and weighted/unweighted values, separate GPA/weighted/pass credit totals, and an on-screen explanation of the d.tech method.
 - Non-destructive source-backed variable-length plan suggestions, compact inline editing for status/year/grade/weighting, grade-grouped transcript history, removal, collapsed plan versions, snapshots, and real active-versus-snapshot comparison.
 - Source-backed SMCCD concurrent-enrollment planning with 2,461 exact district courses across Cañada College, College of San Mateo, and Skyline College. The catalog stays empty until the student searches, uses a stable list-and-detail selection flow, and separates course search from associate-degree planning.
@@ -76,7 +78,7 @@ Last updated: 2026-07-09
 
 - `pnpm lint`: pass.
 - `pnpm typecheck`: pass with 0 errors, 0 warnings, and 0 hints.
-- `pnpm test`: 30/30 unit tests pass, including the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, forced SMCCD weighting, current-year workload isolation, profile ranking, false-positive prevention, transcript layout parsing, Design Lab alias import verification, and SMCCD requirement progress.
+- `pnpm test`: 31/31 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, forced SMCCD weighting, current-year workload isolation, profile ranking, false-positive prevention, transcript layout parsing, Design Lab alias import verification, and SMCCD requirement progress.
 - `pnpm test:e2e`: 4/4 Chromium tests pass, including open-email signup UI, recovery states, and a 390x844 viewport.
 - `pnpm build`: Astro standalone SSR build passes.
 - `pnpm peers check`: pass.
@@ -95,7 +97,8 @@ Last updated: 2026-07-09
 - Live plan-window check: a grade 10-11 plan generated grades 10 and 11 only, while grade 9 transcript history remained visible and counted.
 - Authenticated browser QA: the consolidated course navigation, all three status lists, compact editors, d.tech add-to-Planned flow, Planned-to-In-progress movement, transcript handoff, SMCCD search/degree separation, profile-ranked AA/AS discovery, and overview handoff pass with no browser console errors. A ranking regression check confirms that a Computer Science interest no longer treats Political Science as a match.
 - Minimal importer browser QA: pasted transcript text was parsed deterministically without Codex into five selected rows, all five imported to Done in one action, and the completed state opened the Done list. Empty, populated, completed, 390x844 mobile, light, and dark states were visually reviewed.
-- Final layout audit: 1,044 px desktop content canvas, zero audited horizontal overflow at 1,280 px and 390 px, compact light/dark course and transcript ledgers, mobile editing, and a bounded 12-row d.tech catalog pass. See `UX_AUDIT.md`.
+- Academic workspace browser QA: 26 populated states were reviewed at 1,440x1,000 and 390x844 across every destination, both themes, all three course stages, both catalogs, desktop/mobile course editing, and the redesigned Overview and Graduation views. Every state had zero horizontal overflow, zero rendered text below 10 px, and zero console errors; workspace tabs also passed keyboard navigation.
+- Final layout audit: 1,044 px desktop content canvas, zero audited horizontal overflow, compact light/dark course and transcript ledgers, mobile editing, an applied-credit Graduation reconciliation, and a bounded 12-row d.tech catalog pass. See `UX_AUDIT.md`.
 - Manual browser flow: guided onboarding, focused tracker, minimal transcript upload/review/import, overview, lightweight summary, plan suggestion, snapshot creation/comparison, dark UI, and desktop layout pass.
 - All temporary remote QA users and cascaded data were removed after testing.
 

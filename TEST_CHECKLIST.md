@@ -6,7 +6,7 @@ Last run: 2026-07-09
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 30/30 unit tests passing
+- [x] `pnpm test` with 31/31 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
@@ -37,11 +37,12 @@ Last run: 2026-07-09
 - [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
 - [x] One Courses destination replaces separate academic-plan, d.tech catalog, and SMCCD navigation entries
-- [x] My courses clearly separates `In progress`, `Planned`, and `Done`, with counts and grade-grouped compact rows
+- [x] My courses shows `In progress`, `Planned`, and `Done` simultaneously on desktop, uses count-backed single-stage tabs on mobile, and keeps rows grouped by grade
 - [x] Course editing stays hidden until requested and supports status, final grade, grade level, weighting, and removal
 - [x] Official d.tech catalog loads 41 courses and supports search/filter with one explicit `Add to Planned` action
-- [x] Official d.tech catalog paginates 12 courses per page and labels courses already in Done, In progress, or Planned
+- [x] Official d.tech catalog paginates 12 courses per page and uses compact markers for courses already in Done, In progress, or Planned
 - [x] Graduation tracker excludes unverified mappings
+- [x] Graduation headline totals and composition bars cap excess mapped credit at each requirement maximum while retaining the raw mapped breakdown
 - [x] GPA calculations separate current/projected and weighted/unweighted results
 - [x] Exact d.tech method reproduces 4.00 unweighted and 4.74 weighted from the supplied PDF
 - [x] `P` is excluded from GPA and separated as intersession/Personal Development credit
@@ -70,6 +71,8 @@ Last run: 2026-07-09
 - [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
 - [x] Mobile Courses status lists, inline editor, d.tech discovery, SMCCD search, overview, navigation, and graduation visually pass at 390x844
 - [x] Unified Courses workspace visually passes in both light and dark themes
+- [x] Motion workspace tabs respect reduced-motion preferences and pass Left/Right/Home/End keyboard navigation
+- [x] Twenty-six populated desktop/mobile/light/dark states across every authenticated destination have zero horizontal overflow, zero rendered text below 10 px, and zero browser console errors
 - [x] Transcript empty, populated, and completed states visually pass at desktop and 390x844 in light and dark themes
 - [x] Lightweight summary works with deterministic fallback
 - [x] Desktop dark-theme UI visually reviewed in the in-app browser
