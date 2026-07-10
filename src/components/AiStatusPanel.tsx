@@ -25,7 +25,7 @@ interface CodexRuntimeStatus {
   cliVersion: string | null;
   checkedAt: string;
   model: string;
-  reasoningEffort: "low";
+  reasoningEffort: string;
   maxConcurrentTurns: number;
   runtime: string;
   accessPolicy: string;
@@ -54,6 +54,10 @@ const INITIAL_MESSAGE: ChatMessage = {
   role: "assistant",
   content: "Send a short message to test the live server connection. Each successful reply shows the model and response time."
 };
+
+function formatReasoningEffort(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
 
 export default function AiStatusPanel({ session }: { session: Session }) {
   const [status, setStatus] = useState<CodexRuntimeStatus | null>(null);
@@ -215,7 +219,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
               <div><dt>Provider</dt><dd>{status.runtime}</dd></div>
               <div><dt>Authentication</dt><dd>{authenticationLabel}</dd></div>
               <div><dt>Model</dt><dd>{status.model}</dd></div>
-              <div><dt>Reasoning</dt><dd>Low</dd></div>
+              <div><dt>Reasoning</dt><dd>{formatReasoningEffort(status.reasoningEffort)}</dd></div>
               <div><dt>CLI</dt><dd>{status.cliVersion ? `v${status.cliVersion}` : "Unavailable"}</dd></div>
               <div><dt>Last checked</dt><dd>{lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "Not checked"}</dd></div>
             </dl>

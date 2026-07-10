@@ -82,10 +82,11 @@ Last updated: 2026-07-10
 
 ### Codex SDK
 
-- Official `@openai/codex-sdk` integration isolated behind authenticated Astro API routes.
+- Official `@openai/codex-sdk` 0.144.1 integration isolated behind authenticated Astro API routes.
+- The required 0.144.1 runtime is pinned. Its official platform binaries have a temporary package-name exception from pnpm's 24-hour release-age quarantine so clean installs work during the GPT-5.6 launch window.
 - Structured-output Zod and JSON schemas for source extraction, summaries, plan explanations, and simulator explanations.
 - T3 Code-inspired server boundary and lifecycle management without copying its code.
-- The default runtime is `gpt-5.5` with low reasoning. The bounded diagnostics path omits its synthetic welcome message from model history and disables unrelated Codex plugins, apps, shell tools, hooks, goals, and multi-agent features to reduce startup context and latency.
+- The default runtime is `gpt-5.6-luna` with `low` reasoning, the Codex SDK/CLI equivalent of the Light setting in Codex app surfaces. The bounded diagnostics path omits its synthetic welcome message from model history and disables unrelated Codex plugins, apps, shell tools, hooks, goals, and multi-agent features to reduce startup context and latency.
 - Maximum two concurrent turns, bounded timeouts, per-turn scratch directories, cleanup, read-only sandbox, no network/web search, and no approvals.
 - Prompt-injection boundaries treat all uploads as untrusted data and forbid invention or tool use.
 - Authenticated source parsing accepts extracted text and local image attachments, records jobs/results/latency/fallback state, and always creates a reviewable result.
@@ -113,7 +114,7 @@ Last updated: 2026-07-10
 - Remote recovery smoke test: recovery redirect generation, token verification, password update, and login with the replacement password all pass.
 - Supabase Auth site URL and redirect allowlist now target Astro on port 4321, including `/reset-password` through the local wildcard entries.
 - Authenticated Codex source parse: HTTP 200, structured output, 2 review items, `needs_review`, and `likely` confidence.
-- Authenticated Codex connectivity test: HTTP 200 with the configured `gpt-5.5` runtime at low reasoning; the live diagnostics UI returned the requested response in 6,358 ms and kept the server credential private. A separate live chat response correctly reported the selected model and reasoning effort in 5,521 ms.
+- Authenticated Codex SDK live smoke test: `gpt-5.6-luna` with `low` reasoning returned the exact requested response after the required SDK/CLI upgrade to 0.144.1. The AI connection API and UI read the same runtime model and reasoning values dynamically.
 - AI connection browser QA: connected-provider metadata, live-check feedback, and model response metadata were reviewed in light and dark themes at desktop and 390x844 mobile sizes, with zero horizontal overflow.
 - Onboarding replay browser QA: a completed profile reopened the five-stage walkthrough from Student profile, reached the save screen with all 50 completed courses preserved, and discarded temporary name and weekly-hour edits on exit. Light and dark mobile states had zero horizontal overflow and no console errors.
 - Onboarding priorities layout QA: all five content groups maintain explicit 24 px desktop and 20 px mobile separation; the 1,800 px desktop, 720 px tablet, and 390 px mobile states passed in both themes with zero horizontal overflow and no console errors.
@@ -156,3 +157,4 @@ Last updated: 2026-07-10
 3. Refresh the checked-in SMCCD catalog and d.tech equivalency artifacts when their publishers release newer sources; review data diffs before applying generated migrations.
 4. Add a live class-section feed and a staff review workflow for prerequisite clearances and unresolved catalog clauses when stable approved sources and reviewers are available.
 5. Add scheduled backup/restore drills, error monitoring, and production telemetry retention rules before broader rollout.
+6. Remove the temporary `@openai/codex` release-age exception after the pinned 0.144.1 platform binaries have cleared the 24-hour quarantine.

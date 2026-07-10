@@ -33,7 +33,7 @@ The planning data is intentionally focused on d.tech and currently uses clearly 
    ```env
    PUBLIC_SUPABASE_URL=https://zqkzgmwptdsaqbzrjngt.supabase.co
    PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
-   CODEX_MODEL=gpt-5.5
+   CODEX_MODEL=gpt-5.6-luna
    CODEX_TIMEOUT_MS=9000
    ```
 
@@ -54,6 +54,7 @@ The planning data is intentionally focused on d.tech and currently uses clearly 
    ```
 
    For local development, an existing Codex login can be used when no key is set.
+   The application defaults to `gpt-5.6-luna` with reasoning set to `low` (shown as Light in Codex app surfaces); `CODEX_MODEL` may override the model on a deployment.
 
 5. Start the app.
 

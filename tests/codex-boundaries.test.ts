@@ -16,7 +16,7 @@ describe("Codex feature boundaries", () => {
     expect(featureMap.diagnostics_chat).toBe(true);
     expect(status.features).toEqual(CODEX_FEATURES);
     expect(status.maxConcurrentTurns).toBe(2);
-    expect(status.model).toBe("gpt-5.5");
+    expect(status.model).toBe("gpt-5.6-luna");
     expect(status.reasoningEffort).toBe("low");
     expect(status.accessPolicy).toContain("tools and network disabled");
   });

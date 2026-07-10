@@ -7,3 +7,6 @@ minimumReleaseAgeExclude:
   - '@supabase/realtime-js@2.110.2'
   - '@supabase/storage-js@2.110.2'
   - '@supabase/supabase-js@2.110.2'
+  - '@openai/codex-sdk@0.144.1'
+  # GPT-5.6 requires Codex 0.144.1; this also covers its platform-suffixed binary packages.
+  - '@openai/codex'

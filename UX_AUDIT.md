@@ -69,7 +69,7 @@ The repeatable implementation rules are maintained in `UI_DESIGN_SYSTEM.md`; thi
 - Equivalency QA: CHIN 132 resolves to `Mandarin 3 Spring`, 5 d.tech credits, and World Language `Covered in plan` at 20 planned credits from the one verified Level 3 course.
 - Live transcript totals from the supplied d.tech PDF: Design Lab 30/40 and Personal Development 10/25.
 - Live transcript GPA from the supplied d.tech PDF: 4.00 unweighted and 4.74 weighted, with 45 pass credits visibly excluded.
-- Live AI conversation: authenticated structured response from the configured `gpt-5.5` low-reasoning runtime, including per-response latency.
+- Live AI runtime: authenticated Codex SDK response from the configured `gpt-5.6-luna` runtime with reasoning set to `low`; the connection UI reports model, reasoning, and per-response latency dynamically.
 
 ## UI/UX rubric — 91/100
 

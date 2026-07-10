@@ -1,4 +1,4 @@
-import { Codex, type Input, type Usage, type UserInput } from "@openai/codex-sdk";
+import { Codex, type Input, type ModelReasoningEffort, type Usage, type UserInput } from "@openai/codex-sdk";
 import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -8,8 +8,8 @@ import { promisify } from "node:util";
 import type { ZodType } from "zod";
 
 const DEFAULT_TIMEOUT_MS = 9000;
-const DEFAULT_MODEL = "gpt-5.5";
-const DEFAULT_REASONING_EFFORT = "low" as const;
+const DEFAULT_MODEL = "gpt-5.6-luna";
+const DEFAULT_REASONING_EFFORT = "low" satisfies ModelReasoningEffort;
 const MAX_CONCURRENT_TURNS = 2;
 const PROVIDER_PROBE_TTL_MS = 60_000;
 const execFileAsync = promisify(execFile);
@@ -60,7 +60,7 @@ export interface StructuredRunOptions<T> {
   outputSchema: Record<string, unknown>;
   workingDirectory?: string;
   timeoutMs?: number;
-  reasoningEffort?: "low" | "medium" | "high";
+  reasoningEffort?: ModelReasoningEffort;
 }
 
 export const CODEX_FEATURES = [
