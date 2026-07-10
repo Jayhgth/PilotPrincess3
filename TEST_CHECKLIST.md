@@ -59,6 +59,7 @@ Last run: 2026-07-10
 - [x] Laboratory Science requires Biology, Chemistry, and a third science at 10 credits each
 - [x] A verified Level 3/III world-language course satisfies the full 20-credit requirement without requiring lower levels
 - [x] GPA calculations separate current/projected and weighted/unweighted results
+- [x] GPA presents one current-versus-projected comparison and keeps the full per-course calculation ledger behind a disclosure
 - [x] Exact d.tech method reproduces 4.00 unweighted and 4.74 weighted from the supplied PDF
 - [x] `P` is excluded from GPA and separated as intersession/Personal Development credit
 - [x] `A-` remains visible but uses the same four-point band as `A`
@@ -71,6 +72,11 @@ Last run: 2026-07-10
 - [x] Snapshot preserves a read-only course copy
 - [x] Snapshot comparison shows counts, coverage, GPA, and added/removed/changed rows
 - [x] Timeline, activity, SMCCD concurrent-enrollment, and simulator mutations are wired to user-owned tables
+- [x] Student profile exposes Basics, Direction, and Capacity as keyboard-accessible tabs with one relevant Planning impact readout and one consistent save action
+- [x] Activities and Timeline show one non-duplicated summary, primary records before composers, and row grouping without per-row divider lines
+- [x] Timeline prerequisite issues use one disclosure instead of a permanently expanded warning list
+- [x] Simulator comparison rows align in one matrix without individual card backgrounds or repeated dividers
+- [x] AI connection groups provider status, metadata, access policy, live diagnostics, and exact feature boundaries inside the shared page frame
 - [x] Workload uses only the current plan year, applies three total weekly hours per SMCCD unit, includes activity hours, and warns against the saved weekly and demanding-course limits
 - [x] Academic interests, major direction, and career ideas produce visible course and degree match reasons
 - [x] SMCCD catalog searches and filters 2,461 source-backed records across all three district colleges
@@ -95,6 +101,8 @@ Last run: 2026-07-10
 - [x] Twenty-six populated desktop/mobile/light/dark states across every authenticated destination have zero horizontal overflow, zero rendered text below 10 px, and zero browser console errors
 - [x] All ten authenticated destinations use the documented typography roles; legacy one-off 10/11/13/15/17/18/21/23 px product styles are removed
 - [x] Activity, Timeline, Simulator, and Student profile pass at 1280x720 and 390x844 with 12/14/16/28 px content typography and zero horizontal overflow
+- [x] The refined secondary pages pass populated 1280x720 and 541 px responsive checks in light and dark themes with zero horizontal overflow
+- [x] Student profile desktop height is 757 px with 9 bounded controls/surfaces, down from 2,749 px and 31 before the tabbed editor
 - [x] Overview, Graduation, and GPA use the shared 20 px numeric and 40 px display-metric roles instead of page-specific metric sizes
 - [x] Onboarding priorities use three equal capacity columns on desktop and one column at 390x844
 - [x] Revised page headers, tool rails, registers, profile sections, and choice groups rely on spacing and surfaces instead of repeated structural lines

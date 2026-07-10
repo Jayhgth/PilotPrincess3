@@ -175,7 +175,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
       : "Not authenticated";
 
   return (
-    <>
+    <div className="ai-page page-frame">
       <header className="page-header">
         <div>
           <h1>AI connection</h1>
@@ -281,6 +281,6 @@ export default function AiStatusPanel({ session }: { session: Session }) {
           </details>
         </div>
       )}
-    </>
+    </div>
   );
 }

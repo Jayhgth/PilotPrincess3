@@ -1,6 +1,6 @@
 # Pilot Princess UI system
 
-Last reviewed: 2026-07-09
+Last reviewed: 2026-07-10
 
 This is the reference for future product UI work. It applies to the authenticated workspace, onboarding, authentication, and responsive states. Preserve the product requirements and navigation; use this system to make their presentation consistent.
 
@@ -95,6 +95,13 @@ Separator rules:
 
 ## Page patterns
 
+### Secondary-page summary
+
+- Use one shared summary surface only when the page has a primary decision value, such as weekly activity time or open timeline tasks.
+- Place one primary number at left and no more than three aligned supporting values at right. Do not repeat those values in the register below.
+- Collapse the summary to one column on narrow screens. Keep labels, units, and interpretation visible.
+- Pages without a meaningful primary number, such as transcript import and AI connection, start directly with the task surface.
+
 ### Sidebar utilities
 
 - Theme and sign-out controls live in the footer below school context.
@@ -110,12 +117,14 @@ Separator rules:
 
 ### Activity planner
 
-- Use a narrow input rail and an open activity register.
-- The weekly total is a compact inline readout, not a metric card.
+- Lead with one workload summary that separates activity time, total known workload, and the saved weekly limit.
+- Put the current activity register before the quieter add-activity rail.
 - Activities are rows with name, context, hours, and delete action. Use spacing instead of row borders.
 
 ### Timeline
 
+- Lead with open, completed, course-check, and total counts in one summary surface.
+- Put prerequisite follow-ups behind one disclosure. A student should not scan a separate warning list on every visit.
 - Tasks are the primary surface. The custom-task composer is a quieter side rail.
 - Editable titles should look like text until focused.
 - Completion, timing, and generated provenance should be readable without competing badges.
@@ -123,14 +132,27 @@ Separator rules:
 ### Simulator
 
 - Controls form a narrow scenario setup rail.
-- Results use a clear current-versus-scenario comparison; the empty state should not occupy unnecessary height.
+- Results use one stable current-versus-scenario matrix. Individual comparison rows do not receive card backgrounds or dividers.
 - Explanations and limits follow the comparison as plain text groups, not nested cards.
 
 ### Student profile
 
-- Use three numbered sections: Basics, Direction, and Capacity.
-- Each section has a short purpose statement and its controls; do not wrap the complete profile in one giant card.
-- Keep the downstream-effects summary compact and adjacent to the save area.
+- Use three keyboard-accessible tabs: Basics, Direction, and Capacity. Render one editing task at a time instead of a multi-thousand-pixel form.
+- Keep one focused editor beside a compact Planning impact panel that explains only the current tab's downstream effects.
+- Keep school confirmation with Basics. Keep one consistent save bar below the editor and impact panel.
+- Choice tiles are controls, not decoration. Unselected options use the muted surface; only the selected option receives the accent outline and tint.
+
+### GPA
+
+- Use one current-versus-projected comparison surface with unweighted and weighted methods in stable columns.
+- Keep GPA, weighted, and excluded-pass credit totals as a compact supporting group inside the same surface.
+- Keep the grade-point method visible as one plain note. Put the complete course calculation ledger behind a disclosure so the main page answers the GPA question first.
+
+### AI connection
+
+- Connection status, runtime metadata, and access policy share one bounded surface without cell-by-cell dividers.
+- The live diagnostics chat is the primary test surface. Keep the exact Codex feature boundary table behind a separate disclosure.
+- Always state what the test can access, which credential mode is active, and which deterministic features do not use Codex.
 
 ### Course kanban
 
