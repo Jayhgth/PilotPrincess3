@@ -7,7 +7,7 @@ Last updated: 2026-07-10
 - Strict local-MVP implementation grade: `90/100`; the separate audit grades UI/UX at `91/100` and student usefulness at `86/100`.
 - The complete student flow is implemented in Astro and backed by the linked Supabase project `zqkzgmwptdsaqbzrjngt`.
 - No code or data was copied from PilotPrincess2. The implementation was built from the linked Spec Sheet, the user's clarifications, official d.tech sources, official Codex SDK documentation, and architectural review of `t3code`.
-- The production build, 72 unit tests, five browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency/prerequisite validation, and Codex connectivity check all pass.
+- The production build, 72 unit tests, six browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency/prerequisite validation, and Codex connectivity check all pass.
 
 ## Clarified Product Decisions
 
@@ -36,6 +36,7 @@ Last updated: 2026-07-10
 - Repeated page-header rules, form-card outlines, per-row dividers, and unselected choice borders were removed from the revised tools. Softer global separator tokens remain only for control boundaries, selected states, and major structural divisions.
 - Motion-powered workspace tabs provide one restrained shared-state transition, respect reduced-motion preferences, and support Left/Right/Home/End keyboard navigation. The rest of the UI remains static so motion communicates state instead of decorating the page.
 - Open email/password account creation, clear sign-in errors, forgot-password requests, and a secure password-update callback page.
+- The public sign-in hero now uses a separately loaded, locally owned React Bits Floating Lines adaptation tuned to the product's graphite and burgundy palette. The sign-in task and CSS fallback render independently of the Three.js chunk; the shader pauses when hidden or off-screen, limits pixel density, uses gentle fine-pointer response, and renders a static reduced-motion frame.
 - Five-stage onboarding for student details, planning priorities, a 1-4 year planning window, full or selected graduation tracker areas, and optional transcript import.
 - Completed users can replay onboarding from Student profile for preference changes. Two temporary demo shortcuts sit together above the sidebar theme control: one replays onboarding and the other previews the full hero/sign-in page without ending the active session. Both carry demo-placement metadata, and the login preview includes a direct return to the workspace. Replay edits stay local until the final save, exiting discards them, and existing course records remain untouched.
 - The onboarding priorities step groups each choice section with explicit responsive spacing so legends, helper text, and capacity controls remain visually separate in both themes.

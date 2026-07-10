@@ -107,6 +107,12 @@ Separator rules:
 - Theme and sign-out controls live in the footer below school context.
 - `Replay onboarding` and `View login page` may appear together above the theme control during demos only. Onboarding's permanent product home is Student profile under `Review setup`; the login preview preserves the active session and returns directly to the workspace. Retain the `data-demo-only` and intended-placement metadata until both sidebar shortcuts are removed.
 
+### Public entry hero
+
+- Use one full-bleed visual layer behind a short headline and one explanatory sentence. Do not add feature cards, decorative badges, or a second competing animation.
+- Floating Lines is a locally owned React Bits adaptation using the same graphite and burgundy palette as the workspace. Keep its motion slow, pause it while hidden, and render a static frame when reduced motion is requested.
+- The three source facts remain quiet supporting evidence. They must not compete with the sign-in task or imply guarantees beyond the cited d.tech source year.
+
 ### Onboarding
 
 - One clear question per step with a 28px title and one short explanation.

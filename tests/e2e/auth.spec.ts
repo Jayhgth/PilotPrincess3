@@ -4,7 +4,9 @@ test("renders the d.tech authentication experience", async ({ page }) => {
   await page.goto("/");
 
   await expect(page).toHaveTitle("Pilot Princess | d.tech planning");
-  await expect(page.getByRole("heading", { name: "See the whole route before choosing the next class." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
+  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-motion", "animated");
   await expect(page.getByRole("tab", { name: "Sign in" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Create account" })).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveAttribute("placeholder", "you@example.com");
@@ -15,7 +17,7 @@ test("renders the d.tech authentication experience", async ({ page }) => {
 test("offers a session-safe login preview for demos", async ({ page }) => {
   await page.goto("/?demo=login");
 
-  await expect(page.getByRole("heading", { name: "See the whole route before choosing the next class." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
   await expect(page.getByRole("link", { name: "Return to workspace" })).toHaveAttribute("href", "/app");
   await expect(page.getByRole("tab", { name: "Sign in" })).toBeVisible();
 });
@@ -49,7 +51,15 @@ test("keeps the authentication flow usable at a narrow viewport", async ({ page 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "See the whole route before choosing the next class." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
   await expect(page.getByRole("region", { name: "Sign in" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Open workspace" })).toBeVisible();
+});
+
+test("renders a static hero background when reduced motion is requested", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+
+  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-motion", "reduced");
 });

@@ -4,9 +4,11 @@ import {
   CheckCircleIcon as CheckCircle,
   ShieldCheckIcon as ShieldCheck
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+
+const FloatingLines = lazy(() => import("@/components/reactbits/FloatingLines"));
 
 type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
@@ -119,25 +121,30 @@ export default function AuthExperience() {
   return (
     <main className="auth-page">
       <section className="auth-story" aria-labelledby="auth-title">
+        <Suspense fallback={<div aria-hidden="true" className="auth-story-background" />}>
+          <FloatingLines className="auth-story-background" />
+        </Suspense>
         <a className="wordmark" href="/" aria-label="Pilot Princess home">
           <span className="wordmark-mark">PP</span>
           <span>Pilot Princess</span>
         </a>
         <div className="auth-story-copy">
           <p className="auth-kicker">Built for d.tech</p>
-          <h1 id="auth-title">See the whole route before choosing the next class.</h1>
+          <h1 id="auth-title">See the whole path.</h1>
           <p>
-            Plan four years of courses, requirements, activities, and workload with every recommendation tied back to a source.
+            Build a source-backed four-year plan before choosing classes, SMCCD options, activities, and workload.
           </p>
         </div>
-        <div className="auth-facts" aria-label="Official data summary">
-          <div><strong>225</strong><span>required credits</span></div>
-          <div><strong>41</strong><span>official courses</span></div>
-          <div><strong>2025-26</strong><span>source year</span></div>
+        <div className="auth-story-footer">
+          <div className="auth-facts" aria-label="Official data summary">
+            <div><strong>225</strong><span>required credits</span></div>
+            <div><strong>41</strong><span>official courses</span></div>
+            <div><strong>2025-26</strong><span>source year</span></div>
+          </div>
+          <p className="auth-source-note">
+            Planning guidance stays tied to official sources. Confirm final decisions with d.tech counseling.
+          </p>
         </div>
-        <p className="auth-source-note">
-          Source-backed planning aid. Final graduation and enrollment decisions must be confirmed with d.tech counseling.
-        </p>
       </section>
 
       <section
