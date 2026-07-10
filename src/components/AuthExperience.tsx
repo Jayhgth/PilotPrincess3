@@ -7,6 +7,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
 const FloatingLines = lazy(() => import("@/components/reactbits/FloatingLines"));
 
@@ -151,7 +152,9 @@ export default function AuthExperience() {
         className="auth-panel"
         aria-label={mode === "sign-in" ? "Sign in" : mode === "sign-up" ? "Create account" : "Reset password"}
       >
-        <div className="auth-panel-inner">
+        <div className="auth-panel-stack">
+          <SpotlightCard className="auth-card">
+            <div className="auth-panel-inner">
           {demoLoginPreview && (
             <a className="auth-back-link auth-demo-return" data-demo-only="true" href="/app">
               <ArrowLeft size={16} weight="bold" aria-hidden />
@@ -262,6 +265,8 @@ export default function AuthExperience() {
             )}
           </form>
 
+            </div>
+          </SpotlightCard>
           <div className="auth-guardrails">
             <p><ShieldCheck size={18} weight="duotone" aria-hidden /> Private student data is protected by per-user database policies.</p>
             <p><CheckCircle size={18} weight="duotone" aria-hidden /> Uncertain source mappings never count as fully verified.</p>

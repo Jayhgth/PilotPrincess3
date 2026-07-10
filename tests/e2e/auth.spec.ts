@@ -7,6 +7,21 @@ test("renders the d.tech authentication experience", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
   await expect(page.locator(".auth-story-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
   await expect(page.locator(".auth-story-background")).toHaveAttribute("data-motion", "animated");
+  const authPanel = page.locator(".auth-panel");
+  const authCard = page.locator(".auth-card");
+  await expect(authCard).toHaveAttribute("data-react-bits", "spotlight-card");
+  const panelBox = await authPanel.boundingBox();
+  const cardBox = await authCard.boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.width).toBeLessThan(panelBox!.width - 30);
+  await authCard.hover({ position: { x: 77, y: 64 } });
+  await expect.poll(async () => Number.parseFloat(await authCard.evaluate((element) =>
+    getComputedStyle(element).getPropertyValue("--spotlight-x")
+  ))).toBeGreaterThan(70);
+  expect(Number.parseFloat(await authCard.evaluate((element) =>
+    getComputedStyle(element).getPropertyValue("--spotlight-x")
+  ))).toBeLessThan(85);
   await expect(page.getByRole("tab", { name: "Sign in" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Create account" })).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveAttribute("placeholder", "you@example.com");
@@ -62,4 +77,5 @@ test("renders a static hero background when reduced motion is requested", async 
 
   await expect(page.locator(".auth-story-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
   await expect(page.locator(".auth-story-background")).toHaveAttribute("data-motion", "reduced");
+  await expect(page.locator(".auth-card")).toHaveCSS("animation-name", "none");
 });

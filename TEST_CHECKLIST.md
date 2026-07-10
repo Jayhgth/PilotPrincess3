@@ -131,6 +131,7 @@ Last run: 2026-07-10
 - [x] Demo-only `Replay onboarding` appears above the sidebar theme control and carries machine-readable metadata pointing to Student profile as its intended permanent location
 - [x] Demo-only `View login page` sits beside the onboarding utility, preserves the active session while showing the full hero/sign-in screen, and provides a direct `Return to workspace` link
 - [x] Login hero renders the graphite/burgundy Floating Lines background, pauses outside the viewport, preserves a CSS fallback without WebGL, and becomes static under reduced-motion preferences
+- [x] Authentication renders in a compact Spotlight Card with pointer and keyboard-focus response, remains narrower than its desktop canvas, and removes its entrance animation under reduced-motion preferences
 - [x] Confidence and review state remain visible and editable
 - [x] Codex runs server-side with structured schema validation
 - [x] AI connection tab displays provider/auth status, model, reasoning effort, CLI version, last check, access policy, concurrency, and an explicit used/not-used feature matrix
