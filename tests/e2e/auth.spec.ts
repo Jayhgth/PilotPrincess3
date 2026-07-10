@@ -5,9 +5,14 @@ test("renders the d.tech authentication experience", async ({ page }) => {
 
   await expect(page).toHaveTitle("Pilot Princess | d.tech planning");
   await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
-  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
-  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-motion", "animated");
+  await expect(page.locator(".auth-page-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await expect(page.locator(".auth-page-background")).toHaveAttribute("data-motion", "animated");
+  expect(await page.locator(".auth-page").evaluate((element) =>
+    getComputedStyle(element, "::before").backgroundColor
+  )).toBe("rgba(23, 24, 27, 0.56)");
+  await expect(page.locator(".auth-story")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   const authPanel = page.locator(".auth-panel");
+  await expect(authPanel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   const authCard = page.locator(".auth-card");
   await expect(authCard).toHaveAttribute("data-react-bits", "spotlight-card");
   const panelBox = await authPanel.boundingBox();
@@ -15,6 +20,16 @@ test("renders the d.tech authentication experience", async ({ page }) => {
   expect(panelBox).not.toBeNull();
   expect(cardBox).not.toBeNull();
   expect(cardBox!.width).toBeLessThan(panelBox!.width - 30);
+  expect(cardBox!.x + cardBox!.width / 2).toBeLessThan(panelBox!.x + panelBox!.width / 2);
+  await expect(authCard).toHaveCSS("background-color", /rgba\(26, 27, 31, 0\.76\)/);
+  expect(await authCard.evaluate((element) => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = getComputedStyle(element).getPropertyValue("--spotlight-color");
+    element.append(probe);
+    const normalized = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return normalized;
+  })).toBe("rgba(255, 255, 255, 0.1)");
   await authCard.hover({ position: { x: 77, y: 64 } });
   await expect.poll(async () => Number.parseFloat(await authCard.evaluate((element) =>
     getComputedStyle(element).getPropertyValue("--spotlight-x")
@@ -75,7 +90,7 @@ test("renders a static hero background when reduced motion is requested", async 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
 
-  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
-  await expect(page.locator(".auth-story-background")).toHaveAttribute("data-motion", "reduced");
+  await expect(page.locator(".auth-page-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
+  await expect(page.locator(".auth-page-background")).toHaveAttribute("data-motion", "reduced");
   await expect(page.locator(".auth-card")).toHaveCSS("animation-name", "none");
 });

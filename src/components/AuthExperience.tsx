@@ -121,10 +121,10 @@ export default function AuthExperience() {
 
   return (
     <main className="auth-page">
+      <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
+        <FloatingLines className="auth-page-background" />
+      </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">
-        <Suspense fallback={<div aria-hidden="true" className="auth-story-background" />}>
-          <FloatingLines className="auth-story-background" />
-        </Suspense>
         <a className="wordmark" href="/" aria-label="Pilot Princess home">
           <span className="wordmark-mark">PP</span>
           <span>Pilot Princess</span>
