@@ -51,7 +51,7 @@ Last updated: 2026-07-10
 - Deterministic, plan-aware prerequisite evaluation now supports exact course requirements, AND/OR groups, minimum grades, prior/concurrent timing, grade-level rules, and independently reviewed placement/equivalency clearances. It reports `Ready`, `Missing prerequisite`, or `Counselor review` without treating ambiguous catalog prose as satisfied; the Timeline links unresolved planned courses back to the relevant catalog.
 - Graduation tracker with separate earned, current, planned, open, and unverified values across all eight requirements. The primary percentage counts earned credit only; scheduled credit is not presented as completion. Compact requirement rows replace decorative and misleading progress bars.
 - Overview and Graduation were rebuilt from a documented benchmark review of Artificial Analysis, LiveBench, ARC Prize, Tailwind application data-display patterns, and React Bits. Both pages now lead with one primary answer, keep supporting measures aligned in shared groups, expose source/rule evidence beside the relevant data, and reserve borders for structural or interactive boundaries.
-- Two locally owned React Bits adaptations provide restrained entrance/number behavior with reduced-motion support. Critical credit percentages render their exact final values immediately rather than animating through inaccurate intermediate states.
+- Overview uses three locally owned React Bits adaptations for restrained entrance, exact-number, and summary-loading feedback with reduced-motion support. Critical credit percentages render their exact final values immediately rather than animating through inaccurate intermediate states.
 - Laboratory Science applies the official 10-credit Biology + 10-credit Chemistry + 10-credit third-science structure, so duplicate science credit cannot falsely complete the requirement. A verified Level 3/III world-language course satisfies the full 20-credit sequence without requiring lower levels, while remaining at its actual Done/In progress/Planned stage.
 - GPA tracker with current/projected and weighted/unweighted values, separate GPA/weighted/pass credit totals, and an on-screen explanation of the d.tech method.
 - Non-destructive source-backed variable-length plan suggestions, compact inline editing for status/year/grade/weighting, grade-grouped transcript history, removal, collapsed plan versions, snapshots, and real active-versus-snapshot comparison.
@@ -61,7 +61,7 @@ Last updated: 2026-07-10
 - Activities and weekly-hour workload tracking. SMCCD load uses the official three-hours-of-total-work-per-unit convention, only the current plan year is treated as simultaneous, and unknown d.tech homework time is not fabricated.
 - Editable grade-aware timeline generation.
 - Four-control simulator for major direction, path intensity, course style, and activity load, with current/simulated metrics, risks, tradeoffs, and saved runs.
-- Lightweight generated student summaries with a deterministic fallback.
+- Lightweight generated student summaries with a deterministic fallback. Starting generation immediately removes the stale note from view and converts the action into a disabled, accessible React Bits Shiny Text loading state until the newly saved summary is ready; a failed request restores the prior saved note.
 
 ### Supabase
 
@@ -101,7 +101,7 @@ Last updated: 2026-07-10
 
 - `pnpm lint`: pass.
 - `pnpm typecheck`: pass with 0 errors, 0 warnings, and 0 hints.
-- `pnpm test`: 73/73 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, transcript/catalog alias suggestion deduplication, SMCCD requirement progress, prerequisite parsing/evaluation/graph audits, reviewed directional-equivalency behavior, and readable Codex runtime error decoding.
+- `pnpm test`: 73/73 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, transcript/catalog alias suggestion deduplication, SMCCD requirement progress, prerequisite parsing/evaluation/graph audits, reviewed directional-equivalency behavior, readable Codex runtime error decoding, and the summary action's explicit idle/loading states.
 - `pnpm test:e2e`: 6/6 Chromium tests pass, including the full-page animated auth composition, translucent-card contrast and placement, neutral Spotlight response, open-email signup UI, recovery states, reduced motion, and a 390x844 viewport.
 - `pnpm build`: Astro standalone SSR build passes.
 - Brand-mark QA: the transparent SVG loads at its intended 34 x 34 px size on the live authentication page at 1,440 x 900 and 390 x 844, remains legible over the animated dark background, and introduces no horizontal overflow. The PNG fallback retains an RGBA alpha channel.

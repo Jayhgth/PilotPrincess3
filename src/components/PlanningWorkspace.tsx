@@ -71,6 +71,7 @@ import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import SmccdPlanner from "@/components/SmccdPlanner";
+import SummaryGenerateButton from "@/components/SummaryGenerateButton";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   Activity,
@@ -1230,6 +1231,7 @@ export default function PlanningWorkspace() {
 
   function renderDashboard() {
     if (!profile) return null;
+    const isGeneratingSummary = busyLabel === "Generating summary";
     const nextTasks = tasks.filter((task) => !task.is_completed).slice(0, 4);
     const requiredCredits = progress.reduce((total, item) => total + Number(item.requirement.credits_required), 0);
     const requirementSnapshot = progress.map((item) => {
@@ -1246,7 +1248,7 @@ export default function PlanningWorkspace() {
         <PageHeader
           title={profile.preferred_name ? `Good to see you, ${profile.preferred_name}` : "Planning overview"}
           description="What is done, what needs attention, and how the current plan fits."
-          actions={<button className="secondary-button" onClick={() => void generateSummary()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Generate summary</button>}
+          actions={<SummaryGenerateButton loading={isGeneratingSummary} disabled={Boolean(busyLabel)} onClick={() => void generateSummary()} />}
         />
         <AnimatedContent>
           <section className="overview-snapshot" aria-label="Plan snapshot">
@@ -1301,7 +1303,7 @@ export default function PlanningWorkspace() {
             </AnimatedContent>
           </div>
         </div>
-        {summaries[0] && <AnimatedContent delay={0.16}><section className="overview-plan-note"><Sparkle size={18} /><div><h2>Latest plan note</h2><p>{summaries[0].content}</p></div><span>{openRequirements.length > 0 ? `${openRequirements.length} areas still open` : "All tracked areas covered"}</span></section></AnimatedContent>}
+        {!isGeneratingSummary && summaries[0] && <AnimatedContent key={summaries[0].id} delay={0.08}><section className="overview-plan-note"><Sparkle size={18} /><div><h2>Latest plan note</h2><p>{summaries[0].content}</p></div><span>{openRequirements.length > 0 ? `${openRequirements.length} areas still open` : "All tracked areas covered"}</span></section></AnimatedContent>}
       </div>
     );
   }

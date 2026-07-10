@@ -36,6 +36,7 @@ Last run: 2026-07-10
 - [x] Plan length is constrained to the years available through grade 12
 - [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
+- [x] Summary generation hides the prior note for the full request, exposes a disabled `Generating summary` button with `aria-busy`, and restores the prior note if generation fails
 - [x] One Courses destination replaces separate academic-plan, d.tech catalog, and SMCCD navigation entries
 - [x] My courses shows a single `Done`, `In progress`, `Planned` kanban in that order on desktop and mobile
 - [x] Editable courses drag from anywhere on the collapsed card, show hover/pickup/drop feedback, and receive destination-appropriate grade/year defaults
