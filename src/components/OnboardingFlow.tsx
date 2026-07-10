@@ -28,6 +28,7 @@ import type {
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
 import { ACADEMIC_INTEREST_OPTIONS, MAJOR_DIRECTION_OPTIONS } from "@/lib/profile-planning";
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
+import BrandMark from "@/components/BrandMark";
 
 type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "transcript";
 
@@ -368,7 +369,7 @@ export default function OnboardingFlow({
   return (
     <main className="onboarding-shell">
       <header className="onboarding-topbar">
-        <a className="wordmark" href="/app"><span className="wordmark-mark">PP</span><span>Pilot Princess</span></a>
+        <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">
           {isReplay && <span>Changes save only when you finish.</span>}
           <button className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</button>

@@ -7,6 +7,7 @@ import {
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import BrandMark from "@/components/BrandMark";
 
 type RecoveryState = "checking" | "ready" | "invalid" | "complete";
 
@@ -80,7 +81,7 @@ export default function PasswordResetExperience() {
     <main className="auth-page">
       <section className="auth-story" aria-labelledby="reset-story-title">
         <a className="wordmark" href="/" aria-label="Pilot Princess home">
-          <span className="wordmark-mark">PP</span>
+          <BrandMark />
           <span>Pilot Princess</span>
         </a>
         <div className="auth-story-copy">

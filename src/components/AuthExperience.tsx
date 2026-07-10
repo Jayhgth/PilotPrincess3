@@ -7,6 +7,7 @@ import {
 import { lazy, Suspense, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import BrandMark from "@/components/BrandMark";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
 const FloatingLines = lazy(() => import("@/components/reactbits/FloatingLines"));
@@ -132,7 +133,7 @@ export default function AuthExperience() {
       </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">
         <a className="wordmark" href="/" aria-label="Pilot Princess home">
-          <span className="wordmark-mark">PP</span>
+          <BrandMark />
           <span>Pilot Princess</span>
         </a>
         <div className="auth-story-copy">

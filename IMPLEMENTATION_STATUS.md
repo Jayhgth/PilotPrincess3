@@ -25,6 +25,7 @@ Last updated: 2026-07-10
 
 - Astro 7 SSR application with React islands and the Node standalone adapter.
 - Calm utilitarian student workspace with neutral graphite/silver surfaces, one restrained burgundy accent, Manrope typography, compact desktop/mobile navigation, light/dark themes, empty/loading/error states, and keyboard focus treatment.
+- A transparent Pilot Princess brand mark now combines an abstract `P`, upward route arrow, and restrained three-point crown in the existing burgundy/graphite palette. The reusable mark replaces every temporary `PP` box across authentication, recovery, onboarding, loading, and the workspace sidebar, with SVG and PNG favicon assets included.
 - Three primary destinations (`Overview`, `Courses`, and `Graduation`) and seven secondary tools behind `More tools`, with a measured 1,044 px desktop content canvas, no audited horizontal overflow, and no authenticated product text below 12 px.
 - A coherent academic-workspace visual system now replaces repeated full-width metric and record cards: Overview uses one earned-credit snapshot, a compact requirement index, and an explicit Course plan action; Courses uses a three-stage done/current/planned board; Graduation uses one benchmark-style earned/scheduled/open comparison matrix; and GPA uses one current/projected comparison table.
 - A documented product UI system in `UI_DESIGN_SYSTEM.md` defines the typography roles, spacing scale, control sizes, surface hierarchy, separator rules, form rules, responsive page patterns, and review checklist. It is grounded in current Linear, Atlassian, Carbon, and USWDS product guidance rather than one-off page styling.
@@ -101,6 +102,7 @@ Last updated: 2026-07-10
 - `pnpm test`: 72/72 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, transcript/catalog alias suggestion deduplication, SMCCD requirement progress, prerequisite parsing/evaluation/graph audits, and reviewed directional-equivalency behavior.
 - `pnpm test:e2e`: 6/6 Chromium tests pass, including the full-page animated auth composition, translucent-card contrast and placement, neutral Spotlight response, open-email signup UI, recovery states, reduced motion, and a 390x844 viewport.
 - `pnpm build`: Astro standalone SSR build passes.
+- Brand-mark QA: the transparent SVG loads at its intended 34 x 34 px size on the live authentication page at 1,440 x 900 and 390 x 844, remains legible over the animated dark background, and introduces no horizontal overflow. The PNG fallback retains an RGBA alpha channel.
 - `pnpm peers check`: pass.
 - `supabase db lint --linked`: no schema errors.
 - `supabase db push --linked --include-all --yes`: the prerequisite migration was applied after the later transcript-reconciliation migration; the existing seed remains applied.

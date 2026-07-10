@@ -29,6 +29,7 @@ import {
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
+import BrandMark from "@/components/BrandMark";
 import {
   useCallback,
   useEffect,
@@ -223,7 +224,7 @@ function PaginationControls({
 function LoadingWorkspace() {
   return (
     <main className="workspace-loading" aria-live="polite">
-      <div className="loading-brand"><span className="wordmark-mark">PP</span> Pilot Princess</div>
+      <div className="loading-brand"><BrandMark /> Pilot Princess</div>
       <div className="skeleton-line wide" />
       <div className="skeleton-line" />
       <div className="skeleton-grid">
@@ -1846,7 +1847,7 @@ export default function PlanningWorkspace() {
     <div className="app-shell">
       <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
         <div className="sidebar-top">
-          <a className="wordmark" href="/app"><span className="wordmark-mark">PP</span><span>Pilot Princess</span></a>
+          <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
           <button className="mobile-close icon-button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation"><X size={18} /></button>
         </div>
         <nav className="sidebar-nav" aria-label="Planning workspace">
