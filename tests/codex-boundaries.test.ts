@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODEX_FEATURES, codexRuntimeStatus } from "@/server/codex";
+import { CODEX_FEATURES, codexErrorMessage, codexRuntimeStatus } from "@/server/codex";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -19,5 +19,20 @@ describe("Codex feature boundaries", () => {
     expect(status.model).toBe("gpt-5.6-luna");
     expect(status.reasoningEffort).toBe("low");
     expect(status.accessPolicy).toContain("tools and network disabled");
+  });
+
+  it("turns nested Codex runtime errors into a useful message", () => {
+    const error = new Error(JSON.stringify({
+      type: "error",
+      status: 400,
+      error: {
+        type: "invalid_request_error",
+        message: "The 'gpt-5.6-luna' model requires a newer version of Codex."
+      }
+    }));
+
+    expect(codexErrorMessage(error, "Codex failed.")).toBe(
+      "This server is still running an older Codex CLI. Restart the app to load the upgraded runtime."
+    );
   });
 });

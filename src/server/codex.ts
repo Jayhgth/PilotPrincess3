@@ -143,6 +143,33 @@ export function codexRuntimeStatus() {
   };
 }
 
+export function codexErrorMessage(error: unknown, fallback: string) {
+  const rawMessage = error instanceof Error
+    ? error.message
+    : error && typeof error === "object" && "message" in error
+      ? String(error.message)
+      : fallback;
+  let message = rawMessage;
+
+  try {
+    const payload: unknown = JSON.parse(rawMessage);
+    if (payload && typeof payload === "object") {
+      const outer = payload as { error?: unknown; message?: unknown };
+      if (outer.error && typeof outer.error === "object" && "message" in outer.error) {
+        message = String(outer.error.message);
+      } else if (typeof outer.message === "string") {
+        message = outer.message;
+      }
+    }
+  } catch {
+    // Plain error messages need no decoding.
+  }
+
+  return message.includes("requires a newer version of Codex")
+    ? "This server is still running an older Codex CLI. Restart the app to load the upgraded runtime."
+    : message;
+}
+
 function resolveCodexCliScript() {
   const sdkEntry = import.meta.resolve("@openai/codex-sdk");
   return createRequire(sdkEntry).resolve("@openai/codex/bin/codex.js");

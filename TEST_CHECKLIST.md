@@ -6,7 +6,7 @@ Last run: 2026-07-10
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 72/72 unit tests passing
+- [x] `pnpm test` with 73/73 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
@@ -136,6 +136,7 @@ Last run: 2026-07-10
 - [x] Codex runs server-side with structured schema validation
 - [x] AI connection tab displays provider/auth status, model, reasoning effort, CLI version, last check, access policy, concurrency, and an explicit used/not-used feature matrix
 - [x] Codex SDK 0.144.1 live smoke succeeds with `gpt-5.6-luna` and `low` reasoning, equivalent to Light in Codex app surfaces
+- [x] Outdated Codex runtime failures render a concise restart instruction instead of raw nested provider JSON
 - [x] Authenticated Codex conversation succeeds, reports model and latency, and does not expose the credential or claim access to student data
 - [x] Text PDF parsing and planning calculations are explicitly deterministic and do not call Codex
 - [x] Upload content is treated as untrusted data with no network/tool access

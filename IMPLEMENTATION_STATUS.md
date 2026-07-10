@@ -7,7 +7,7 @@ Last updated: 2026-07-10
 - Strict local-MVP implementation grade: `90/100`; the separate audit grades UI/UX at `91/100` and student usefulness at `86/100`.
 - The complete student flow is implemented in Astro and backed by the linked Supabase project `zqkzgmwptdsaqbzrjngt`.
 - No code or data was copied from PilotPrincess2. The implementation was built from the linked Spec Sheet, the user's clarifications, official d.tech sources, official Codex SDK documentation, and architectural review of `t3code`.
-- The production build, 72 unit tests, six browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency/prerequisite validation, and Codex connectivity check all pass.
+- The production build, 73 unit tests, six browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency/prerequisite validation, and Codex connectivity check all pass.
 
 ## Clarified Product Decisions
 
@@ -93,6 +93,7 @@ Last updated: 2026-07-10
 - A dedicated transcript prompt excludes planned or in-progress rows, preserves explicit evidence, and never imports a course until the student confirms it.
 - Deterministic planners and calculators remain functional when Codex is unavailable.
 - The authenticated AI connection screen uses a T3 Code-style provider probe and exposes connected/unavailable/checking states, authentication method, model, reasoning effort, Codex CLI version, last check time, concurrency, sandbox policy, the complete feature boundary, and a separate live generation check.
+- Nested Codex runtime failures are decoded before reaching the UI; an outdated server now produces a direct restart instruction instead of exposing raw provider JSON.
 - The AI conversation explicitly cannot access student records, files, the browser, or tools and explains that a successful message proves only the authenticated server-side Codex path and structured response.
 - Codex is explicitly excluded from text-based transcript parsing, graduation, GPA, workload, SMCCD progress, and other deterministic planning calculations.
 
@@ -100,7 +101,7 @@ Last updated: 2026-07-10
 
 - `pnpm lint`: pass.
 - `pnpm typecheck`: pass with 0 errors, 0 warnings, and 0 hints.
-- `pnpm test`: 72/72 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, transcript/catalog alias suggestion deduplication, SMCCD requirement progress, prerequisite parsing/evaluation/graph audits, and reviewed directional-equivalency behavior.
+- `pnpm test`: 73/73 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, transcript/catalog alias suggestion deduplication, SMCCD requirement progress, prerequisite parsing/evaluation/graph audits, reviewed directional-equivalency behavior, and readable Codex runtime error decoding.
 - `pnpm test:e2e`: 6/6 Chromium tests pass, including the full-page animated auth composition, translucent-card contrast and placement, neutral Spotlight response, open-email signup UI, recovery states, reduced motion, and a 390x844 viewport.
 - `pnpm build`: Astro standalone SSR build passes.
 - Brand-mark QA: the transparent SVG loads at its intended 34 x 34 px size on the live authentication page at 1,440 x 900 and 390 x 844, remains legible over the animated dark background, and introduces no horizontal overflow. The PNG fallback retains an RGBA alpha channel.

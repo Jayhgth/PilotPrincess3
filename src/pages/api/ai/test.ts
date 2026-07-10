@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { codexRuntimeStatus, runCodexStructured } from "@/server/codex";
+import { codexErrorMessage, codexRuntimeStatus, runCodexStructured } from "@/server/codex";
 
 export const prerender = false;
 
@@ -55,7 +55,7 @@ export const POST: APIRoute = async ({ request }) => {
   } catch (error) {
     const message = error instanceof Error && error.name === "AbortError"
       ? "Codex did not respond before the 60 second test timeout."
-      : error instanceof Error ? error.message : "Codex connection test failed.";
+      : codexErrorMessage(error, "Codex connection test failed.");
     await auth.supabase.from("event_logs").insert({
       user_id: auth.user.id,
       event_name: "codex_connection_tested",
