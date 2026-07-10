@@ -2,6 +2,7 @@ import { normalizeCourseKey, referenceFromCatalogCourse } from "./normalize";
 import type {
   AllOfRule,
   CatalogCourse,
+  ClearanceRule,
   CourseReference,
   CourseRule,
   GradeLevel,
@@ -46,21 +47,6 @@ const AMBIGUOUS_PATTERNS: Array<{
     pattern: /\b(?:recommended|preferred|strongly encouraged|suggested)\b/i,
     reason: "ambiguous_recommendation",
     explanation: "The source describes a recommendation without saying whether it is required."
-  },
-  {
-    pattern: /\b(?:approval|permission|consent)\b/i,
-    reason: "approval_required",
-    explanation: "Approval is a manual decision and the source does not encode its criteria."
-  },
-  {
-    pattern: /\b(?:equivalent|equivalency|equivalent experience)\b/i,
-    reason: "equivalency_not_defined",
-    explanation: "The source allows an equivalency but does not define a deterministic equivalency mapping."
-  },
-  {
-    pattern: /\b(?:placement|assessment|test score|qualifying score|proficiency)\b/i,
-    reason: "placement_not_defined",
-    explanation: "The source refers to placement or proficiency without a complete deterministic threshold."
   },
   {
     pattern: /\bunless\b/i,
@@ -166,6 +152,23 @@ function courseRule(
   };
 }
 
+function clearanceRule(
+  clauseText: string,
+  source: PrerequisiteSourceContext,
+  clearanceType: ClearanceRule["clearanceType"],
+  authorityText: string
+): ClearanceRule {
+  return { kind: "clearance", clauseText, source, clearanceType, authorityText };
+}
+
+function applyMinimumGrade(rule: PrerequisiteRule, minimumGrade: LetterGrade): PrerequisiteRule {
+  if (rule.kind === "course") return { ...rule, minimumGrade };
+  if (rule.kind === "all_of" || rule.kind === "any_of") {
+    return { ...rule, rules: rule.rules.map((child) => applyMinimumGrade(child, minimumGrade)) };
+  }
+  return rule;
+}
+
 function courseRuleWithGrade(
   rawCourseName: string,
   rawGrade: string,
@@ -182,7 +185,8 @@ function courseRuleWithGrade(
       `The explicit grade “${rawGrade}” is not a supported letter-grade threshold.`
     );
   }
-  return courseRule(rawCourseName, clauseText, source, options, "prior", minimumGrade);
+  const baseRule = parseClause(rawCourseName, source, options);
+  return applyMinimumGrade(baseRule, minimumGrade);
 }
 
 function gradeLevelRule(
@@ -254,13 +258,63 @@ function parseClause(
     return unresolvedRule(rawClause, source, "unknown_clause", "The prerequisite clause is empty.");
   }
 
+  const withoutHistoricalLabel = clauseText
+    .replace(/\s*\((?:formerly\s+[^)]+|offered at\s+[^)]+|Skyline|Canada|Cañada)\)/gi, "")
+    .trim();
+  if (withoutHistoricalLabel !== clauseText) {
+    return parseClause(withoutHistoricalLabel, source, options);
+  }
+
   const gradeLevel = parseGradeLevel(clauseText, source);
   if (gradeLevel) return gradeLevel;
+
+  const challengeExplanation = clauseText.match(/^(.+?\.)\s+(.+\bprerequisite challenge\b.+)$/i);
+  if (challengeExplanation) {
+    const statedOptions = parseClause(challengeExplanation[1].replace(/\.$/, ""), source, options);
+    const challenge = clearanceRule(
+      challengeExplanation[2],
+      source,
+      "prerequisite_challenge",
+      challengeExplanation[2]
+    );
+    return { kind: "any_of", clauseText, source, rules: [statedOptions, challenge] };
+  }
+
+  if (/^(?:an?\s+)?equivalent(?:\s+(?:course|coursework|experience))?$/i.test(clauseText)) {
+    return clearanceRule(clauseText, source, "approved_equivalency", clauseText);
+  }
+  if (
+    /^(?:appropriate\s+)?placement\b|^placement as determined\b|^other measures\b/i.test(clauseText) ||
+    /^(?:appropriate\s+skill level\b.*\b(?:eligibility|placement)\b|eligibility for\b|eligible for\b)/i.test(clauseText)
+  ) {
+    return clearanceRule(clauseText, source, "placement", clauseText);
+  }
+  if (/^(?:instructor|department|counselor|dean|division)?\s*(?:approval|permission|consent)\b/i.test(clauseText)) {
+    return clearanceRule(clauseText, source, "instructor_approval", clauseText);
+  }
+  if (/^prerequisite challenge\b/i.test(clauseText)) {
+    return clearanceRule(clauseText, source, "prerequisite_challenge", clauseText);
+  }
+  if (/^(?:admission|acceptance|accepted|enrollment|indenture)\s+(?:to|into|in)\b.*\b(?:program|academy|apprenticeship)\b/i.test(clauseText)) {
+    return clearanceRule(clauseText, source, "program_admission", clauseText);
+  }
+  if (/^(?:demonstration\b.*|(?:by\s+)?audition\b.*|portfolio review\b.*|present\b.*portfolio\b.*)$/i.test(clauseText)) {
+    return clearanceRule(clauseText, source, "audition_or_portfolio", clauseText);
+  }
 
   for (const ambiguous of AMBIGUOUS_PATTERNS) {
     if (ambiguous.pattern.test(clauseText)) {
       return unresolvedRule(clauseText, source, ambiguous.reason, ambiguous.explanation);
     }
+  }
+
+  const priorOrConcurrent = clauseText.match(/^(?:completion(?:\s+of)?|completed)\s+or\s+concurrent enrollment in,?\s+(.+)$/i);
+  if (priorOrConcurrent) {
+    return parseClause(priorOrConcurrent[1], source, { ...options, defaultTiming: "prior_or_concurrent" });
+  }
+  const concurrentField = clauseText.match(/^concurrent enrollment in,?\s+(.+)$/i);
+  if (concurrentField) {
+    return parseClause(concurrentField[1], source, { ...options, defaultTiming: "concurrent" });
   }
 
   const coRequisiteSuffix = clauseText.match(/^(.+?)\s+(?:co-?requisite|corequisite)$/i);
@@ -271,7 +325,7 @@ function parseClause(
   if (coRequisitePrefix) {
     return courseRule(coRequisitePrefix[1], clauseText, source, options, "prior_or_concurrent");
   }
-  const concurrentEnrollment = clauseText.match(/^concurrent enrollment (?:in|with)\s+(.+)$/i);
+  const concurrentEnrollment = clauseText.match(/^concurrent enrollment with\s+(.+)$/i);
   if (concurrentEnrollment) {
     return courseRule(concurrentEnrollment[1], clauseText, source, options, "concurrent");
   }
@@ -281,12 +335,12 @@ function parseClause(
   }
 
   const gradeSuffix = clauseText.match(
-    /^(.+?)\s+with\s+(?:a\s+)?(?:minimum\s+)?grade\s+(?:of\s+)?([A-F][+-]?)\s+or\s+better$/i
+    /^(.+?),?\s+with\s+(?:a\s+)?(?:minimum\s+)?grade\s+(?:of\s+)?([A-F][+-]?)\s+or\s+better$/i
   );
   if (gradeSuffix) {
     return courseRuleWithGrade(gradeSuffix[1], gradeSuffix[2], clauseText, source, options);
   }
-  const shortGradeSuffix = clauseText.match(/^(.+?)\s+with\s+(?:a\s+)?([A-F][+-]?)\s+or\s+better$/i);
+  const shortGradeSuffix = clauseText.match(/^(.+?),?\s+with\s+(?:a\s+)?([A-F][+-]?)\s+or\s+better$/i);
   if (shortGradeSuffix) {
     return courseRuleWithGrade(shortGradeSuffix[1], shortGradeSuffix[2], clauseText, source, options);
   }
@@ -317,11 +371,23 @@ function parseClause(
       clauseText,
       source,
       course: exactReference,
-      timing: "prior"
+      timing: options.defaultTiming ?? "prior"
     };
   }
 
-  if (/[(),;]/.test(withoutCompletionPrefix)) {
+  const normalizedBooleans = withoutCompletionPrefix
+    .replace(/,\s+or\s+/gi, " or ")
+    .replace(/,\s+and\s+/gi, " and ");
+  const commaParts = normalizedBooleans.split(/\s*,\s*/).filter(Boolean);
+  if (commaParts.length > 1 && commaParts.every((part) => catalogReference(part, options.catalog))) {
+    return {
+      kind: "all_of",
+      clauseText,
+      source,
+      rules: commaParts.map((part) => parseClause(part, source, options))
+    };
+  }
+  if (/[(),;]/.test(normalizedBooleans)) {
     return unresolvedRule(
       clauseText,
       source,
@@ -330,8 +396,8 @@ function parseClause(
     );
   }
 
-  const hasAnd = /\s+and\s+/i.test(withoutCompletionPrefix);
-  const hasOr = /\s+or\s+/i.test(withoutCompletionPrefix);
+  const hasAnd = /\s+and\s+/i.test(normalizedBooleans);
+  const hasOr = /\s+or\s+/i.test(normalizedBooleans);
   if (hasAnd && hasOr) {
     return unresolvedRule(
       clauseText,
@@ -341,15 +407,15 @@ function parseClause(
     );
   }
   if (hasOr) {
-    const rules = withoutCompletionPrefix.split(/\s+or\s+/i).map((part) => parseClause(part, source, options));
+    const rules = normalizedBooleans.split(/\s+or\s+/i).map((part) => parseClause(part, source, options));
     return { kind: "any_of", clauseText, source, rules };
   }
   if (hasAnd) {
-    const rules = withoutCompletionPrefix.split(/\s+and\s+/i).map((part) => parseClause(part, source, options));
+    const rules = normalizedBooleans.split(/\s+and\s+/i).map((part) => parseClause(part, source, options));
     return { kind: "all_of", clauseText, source, rules };
   }
 
-  return courseRule(withoutCompletionPrefix, clauseText, source, options, "prior");
+  return courseRule(withoutCompletionPrefix, clauseText, source, options, options.defaultTiming ?? "prior");
 }
 
 function unresolvedClauses(rule: PrerequisiteRule): UnresolvedRule[] {
@@ -359,7 +425,7 @@ function unresolvedClauses(rule: PrerequisiteRule): UnresolvedRule[] {
 }
 
 function hasResolvedLeaf(rule: PrerequisiteRule): boolean {
-  if (rule.kind === "course" || rule.kind === "grade_level") return true;
+  if (rule.kind === "course" || rule.kind === "clearance" || rule.kind === "grade_level") return true;
   if (rule.kind === "all_of" || rule.kind === "any_of") return rule.rules.some(hasResolvedLeaf);
   return false;
 }

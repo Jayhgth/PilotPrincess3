@@ -167,8 +167,29 @@ export interface SmccdCourse {
   degree_applicable: boolean;
   transfer_credit: "CSU" | "UC" | "CSU/UC" | null;
   attributes: string[];
+  prerequisites: string[];
+  corequisites: string[];
+  recommended_preparation: string[];
+  detail_status: "verified" | "partial" | "unavailable";
+  degree_applicability_source: "course_detail" | "number_heuristic";
   catalog_url: string;
   source_year: string;
+}
+
+export interface SmccdPrerequisiteClearance {
+  id: string;
+  user_id: string;
+  target_course_id: string;
+  clearance_type: "placement" | "approved_equivalency" | "prerequisite_challenge" | "instructor_approval" | "program_admission" | "audition_or_portfolio";
+  status: "approved" | "pending" | "denied";
+  verification_status: "pending" | "approved" | "rejected";
+  authority: string;
+  evidence_summary: string | null;
+  decided_at: string | null;
+  expires_at: string | null;
+  source_url: string | null;
+  verified_by: string | null;
+  verified_at: string | null;
 }
 
 export interface SmccdHighSchoolEquivalency {

@@ -1,14 +1,17 @@
 # Deterministic prerequisite engine
 
-The prerequisite engine lives in `src/lib/prerequisites/`. It has no UI, database, or planner-model dependency. Callers provide structurally typed catalog and plan records, so a later Courses-board integration can adapt the current application models without coupling this engine to them.
+The prerequisite engine lives in `src/lib/prerequisites/`. It has no UI or planner-model dependency. Callers provide structurally typed catalog and plan records, so a later Courses-board integration can adapt application models without coupling the evaluator to them. The same engine evaluates d.tech and SMCCD rules.
 
 ## API
 
 ```ts
 import {
   auditPrerequisiteGraph,
+  auditSmccdPrerequisites,
+  buildReviewedDtechToSmccdPrerequisiteEquivalencies,
   evaluateParsedPrerequisites,
-  parsePrerequisites
+  parsePrerequisites,
+  parseSmccdCoursePrerequisites
 } from "@/lib/prerequisites";
 
 const parsed = parsePrerequisites(
@@ -54,6 +57,10 @@ const result = evaluateParsedPrerequisites(parsed, {
 // and counselor questions suitable for a user-facing explanation.
 
 const audit = auditPrerequisiteGraph(catalog);
+
+const smccdParsed = parseSmccdCoursePrerequisites(selectedSmccdCourse, allSmccdCourses);
+const smccdResult = evaluateParsedPrerequisites(smccdParsed, smccdPlanInput);
+const districtAudit = auditSmccdPrerequisites(allSmccdCourses);
 ```
 
 `termIndex` is an application-defined monotonic term number. A smaller number is earlier; the same number is concurrent. A completed transcript row without a term index is treated as historical. Current or planned rows without a term index cannot establish chronology and produce `needs_review`.
@@ -66,26 +73,50 @@ The AST supports:
 - exact course references with prior, prior-or-concurrent co-requisite, or strictly concurrent timing;
 - explicit letter-grade minimums;
 - minimum, maximum, and enumerated grade-level constraints; and
+- placement, approved-equivalency, prerequisite-challenge, instructor-approval, program-admission, and audition/portfolio clearances; and
 - unresolved clauses that retain the exact source text, source metadata, explanation, and counselor question.
 
 Evaluation uses exact normalized IDs, codes, names, and declared aliases. It does not use substring or fuzzy matching. Transcript-backed and manual rows behave identically once those identifiers or aliases are supplied.
 
 ## Conservative parsing policy
 
-The parser recognizes only narrow forms with explicit meaning: simple course labels, `and`, `or`, completion prefixes, supported grade-minimum wording, explicit co-requisite/concurrent wording, and grade 9–12 constraints. Multiple strings in a catalog array are treated as `all_of`.
+The parser recognizes only narrow forms with explicit meaning: simple course labels, unambiguous `and` or `or`, completion prefixes, supported grade-minimum wording, explicit co-requisite/concurrent wording, grade 9–12 constraints, and explicitly named administrative clearances. Multiple prerequisite strings are treated as `all_of`. SMCCD's separate corequisite field is parsed as strictly concurrent; recommended preparation is preserved in catalog data but never evaluated as a requirement.
 
 The following remain manual review:
 
 - recommendations such as `preferred`, `recommended`, or `suggested`;
-- approvals, permissions, and consent;
-- unspecified equivalents;
-- placement, proficiency, assessment, or test language without a complete threshold;
+- approvals, placement, challenges, and unspecified equivalents without an independently verified clearance decision;
+- proficiency, assessment, test, experience, or credential language that cannot be represented as an exact course or named clearance;
 - `and/or`, mixed ungrouped AND/OR expressions, exceptions, and unsupported punctuation/grouping; and
 - prose that is not an exact catalog label or a safely recognizable course identifier.
 
 Source confidence is preserved as evidence; it is never silently promoted. An unresolved branch evaluates to `needs_review` unless boolean logic proves another explicit `any_of` branch sufficient. For `all_of`, a known failed requirement remains `blocked` even if a separate clause also needs review.
 
+An explicit placement or equivalency alternative is a structured rule, but an absent or student-reported decision remains `needs_review`. Stored clearance submissions carry a separate verification status. `clearanceFromStoredRecord` converts a claimed approval to `pending` until it has been independently approved; the migration's RLS policies also prevent an authenticated student from promoting or editing a reviewed record.
+
 Same-term courses never satisfy a prior prerequisite. They satisfy only a rule explicitly parsed or authored as `prior_or_concurrent` or `concurrent`. An earlier planned term can satisfy a course prerequisite, but an unearned grade cannot prove an explicit grade minimum.
+
+## SMCCD catalog ingestion and ENGL C1000
+
+The SMCCD scraper now reads every official course-detail page, not just the subject index. It stores verbatim prerequisite, corequisite, and recommended-preparation text separately, plus exact degree applicability, general-education attributes, detail status, and source URL. A failed or incomplete detail read stays `partial` or `unavailable`; the engine does not manufacture missing rules.
+
+The previous numeric heuristic incorrectly treated Common Course Numbering codes such as `C1000` as non-degree courses because `1000` is greater than 800. The detail-page value now wins. At all three colleges, `ENGL C1000 Academic Reading and Writing` is recorded as:
+
+- degree applicable and CSU/UC transferable;
+- Cal-GETC Area 1A and AA/AS Degree Requirements Area 1A; and
+- requiring placement through the college's multiple-measures process.
+
+That makes ENGL C1000 an SMCCD/Cal-GETC English-composition general-education course. It does not automatically prove d.tech high-school English graduation credit. The checked-in 2021 d.tech equivalency chart has no ENGL C1000 row, so any d.tech credit remains pending until d.tech supplies an approved mapping.
+
+## Equivalency direction
+
+Equivalency is directional:
+
+- `buildDtechPrerequisiteEquivalencies` converts reviewed rows in the existing d.tech chart from an SMCCD course to the published d.tech equivalent. It never reverses them.
+- `buildReviewedDtechToSmccdPrerequisiteEquivalencies` accepts a separately reviewed SMCCD decision that a d.tech course satisfies a named SMCCD prerequisite. Pending or unverified decisions stay `needs_review`. A mapping may be limited to one target SMCCD course.
+- Explicit catalog wording such as `course or equivalent, or placement` becomes an `any_of` rule. Any exact course path can satisfy it; equivalency and placement paths require their own approved evidence.
+
+This prevents a college-to-high-school credit conversion from being reused as proof that the high-school course meets college placement or prerequisite standards.
 
 ## Graph audit
 
@@ -96,14 +127,24 @@ Same-term courses never satisfy a prior prerequisite. They satisfy only a rule e
 - course or grade-level rules with no feasible grade sequence; and
 - every unresolved source clause.
 
-The catalog-wide test reads the checked-in `supabase/seed.sql` without modifying it. The seed uses combined display names, so the test supplies explicit aliases for the shorter prerequisite labels (for example, `Geometry` for `Geometry / Geometry Honors`). These aliases must eventually come from reviewed catalog mapping data rather than inference.
+The d.tech catalog-wide test reads the checked-in `supabase/seed.sql` without modifying it. The seed uses combined display names, so the test supplies explicit aliases for shorter prerequisite labels (for example, `Geometry` for `Geometry / Geometry Honors`). These aliases must come from reviewed catalog mapping data rather than inference.
 
 As of the checked-in 2025–26 d.tech seed, all 41 courses and 25 deterministic course references audit cleanly after those explicit aliases. One phrase remains unresolved:
 
 - `Precalculus preferred` on `Advanced Physics Honors`: “preferred” does not say whether Precalculus is required, nor what exception or alternate evidence is accepted.
 
+The checked-in SMCCD audit covers all 2,461 courses and currently finds 846 deterministic course references, 246 unresolved AST clauses (227 unique audit warnings), 109 unique missing exact references, 16 cycle components, and no impossible grade sequences. Fourteen cycles are explicit co-requisite groups; the CSM NURS 231/232/235 group and Skyline MUS. 430.4 self-reference include a prior edge and remain catalog-review errors. Remaining review cases are intentionally retained. Common categories include:
+
+- long police, fire, nursing, dental, and apprenticeship eligibility prose containing applications, licenses, certificates, tests, work experience, or several administrative decisions;
+- mixed ungrouped `AND`/`OR` expressions, `and/or`, and complex lab-sequence alternatives whose grouping cannot be safely inferred;
+- portfolio, audition, program-admission, or instructor-review prose that combines a clearance with additional unstated criteria;
+- historical, cross-campus, generic, or external course descriptions that do not exactly resolve to a catalog row; and
+- malformed source text such as duplicated `Eligibility for` or a grade statement whose operator was lost on the catalog page.
+
+Examples intentionally left unresolved include the full `AJPS 107` PELLETB/physical-agility/fingerprint/license clause, `ART 352 ... minimum grade of C and/or portfolio review`, the multi-sequence `BIOL 240` biology-and-chemistry rule, and course-specific program/certificate admission prose. These require a catalog correction or counselor interpretation, not another parser guess.
+
 ## Later planner integration seam
 
-The Courses board should add a small adapter, outside this module, that maps catalog rows to `CatalogCourse` and completed/current/planned rows to `PlannedCourseInput`. The adapter should assign a stable `termIndex`, preserve normalized IDs/codes/names, and load only reviewed aliases. It can then parse each catalog prerequisite array once, cache the AST by catalog version, evaluate each planned course, and render the structured result.
+The Courses board should add a small adapter, outside this module, that maps catalog rows to `CatalogCourse` and completed/current/planned rows to `PlannedCourseInput`. The adapter should assign a stable `termIndex`, preserve normalized IDs/codes/names, and load only reviewed aliases, clearances, and directional equivalencies. It can then parse each catalog prerequisite array once, cache the AST by catalog version, evaluate each planned course, and render the structured result.
 
 Do not convert `needs_review` to success in the UI. Show its source text and counselor question, and keep registration/graduation language explicitly advisory until the catalog language or a counselor resolves it.

@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const catalog = JSON.parse(await readFile("supabase/catalog/smccd-2025-2026.json", "utf8"));
 const outputPath = "supabase/migrations/20260710000000_smccd_curriculum.sql";
+const prerequisiteOutputPath = "supabase/migrations/20260710033000_smccd_prerequisites.sql";
 
 const sql = [];
 sql.push(`-- Source-backed SMCCD curriculum imported from the official 2025-2026 catalogs.
@@ -30,6 +31,11 @@ create table public.smccd_courses (
   degree_applicable boolean not null default true,
   transfer_credit text check (transfer_credit in ('CSU', 'UC', 'CSU/UC')),
   attributes text[] not null default '{}',
+  prerequisites text[] not null default '{}',
+  corequisites text[] not null default '{}',
+  recommended_preparation text[] not null default '{}',
+  detail_status text not null default 'unavailable' constraint smccd_courses_detail_status_valid check (detail_status in ('verified', 'partial', 'unavailable')),
+  degree_applicability_source text not null default 'number_heuristic' constraint smccd_courses_degree_source_valid check (degree_applicability_source in ('course_detail', 'number_heuristic')),
   catalog_url text not null,
   source_year text not null,
   created_at timestamptz not null default now(),
@@ -121,7 +127,7 @@ sql.push(insertValues(
 
 for (const batch of chunks(catalog.courses, 200)) {
   sql.push(insertValues(
-    "public.smccd_courses (id, college_code, course_code, subject, course_number, title, units_min, units_max, degree_applicable, transfer_credit, attributes, catalog_url, source_year)",
+    "public.smccd_courses (id, college_code, course_code, subject, course_number, title, units_min, units_max, degree_applicable, transfer_credit, attributes, prerequisites, corequisites, recommended_preparation, detail_status, degree_applicability_source, catalog_url, source_year)",
     batch.map((course) => [
       `${course.collegeCode}:${course.courseCode}`,
       course.collegeCode,
@@ -134,6 +140,11 @@ for (const batch of chunks(catalog.courses, 200)) {
       course.degreeApplicable,
       course.transferCredit,
       { sql: `array[${course.attributes.map(quote).join(", ")}]::text[]` },
+      { sql: `array[${course.prerequisites.map(quote).join(", ")}]::text[]` },
+      { sql: `array[${course.corequisites.map(quote).join(", ")}]::text[]` },
+      { sql: `array[${course.recommendedPreparation.map(quote).join(", ")}]::text[]` },
+      course.detailStatus,
+      course.degreeApplicabilitySource,
       course.catalogUrl,
       catalog.catalogYear
     ])
@@ -195,9 +206,136 @@ for (const batch of chunks(options, 250)) {
 await writeFile(outputPath, `${sql.join("\n").trimEnd()}\n`);
 console.log(`Wrote ${outputPath}: ${catalog.courses.length} courses, ${catalog.programs.length} programs, ${requirements.length} requirement groups, ${options.length} course options.`);
 
+const prerequisiteSql = [`-- Source-backed SMCCD prerequisite enrichment generated from supabase/catalog/smccd-2025-2026.json.
+-- Course-detail pages are authoritative; unavailable or partially structured pages remain explicitly labeled.
+
+alter table public.smccd_courses
+  add column if not exists prerequisites text[] not null default '{}',
+  add column if not exists corequisites text[] not null default '{}',
+  add column if not exists recommended_preparation text[] not null default '{}',
+  add column if not exists detail_status text not null default 'unavailable',
+  add column if not exists degree_applicability_source text not null default 'number_heuristic';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'smccd_courses_detail_status_valid') then
+    alter table public.smccd_courses
+      add constraint smccd_courses_detail_status_valid check (detail_status in ('verified', 'partial', 'unavailable'));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'smccd_courses_degree_source_valid') then
+    alter table public.smccd_courses
+      add constraint smccd_courses_degree_source_valid check (degree_applicability_source in ('course_detail', 'number_heuristic'));
+  end if;
+end
+$$;
+
+create table if not exists public.student_prerequisite_clearances (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  target_course_id text not null references public.smccd_courses(id) on delete cascade,
+  clearance_type text not null check (clearance_type in ('placement', 'approved_equivalency', 'prerequisite_challenge', 'instructor_approval', 'program_admission', 'audition_or_portfolio')),
+  status text not null check (status in ('approved', 'pending', 'denied')),
+  verification_status text not null default 'pending' check (verification_status in ('pending', 'approved', 'rejected')),
+  authority text not null,
+  evidence_summary text,
+  decided_at timestamptz,
+  expires_at timestamptz,
+  source_url text,
+  verified_by text,
+  verified_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, target_course_id, clearance_type)
+);
+
+create index if not exists student_prerequisite_clearances_user_course_idx
+  on public.student_prerequisite_clearances(user_id, target_course_id);
+
+alter table public.student_prerequisite_clearances enable row level security;
+
+drop policy if exists "users manage own prerequisite clearances" on public.student_prerequisite_clearances;
+drop policy if exists "users read own prerequisite clearances" on public.student_prerequisite_clearances;
+create policy "users read own prerequisite clearances"
+  on public.student_prerequisite_clearances for select to authenticated
+  using ((select auth.uid()) = user_id);
+
+drop policy if exists "users submit prerequisite clearances for review" on public.student_prerequisite_clearances;
+create policy "users submit prerequisite clearances for review"
+  on public.student_prerequisite_clearances for insert to authenticated
+  with check (
+    (select auth.uid()) = user_id
+    and verification_status = 'pending'
+    and verified_by is null
+    and verified_at is null
+  );
+
+drop policy if exists "users update pending prerequisite clearances" on public.student_prerequisite_clearances;
+create policy "users update pending prerequisite clearances"
+  on public.student_prerequisite_clearances for update to authenticated
+  using ((select auth.uid()) = user_id and verification_status = 'pending')
+  with check (
+    (select auth.uid()) = user_id
+    and verification_status = 'pending'
+    and verified_by is null
+    and verified_at is null
+  );
+
+drop policy if exists "users delete pending prerequisite clearances" on public.student_prerequisite_clearances;
+create policy "users delete pending prerequisite clearances"
+  on public.student_prerequisite_clearances for delete to authenticated
+  using ((select auth.uid()) = user_id and verification_status = 'pending');
+
+drop trigger if exists student_prerequisite_clearances_set_updated_at on public.student_prerequisite_clearances;
+create trigger student_prerequisite_clearances_set_updated_at
+before update on public.student_prerequisite_clearances
+for each row execute procedure public.set_updated_at();
+
+comment on table public.student_prerequisite_clearances is
+  'Submitted college placement, equivalency, challenge, admission, audition, or approval decisions. Only independently approved verification records satisfy prerequisites.';
+
+comment on column public.smccd_courses.prerequisites is
+  'Verbatim prerequisite text from the official course-detail page; ambiguous clauses require manual review.';
+comment on column public.smccd_courses.corequisites is
+  'Verbatim corequisite text from the official course-detail page.';
+comment on column public.smccd_courses.recommended_preparation is
+  'Advisory preparation kept separate from required prerequisites.';
+`];
+
+const enrichedCourses = catalog.courses;
+for (const batch of chunks(enrichedCourses, 150)) prerequisiteSql.push(updateCourseDetails(batch));
+
+await writeFile(prerequisiteOutputPath, `${prerequisiteSql.join("\n").trimEnd()}\n`);
+console.log(`Wrote ${prerequisiteOutputPath}: ${enrichedCourses.length} enriched course rows and the review-gated clearance schema.`);
+
 function insertValues(tableAndColumns, rows) {
   if (rows.length === 0) return "";
   return `insert into ${tableAndColumns} values\n${rows.map((row) => `  (${row.map(sqlValue).join(", ")})`).join(",\n")}\non conflict do nothing;\n`;
+}
+
+function updateCourseDetails(rows) {
+  const values = rows.map((course) => [
+    `${course.collegeCode}:${course.courseCode}`,
+    course.degreeApplicable,
+    { sql: `array[${course.attributes.map(quote).join(", ")}]::text[]` },
+    { sql: `array[${course.prerequisites.map(quote).join(", ")}]::text[]` },
+    { sql: `array[${course.corequisites.map(quote).join(", ")}]::text[]` },
+    { sql: `array[${course.recommendedPreparation.map(quote).join(", ")}]::text[]` },
+    course.detailStatus,
+    course.degreeApplicabilitySource
+  ]);
+  return `update public.smccd_courses as course
+set degree_applicable = source.degree_applicable,
+    attributes = source.attributes,
+    prerequisites = source.prerequisites,
+    corequisites = source.corequisites,
+    recommended_preparation = source.recommended_preparation,
+    detail_status = source.detail_status,
+    degree_applicability_source = source.degree_applicability_source
+from (values
+${values.map((row) => `  (${row.map(sqlValue).join(", ")})`).join(",\n")}
+) as source(id, degree_applicable, attributes, prerequisites, corequisites, recommended_preparation, detail_status, degree_applicability_source)
+where course.id = source.id;
+`;
 }
 
 function sqlValue(value) {

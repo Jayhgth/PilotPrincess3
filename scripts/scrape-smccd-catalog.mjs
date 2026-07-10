@@ -92,7 +92,70 @@ async function scrapeCourses(college) {
       });
     });
   }
-  return [...courses.values()].sort((a, b) => a.courseCode.localeCompare(b.courseCode));
+  const summaries = [...courses.values()].sort((a, b) => a.courseCode.localeCompare(b.courseCode));
+  return mapWithConcurrency(summaries, 12, async (course) => {
+    try {
+      const detailHtml = await fetchText(course.catalogUrl);
+      return enrichCourseFromDetail(course, detailHtml);
+    } catch (error) {
+      console.warn(`Could not read course detail ${course.catalogUrl}: ${error instanceof Error ? error.message : String(error)}`);
+      return {
+        ...course,
+        prerequisites: [],
+        corequisites: [],
+        recommendedPreparation: [],
+        detailStatus: "unavailable",
+        degreeApplicabilitySource: "number_heuristic"
+      };
+    }
+  });
+}
+
+function enrichCourseFromDetail(course, html) {
+  const $ = cheerio.load(html);
+  const prerequisites = labeledRequirement($, "Prerequisites");
+  const corequisites = labeledRequirement($, "Corequisites");
+  const recommendedPreparation = labeledRequirement($, "Recommended");
+  const creditLabel = ownTextValues($).find((value) => /^(?:Non-|Not )?Degree Credit$/i.test(value));
+  const exactDegreeApplicable = creditLabel
+    ? !/^(?:Non-|Not )Degree Credit$/i.test(creditLabel)
+    : null;
+  const detailText = $("body").text().replace(/\s+/g, " ").trim();
+  const detailAttributes = attributesFromText(detailText);
+  const hasRequirementLabels = prerequisites.found || corequisites.found;
+
+  return {
+    ...course,
+    degreeApplicable: exactDegreeApplicable ?? course.degreeApplicable,
+    transferCredit: parseTransferCredit(detailText) ?? course.transferCredit,
+    attributes: [...new Set([...course.attributes, ...detailAttributes])],
+    prerequisites: prerequisites.values,
+    corequisites: corequisites.values,
+    recommendedPreparation: recommendedPreparation.values,
+    detailStatus: exactDegreeApplicable !== null && hasRequirementLabels ? "verified" : "partial",
+    degreeApplicabilitySource: exactDegreeApplicable !== null ? "course_detail" : "number_heuristic"
+  };
+}
+
+function labeledRequirement($, label) {
+  const labelPattern = new RegExp(`^${label}:?$`, "i");
+  const node = $("strong, b").filter((_, element) => labelPattern.test($(element).text().replace(/\s+/g, " ").trim())).first();
+  if (node.length === 0) return { found: false, values: [] };
+  const parentText = node.parent().text().replace(/\s+/g, " ").trim();
+  const value = parentText.replace(new RegExp(`^${label}:?\\s*`, "i"), "").trim();
+  return {
+    found: true,
+    values: !value || /^none\.?$/i.test(value) ? [] : [value]
+  };
+}
+
+function ownTextValues($) {
+  const values = [];
+  $("body *").each((_, element) => {
+    const ownText = $(element).clone().children().remove().end().text().replace(/\s+/g, " ").trim();
+    if (ownText) values.push(ownText);
+  });
+  return values;
 }
 
 async function scrapePrograms(college) {

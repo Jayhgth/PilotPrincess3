@@ -58,6 +58,20 @@ export interface CourseRule extends RuleBase {
   minimumGrade?: LetterGrade;
 }
 
+export type PrerequisiteClearanceType =
+  | "placement"
+  | "approved_equivalency"
+  | "prerequisite_challenge"
+  | "instructor_approval"
+  | "program_admission"
+  | "audition_or_portfolio";
+
+export interface ClearanceRule extends RuleBase {
+  kind: "clearance";
+  clearanceType: PrerequisiteClearanceType;
+  authorityText: string;
+}
+
 export type GradeLevelConstraint =
   | { kind: "minimum"; grade: GradeLevel }
   | { kind: "maximum"; grade: GradeLevel }
@@ -84,7 +98,7 @@ export interface UnresolvedRule extends RuleBase {
   counselorQuestion: string;
 }
 
-export type PrerequisiteRule = AllOfRule | AnyOfRule | CourseRule | GradeLevelRule | UnresolvedRule;
+export type PrerequisiteRule = AllOfRule | AnyOfRule | CourseRule | ClearanceRule | GradeLevelRule | UnresolvedRule;
 
 export interface ParsedPrerequisites {
   rule: PrerequisiteRule;
@@ -112,6 +126,7 @@ export interface ParsePrerequisiteOptions {
   sourceLabel?: string;
   sourceYear?: string;
   confidence?: SourceConfidence;
+  defaultTiming?: CourseTiming;
 }
 
 export type PlannedCourseStatus = "completed" | "current" | "planned";
@@ -139,6 +154,34 @@ export interface PrerequisiteEvaluationInput {
     gradeLevel?: GradeLevel;
   };
   courses: readonly PlannedCourseInput[];
+  clearances?: readonly PrerequisiteClearanceInput[];
+  equivalencies?: readonly PrerequisiteEquivalencyInput[];
+}
+
+export type PrerequisiteDecisionStatus = "approved" | "pending" | "denied";
+
+export interface PrerequisiteClearanceInput {
+  id: string;
+  type: PrerequisiteClearanceType;
+  target: CourseReference;
+  status: PrerequisiteDecisionStatus;
+  authority: string;
+  evidenceSummary?: string;
+  decidedAt?: string;
+  expiresAt?: string;
+  sourceUrl?: string;
+}
+
+export interface PrerequisiteEquivalencyInput {
+  id: string;
+  from: CourseReference;
+  to: CourseReference;
+  appliesToTarget?: CourseReference;
+  status: PrerequisiteDecisionStatus;
+  authority: string;
+  evidenceSummary?: string;
+  sourceId?: string;
+  sourceUrl?: string;
 }
 
 export type PrerequisiteEvaluationStatus = "satisfied" | "blocked" | "needs_review";
@@ -160,7 +203,7 @@ export interface OrderingViolation {
   message: string;
 }
 
-export type EvidenceKind = "course" | "grade_level" | "manual_review";
+export type EvidenceKind = "course" | "clearance" | "grade_level" | "manual_review";
 
 export interface PrerequisiteEvidence {
   kind: EvidenceKind;
@@ -169,7 +212,7 @@ export interface PrerequisiteEvidence {
   clauseText: string;
   source: PrerequisiteSourceContext;
   courseInstanceId?: string;
-  matchedBy?: "id" | "code" | "name" | "alias";
+  matchedBy?: "id" | "code" | "name" | "alias" | "equivalency";
   observedGrade?: string;
   observedTermIndex?: number;
 }

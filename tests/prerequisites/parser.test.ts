@@ -93,8 +93,6 @@ describe("conservative prerequisite parser", () => {
   it("does not turn approvals, equivalencies, mixed boolean text, or prose into verified rules", () => {
     const phrases = [
       "Algebra 1 and/or Geometry",
-      "Algebra 1 or equivalent",
-      "Instructor approval",
       "One year of laboratory experience"
     ];
 
@@ -103,6 +101,35 @@ describe("conservative prerequisite parser", () => {
       expect(parsed.parseConfidence, phrase).toBe("unresolved");
       expect(parsed.unresolvedClauses, phrase).toHaveLength(1);
     }
+  });
+
+  it("preserves an explicit equivalent path as a clearance instead of guessing a course", () => {
+    const parsed = parsePrerequisites(["Algebra 1 or equivalent"], { catalog });
+
+    expect(parsed.parseConfidence).toBe("exact");
+    expect(parsed.rule.kind === "all_of" && parsed.rule.rules[0]).toMatchObject({
+      kind: "any_of",
+      rules: [
+        expect.objectContaining({ kind: "course", course: expect.objectContaining({ id: "alg-1" }) }),
+        expect.objectContaining({ kind: "clearance", clearanceType: "approved_equivalency" })
+      ]
+    });
+    const approval = parsePrerequisites(["Instructor approval"], { catalog });
+    expect(approval.rule.kind === "all_of" && approval.rule.rules[0]).toMatchObject({
+      kind: "clearance",
+      clearanceType: "instructor_approval"
+    });
+  });
+
+  it("treats course eligibility as placement evidence rather than prior completion", () => {
+    const parsed = parsePrerequisites(["Eligibility for ENGL C1000 or ENGL C1000E"], { catalog });
+
+    expect(parsed.parseConfidence).toBe("exact");
+    expect(parsed.rule.kind === "all_of" && parsed.rule.rules[0]).toMatchObject({
+      kind: "clearance",
+      clearanceType: "placement"
+    });
+    expect(leaves(parsed.rule)).not.toEqual(expect.arrayContaining([expect.objectContaining({ kind: "course" })]));
   });
 
   it("does not silently discard an unsupported explicit grade threshold", () => {

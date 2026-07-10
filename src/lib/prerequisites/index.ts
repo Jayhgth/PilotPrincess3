@@ -7,4 +7,13 @@ export {
   resolveCatalogCourse
 } from "./normalize";
 export { parsePrerequisites } from "./parser";
+export {
+  auditSmccdPrerequisites,
+  buildDtechPrerequisiteEquivalencies,
+  buildReviewedDtechToSmccdPrerequisiteEquivalencies,
+  buildSmccdPrerequisiteCatalog,
+  clearanceFromStoredRecord,
+  parseSmccdCoursePrerequisites
+} from "./smccd";
 export type * from "./types";
+export type * from "./smccd";

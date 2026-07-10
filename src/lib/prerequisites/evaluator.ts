@@ -1,5 +1,6 @@
 import { courseIdentityMatch, plannedCourseIdentity } from "./normalize";
 import type {
+  ClearanceRule,
   CourseRule,
   GradeLevelConstraint,
   LetterGrade,
@@ -23,6 +24,30 @@ interface NodeResult {
 }
 
 type TermRelation = "prior" | "same" | "future" | "unknown";
+
+interface MatchedCourse {
+  course: PlannedCourseInput;
+  match: {
+    matched: true;
+    matchedBy: "id" | "code" | "name" | "alias" | "equivalency";
+  };
+  equivalencyAuthority?: string;
+}
+
+function targetIdentity(input: PrerequisiteEvaluationInput) {
+  return {
+    ...(input.target.courseId ? { id: input.target.courseId } : {}),
+    code: input.target.code,
+    name: input.target.name
+  };
+}
+
+function equivalencyAppliesToTarget(
+  equivalency: NonNullable<PrerequisiteEvaluationInput["equivalencies"]>[number],
+  input: PrerequisiteEvaluationInput
+): boolean {
+  return !equivalency.appliesToTarget || courseIdentityMatch(equivalency.appliesToTarget, targetIdentity(input)).matched;
+}
 
 const GRADE_RANK: Record<LetterGrade, number> = {
   "A+": 12,
@@ -68,10 +93,54 @@ function timingLabel(rule: CourseRule): string {
 function evaluateCourseRule(rule: CourseRule, input: PrerequisiteEvaluationInput): NodeResult {
   const matching = input.courses
     .filter((course) => !input.target.instanceId || course.instanceId !== input.target.instanceId)
-    .map((course) => ({ course, match: courseIdentityMatch(rule.course, plannedCourseIdentity(course)) }))
-    .filter(({ match }) => match.matched);
+    .map((course): MatchedCourse | null => {
+      const direct = courseIdentityMatch(rule.course, plannedCourseIdentity(course));
+      if (direct.matched && direct.matchedBy) {
+        return { course, match: { matched: true, matchedBy: direct.matchedBy } };
+      }
+      const approvedEquivalency = input.equivalencies?.find(
+        (equivalency) =>
+          equivalency.status === "approved" &&
+          equivalencyAppliesToTarget(equivalency, input) &&
+          courseIdentityMatch(equivalency.from, plannedCourseIdentity(course)).matched &&
+          courseIdentityMatch(equivalency.to, rule.course).matched
+      );
+      return approvedEquivalency
+        ? {
+            course,
+            match: { matched: true, matchedBy: "equivalency" },
+            equivalencyAuthority: approvedEquivalency.authority
+          }
+        : null;
+    })
+    .filter((match): match is MatchedCourse => match !== null);
 
   if (matching.length === 0) {
+    const pendingEquivalency = input.equivalencies?.find(
+      (equivalency) =>
+        equivalency.status === "pending" &&
+        equivalencyAppliesToTarget(equivalency, input) &&
+        courseIdentityMatch(equivalency.to, rule.course).matched &&
+        input.courses.some((course) => courseIdentityMatch(equivalency.from, plannedCourseIdentity(course)).matched)
+    );
+    if (pendingEquivalency) {
+      return {
+        state: "review",
+        missingCourses: [],
+        orderingViolations: [],
+        evidence: [
+          {
+            kind: "clearance",
+            satisfied: null,
+            message: `${pendingEquivalency.authority} has not yet approved the directional equivalency from ${pendingEquivalency.from.name} to ${pendingEquivalency.to.name}.`,
+            clauseText: rule.clauseText,
+            source: rule.source,
+            matchedBy: "equivalency"
+          }
+        ],
+        questions: [`Has ${pendingEquivalency.authority} approved ${pendingEquivalency.from.name} as satisfying ${rule.course.name}?`]
+      };
+    }
     const gradeText = rule.minimumGrade ? ` with ${rule.minimumGrade} or better` : "";
     return {
       state: "fail",
@@ -159,7 +228,7 @@ function evaluateCourseRule(rule: CourseRule, input: PrerequisiteEvaluationInput
   }
 
   if (!rule.minimumGrade) {
-    const [{ course, match }] = acceptable;
+    const [{ course, match, equivalencyAuthority }] = acceptable;
     return {
       state: "pass",
       missingCourses: [],
@@ -168,7 +237,9 @@ function evaluateCourseRule(rule: CourseRule, input: PrerequisiteEvaluationInput
         {
           kind: "course",
           satisfied: true,
-          message: `${course.name} satisfies the ${timingLabel(rule)} course requirement.`,
+          message: equivalencyAuthority
+            ? `${course.name} satisfies the ${timingLabel(rule)} course requirement through the approved mapping from ${equivalencyAuthority}.`
+            : `${course.name} satisfies the ${timingLabel(rule)} course requirement.`,
           clauseText: rule.clauseText,
           source: rule.source,
           courseInstanceId: course.instanceId,
@@ -253,6 +324,104 @@ function evaluateCourseRule(rule: CourseRule, input: PrerequisiteEvaluationInput
   };
 }
 
+function evaluateClearanceRule(rule: ClearanceRule, input: PrerequisiteEvaluationInput): NodeResult {
+  const clearance = input.clearances?.find(
+    (candidate) => candidate.type === rule.clearanceType && courseIdentityMatch(candidate.target, targetIdentity(input)).matched
+  );
+  const typeLabel = rule.clearanceType.replaceAll("_", " ");
+  if (!clearance) {
+    return {
+      state: "review",
+      missingCourses: [],
+      orderingViolations: [],
+      evidence: [
+        {
+          kind: "clearance",
+          satisfied: null,
+          message: `No official ${typeLabel} decision is recorded for ${input.target.name}.`,
+          clauseText: rule.clauseText,
+          source: rule.source
+        }
+      ],
+      questions: [`Has the college recorded an approved ${typeLabel} decision for ${input.target.name}?`]
+    };
+  }
+
+  const parsedExpiry = clearance.expiresAt ? Date.parse(clearance.expiresAt) : undefined;
+  const invalidExpiry = parsedExpiry !== undefined && Number.isNaN(parsedExpiry);
+  const expired = parsedExpiry !== undefined && !invalidExpiry && parsedExpiry < Date.now();
+  if (invalidExpiry) {
+    return {
+      state: "review",
+      missingCourses: [],
+      orderingViolations: [],
+      evidence: [
+        {
+          kind: "clearance",
+          satisfied: null,
+          message: `${clearance.authority} supplied an invalid expiration date for the ${typeLabel} decision.`,
+          clauseText: rule.clauseText,
+          source: rule.source
+        }
+      ],
+      questions: [`What is the verified expiration date for the ${typeLabel} decision for ${input.target.name}?`]
+    };
+  }
+  if (clearance.status === "approved" && !expired) {
+    return {
+      state: "pass",
+      missingCourses: [],
+      orderingViolations: [],
+      evidence: [
+        {
+          kind: "clearance",
+          satisfied: true,
+          message: `${clearance.authority} approved the ${typeLabel} requirement${clearance.evidenceSummary ? `: ${clearance.evidenceSummary}` : "."}`,
+          clauseText: rule.clauseText,
+          source: rule.source
+        }
+      ],
+      questions: []
+    };
+  }
+
+  if (clearance.status === "denied") {
+    return {
+      state: "fail",
+      missingCourses: [],
+      orderingViolations: [],
+      evidence: [
+        {
+          kind: "clearance",
+          satisfied: false,
+          message: `${clearance.authority} denied the ${typeLabel} requirement${clearance.evidenceSummary ? `: ${clearance.evidenceSummary}` : "."}`,
+          clauseText: rule.clauseText,
+          source: rule.source
+        }
+      ],
+      questions: [`What approved alternate path is available after the denied ${typeLabel} decision for ${input.target.name}?`]
+    };
+  }
+
+  return {
+    state: "review",
+    missingCourses: [],
+    orderingViolations: [],
+    evidence: [
+      {
+        kind: "clearance",
+        satisfied: null,
+        message: expired
+          ? `${clearance.authority}'s ${typeLabel} approval has expired.`
+          : `${clearance.authority}'s ${typeLabel} decision is still pending.`,
+        clauseText: rule.clauseText,
+        source: rule.source
+      }
+    ],
+    questions: [`What is the current approved ${typeLabel} status for ${input.target.name}?`]
+  };
+}
+
 function gradeLevelPasses(constraint: GradeLevelConstraint, grade: number): boolean {
   if (constraint.kind === "minimum") return grade >= constraint.grade;
   if (constraint.kind === "maximum") return grade <= constraint.grade;
@@ -277,6 +446,7 @@ function combine(results: NodeResult[], state: NodeState): NodeResult {
 
 function evaluateRule(rule: PrerequisiteRule, input: PrerequisiteEvaluationInput): NodeResult {
   if (rule.kind === "course") return evaluateCourseRule(rule, input);
+  if (rule.kind === "clearance") return evaluateClearanceRule(rule, input);
   if (rule.kind === "unresolved") {
     return {
       state: "review",

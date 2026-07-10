@@ -116,4 +116,108 @@ describe("deterministic prerequisite evaluation", () => {
     expect(evaluate(["Algebra 1"], [wrongNumber]).status).toBe("blocked");
     expect(evaluate(["Algebra 1"], [course({ termIndex: 4 })]).status).toBe("blocked");
   });
+
+  it("requires an official placement decision for placement-based prerequisites", () => {
+    const parsed = parsePrerequisites(["Placement as determined by the college's multiple measures assessment process."], {
+      catalog,
+      confidence: "verified"
+    });
+    const baseInput: PrerequisiteEvaluationInput = {
+      target: { courseId: "target", name: "Target Course", termIndex: 4, gradeLevel: 11 },
+      courses: []
+    };
+
+    expect(evaluateParsedPrerequisites(parsed, baseInput).status).toBe("needs_review");
+    expect(
+      evaluateParsedPrerequisites(parsed, {
+        ...baseInput,
+        clearances: [
+          {
+            id: "placement-1",
+            type: "placement",
+            target: { id: "target", name: "Target Course" },
+            status: "approved",
+            authority: "College assessment office",
+            evidenceSummary: "Multiple-measures placement recorded"
+          }
+        ]
+      }).status
+    ).toBe("satisfied");
+    expect(
+      evaluateParsedPrerequisites(parsed, {
+        ...baseInput,
+        clearances: [
+          {
+            id: "placement-2",
+            type: "placement",
+            target: { id: "target", name: "Target Course" },
+            status: "denied",
+            authority: "College assessment office"
+          }
+        ]
+      }).status
+    ).toBe("blocked");
+    expect(
+      evaluateParsedPrerequisites(parsed, {
+        ...baseInput,
+        clearances: [
+          {
+            id: "placement-invalid-expiry",
+            type: "placement",
+            target: { id: "target", name: "Target Course" },
+            status: "approved",
+            authority: "College assessment office",
+            expiresAt: "not-a-date"
+          }
+        ]
+      }).status
+    ).toBe("needs_review");
+  });
+
+  it("applies only approved directional equivalencies", () => {
+    const parsed = parsePrerequisites(["Precalculus"], { catalog, confidence: "verified" });
+    const collegeCourse = course({
+      instanceId: "math-222",
+      courseId: undefined,
+      code: "MATH 222",
+      name: "Precalculus at CSM",
+      status: "completed",
+      termIndex: 2
+    });
+    const input: PrerequisiteEvaluationInput = {
+      target: { courseId: "target", name: "Target Course", termIndex: 4, gradeLevel: 11 },
+      courses: [collegeCourse],
+      equivalencies: [
+        {
+          id: "mapping-1",
+          from: { code: "MATH 222", name: "MATH 222" },
+          to: { id: "precalc", name: "Precalculus" },
+          status: "approved",
+          authority: "d.tech equivalency chart"
+        }
+      ]
+    };
+
+    const result = evaluateParsedPrerequisites(parsed, input);
+    expect(result.status).toBe("satisfied");
+    expect(result.evidence[0]).toMatchObject({ matchedBy: "equivalency" });
+
+    expect(
+      evaluateParsedPrerequisites(parsed, {
+        ...input,
+        equivalencies: input.equivalencies?.map((mapping) => ({ ...mapping, status: "pending" as const }))
+      }).status
+    ).toBe("needs_review");
+
+    expect(
+      evaluateParsedPrerequisites(parsed, {
+        ...input,
+        target: { ...input.target, courseId: "other-target", name: "Other Target" },
+        equivalencies: input.equivalencies?.map((mapping) => ({
+          ...mapping,
+          appliesToTarget: { id: "target", name: "Target Course" }
+        }))
+      }).status
+    ).toBe("blocked");
+  });
 });

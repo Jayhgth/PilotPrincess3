@@ -7,6 +7,8 @@ const errors = [];
 const courseIds = new Set();
 const programIds = new Set();
 const equivalencyCodes = new Set();
+const detailStatuses = new Set(["verified", "partial", "unavailable"]);
+const degreeSources = new Set(["course_detail", "number_heuristic"]);
 
 if (catalog.catalogYear !== "2025-2026") errors.push("Catalog year must be 2025-2026.");
 for (const code of collegeCodes) {
@@ -23,6 +25,32 @@ for (const course of catalog.courses) {
   if (!collegeCodes.has(course.collegeCode)) errors.push(`Unknown college ${course.collegeCode}.`);
   if (!Number.isFinite(course.unitsMin) || course.unitsMin < 0) errors.push(`Invalid units for ${id}.`);
   if (!course.catalogUrl?.startsWith("https://catalog.")) errors.push(`Invalid official URL for ${id}.`);
+  if (!Array.isArray(course.prerequisites) || !Array.isArray(course.corequisites) || !Array.isArray(course.recommendedPreparation)) {
+    errors.push(`Missing prerequisite arrays for ${id}.`);
+  }
+  if (!detailStatuses.has(course.detailStatus)) errors.push(`Invalid detail status for ${id}.`);
+  if (!degreeSources.has(course.degreeApplicabilitySource)) errors.push(`Invalid degree source for ${id}.`);
+  if (/^C\d+/i.test(course.number) && !course.degreeApplicable) errors.push(`Common Course Numbering row ${id} is incorrectly non-degree-applicable.`);
+}
+
+const verifiedDetailCount = catalog.courses.filter((course) => course.detailStatus === "verified").length;
+const unavailableDetailCount = catalog.courses.filter((course) => course.detailStatus === "unavailable").length;
+const prerequisiteCount = catalog.courses.filter((course) => course.prerequisites.length > 0).length;
+const corequisiteCount = catalog.courses.filter((course) => course.corequisites.length > 0).length;
+if (verifiedDetailCount < 2200) errors.push(`Only ${verifiedDetailCount} course-detail pages were verified.`);
+if (unavailableDetailCount > 4) errors.push(`${unavailableDetailCount} course-detail pages are unavailable.`);
+if (prerequisiteCount < 900) errors.push(`Only ${prerequisiteCount} courses have captured prerequisites.`);
+if (corequisiteCount < 60) errors.push(`Only ${corequisiteCount} courses have captured corequisites.`);
+
+const englishC1000 = catalog.courses.filter((course) => course.courseCode === "ENGL C1000");
+if (englishC1000.length !== 3) errors.push(`Expected ENGL C1000 at all three colleges, found ${englishC1000.length}.`);
+for (const course of englishC1000) {
+  if (!course.degreeApplicable || !course.attributes.some((attribute) => attribute.includes("Area 1A"))) {
+    errors.push(`${course.collegeCode}:ENGL C1000 must be degree-applicable general education Area 1A.`);
+  }
+  if (!course.prerequisites.some((prerequisite) => /multiple measures assessment process/i.test(prerequisite))) {
+    errors.push(`${course.collegeCode}:ENGL C1000 is missing its official multiple-measures prerequisite.`);
+  }
 }
 
 for (const program of catalog.programs) {
