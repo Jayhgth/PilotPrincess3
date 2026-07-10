@@ -130,7 +130,7 @@ Last run: 2026-07-10
 - [x] Completed users can replay onboarding, save changed profile preferences, or exit without persisting draft edits or changing existing courses
 - [x] Demo-only `Replay onboarding` appears above the sidebar theme control and carries machine-readable metadata pointing to Student profile as its intended permanent location
 - [x] Demo-only `View login page` sits beside the onboarding utility, preserves the active session while showing the full hero/sign-in screen, and provides a direct `Return to workspace` link
-- [x] Login hero renders one continuous full-page graphite/burgundy Floating Lines background behind both sections with one uniform darkening veil and no grid-boundary tint, pauses outside the viewport, preserves a CSS fallback without WebGL, and becomes static under reduced-motion preferences
+- [x] Login hero renders one continuous full-page near-black/deep-rose Floating Lines background directly behind both sections without a gray veil or grid-boundary tint, pauses outside the viewport, preserves a CSS fallback without WebGL, and becomes static under reduced-motion preferences
 - [x] Authentication renders in a compact left-biased translucent Spotlight Card with neutral-white pointer and keyboard-focus response, remains narrower than its desktop canvas, and removes its entrance animation under reduced-motion preferences
 - [x] Confidence and review state remain visible and editable
 - [x] Codex runs server-side with structured schema validation

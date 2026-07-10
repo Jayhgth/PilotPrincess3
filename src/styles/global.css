@@ -148,24 +148,15 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   isolation: isolate;
   overflow: hidden;
   position: relative;
-  background: #17181b;
+  background: #0c0d0f;
 }
 .auth-page-background {
   position: absolute;
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(circle at 76% 64%, rgb(255 255 255 / 0.08), transparent 34%),
-    radial-gradient(circle at 60% 78%, rgb(138 48 73 / 0.2), transparent 42%),
-    #17181b;
-}
-.auth-page::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background: rgb(23 24 27 / 0.56);
-  pointer-events: none;
+    radial-gradient(circle at 60% 78%, rgb(138 48 73 / 0.16), transparent 42%),
+    #0c0d0f;
 }
 
 .auth-story {

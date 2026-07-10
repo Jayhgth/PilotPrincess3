@@ -10,6 +10,7 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
 const FloatingLines = lazy(() => import("@/components/reactbits/FloatingLines"));
+const AUTH_LINES_GRADIENT = ["#541c30", "#9a2f50", "#d05b7e", "#f1a6ba"];
 
 type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
@@ -122,7 +123,12 @@ export default function AuthExperience() {
   return (
     <main className="auth-page">
       <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
-        <FloatingLines className="auth-page-background" />
+        <FloatingLines
+          backgroundColor="#0c0d0f"
+          className="auth-page-background"
+          lineOpacity={0.48}
+          linesGradient={AUTH_LINES_GRADIENT}
+        />
       </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">
         <a className="wordmark" href="/" aria-label="Pilot Princess home">

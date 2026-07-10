@@ -109,7 +109,7 @@ Separator rules:
 
 ### Public entry hero
 
-- Use one full-bleed visual layer with a continuous base color behind the story and authentication task. If the shader needs restraint, use one uniform full-page graphite veil. Do not apply section-sized readability tints that expose the layout boundary, split the page with a flat form canvas, or add feature cards, decorative badges, or a second competing animation.
+- Use one full-bleed visual layer with a continuous near-black base behind the story and authentication task. Tune the shader's base and line opacity directly instead of laying a gray veil over the result. Do not apply section-sized readability tints that expose the layout boundary, split the page with a flat form canvas, or add feature cards, decorative badges, or a second competing animation.
 - Floating Lines is a locally owned React Bits adaptation using the same graphite and burgundy palette as the workspace. Keep its motion slow, pause it while hidden, and render a static frame when reduced motion is requested.
 - The three source facts remain quiet supporting evidence. They must not compete with the sign-in task or imply guarantees beyond the cited d.tech source year.
 - Keep authentication inside one compact translucent graphite Spotlight Card, biased slightly toward the page center rather than treating the full right column as the form. Trust notes sit below the card so the credential boundary stays focused. The spotlight is neutral white; burgundy remains reserved for actions and state. Pointer and focus response may clarify the active surface, but must not tilt, shift, or interfere with input contrast.

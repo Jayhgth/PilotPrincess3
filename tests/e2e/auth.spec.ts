@@ -7,9 +7,7 @@ test("renders the d.tech authentication experience", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
   await expect(page.locator(".auth-page-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
   await expect(page.locator(".auth-page-background")).toHaveAttribute("data-motion", "animated");
-  expect(await page.locator(".auth-page").evaluate((element) =>
-    getComputedStyle(element, "::before").backgroundColor
-  )).toBe("rgba(23, 24, 27, 0.56)");
+  await expect(page.locator(".auth-page")).toHaveCSS("background-color", "rgb(12, 13, 15)");
   await expect(page.locator(".auth-story")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   const authPanel = page.locator(".auth-panel");
   await expect(authPanel).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
