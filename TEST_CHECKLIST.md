@@ -73,6 +73,12 @@ Last run: 2026-07-09
 - [x] Unified Courses workspace visually passes in both light and dark themes
 - [x] Motion workspace tabs respect reduced-motion preferences and pass Left/Right/Home/End keyboard navigation
 - [x] Twenty-six populated desktop/mobile/light/dark states across every authenticated destination have zero horizontal overflow, zero rendered text below 10 px, and zero browser console errors
+- [x] All ten authenticated destinations use the documented typography roles; legacy one-off 10/11/13/15/17/18/21/23 px product styles are removed
+- [x] Activity, Timeline, Simulator, and Student profile pass at 1280x720 and 390x844 with 12/14/16/28 px content typography and zero horizontal overflow
+- [x] Overview, Graduation, and GPA use the shared 20 px numeric and 40 px display-metric roles instead of page-specific metric sizes
+- [x] Onboarding priorities use three equal capacity columns on desktop and one column at 390x844
+- [x] Revised page headers, tool rails, registers, profile sections, and choice groups rely on spacing and surfaces instead of repeated structural lines
+- [x] Light and dark separator tokens remain legible while secondary boundaries stay visually quiet
 - [x] Transcript empty, populated, and completed states visually pass at desktop and 390x844 in light and dark themes
 - [x] Lightweight summary works with deterministic fallback
 - [x] Desktop dark-theme UI visually reviewed in the in-app browser

@@ -56,7 +56,7 @@ export const POST: APIRoute = async ({ request }) => {
       prompt: [
         parsed.data.feature === "plan"
           ? "Explain this suggested four-year plan, its workload tradeoffs, and questions the student should verify."
-          : "Explain the comparison between the current and simulated plans in plain language.",
+          : "Explain the comparison between the current plan and scenario in plain language.",
         "Do not guarantee admissions outcomes. Do not imply uncertain mappings are verified.",
         JSON.stringify(parsed.data.context)
       ].join("\n\n"),

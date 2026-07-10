@@ -6,12 +6,18 @@ Last reviewed: 2026-07-09
 
 Strict final grade: **98/100**. The workspace is calm, readable, and usable on desktop and mobile. Overview, course status, discovery, graduation, transcript import, and editing now share one predictable academic-workspace structure.
 
+The repeatable implementation rules are maintained in `UI_DESIGN_SYSTEM.md`; this audit records the measured result, while that document is the reference for future UI work.
+
 ## Evidence reviewed
 
 - Every authenticated destination was inspected with populated data at a 1,440 by 1,000 desktop viewport. Overview, Courses, and Graduation were also inspected in both themes.
 - Overview, all three Courses states, d.tech discovery, mobile course editing, Graduation, Simulator, and Student profile were inspected at a 390 by 844 mobile viewport.
 - The local DegreeDoesntWorks interface was used only as a sizing and density reference. Its 56 px top bar, 720 to 980 px primary content widths, 14 px base type, and restrained control sizing informed the audit without copying its product or code.
 - [Linear's dashboard guidance](https://linear.app/docs/dashboards) and [UI redesign notes](https://linear.app/now/how-we-redesigned-the-linear-ui) supported pruning controls, separating navigation from content, and making the main work state visible without repeated decorative cards.
+- [Linear's 2026 design refresh](https://linear.app/now/behind-the-latest-design-refresh) reinforced the rule that structure should be felt through hierarchy and density before it is drawn with borders, and that secondary chrome should not compete with the task.
+- [Atlassian typography](https://atlassian.design/foundations/typography/product-typefaces-and-scale/), [spacing](https://atlassian.design/foundations/grid-beta/applying-grid), and [border](https://atlassian.design/foundations/border) guidance informed the limited type roles, 8 px-based spacing rhythm, and purposeful 1 px/selected 2 px boundary rules.
+- [Carbon productive typography](https://carbondesignsystem.com/elements/typography/style-strategies/) and [form patterns](https://carbondesignsystem.com/patterns/forms-pattern/) informed the task-focused 12/14/16 px text hierarchy, top-aligned labels, concise helper text, and progressive grouping.
+- [USWDS form guidance](https://designsystem.digital.gov/components/form/) supported the simple vertical reading order, semantic fieldsets, and replacement of ambiguous disabled fields with clearly read-only values.
 - [Carbon dashboard guidance](https://carbondesignsystem.com/data-visualization/dashboards/) supported the overview-to-detail hierarchy and keeping requirement labels, values, and completion context together.
 - [Shopify navigation guidance](https://shopify.dev/docs/apps/design/navigation) supported using compact tabs only between sibling views instead of adding more sidebar destinations.
 - [React Bits](https://www.reactbits.dev/get-started/installation) was reviewed for component ideas; its Motion foundation informed the restrained shared tab indicator, while autoplay, 3D, spotlight, and ornamental effects were intentionally excluded from this planning workflow.
@@ -38,12 +44,17 @@ Strict final grade: **98/100**. The workspace is calm, readable, and usable on d
 - Generic status tabs used abrupt state changes. The shared indicator now uses one 160 ms Motion transition with reduced-motion support and full arrow/Home/End keyboard behavior.
 - The AI page was a binary connection button. It is now a bounded conversation that reports model and latency, explains what the test proves, and states that it cannot access student records or files.
 - Narrow screens stacked three oversized overview metrics. The first two now share a row and the workload summary spans the width below them.
+- Older tools used a mixture of 10, 11, 13, 15, 17, 18, 21, and 23 px text with many near-duplicate font weights. The product now uses named supporting, body, section, numeric, page, and display-metric roles; all authenticated page audits resolve to that shared scale.
+- Activity, Timeline, Simulator, and Student profile still used generic bordered form cards after the academic workspace had changed. They now use purpose-specific layouts: register plus composer, checklist plus composer, controls plus scenario output, and section-intro plus form body.
+- Profile and onboarding capacity fields were verbose and visually uneven. Options are shorter, each helper states exactly how the value is used, fixed school data is read-only, and the three capacity controls share one responsive grid.
+- Page headers, forms, unselected choice tiles, and list rows repeated too many visible separators. Revised views use negative space and muted surfaces first; borders are retained for controls, selected states, and major structural boundaries.
 
 ## Measured final checks
 
 - Desktop content width: 1,044 px at a 1,280 px viewport and a bounded 1,200 px application canvas at 1,440 px.
 - Horizontal overflow: zero across 26 populated desktop/mobile/theme states.
-- Visible text below 10 px: zero across every audited destination and zero remaining CSS declarations.
+- Authenticated product typography: 12 px supporting/labels, 14 px body/controls, 16 px sections, 20 px numeric values, 28 px page titles, and 40 px single display metrics. No 10, 11, 13, 15, 17, 18, 21, or 23 px product declarations remain.
+- Responsive tool audit: Activity, Timeline, Simulator, and Student profile have zero horizontal overflow at both 1,280x720 and 390x844. Onboarding capacity fields resolve to three equal desktop columns and one mobile column.
 - Undersized actionable controls: zero, excluding 16 px native checkboxes inside full-size clickable labels.
 - d.tech catalog: 12 records per page.
 - Transcript review: one 860 px-wide ledger with 57 px primary rows and no full-width cards.
@@ -65,7 +76,7 @@ Strict final grade: **98/100**. The workspace is calm, readable, and usable on d
 - Responsive behavior: 10/10
 - Feedback and AI transparency: 10/10
 - Accessibility and interaction sizing: 9/10
-- Visual restraint and consistency: 9/10
+- Visual restraint and consistency: 10/10
 - Data trust and requirement clarity: 9/10
 
 ## Remaining improvements
