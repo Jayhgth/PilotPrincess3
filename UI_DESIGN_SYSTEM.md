@@ -105,7 +105,7 @@ Separator rules:
 ### Sidebar utilities
 
 - Theme and sign-out controls live in the footer below school context.
-- `Replay onboarding` may appear above the theme control during demos only. Its permanent product home is Student profile under `Review setup`; retain the `data-demo-only` and intended-placement metadata until the sidebar shortcut is removed.
+- `Replay onboarding` and `View login page` may appear together above the theme control during demos only. Onboarding's permanent product home is Student profile under `Review setup`; the login preview preserves the active session and returns directly to the workspace. Retain the `data-demo-only` and intended-placement metadata until both sidebar shortcuts are removed.
 
 ### Onboarding
 

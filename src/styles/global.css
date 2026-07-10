@@ -289,6 +289,11 @@ input:focus, select:focus, textarea:focus {
 .auth-back-action { justify-self: start; }
 .auth-back-action:hover,
 .auth-back-link:hover { color: var(--ink); }
+.auth-demo-return {
+  width: fit-content;
+  margin-bottom: 18px;
+  text-decoration: none;
+}
 .reset-form-header { margin-top: 28px; }
 .auth-recovery-note {
   display: flex;

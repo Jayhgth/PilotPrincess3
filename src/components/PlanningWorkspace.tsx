@@ -133,6 +133,14 @@ const DEMO_ONBOARDING_SHORTCUT = {
   intendedPlacement: "student-profile-review-setup"
 } as const;
 
+// Demo-only placement metadata. This shortcut previews the public entry screen
+// without ending the current session; remove it with the other demo controls.
+const DEMO_LOGIN_SHORTCUT = {
+  label: "View login page",
+  currentPlacement: "sidebar-footer",
+  intendedPlacement: "demo-controls"
+} as const;
+
 type CourseArea = "mine" | "dtech" | "smccd";
 type ProfileSection = "basics" | "direction" | "capacity";
 const DEFAULT_SIMULATION: SimulationConfig = {
@@ -1869,6 +1877,20 @@ export default function PlanningWorkspace() {
           >
             <ArrowClockwise size={17} />
             <span>{DEMO_ONBOARDING_SHORTCUT.label}</span>
+          </button>
+          <button
+            className="sidebar-utility"
+            data-demo-only="true"
+            data-current-placement={DEMO_LOGIN_SHORTCUT.currentPlacement}
+            data-intended-placement={DEMO_LOGIN_SHORTCUT.intendedPlacement}
+            onClick={() => {
+              setMobileNavOpen(false);
+              window.location.assign("/?demo=login");
+            }}
+            type="button"
+          >
+            <House size={17} />
+            <span>{DEMO_LOGIN_SHORTCUT.label}</span>
           </button>
           <button className="sidebar-utility" onClick={toggleTheme} type="button">{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
           <button className="sidebar-utility" onClick={() => void signOut()} type="button"><SignOut size={17} /><span>Sign out</span></button>

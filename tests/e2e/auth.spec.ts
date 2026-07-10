@@ -12,6 +12,14 @@ test("renders the d.tech authentication experience", async ({ page }) => {
   await expect(page.getByText("2025-26", { exact: true })).toBeVisible();
 });
 
+test("offers a session-safe login preview for demos", async ({ page }) => {
+  await page.goto("/?demo=login");
+
+  await expect(page.getByRole("heading", { name: "See the whole route before choosing the next class." })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to workspace" })).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("tab", { name: "Sign in" })).toBeVisible();
+});
+
 test("allows account creation with any valid email address", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("tab", { name: "Create account" }).click();

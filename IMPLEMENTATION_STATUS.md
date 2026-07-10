@@ -7,7 +7,7 @@ Last updated: 2026-07-10
 - Strict local-MVP implementation grade: `90/100`; the separate audit grades UI/UX at `91/100` and student usefulness at `86/100`.
 - The complete student flow is implemented in Astro and backed by the linked Supabase project `zqkzgmwptdsaqbzrjngt`.
 - No code or data was copied from PilotPrincess2. The implementation was built from the linked Spec Sheet, the user's clarifications, official d.tech sources, official Codex SDK documentation, and architectural review of `t3code`.
-- The production build, 72 unit tests, four browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency/prerequisite validation, and Codex connectivity check all pass.
+- The production build, 72 unit tests, five browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency/prerequisite validation, and Codex connectivity check all pass.
 
 ## Clarified Product Decisions
 
@@ -37,7 +37,7 @@ Last updated: 2026-07-10
 - Motion-powered workspace tabs provide one restrained shared-state transition, respect reduced-motion preferences, and support Left/Right/Home/End keyboard navigation. The rest of the UI remains static so motion communicates state instead of decorating the page.
 - Open email/password account creation, clear sign-in errors, forgot-password requests, and a secure password-update callback page.
 - Five-stage onboarding for student details, planning priorities, a 1-4 year planning window, full or selected graduation tracker areas, and optional transcript import.
-- Completed users can replay onboarding from Student profile for preference changes. A temporary demo shortcut also sits in the sidebar directly above the theme control; code metadata identifies it as demo-only and points to Student profile as the durable location. Replay edits stay local until the final save, exiting discards them, and existing course records remain untouched.
+- Completed users can replay onboarding from Student profile for preference changes. Two temporary demo shortcuts sit together above the sidebar theme control: one replays onboarding and the other previews the full hero/sign-in page without ending the active session. Both carry demo-placement metadata, and the login preview includes a direct return to the workspace. Replay edits stay local until the final save, exiting discards them, and existing course records remain untouched.
 - The onboarding priorities step groups each choice section with explicit responsive spacing so legends, helper text, and capacity controls remain visually separate in both themes.
 - Student profile editing for name, age, grade, graduation year, structured academic interests, other interests, major direction, career ideas, planning intensity, a demanding-course limit, a weekly commitment limit, stress baseline, plan window, and tracker scope. Every field states and exposes the planning output it changes.
 - Minimal transcript import for PDF, DOCX, TXT, CSV, PNG, JPEG, WebP, and pasted text, with a private 15 MB bucket. One file row and one `Read transcript` action replace the previous generic source-management form.

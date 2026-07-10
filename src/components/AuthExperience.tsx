@@ -33,6 +33,10 @@ function authenticationMessage(error: unknown) {
 export default function AuthExperience() {
   const configured = hasPublicEnv();
   const supabase = useMemo(() => (configured ? getBrowserSupabase() : null), [configured]);
+  const demoLoginPreview = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("demo") === "login";
+  }, []);
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,11 +51,11 @@ export default function AuthExperience() {
   });
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase || demoLoginPreview) return;
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) window.location.assign("/app");
     });
-  }, [supabase]);
+  }, [demoLoginPreview, supabase]);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -141,6 +145,12 @@ export default function AuthExperience() {
         aria-label={mode === "sign-in" ? "Sign in" : mode === "sign-up" ? "Create account" : "Reset password"}
       >
         <div className="auth-panel-inner">
+          {demoLoginPreview && (
+            <a className="auth-back-link auth-demo-return" data-demo-only="true" href="/app">
+              <ArrowLeft size={16} weight="bold" aria-hidden />
+              Return to workspace
+            </a>
+          )}
           <div className="auth-switch" role="tablist" aria-label="Authentication mode">
             <button
               className={mode === "sign-in" || mode === "forgot-password" ? "active" : ""}
