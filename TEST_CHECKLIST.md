@@ -6,13 +6,13 @@ Last run: 2026-07-10
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 38/38 unit tests passing
+- [x] `pnpm test` with 72/72 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
 - [x] `pnpm peers check`
 - [x] `supabase db lint --linked` with no schema errors
-- [x] All ten migrations and seed applied to linked Supabase project; local and remote migration histories match
+- [x] All eleven migrations and seed applied to linked Supabase project; local and remote migration histories match
 - [x] `pnpm smccd:validate` with 2,461 courses, 131 AA/AS programs, and 120 d.tech/SMCCD equivalencies
 
 ## Authentication and Security
@@ -45,6 +45,11 @@ Last run: 2026-07-10
 - [x] Course editing stays hidden until requested and supports status, final grade, grade level, weighting, and removal
 - [x] Official d.tech catalog loads 41 courses and supports search/filter with one explicit `Add to Planned` action
 - [x] Official d.tech catalog paginates 12 courses per page and uses compact markers for courses already in Done, In progress, or Planned
+- [x] d.tech and SMCCD use one coherent list-and-detail catalog pattern with plan-aware prerequisite readiness on every result
+- [x] Selected-course details distinguish satisfied evidence, missing or out-of-order requirements, recommended preparation, and counselor-review questions
+- [x] Deterministic prerequisite checks cover exact AND/OR course rules, minimum grades, prior/concurrent timing, grade constraints, and independently reviewed clearances without fuzzy matching
+- [x] d.tech-to-SMCCD prerequisite equivalency works only through an explicitly reviewed reverse mapping; the older SMCCD-to-d.tech credit chart is never reversed automatically
+- [x] Planned prerequisite problems surface in Timeline as links back to the relevant catalog record
 - [x] Graduation tracker excludes unverified mappings
 - [x] Graduation reports earned, current, planned, and open credit separately without presenting scheduled credit as completion
 - [x] Graduation requirement rows use exact values and rule warnings instead of decorative progress bars
@@ -66,6 +71,7 @@ Last run: 2026-07-10
 - [x] Workload uses only the current plan year, applies three total weekly hours per SMCCD unit, includes activity hours, and warns against the saved weekly and demanding-course limits
 - [x] Academic interests, major direction, and career ideas produce visible course and degree match reasons
 - [x] SMCCD catalog searches and filters 2,461 source-backed records across all three district colleges
+- [x] SMCCD course-detail data preserves prerequisites, corequisites, recommended preparation, general-education attributes, transfer status, detail verification, and degree applicability
 - [x] SMCCD results stay empty before a search, and course search is separated from associate-degree planning
 - [x] Exact SMCCD course selection persists the district foreign key, college units, plan status, and proposed d.tech credit
 - [x] Exact equivalency matches persist source-backed d.tech credits and requirement area; CHIN 132 displays Mandarin 3 Spring and 5 d.tech credits
