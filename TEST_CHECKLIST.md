@@ -38,7 +38,8 @@ Last run: 2026-07-10
 - [x] Overview recalculates graduation coverage and workload
 - [x] One Courses destination replaces separate academic-plan, d.tech catalog, and SMCCD navigation entries
 - [x] My courses shows a single `Done`, `In progress`, `Planned` kanban in that order on desktop and mobile
-- [x] Editable courses drag between columns and receive destination-appropriate grade/year defaults
+- [x] Editable courses drag from anywhere on the collapsed card, show hover/pickup/drop feedback, and receive destination-appropriate grade/year defaults
+- [x] Edit remains independently clickable, and keyboard pickup/cancel exposes the same drag state without triggering the editor
 - [x] Transcript-backed courses have a visible lock, no drag handle, and remain in Done
 - [x] Course editing stays hidden until requested and supports status, final grade, grade level, weighting, and removal
 - [x] Official d.tech catalog loads 41 courses and supports search/filter with one explicit `Add to Planned` action

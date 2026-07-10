@@ -2102,8 +2102,10 @@ textarea,
 
 .course-kanban-viewport { min-width: 0; overflow-x: auto; padding-bottom: 8px; overscroll-behavior-inline: contain; }
 .course-kanban { display: grid; min-width: 880px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
-.kanban-column { display: grid; min-width: 0; grid-template-rows: auto minmax(300px, 1fr) auto; overflow: hidden; border-radius: var(--radius); background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg)); transition: background-color 140ms ease, box-shadow 140ms ease; }
-.kanban-column.drop-target { background: var(--accent-soft); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+.kanban-column { display: grid; min-width: 0; grid-template-rows: auto minmax(300px, 1fr) auto; overflow: hidden; border-radius: var(--radius); background: color-mix(in srgb, var(--surface-muted) 58%, var(--bg)); transition: background-color 180ms ease, box-shadow 180ms ease; }
+.kanban-column.drop-target { background: color-mix(in srgb, var(--accent-soft) 64%, var(--bg)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 48%, transparent); }
+.kanban-column.drop-target .kanban-column-header svg,
+.kanban-column.drop-target .kanban-column-header h2 { color: var(--accent); }
 .kanban-column-header { display: flex; min-height: 70px; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; }
 .kanban-column-header > div { display: flex; min-width: 0; align-items: flex-start; gap: 9px; }
 .kanban-column-header svg { flex: 0 0 auto; margin-top: 1px; color: var(--ink-faint); }
@@ -2111,7 +2113,7 @@ textarea,
 .kanban-column-header h2 { margin: 0; font-size: var(--type-section); line-height: var(--leading-section); }
 .kanban-column-header p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .kanban-column-header > strong { min-width: 22px; color: var(--ink-soft); font-size: var(--type-section); text-align: right; }
-.kanban-column-body { display: grid; max-height: min(610px, calc(100dvh - 290px)); align-content: start; gap: 8px; overflow-y: auto; padding: 0 8px 10px; scrollbar-width: thin; }
+.kanban-column-body { display: grid; max-height: min(610px, calc(100dvh - 290px)); align-content: start; gap: 7px; overflow-y: auto; padding: 0 8px 10px; scrollbar-width: thin; }
 .kanban-column-action { display: inline-flex; min-height: 38px; align-items: center; justify-content: flex-start; gap: 7px; border: 0; background: transparent; color: var(--ink-soft); padding: 0 14px; font-size: var(--type-supporting); font-weight: 650; }
 .kanban-column-action:hover { background: var(--surface); color: var(--ink); }
 .kanban-empty { display: grid; min-height: 190px; align-content: center; justify-items: start; gap: 5px; padding: 18px 12px; }
@@ -2119,33 +2121,50 @@ textarea,
 .kanban-empty p { max-width: 28ch; margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .kanban-empty .quiet-button { margin: 4px 0 0 -10px; }
 
-.kanban-course { position: relative; min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-raised); transition: border-color 140ms ease, opacity 140ms ease, box-shadow 140ms ease; }
-.kanban-course:hover { border-color: var(--line-strong); }
-.kanban-course.dragging { opacity: .24; }
+.kanban-course { position: relative; min-width: 0; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: var(--surface-raised); box-shadow: 0 1px 2px rgb(35 38 43 / 0.035); transition: transform 170ms cubic-bezier(.2,.8,.2,1), border-color 170ms ease, background-color 170ms ease, opacity 140ms ease, box-shadow 170ms ease; }
+.kanban-course.draggable:hover:not(.editing):not(.dragging) { z-index: 1; border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); box-shadow: 0 5px 14px rgb(35 38 43 / 0.1); transform: translateY(-2px); }
+.kanban-course.draggable:active:not(.editing) { cursor: grabbing; transform: translateY(0) scale(.992); }
+.kanban-course.dragging { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); box-shadow: none; opacity: .22; }
 .kanban-course.editing { border-color: var(--line-strong); box-shadow: var(--shadow); }
-.kanban-course-main { display: grid; min-height: 76px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 11px 10px; }
-.course-drag-handle { display: inline-grid; width: 22px; height: 34px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-faint); padding: 0; cursor: grab; touch-action: none; }
-.course-drag-handle:hover { background: var(--surface-muted); color: var(--ink); }
-.course-drag-handle:active { cursor: grabbing; }
-.kanban-lock { display: inline-flex; min-width: 22px; align-items: center; gap: 4px; color: var(--ink-faint); font-size: var(--type-supporting); line-height: 34px; white-space: nowrap; }
+.kanban-course.locked { background: color-mix(in srgb, var(--surface-raised) 84%, var(--surface-muted)); }
+.kanban-course-main { display: grid; min-height: 82px; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 12px 42px 12px 12px; text-align: left; }
+.kanban-course.draggable .kanban-course-main { cursor: grab; touch-action: pan-y; user-select: none; }
+.kanban-course-main:focus-visible { border-radius: 6px; outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -3px; }
+.kanban-drag-affordance { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); }
+.kanban-drag-affordance > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.kanban-course.draggable:hover .kanban-drag-affordance { color: var(--accent); animation: kanban-grip-nudge 420ms cubic-bezier(.2,.8,.2,1); }
+.kanban-lock { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); font-size: var(--type-supporting); white-space: nowrap; }
 .kanban-lock span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.kanban-course-copy { display: grid; min-width: 0; gap: 4px; }
-.kanban-course-copy > strong { overflow: hidden; font-size: var(--type-body); line-height: var(--leading-body); text-overflow: ellipsis; white-space: nowrap; }
-.kanban-course-copy > span { display: flex; min-width: 0; flex-wrap: wrap; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.kanban-course-copy > span > span:not(:last-child)::after { content: "/"; margin-inline: 5px; color: var(--line-strong); }
+.kanban-course-copy { display: grid; min-width: 0; gap: 5px; }
+.kanban-course-copy > strong { display: -webkit-box; overflow: hidden; font-size: var(--type-body); line-height: var(--leading-body); text-align: left; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.kanban-course-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: 3px 10px; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.kanban-course-meta > span { display: inline-flex; align-items: center; }
 .kanban-course-copy > small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.kanban-course .course-edit-button { align-self: start; }
-.kanban-course-editor { display: grid; grid-template-columns: 1fr; gap: 10px; background: var(--surface); padding: 0 10px 12px 40px; }
+.kanban-course .course-edit-button { position: absolute; z-index: 2; top: 8px; right: 8px; opacity: .64; transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease; }
+.kanban-course:hover .course-edit-button,
+.kanban-course .course-edit-button:focus-visible,
+.kanban-course.editing .course-edit-button { opacity: 1; }
+.kanban-course-editor { display: grid; grid-template-columns: 1fr; gap: 10px; border-top: 1px solid var(--line); background: var(--surface); padding: 12px; }
 .kanban-course-editor > label:not(.course-weight-control) { display: grid; gap: 5px; }
 .kanban-course-editor > label > span { font-size: var(--type-supporting); font-weight: 650; }
 .kanban-course-editor input,
 .kanban-course-editor select { min-height: 38px; font-size: var(--type-body); }
 .kanban-course-editor .danger-button { justify-self: start; }
-.course-drag-preview { display: flex; width: min(300px, 78vw); align-items: flex-start; gap: 8px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-raised); padding: 12px; box-shadow: var(--shadow); }
-.course-drag-preview > svg { flex: 0 0 auto; color: var(--ink-faint); }
+.course-drag-preview { display: flex; width: min(310px, 78vw); align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 7px; background: var(--surface-raised); padding: 13px 14px; box-shadow: 0 14px 30px rgb(35 38 43 / 0.18); animation: kanban-pickup 150ms cubic-bezier(.2,.8,.2,1) both; transform: rotate(-1deg) scale(1.015); cursor: grabbing; }
+.course-drag-preview > svg { flex: 0 0 auto; color: var(--accent); }
 .course-drag-preview > span { display: grid; gap: 3px; }
 .course-drag-preview strong { font-size: var(--type-body); }
 .course-drag-preview small { color: var(--ink-faint); font-size: var(--type-supporting); }
+
+@keyframes kanban-grip-nudge {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-2px); }
+}
+
+@keyframes kanban-pickup {
+  from { opacity: .55; transform: rotate(0) scale(.97); }
+  to { opacity: 1; transform: rotate(-1deg) scale(1.015); }
+}
 .plan-explanation { max-width: 78ch; margin: 0 0 14px; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
 
 .requirement-index-grid article { padding-left: 0; }
@@ -2173,4 +2192,13 @@ textarea,
   .kanban-column-body { max-height: min(560px, calc(100dvh - 250px)); }
   .graduation-totals { border-top: 0; }
   .requirement-credit-breakdown { grid-template-columns: 1fr 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-course,
+  .kanban-column { transition: none; }
+  .kanban-course.draggable:hover:not(.editing):not(.dragging),
+  .kanban-course.draggable:active:not(.editing),
+  .course-drag-preview { animation: none; transform: none; }
+  .kanban-course.draggable:hover .kanban-drag-affordance { animation: none; }
 }

@@ -16,14 +16,15 @@ import {
   CheckCircleIcon as CheckCircle,
   DotsSixVerticalIcon as DotsSixVertical,
   GaugeIcon as Gauge,
+  HandGrabbingIcon as HandGrabbing,
   ListChecksIcon as ListChecks,
   LockKeyIcon as LockKey,
   PencilSimpleIcon as PencilSimple,
   SparkleIcon as Sparkle,
   TrashIcon as Trash
 } from "@phosphor-icons/react";
-import { useState, type CSSProperties, type ReactNode } from "react";
-import { courseDisplayName, GRADE_LEVELS, LETTER_GRADES, schoolYearForGrade } from "@/lib/planning";
+import { useState, type ReactNode } from "react";
+import { courseDisplayName, GRADE_LEVELS, LETTER_GRADES, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
 import type { Course, CourseStatus, GradeLevel, PlanCourse, StudentProfile } from "@/lib/models";
 
 const STATUS_ORDER: CourseStatus[] = ["completed", "current", "planned"];
@@ -74,9 +75,9 @@ function CourseCard({
   onRemove: (id: string) => void;
 }) {
   const locked = Boolean(row.source_review_item_id);
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: row.id,
-    disabled: locked || busy,
+    disabled: locked || busy || editing,
     data: { row }
   });
   const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
@@ -84,30 +85,33 @@ function CourseCard({
   const weighted = isSmccd || row.is_weighted;
   const isPass = row.letter_grade?.toUpperCase() === "P";
   const title = courseDisplayName(row, courseMap);
-  const style: CSSProperties | undefined = transform
-    ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
-    : undefined;
   const metadata = [
     `Grade ${row.grade_level}`,
     row.credits ? formatCredits(Number(row.credits)) : "Credits need review",
-    isSmccd ? "SMCCD" : catalogCourse?.subject ?? row.requirement_area_override?.replaceAll("_", " ") ?? "Custom",
+    isSmccd ? "SMCCD" : catalogCourse?.subject ?? (row.requirement_area_override ? REQUIREMENT_LABELS[row.requirement_area_override] : "Custom"),
     weighted ? "Weighted" : null,
-    isPass ? "Pass, outside GPA" : null
+    isPass ? "Pass, outside GPA" : null,
+    locked ? "Transcript" : null
   ].filter(Boolean) as string[];
 
   return (
-    <article ref={setNodeRef} style={style} className={`kanban-course ${editing ? "editing" : ""} ${isDragging ? "dragging" : ""} ${locked ? "locked" : ""}`}>
-      <div className="kanban-course-main">
+    <div ref={setNodeRef} className={`kanban-course ${editing ? "editing" : ""} ${isDragging ? "dragging" : ""} ${locked ? "locked" : "draggable"}`}>
+      <article
+        className="kanban-course-main"
+        {...(locked || editing ? {} : listeners)}
+        {...(locked || editing ? {} : attributes)}
+        aria-label={locked || editing ? undefined : `Move ${title}. Drag this card to another column.`}
+      >
         {locked
-          ? <span className="kanban-lock" title="Transcript records cannot move"><LockKey size={15} /><span>Transcript</span></span>
-          : <button className="course-drag-handle" type="button" aria-label={`Move ${title}`} {...listeners} {...attributes}><DotsSixVertical size={18} /></button>}
+          ? <span className="kanban-lock" title="Transcript records cannot move"><LockKey size={16} /><span>Transcript</span></span>
+          : <span className="kanban-drag-affordance" title="Drag anywhere on this card"><DotsSixVertical size={18} /><span>Drag</span></span>}
         <div className="kanban-course-copy">
           <strong>{title}</strong>
-          <span>{metadata.map((item) => <span key={item}>{item}</span>)}</span>
+          <div className="kanban-course-meta">{metadata.map((item) => <span key={item}>{item}</span>)}</div>
           {row.status === "completed" && <small>{row.letter_grade ? `Final grade ${row.letter_grade}` : "Final grade not entered"}</small>}
         </div>
-        <button className="icon-button course-edit-button" type="button" onClick={() => onEditingChange(editing ? null : row.id)} aria-expanded={editing} aria-label={`${editing ? "Close editor for" : "Edit"} ${title}`}><PencilSimple size={15} /></button>
-      </div>
+      </article>
+      <button className="icon-button course-edit-button" type="button" onClick={() => onEditingChange(editing ? null : row.id)} aria-expanded={editing} aria-label={`${editing ? "Close editor for" : "Edit"} ${title}`}><PencilSimple size={15} /></button>
       {editing && <div className="kanban-course-editor">
         <label><span>Status</span>{locked
           ? <input value="Done from transcript" readOnly />
@@ -119,7 +123,7 @@ function CourseCard({
         <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => onUpdate(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "SMCCD courses are weighted" : "Weighted or honors"}</span></label>
         <button className="danger-button small" type="button" onClick={() => onRemove(row.id)}><Trash size={15} /> Remove</button>
       </div>}
-    </article>
+    </div>
   );
 }
 
@@ -182,7 +186,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragCancel={() => setActiveId(null)} onDragEnd={handleDragEnd}>
-      <p className="kanban-help">Drag courses between columns. Transcript records are locked to Done.</p>
+      <p className="kanban-help">Drag anywhere on an unlocked card to move it. Transcript records stay in Done.</p>
       <div className="course-kanban-viewport">
         <section className="course-kanban" aria-label="Course kanban board">
           {STATUS_ORDER.map((status) => {
@@ -195,7 +199,9 @@ export default function CourseKanban(props: CourseKanbanProps) {
           })}
         </section>
       </div>
-      <DragOverlay>{activeRow && <div className="course-drag-preview"><DotsSixVertical size={18} /><span><strong>{courseDisplayName(activeRow, courseMap)}</strong><small>Move to another column</small></span></div>}</DragOverlay>
+      <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(.2,.8,.2,1)" }}>
+        {activeRow && <div className="course-drag-preview"><HandGrabbing size={19} weight="bold" /><span><strong>{courseDisplayName(activeRow, courseMap)}</strong><small>Release over another column</small></span></div>}
+      </DragOverlay>
     </DndContext>
   );
 }

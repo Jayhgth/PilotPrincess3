@@ -132,7 +132,8 @@ Separator rules:
 - Preserve the left-to-right model `Done`, `In progress`, `Planned`. Do not reorder the stages to make the mutable state appear first.
 - Keep columns neutral. Status is already communicated by position, heading, icon, and description; do not add decorative colored side rails to cards.
 - A card shows only course identity, grade, credit, source/subject, and a result when one exists. Secondary controls remain behind Edit.
-- Editable cards expose a dedicated drag handle and retain the status selector as the keyboard/mobile fallback. Transcript-backed cards expose a lock in the same control position and never drag.
+- The complete collapsed surface of an editable card is the drag target. A quiet grip icon signals the behavior, hover adds a small lift, pickup creates a distinct overlay, and the destination column responds. Edit is the only excluded card action, and the status selector remains the keyboard/mobile fallback.
+- Motion communicates drag availability and state only. Disable the lift and pickup animation under reduced motion while preserving the interaction and focus treatment.
 - On narrow screens preserve all three columns in a horizontal board rather than replacing the relationship with unrelated status tabs.
 
 ### Graduation
