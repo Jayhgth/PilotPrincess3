@@ -6,36 +6,13 @@ import type {
   SmccdHighSchoolEquivalency,
   StudentProfile
 } from "@/lib/models";
+import { courseNameAliases, normalizeCourseName } from "@/lib/course-names";
 import { schoolYearForGrade } from "@/lib/planning";
-
-function normalizeCourseName(value: string) {
-  const designLabTranscriptLabel = /^\s*d\s*\.?\s*lab\s*:\s*/i.test(value);
-  const normalized = value
-    .toLowerCase()
-    .replace(/^\s*d\s*\.?\s*lab\s*:\s*/i, "")
-    .replace(/\bhonors?\b/g, designLabTranscriptLabel ? "" : "honors")
-    .replace(/\badvanced placement\b/g, "ap")
-    .replace(/\bintro\b/g, "introduction")
-    .replace(/\bcodesigners\b/g, "co designers")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-  return normalized === "foundation design thinking"
-    ? "foundation in design thinking"
-    : normalized;
-}
-
-function courseAliases(course: Course) {
-  return course.name
-    .split("/")
-    .map(normalizeCourseName)
-    .filter(Boolean);
-}
 
 export function findTranscriptCatalogMatch(name: string, courses: Course[]) {
   const normalized = normalizeCourseName(name);
   if (!normalized) return null;
-  const exact = courses.filter((course) => courseAliases(course).includes(normalized));
+  const exact = courses.filter((course) => courseNameAliases(course.name).includes(normalized));
   return exact.length === 1 ? exact[0] : null;
 }
 

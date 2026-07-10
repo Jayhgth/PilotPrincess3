@@ -13,6 +13,7 @@ import type {
   StudentProfile,
   WorkloadSummary
 } from "@/lib/models";
+import { courseEquivalenceKeys } from "@/lib/course-names";
 import { majorDirectionLabel } from "@/lib/profile-planning";
 
 const GRADE_POINTS: Record<string, number> = {
@@ -387,7 +388,16 @@ export function generateSuggestedPlan(
 ): GeneratedPlanCourse[] {
   const graduationYear = profile.graduation_year ?? new Date().getFullYear() + 3;
   const currentGrade = (profile.grade_level ?? 9) as GradeLevel;
+  const courseMap = new Map(courses.map((course) => [course.id, course]));
   const existingIds = new Set(existing.map((row) => row.course_id).filter(Boolean));
+  const existingNameKeys = new Set<string>();
+  for (const row of existing) {
+    const catalogName = row.course_id ? courseMap.get(row.course_id)?.name : null;
+    for (const name of [catalogName, row.custom_course_name]) {
+      if (!name) continue;
+      for (const key of courseEquivalenceKeys(name)) existingNameKeys.add(key);
+    }
+  }
   const generated: GeneratedPlanCourse[] = [];
 
   for (const grade of selectedPlanGrades(profile)) {
@@ -400,6 +410,8 @@ export function generateSuggestedPlan(
           ? candidates.find((candidate) => !candidate.is_weighted && !candidate.is_honors) ?? candidates[0]
           : candidates[0];
       if (!course || existingIds.has(course.id)) continue;
+      const equivalenceKeys = courseEquivalenceKeys(course.name);
+      if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) continue;
       generated.push({
         course_id: course.id,
         grade_level: grade,
@@ -411,6 +423,7 @@ export function generateSuggestedPlan(
         user_edited: false
       });
       existingIds.add(course.id);
+      for (const key of equivalenceKeys) existingNameKeys.add(key);
     }
   }
 

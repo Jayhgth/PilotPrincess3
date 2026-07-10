@@ -434,6 +434,31 @@ describe("planning and simulation", () => {
     expect(existing[0].user_edited).toBe(true);
   });
 
+  it("does not suggest a completed transcript alias with a missing catalog ID", () => {
+    const seniorProfile: StudentProfile = {
+      ...profile,
+      grade_level: 12,
+      graduation_year: 2026,
+      plan_start_grade: 12,
+      plan_end_grade: 12,
+      goal_intensity: "competitive"
+    };
+    const catalog = [
+      course({ id: "precalculus", name: "Precalculus", subject: "Mathematics", grade_levels: [12] }),
+      course({ id: "precalculus-honors", name: "Precalculus Honors", subject: "Mathematics", grade_levels: [12], is_honors: true, is_weighted: true })
+    ];
+    const completedTranscript = [planCourse({
+      id: "completed-precalculus",
+      course_id: null,
+      custom_course_name: "Pre-Calculus Honors",
+      source_review_item_id: "review-precalculus",
+      grade_level: 10
+    })];
+
+    expect(generateSuggestedPlan(seniorProfile, catalog, completedTranscript)).toEqual([]);
+    expect(generateSuggestedPlan({ ...seniorProfile, goal_intensity: "lower_stress" }, catalog, completedTranscript)).toEqual([]);
+  });
+
   it("uses the student's graduation year to label school years", () => {
     expect(schoolYearForGrade(2028, 9)).toBe("2024-2025");
     expect(schoolYearForGrade(2028, 12)).toBe("2027-2028");
@@ -674,6 +699,7 @@ describe("transcript import", () => {
 
     expect(findTranscriptCatalogMatch("Precalculus", catalogCourses)?.id).toBe("precalculus");
     expect(findTranscriptCatalogMatch("Precalculus Honors", catalogCourses)?.id).toBe("precalculus-honors");
+    expect(findTranscriptCatalogMatch("Pre-Calculus Honors", catalogCourses)?.id).toBe("precalculus-honors");
   });
 
   it("imports a matched Design Lab alias with verified requirement credit", () => {

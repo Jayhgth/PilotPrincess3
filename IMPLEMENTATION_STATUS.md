@@ -7,7 +7,7 @@ Last updated: 2026-07-10
 - Strict local-MVP implementation grade: `90/100`; the separate audit grades UI/UX at `91/100` and student usefulness at `86/100`.
 - The complete student flow is implemented in Astro and backed by the linked Supabase project `zqkzgmwptdsaqbzrjngt`.
 - No code or data was copied from PilotPrincess2. The implementation was built from the linked Spec Sheet, the user's clarifications, official d.tech sources, official Codex SDK documentation, and architectural review of `t3code`.
-- The production build, 37 unit tests, four browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency validation, and Codex connectivity check all pass.
+- The production build, 38 unit tests, four browser tests, remote schema lint, remote auth/RLS/storage smoke checks, open-email signup, password login, recovery-token flow, actual-PDF transcript import, SMCCD catalog/equivalency validation, and Codex connectivity check all pass.
 
 ## Clarified Product Decisions
 
@@ -46,6 +46,7 @@ Last updated: 2026-07-10
 - Laboratory Science applies the official 10-credit Biology + 10-credit Chemistry + 10-credit third-science structure, so duplicate science credit cannot falsely complete the requirement. A verified Level 3/III world-language course satisfies the full 20-credit sequence without requiring lower levels, while remaining at its actual Done/In progress/Planned stage.
 - GPA tracker with current/projected and weighted/unweighted values, separate GPA/weighted/pass credit totals, and an on-screen explanation of the d.tech method.
 - Non-destructive source-backed variable-length plan suggestions, compact inline editing for status/year/grade/weighting, grade-grouped transcript history, removal, collapsed plan versions, snapshots, and real active-versus-snapshot comparison.
+- Suggestions compare canonical course names as well as catalog IDs, so transcript variants such as `Pre-Calculus Honors` cannot be suggested again as `Precalculus Honors` even when an older import lacks a catalog ID. The linked duplicate was removed and its transcript-backed row was mapped to the verified catalog course.
 - Source-backed SMCCD concurrent-enrollment planning with 2,461 exact district courses across Cañada College, College of San Mateo, and Skyline College. The catalog stays empty until the student searches, uses a stable list-and-detail selection flow, and separates course search from associate-degree planning.
 - Searchable, ranked AA/AS discovery across 131 programs, with separate views for profile matches, existing-course progress, and the complete district set. Match reasons, persisted student goals, and deterministic major-requirement progress are visible; general education, residency, waivers, and substitutions are explicitly excluded from the estimate.
 - Activities and weekly-hour workload tracking. SMCCD load uses the official three-hours-of-total-work-per-unit convention, only the current plan year is treated as simultaneous, and unknown d.tech homework time is not fabricated.
@@ -55,7 +56,7 @@ Last updated: 2026-07-10
 
 ### Supabase
 
-- Nine applied migrations containing 28 application tables, enums, constraints, indexes, triggers, helper functions, RLS, storage policies, onboarding preferences, transcript provenance, SMCCD curriculum/goals/equivalencies, open email registration, repaired transcript requirement mappings, workload limits, and explicit requirement overrides.
+- Ten applied migrations containing 28 application tables, enums, constraints, indexes, triggers, helper functions, RLS, storage policies, onboarding preferences, transcript provenance, SMCCD curriculum/goals/equivalencies, open email registration, repaired transcript requirement mappings, workload limits, explicit requirement overrides, and transcript/catalog name reconciliation.
 - Retained `allowed_email_domains` metadata seeded with `dtechhs.org`, with no auth trigger or registration enforcement.
 - New-user trigger provisions a student profile, active four-year plan, and active version transactionally.
 - Per-user RLS on profiles, sources, parse jobs, review items, plans, versions, courses, grades, activities, timeline tasks, simulations, summaries, and event logs.
@@ -88,7 +89,7 @@ Last updated: 2026-07-10
 
 - `pnpm lint`: pass.
 - `pnpm typecheck`: pass with 0 errors, 0 warnings, and 0 hints.
-- `pnpm test`: 37/37 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, and SMCCD requirement progress.
+- `pnpm test`: 38/38 unit tests pass, including applied-credit capping, the exact 4.00/4.74 transcript GPA method, pass-credit exclusion, A/A-minus equivalence, evidence-based Honors detection, forced SMCCD weighting, locked transcript moves, kanban grade transitions, structured science coverage, Level 3 language proficiency, transcript layout parsing, Design Lab alias import verification, transcript/catalog alias suggestion deduplication, and SMCCD requirement progress.
 - `pnpm test:e2e`: 4/4 Chromium tests pass, including open-email signup UI, recovery states, and a 390x844 viewport.
 - `pnpm build`: Astro standalone SSR build passes.
 - `pnpm peers check`: pass.

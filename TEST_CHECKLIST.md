@@ -6,13 +6,13 @@ Last run: 2026-07-10
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 37/37 unit tests passing
+- [x] `pnpm test` with 38/38 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
 - [x] `pnpm peers check`
 - [x] `supabase db lint --linked` with no schema errors
-- [x] All nine migrations and seed applied to linked Supabase project; local and remote migration histories match
+- [x] All ten migrations and seed applied to linked Supabase project; local and remote migration histories match
 - [x] `pnpm smccd:validate` with 2,461 courses, 131 AA/AS programs, and 120 d.tech/SMCCD equivalencies
 
 ## Authentication and Security
@@ -41,6 +41,7 @@ Last run: 2026-07-10
 - [x] Editable courses drag from anywhere on the collapsed card, show hover/pickup/drop feedback, and receive destination-appropriate grade/year defaults
 - [x] Edit remains independently clickable, and keyboard pickup/cancel exposes the same drag state without triggering the editor
 - [x] Transcript-backed courses have a visible lock, no drag handle, and remain in Done
+- [x] Suggestions exclude completed transcript aliases even when punctuation differs or an older import lacks a catalog ID
 - [x] Course editing stays hidden until requested and supports status, final grade, grade level, weighting, and removal
 - [x] Official d.tech catalog loads 41 courses and supports search/filter with one explicit `Add to Planned` action
 - [x] Official d.tech catalog paginates 12 courses per page and uses compact markers for courses already in Done, In progress, or Planned
