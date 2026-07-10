@@ -25,7 +25,12 @@ import {
   selectedPlanGrades,
   simulatePlan
 } from "@/lib/planning";
-import { findTranscriptCatalogMatch, transcriptPlanCourseDraft } from "@/lib/transcript";
+import {
+  findTranscriptCatalogMatch,
+  resolveTranscriptCourse,
+  transcriptPlanCourseDraft,
+  visibleTranscriptUncertaintyNotes
+} from "@/lib/transcript";
 import { courseProfileFit, programProfileFit } from "@/lib/profile-planning";
 
 const profile: StudentProfile = {
@@ -689,6 +694,113 @@ describe("transcript import", () => {
     expect(findTranscriptCatalogMatch("D.Lab: CoDesigners Honors", catalogCourses)?.id).toBe("codesigners");
     expect(findTranscriptCatalogMatch("D.Lab: Innovation Diploma Honors", catalogCourses)?.id).toBe("innovation");
     expect(findTranscriptCatalogMatch("Intro to Prototyping and Fabrication", catalogCourses)?.id).toBe("prototyping");
+  });
+
+  it("uses a unique relaxed catalog key only after exact matching", () => {
+    const catalogCourses = [
+      course({ id: "precalculus", name: "Precalculus" }),
+      course({ id: "precalculus-honors", name: "Precalculus Honors", is_honors: true, is_weighted: true }),
+      course({ id: "advanced-physics", name: "Advanced Physics Honors", subject: "Laboratory Science", is_honors: true, is_weighted: true })
+    ];
+
+    expect(findTranscriptCatalogMatch("Pre-Calculus", catalogCourses)?.id).toBe("precalculus");
+    expect(findTranscriptCatalogMatch("Pre-Calculus Honors", catalogCourses)?.id).toBe("precalculus-honors");
+    expect(findTranscriptCatalogMatch("Advanced Physics", catalogCourses)?.id).toBe("advanced-physics");
+  });
+
+  it("resolves d.tech intersession rows without treating absent catalog membership as uncertainty", () => {
+    const payload = {
+      course_name: "Documentary Film",
+      subject: "Personal Development",
+      institution_name: "Design Tech High School",
+      letter_grade: "P",
+      credits: 2.5
+    };
+    const warning = "No exact d.tech catalog match was found. This course will remain custom until reviewed.";
+    const resolution = resolveTranscriptCourse(payload, []);
+
+    expect(resolution).toMatchObject({
+      classification: "dtech_intersession",
+      gradingBasis: "pass_fail",
+      identityResolved: true
+    });
+    expect(visibleTranscriptUncertaintyNotes(payload, [warning], [])).toEqual([]);
+  });
+
+  it("reconciles legacy d.tech P rows even when an older review payload omitted the subject", () => {
+    const payload = {
+      course_name: "Documentary Film",
+      subject: null,
+      institution_name: "Design Tech High School",
+      letter_grade: "P",
+      credits: 2.5
+    };
+    const warning = "No exact d.tech catalog match was found. This course will remain custom until reviewed.";
+
+    expect(resolveTranscriptCourse(payload, []).classification).toBe("dtech_intersession");
+    expect(visibleTranscriptUncertaintyNotes(payload, [warning], [])).toEqual([]);
+  });
+
+  it("does not mistake an ordinary d.tech academic F for intersession without supporting evidence", () => {
+    const payload = {
+      course_name: "English 2",
+      subject: null,
+      institution_name: "Design Tech High School",
+      letter_grade: "F",
+      credits: 10
+    };
+
+    expect(resolveTranscriptCourse(payload, []).classification).toBe("custom");
+  });
+
+  it("removes stale catalog warnings when a current unique course match exists", () => {
+    const catalogCourse = course({ id: "physics", name: "Advanced Physics Honors", subject: "Laboratory Science" });
+    const payload = {
+      course_name: "Advanced Physics",
+      institution_name: "Design Tech High School",
+      letter_grade: "A",
+      credits: 10
+    };
+    const warning = "No exact d.tech catalog match was found. This course will remain custom until reviewed.";
+
+    expect(resolveTranscriptCourse(payload, [catalogCourse]).classification).toBe("dtech_catalog");
+    expect(visibleTranscriptUncertaintyNotes(payload, [warning], [catalogCourse])).toEqual([]);
+  });
+
+  it("keeps true custom-course warnings visible", () => {
+    const payload = {
+      course_name: "Independent Study in Robotics",
+      institution_name: "Design Tech High School",
+      letter_grade: "A",
+      credits: 5
+    };
+    const warning = "No exact d.tech catalog match was found. This course will remain custom until reviewed.";
+
+    expect(resolveTranscriptCourse(payload, []).classification).toBe("custom");
+    expect(visibleTranscriptUncertaintyNotes(payload, [warning], [])).toEqual([warning]);
+  });
+
+  it("imports a failed intersession attempt outside GPA and without earned credit", () => {
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "Experimental Studio",
+        subject: "Personal Development",
+        institution_name: "Design Tech High School",
+        grade_level: 11,
+        credits: 2.5,
+        letter_grade: "F"
+      },
+      profile,
+      [],
+      [],
+      "review-failed-intersession"
+    );
+
+    expect(draft.credits).toBe(0);
+    expect(draft.requirement_area_override).toBe("personal_development");
+    expect(draft.mapping_verified).toBe(false);
+    expect(calculateGpa([{ ...planCourse(), ...draft }]).gradedCredits).toBe(0);
+    expect(draft.notes).toContain("no Personal Development credit is earned for an F");
   });
 
   it("preserves honors distinctions outside Design Lab transcript labels", () => {

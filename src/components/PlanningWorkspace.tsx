@@ -62,7 +62,12 @@ import {
   MAJOR_DIRECTION_OPTIONS,
   majorDirectionLabel
 } from "@/lib/profile-planning";
-import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
+import {
+  resolveTranscriptCourse,
+  transcriptPlanCourseDraft,
+  visibleTranscriptUncertaintyNotes,
+  type TranscriptCoursePayload
+} from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
@@ -1457,19 +1462,30 @@ export default function PlanningWorkspace() {
             <div className="transcript-course-rows">{transcriptItems.map((item) => {
             const draft = reviewDrafts[item.id] ?? JSON.stringify(item.corrected_payload ?? item.proposed_payload, null, 2);
             const displayPayload = item.corrected_payload ?? item.proposed_payload;
+            const transcriptPayload = displayPayload as unknown as TranscriptCoursePayload;
+            const resolution = resolveTranscriptCourse(transcriptPayload, courses);
+            const visibleNotes = visibleTranscriptUncertaintyNotes(transcriptPayload, item.uncertainty_notes, courses);
             const imported = importedIds.has(item.id);
             const selected = selectedTranscriptIds.has(item.id);
             const name = String(displayPayload.matched_course_name ?? displayPayload.matched_smccd_course_name ?? displayPayload.course_name ?? "Course name needs review");
             const institution = String(displayPayload.institution_name ?? "").trim();
+            const classificationDetail = resolution.classification === "dtech_intersession"
+              ? "Intersession · Pass/fail · Personal Development"
+              : resolution.classification === "dtech_catalog" && !displayPayload.matched_course_id
+                ? `Catalog match: ${resolution.matchedCourse?.name ?? "d.tech course"}`
+                : "";
+            const courseDetail = [institution, classificationDetail].filter(Boolean).join(" · ");
             const grade = String(displayPayload.letter_grade ?? "Review");
             const credits = displayPayload.credits ?? displayPayload.college_units ?? "Review";
             const year = String(displayPayload.school_year ?? (displayPayload.grade_level ? `Grade ${displayPayload.grade_level}` : "Review"));
+            const needsReview = visibleNotes.length > 0 || (item.confidence === "uncertain" && !resolution.identityResolved);
+            const status = imported ? "Imported" : resolution.classification === "dtech_intersession" ? "Intersession" : needsReview ? "Review" : "Ready";
             return <article className="transcript-course-item" role="rowgroup" key={item.id}>
               <div className="transcript-course-row" role="row">
-                <span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${name}`} checked={imported || selected} disabled={imported} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{name}</strong>{institution && <small>{institution}</small>}</span></span>
-                <span role="cell" data-label="Grade">{grade}</span><span role="cell" data-label="Credits">{String(credits)}</span><span role="cell" data-label="Year">{year}</span><span role="cell" data-label="Status" className={imported ? "transcript-imported" : item.confidence === "uncertain" ? "transcript-review-needed" : ""}>{imported ? "Imported" : item.confidence === "uncertain" ? "Review" : "Ready"}</span>
+                <span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${name}`} checked={imported || selected} disabled={imported} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{name}</strong>{courseDetail && <small>{courseDetail}</small>}</span></span>
+                <span role="cell" data-label="Grade">{grade}</span><span role="cell" data-label="Credits">{String(credits)}</span><span role="cell" data-label="Year">{year}</span><span role="cell" data-label="Status" className={imported ? "transcript-imported" : needsReview ? "transcript-review-needed" : resolution.classification === "dtech_intersession" ? "transcript-intersession-ready" : ""}>{status}</span>
               </div>
-              {item.uncertainty_notes.length > 0 && <p className="transcript-row-warning">{item.uncertainty_notes.join(" ")}</p>}
+              {visibleNotes.length > 0 && <p className="transcript-row-warning">{visibleNotes.join(" ")}</p>}
               {!imported && <details className="transcript-row-editor"><summary>Edit extracted data</summary><label className="form-field"><span>Structured transcript data</span><textarea className="code-editor" value={draft} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} /><small className="form-hint">Changes are saved when this row is imported.</small></label><button className="quiet-button small" type="button" onClick={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)}><X size={15} /> Ignore row</button></details>}
             </article>;
           })}</div>

@@ -6,7 +6,7 @@ Last run: 2026-07-10
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 73/73 unit tests passing
+- [x] `pnpm test` with 84/84 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
@@ -118,7 +118,12 @@ Last run: 2026-07-10
 - [x] Authenticated Codex parse returns structured output
 - [x] Parse creates review items and sets the source to `needs_review`
 - [x] Transcript parser extracts only completed/final-grade course rows
+- [x] d.tech `P` rows and quarter-coded `F` rows classify as intersession pass/fail records instead of false missing-catalog warnings
+- [x] Legacy imported `P` rows reconcile from durable transcript evidence even when their older review JSON omitted the subject classification
+- [x] Academic transcript names use exact catalog matching first, then accept only a unique relaxed-equivalence match; genuine custom courses remain in review
+- [x] Failed intersession attempts remain outside GPA, earn zero Personal Development credit, and cannot be mistaken for ordinary academic `F` rows
 - [x] Actual d.tech text-layer PDF parses 50 completed rows with no parser conflicts and `aiUsed: false`
+- [x] Actual d.tech PDF classifies 17 intersession rows and 45 passed credits with zero stale catalog warnings in the live review UI
 - [x] Actual d.tech PDF produces 270 GPA credits, 200 weighted credits, and 45 excluded pass credits
 - [x] All 17 college rows in the regression PDF match exact SMCCD records
 - [x] Official 120-row d.tech/SMCCD equivalency artifact validates for unique codes, units, credits, requirement area, and high-school equivalent

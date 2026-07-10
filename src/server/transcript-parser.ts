@@ -6,7 +6,7 @@ const GRADE_CREDIT_PATTERN = /\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F|P|I|IP|NP
 const COLLEGE_CODE_PATTERN = /^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)\b/;
 const DISTRICT_COLLEGES = ["College of San Mateo", "Skyline College", "Cañada College", "Canada College"];
 
-export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.2.0";
+export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.3.0";
 
 interface TranscriptSection {
   schoolYear: string;
@@ -82,12 +82,14 @@ export function parseDtechTranscriptText(text: string): ParsedTranscriptResult {
     if (differentGpaBands) {
       conflicts.push(`${courseName} lists semester grades in different d.tech GPA bands (${grades.join(", ")}); the latest printed grade is used for planning.`);
     }
-    const isIntersessionPass = !pending.section.isCollege && /^Q[1-4]\b/i.test(rawTitle) && grades.every((grade) => grade === "P");
+    const isIntersession = !pending.section.isCollege
+      && /^Q[1-4]\b/i.test(rawTitle)
+      && grades.every((grade) => grade === "P" || grade === "F");
 
     courses.push({
       course_name: courseName,
       course_code: collegeCode ? `${collegeCode[1]} ${collegeCode[2]}` : null,
-      subject: collegeCode?.[1]?.replace(/\.$/, "") ?? (isIntersessionPass ? "Personal Development" : null),
+      subject: collegeCode?.[1]?.replace(/\.$/, "") ?? (isIntersession ? "Personal Development" : null),
       grade_level: pending.gradeLevel,
       school_year: fullSchoolYear(pending.section.schoolYear),
       term: termForTitle(rawTitle, gradeMatches.length),
@@ -97,7 +99,7 @@ export function parseDtechTranscriptText(text: string): ParsedTranscriptResult {
       institution_name: pending.section.institution,
       college_units: null,
       confidence: differentGpaBands ? "uncertain" : gradeMatches.length > 1 ? "likely" : "verified",
-      evidence: `${pending.section.schoolYear} ${pending.section.institution}: grade ${grades.join("/")}, ${gradeMatches.map((match) => match[2]).join("+")} credits${pending.section.isCollege ? ", weighted college course" : ""}${isIntersessionPass ? ", intersession Personal Development credit" : ""}${pending.ucApproved ? ", UC-approved marker" : ""}.`
+      evidence: `${pending.section.schoolYear} ${pending.section.institution}: grade ${grades.join("/")}, ${gradeMatches.map((match) => match[2]).join("+")} credits${pending.section.isCollege ? ", weighted college course" : ""}${isIntersession ? ", intersession pass/fail course" : ""}${isIntersession && grades.every((grade) => grade === "P") ? ", Personal Development credit" : ""}${pending.ucApproved ? ", UC-approved marker" : ""}.`
     });
     pending = null;
   };

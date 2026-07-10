@@ -994,6 +994,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .transcript-course-name strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .transcript-course-name small { overflow: hidden; color: var(--ink-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .transcript-imported { color: var(--success); font-weight: 650; }
+.transcript-intersession-ready { color: var(--accent); font-weight: 650; }
 .transcript-review-needed { color: var(--warning); font-weight: 650; }
 .transcript-row-warning { margin: -2px 0 8px 26px; color: var(--warning); font-size: 12px; line-height: 1.45; }
 .transcript-row-editor { margin: 0 0 9px 26px; }

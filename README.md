@@ -106,7 +106,7 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 - `src/lib/planning.ts` contains deterministic graduation, GPA, workload, timeline, plan generation, and simulation logic.
 - `src/lib/profile-planning.ts` contains deterministic course and associate-degree fit scoring with visible match reasons.
 - `src/lib/transcript.ts` contains deterministic catalog matching and reviewed transcript-to-plan conversion.
-- `src/server/transcript-parser.ts` parses text-layer d.tech transcripts without AI and preserves ambiguous rows for review.
+- `src/server/transcript-parser.ts` parses text-layer d.tech transcripts without AI, classifies quarter-coded pass/fail intersession rows separately from the annual catalog, and preserves genuinely ambiguous rows for review.
 - `src/components/SmccdPlanner.tsx` provides the embedded official district search, exact-course planning, and separately disclosed AA/AS major-progress tracking.
 - `src/pages/api/ai/` contains bearer-authenticated Node routes for Codex parsing and explanations.
 - `src/server/codex.ts` owns Codex isolation, structured runs, concurrency, timeouts, and cleanup.
@@ -119,7 +119,7 @@ The browser never receives an AI key. User-owned tables and uploads are protecte
 
 ### Transcript and workload rules
 
-Text-layer PDF extraction, transcript row parsing, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic. On d.tech transcripts, `P` earns credit but does not enter GPA; intersession `P` rows are tracked under Personal Development. Exact marks such as `A-` stay visible, while `A+`, `A`, and `A-` share the four-point GPA band. The transcript `*` marker means UC A-G approval, not Honors; a d.tech course is weighted only when its reviewed title explicitly says Honors. Every SMCCD course receives the weighted point.
+Text-layer PDF extraction, transcript row parsing, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic. On d.tech transcripts, `P` earns credit but does not enter GPA; d.tech pass/fail rows and quarter-coded `F` rows are classified as intersession rather than incorrectly treated as missing catalog courses. Passed intersession rows map to Personal Development, while failed attempts earn zero credit and remain outside GPA. Exact marks such as `A-` stay visible, while `A+`, `A`, and `A-` share the four-point GPA band. The transcript `*` marker means UC A-G approval, not Honors; a d.tech course is weighted only when its reviewed title explicitly says Honors. Every SMCCD course receives the weighted point.
 
 Laboratory Science requires 10 Biology credits, 10 Chemistry credits, and 10 additional lab-science credits. A verified Level 3/III world-language course satisfies the complete 20-credit sequence even when lower levels are absent. The 2021 equivalency chart is visibly labeled and must be confirmed for current approval.
 

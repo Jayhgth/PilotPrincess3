@@ -23,7 +23,7 @@ describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.2.0");
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.3.0");
     expect(result.courses).toHaveLength(6);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
@@ -67,5 +67,32 @@ describe("deterministic d.tech transcript parser", () => {
 
     expect(result.courses).toEqual([]);
     expect(result.conflicts[0]).toContain("No final grade and credit pair");
+  });
+
+  it("classifies quarter-coded P and F rows as d.tech intersession pass/fail courses", () => {
+    const result = parseDtechTranscriptText(`
+25-26 Design Tech High School
+11 Q1 Documentary Film P 2.5
+11 Q2 Experimental Studio F 0.0
+Comments
+`);
+
+    expect(result.courses).toHaveLength(2);
+    expect(result.courses[0]).toMatchObject({
+      course_name: "Documentary Film",
+      subject: "Personal Development",
+      letter_grade: "P",
+      weighted: false
+    });
+    expect(result.courses[0].evidence).toContain("intersession pass/fail course");
+    expect(result.courses[0].evidence).toContain("Personal Development credit");
+    expect(result.courses[1]).toMatchObject({
+      course_name: "Experimental Studio",
+      subject: "Personal Development",
+      letter_grade: "F",
+      credits: 0,
+      weighted: false
+    });
+    expect(result.courses[1].evidence).not.toContain("Personal Development credit");
   });
 });

@@ -27,7 +27,12 @@ import type {
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
 import { ACADEMIC_INTEREST_OPTIONS, MAJOR_DIRECTION_OPTIONS } from "@/lib/profile-planning";
-import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
+import {
+  isDtechIntersessionCourse,
+  resolveTranscriptCourse,
+  transcriptPlanCourseDraft,
+  type TranscriptCoursePayload
+} from "@/lib/transcript";
 import BrandMark from "@/components/BrandMark";
 
 type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "transcript";
@@ -129,7 +134,7 @@ export default function OnboardingFlow({
   );
   const intersessionTranscriptItems = transcriptItems.filter((item) => {
     const payload = payloadFor(item);
-    return payload.letter_grade?.toUpperCase() === "P" && payload.subject === "Personal Development";
+    return isDtechIntersessionCourse(payload);
   });
   const academicTranscriptItems = transcriptItems.filter((item) => !intersessionTranscriptItems.includes(item));
 
@@ -465,9 +470,17 @@ export default function OnboardingFlow({
               <div className="transcript-course-list">{academicTranscriptItems.map((item) => {
                 const payload = payloadFor(item);
                 const selected = selectedTranscriptIds.has(item.id);
-                return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{payload.matched_course_id ? "Catalog match" : "Custom course"}, {item.confidence}</em></label>;
+                const resolution = resolveTranscriptCourse(payload, courses);
+                const identityLabel = resolution.classification === "dtech_catalog"
+                  ? "Catalog match"
+                  : resolution.classification === "smccd_catalog"
+                    ? "SMCCD match"
+                    : resolution.classification === "smccd_unmatched"
+                      ? "SMCCD review"
+                      : "Custom course";
+                return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{identityLabel}, {resolution.identityResolved ? "resolved" : item.confidence}</em></label>;
               })}</div>
-              {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass credits</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA and counted toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>Pass, grade {payload.grade_level}, {payload.credits ?? 0} Personal Development credits</small></span><em>Not in GPA</em></label>; })}</div></details>}
+              {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass/fail courses</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA. Passed classes count toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); const passed = payload.letter_grade?.toUpperCase() === "P"; return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{passed ? `Pass, grade ${payload.grade_level}, ${payload.credits ?? 0} Personal Development credits` : `F, grade ${payload.grade_level}, no Personal Development credit`}</small></span><em>Pass/fail · Not in GPA</em></label>; })}</div></details>}
               <button className="quiet-button" type="button" onClick={() => { setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); }}>Use a different transcript</button>
             </div>}
           </>}

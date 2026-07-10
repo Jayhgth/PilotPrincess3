@@ -4,8 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { findTranscriptCatalogMatch } from "@/lib/transcript";
-import { normalizeSmccdCourseCode, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
+import { normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { Course, SmccdCourse } from "@/lib/models";
 import {
   parsedTranscriptJsonSchema,
@@ -15,72 +14,13 @@ import {
 import { runCodexStructured } from "@/server/codex";
 import { extractSource } from "@/server/source-extraction";
 import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
+import { transcriptReviewRows } from "@/server/transcript-review";
 
 export const prerender = false;
 
 const requestSchema = z.object({
   sourceId: z.uuid()
 });
-
-function transcriptReviewRows(
-  userId: string,
-  sourceId: string,
-  result: ParsedTranscriptResult,
-  courses: Course[],
-  smccdCourses: SmccdCourse[]
-) {
-  const courseRows = result.courses.map((course) => {
-    const institutionCode = Object.entries(SMCCD_COLLEGE_NAMES).find(([, name]) => name === course.institution_name)?.[0];
-    const isCollegeCourse = Boolean(course.course_code && institutionCode);
-    const normalizedCollegeCode = course.course_code ? normalizeSmccdCourseCode(course.course_code) : null;
-    const collegeMatches = normalizedCollegeCode
-      ? smccdCourses.filter((candidate) => candidate.course_code === normalizedCollegeCode)
-      : [];
-    const smccdMatch = collegeMatches.find((candidate) => candidate.college_code === institutionCode)
-      ?? (collegeMatches.length === 1 ? collegeMatches[0] : null);
-    const match = isCollegeCourse ? null : findTranscriptCatalogMatch(course.course_name, courses);
-    const uncertaintyNotes = [
-      ...(!isCollegeCourse && !match ? ["No exact d.tech catalog match was found. This course will remain custom until reviewed."] : []),
-      ...(isCollegeCourse && !smccdMatch ? ["No exact SMCCD catalog match was found for this college course code."] : []),
-      ...(course.grade_level === null ? ["Grade level was not explicit in the transcript."] : []),
-      ...(course.credits === null && match?.credits === null ? ["Credits need manual confirmation."] : [])
-    ];
-    return {
-      user_id: userId,
-      source_id: sourceId,
-      entity_type: "transcript_course",
-      proposed_payload: {
-        ...course,
-        matched_course_id: match?.id ?? null,
-        matched_course_name: match?.name ?? null,
-        matched_smccd_course_id: smccdMatch?.id ?? null,
-        matched_smccd_course_name: smccdMatch ? `${smccdMatch.course_code} ${smccdMatch.title}` : null,
-        college_units: smccdMatch ? Number(smccdMatch.units_max ?? smccdMatch.units_min) : course.college_units,
-        import_status: "completed"
-      },
-      confidence: uncertaintyNotes.length > 0 ? "uncertain" : course.confidence,
-      status: "pending",
-      uncertainty_notes: uncertaintyNotes
-    };
-  });
-  const noteRow = {
-    user_id: userId,
-    source_id: sourceId,
-    entity_type: "transcript_note",
-    proposed_payload: {
-      summary: result.summary,
-      student_name: result.student_name,
-      school_name: result.school_name,
-      academic_years: result.academic_years,
-      conflicts: result.conflicts,
-      counselor_questions: result.counselor_questions
-    },
-    confidence: result.conflicts.length > 0 ? "uncertain" : "likely",
-    status: "approved",
-    uncertainty_notes: result.conflicts
-  };
-  return [...courseRows, noteRow];
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
@@ -159,6 +99,7 @@ export const POST: APIRoute = async ({ request }) => {
       const prompt = [
         "This transcript has no usable text layer and is provided as images. Extract only courses explicitly shown as completed or carrying a final grade.",
         "For every course, preserve the printed course name, institution, grade level, school year, term, final letter grade, high-school credits, college units, and weighting when present.",
+        "On d.tech transcripts, Q1 through Q4 rows graded P or F are intersession pass/fail courses. Preserve the Q prefix and use Personal Development as the subject; they are not expected to have an annual d.tech catalog match.",
         "Do not treat in-progress, requested, or planned courses as completed. Omit them from courses and mention them in conflicts when relevant.",
         "Use verified only when the field is explicit and legible. Use uncertain for inferred, incomplete, or conflicting values.",
         "Evidence must be a short location or wording from the transcript, not invented context.",

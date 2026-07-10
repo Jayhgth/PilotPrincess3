@@ -6,14 +6,51 @@ import type {
   SmccdHighSchoolEquivalency,
   StudentProfile
 } from "@/lib/models";
-import { courseNameAliases, normalizeCourseName } from "@/lib/course-names";
+import { courseEquivalenceKeys, courseNameAliases, normalizeCourseName } from "@/lib/course-names";
 import { schoolYearForGrade } from "@/lib/planning";
+
+const DTECH_INSTITUTION_PATTERN = /Design Tech High School|\bd\.?tech\b/i;
+const SMCCD_INSTITUTION_PATTERN = /College of San Mateo|Skyline College|Cañada College|Canada College/i;
+const DTECH_CATALOG_MISS = "No exact d.tech catalog match was found.";
+const SMCCD_CATALOG_MISS = "No exact SMCCD catalog match was found";
+
+export type TranscriptCourseClassification =
+  | "dtech_catalog"
+  | "dtech_intersession"
+  | "smccd_catalog"
+  | "smccd_unmatched"
+  | "custom";
 
 export function findTranscriptCatalogMatch(name: string, courses: Course[]) {
   const normalized = normalizeCourseName(name);
   if (!normalized) return null;
   const exact = courses.filter((course) => courseNameAliases(course.name).includes(normalized));
-  return exact.length === 1 ? exact[0] : null;
+  if (exact.length === 1) return exact[0];
+  if (exact.length > 1) return null;
+
+  const transcriptKeys = courseEquivalenceKeys(name);
+  const equivalent = courses.filter((course) => {
+    for (const key of courseEquivalenceKeys(course.name)) {
+      if (transcriptKeys.has(key)) return true;
+    }
+    return false;
+  });
+  return equivalent.length === 1 ? equivalent[0] : null;
+}
+
+export function stripTranscriptQuarterPrefix(name: string) {
+  return name.replace(/^\s*Q[1-4]\s+/i, "").replace(/\s+/g, " ").trim();
+}
+
+export function isDtechIntersessionCourse(payload: TranscriptCoursePayload) {
+  const grade = payload.letter_grade?.trim().toUpperCase() ?? "";
+  if (grade !== "P" && grade !== "F") return false;
+  const institutionIsDtech = DTECH_INSTITUTION_PATTERN.test(payload.institution_name ?? "");
+  const quarterPrefix = /^\s*Q[1-4]\b/i.test(payload.course_name);
+  const personalDevelopment = payload.subject?.trim().toLowerCase() === "personal development";
+  if (grade === "P" && institutionIsDtech) return true;
+  return (institutionIsDtech && (quarterPrefix || personalDevelopment))
+    || (payload.transcript_classification === "dtech_intersession" && personalDevelopment);
 }
 
 export function normalizeCollegeCourseCode(value: string | null | undefined) {
@@ -62,6 +99,43 @@ export interface TranscriptCoursePayload {
   matched_course_name?: string | null;
   matched_smccd_course_id?: string | null;
   matched_smccd_course_name?: string | null;
+  transcript_classification?: TranscriptCourseClassification;
+  grading_basis?: "letter" | "pass_fail";
+}
+
+export function resolveTranscriptCourse(payload: TranscriptCoursePayload, courses: Course[]) {
+  const isIntersession = isDtechIntersessionCourse(payload);
+  const matchedCourse = isIntersession
+    ? null
+    : payload.matched_course_id
+      ? courses.find((course) => course.id === payload.matched_course_id) ?? findTranscriptCatalogMatch(payload.course_name, courses)
+      : findTranscriptCatalogMatch(payload.course_name, courses);
+  const isSmccd = Boolean(payload.matched_smccd_course_id) || SMCCD_INSTITUTION_PATTERN.test(payload.institution_name ?? "");
+  const classification: TranscriptCourseClassification = isIntersession
+    ? "dtech_intersession"
+    : isSmccd
+      ? payload.matched_smccd_course_id ? "smccd_catalog" : "smccd_unmatched"
+      : matchedCourse ? "dtech_catalog" : "custom";
+
+  return {
+    classification,
+    gradingBasis: isIntersession ? "pass_fail" as const : "letter" as const,
+    matchedCourse,
+    identityResolved: classification === "dtech_intersession" || classification === "dtech_catalog" || classification === "smccd_catalog"
+  };
+}
+
+export function visibleTranscriptUncertaintyNotes(
+  payload: TranscriptCoursePayload,
+  notes: string[],
+  courses: Course[]
+) {
+  const resolution = resolveTranscriptCourse(payload, courses);
+  return notes.filter((note) => {
+    if (note.startsWith(DTECH_CATALOG_MISS) && (resolution.classification === "dtech_intersession" || resolution.classification === "dtech_catalog")) return false;
+    if (note.startsWith(SMCCD_CATALOG_MISS) && resolution.classification === "smccd_catalog") return false;
+    return true;
+  });
 }
 
 export function transcriptPlanCourseDraft(
@@ -72,19 +146,20 @@ export function transcriptPlanCourseDraft(
   reviewItemId: string,
   equivalencies: SmccdHighSchoolEquivalency[] = []
 ): Omit<PlanCourse, "id" | "plan_version_id" | "user_id"> {
-  const matched = payload.matched_course_id
-    ? courses.find((course) => course.id === payload.matched_course_id) ?? null
-    : findTranscriptCatalogMatch(payload.course_name, courses);
+  const resolution = resolveTranscriptCourse(payload, courses);
+  const matched = resolution.matchedCourse;
   const fallbackGrade = Math.max(9, Math.min(12, (profile.grade_level ?? 9) - 1)) as GradeLevel;
   const grade = Math.max(9, Math.min(12, Number(payload.grade_level ?? fallbackGrade))) as GradeLevel;
   const equivalency = findHighSchoolEquivalency(payload, equivalencies);
-  const credits = equivalency?.high_school_credits ?? payload.credits ?? matched?.credits ?? null;
+  const reportedCredits = equivalency?.high_school_credits ?? payload.credits ?? matched?.credits ?? null;
+  const isIntersession = resolution.classification === "dtech_intersession";
+  const passedIntersession = isIntersession && payload.letter_grade?.trim().toUpperCase() === "P";
+  const credits = isIntersession && !passedIntersession ? 0 : reportedCredits;
   const isSmccdCourse = Boolean(
     payload.matched_smccd_course_id ||
     /College of San Mateo|Skyline College|Cañada College|Canada College/i.test(payload.institution_name ?? "")
   );
-  const isIntersessionPass = !matched && payload.letter_grade?.toUpperCase() === "P" && payload.subject === "Personal Development";
-  const verifiedMapping = Boolean(equivalency) || isIntersessionPass || Boolean(
+  const verifiedMapping = Boolean(equivalency) || passedIntersession || Boolean(
     matched && mappings.some((mapping) => mapping.course_id === matched.id && mapping.confidence === "verified")
   );
 
@@ -107,11 +182,14 @@ export function transcriptPlanCourseDraft(
         : "Imported from a reviewed transcript.",
       equivalency
         ? `The official d.tech equivalency chart (updated 2021) applies ${equivalency.high_school_credits} high-school credits to ${equivalency.high_school_equivalent}. Confirm current approval with a counselor.`
+        : null,
+      isIntersession
+        ? `Recognized from the transcript as a d.tech intersession pass/fail course${passedIntersession ? " with Personal Development credit" : "; no Personal Development credit is earned for an F"}.`
         : null
     ].filter(Boolean).join(" "),
     sort_order: 0,
     source_review_item_id: reviewItemId,
     smccd_course_id: payload.matched_smccd_course_id ?? null,
-    requirement_area_override: equivalency?.requirement_area ?? (isIntersessionPass ? "personal_development" : null)
+    requirement_area_override: equivalency?.requirement_area ?? (isIntersession ? "personal_development" : null)
   };
 }
