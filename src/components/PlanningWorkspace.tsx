@@ -2,6 +2,7 @@ import {
   ActivityIcon,
   AirplaneTiltIcon as AirplaneTilt,
   ArrowClockwiseIcon as ArrowClockwise,
+  ArrowRightIcon as ArrowRight,
   BookOpenIcon as BookOpen,
   CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
@@ -63,9 +64,10 @@ import {
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
+import AnimatedContent from "@/components/reactbits/AnimatedContent";
+import CountUp from "@/components/reactbits/CountUp";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
-import { DataPair } from "@/components/AcademicVisuals";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import SmccdPlanner from "@/components/SmccdPlanner";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
@@ -238,6 +240,7 @@ export default function PlanningWorkspace() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [expandedRequirementIds, setExpandedRequirementIds] = useState<Set<string>>(new Set());
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
   const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
@@ -1217,12 +1220,16 @@ export default function PlanningWorkspace() {
   function renderDashboard() {
     if (!profile) return null;
     const nextTasks = tasks.filter((task) => !task.is_completed).slice(0, 4);
-    const missing = progress.filter((item) => item.status === "missing");
     const requiredCredits = progress.reduce((total, item) => total + Number(item.requirement.credits_required), 0);
-    const dashboardCredits = progress.reduce((sum, item) => {
+    const requirementSnapshot = progress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
+      return { item, applied };
+    });
+    const dashboardCredits = requirementSnapshot.reduce((sum, { applied }) => {
       return { completed: sum.completed + applied.completed, scheduled: sum.scheduled + applied.current + applied.planned, remaining: sum.remaining + applied.remaining };
     }, { completed: 0, scheduled: 0, remaining: 0 });
+    const openRequirements = requirementSnapshot.filter(({ applied }) => applied.remaining > 0);
+    const nextOpenRequirement = [...openRequirements].sort((a, b) => b.applied.remaining - a.applied.remaining)[0];
     return (
       <div className="dashboard-page page-frame">
         <PageHeader
@@ -1230,53 +1237,60 @@ export default function PlanningWorkspace() {
           description="What is done, what needs attention, and how the current plan fits."
           actions={<button className="secondary-button" onClick={() => void generateSummary()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Generate summary</button>}
         />
-        <section className="route-brief" aria-label="Plan summary">
-          <div className="route-coverage">
-            <span>{profile.tracker_mode === "selected" ? "Tracked credits earned" : "Graduation credits earned"}</span>
-            <strong>{graduationEarnedPercent}<small>%</small></strong>
-            <p>{dashboardCredits.completed} of {requiredCredits} earned. {dashboardCredits.scheduled} scheduled, {dashboardCredits.remaining} still open.</p>
-            <button className="quiet-button small" type="button" onClick={() => navigate("graduation")}>Open graduation map</button>
-          </div>
-          <div className="route-readouts">
-            <DataPair label="Projected weighted GPA" value={formatGpa(gpa.projectedWeighted)} detail={gpa.gradedCredits > 0 ? `${gpa.gradedCredits} graded credits` : "Add grades to calculate"} />
-            <DataPair label="Current workload" value={workload ? titleCase(workload.level) : "Not available"} detail={workload ? `${workload.knownWeeklyHours} known weekly hours, ${workload.demandingCourseCount} demanding courses` : "Complete the student profile"} />
-          </div>
-        </section>
-        {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
-        <button className="course-overview-row" type="button" onClick={() => openCourses("mine")}>
-          <span><strong>Courses</strong><small>Everything currently in the plan</small></span>
-          <dl className="course-stage-strip"><div className="current"><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div className="planned"><dt>Planned</dt><dd>{courseCounts.planned}</dd></div><div className="completed"><dt>Done</dt><dd>{courseCounts.completed}</dd></div></dl>
-          <span>Open</span>
-        </button>
-        <div className="dashboard-focus-grid">
-          <section className="dashboard-section requirement-index">
-            <header className="section-heading"><div><h2>Requirement map</h2><p>Verified completed, current, and planned credits.</p></div><button className="quiet-button small" onClick={() => navigate("graduation")}>View all</button></header>
-            <div className="requirement-index-grid">
-              {progress.map((item) => {
-                const requiredCredits = Number(item.requirement.credits_required);
-                const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
-                return <article className={item.status} key={item.requirement.id}><span>{item.requirement.name}</span><strong>{applied.completed}<small> / {item.requirement.credits_required}</small></strong><small>{item.status === "complete" ? "Complete" : item.status === "on_track" ? `${applied.current + applied.planned} scheduled` : `${applied.remaining} credits open`}</small></article>;
-              })}
+        <AnimatedContent>
+          <section className="overview-snapshot" aria-label="Plan snapshot">
+            <div className="overview-primary-result">
+              <span>{profile.tracker_mode === "selected" ? "Tracked credits earned" : "Graduation credits earned"}</span>
+              <strong><CountUp from={graduationEarnedPercent} to={graduationEarnedPercent} suffix="%" /></strong>
+              <p>{dashboardCredits.completed} of {requiredCredits} required credits are complete.</p>
+              <button className="overview-text-action" type="button" onClick={() => navigate("graduation")}>View graduation <ArrowRight size={15} /></button>
             </div>
+            <dl className="overview-signals">
+              <div><dt>Projected weighted GPA</dt><dd>{formatGpa(gpa.projectedWeighted)}</dd><span>{gpa.gradedCredits > 0 ? `${gpa.gradedCredits} graded credits` : "Add grades to calculate"}</span></div>
+              <div><dt>Current workload</dt><dd>{workload ? titleCase(workload.level) : "Not available"}</dd><span>{workload ? `${workload.knownWeeklyHours} known hours each week` : "Complete the student profile"}</span></div>
+              <div><dt>Next open area</dt><dd>{nextOpenRequirement?.item.requirement.name ?? "None"}</dd><span>{nextOpenRequirement ? `${nextOpenRequirement.applied.remaining} credits still needed` : "Every tracked area has coverage"}</span></div>
+            </dl>
           </section>
-          <section className="dashboard-section next-actions">
-            <header className="section-heading"><div><h2>Next actions</h2><p>{nextTasks.length ? `${nextTasks.length} open items` : "Nothing is waiting"}</p></div><button className="quiet-button small" onClick={() => navigate("timeline")}>Timeline</button></header>
-            {nextTasks.length ? (
-              <div className="task-list dashboard-tasks">
-                {nextTasks.map((task) => (
-                  <label className="task-row" key={task.id}>
-                    <input type="checkbox" checked={task.is_completed} onChange={() => void updateTask(task.id, { is_completed: true })} />
-                    <span><strong>{task.title}</strong><small>{task.due_label ?? titleCase(task.category)}</small></span>
-                  </label>
-                ))}
-              </div>
-            ) : <EmptyState title="No open tasks" body="Generate a timeline from your current grade and plan." action={<button className="secondary-button" onClick={() => void generateTasks()}>Generate timeline</button>} />}
-          </section>
+        </AnimatedContent>
+        {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
+        <div className="overview-decision-grid">
+          <AnimatedContent className="overview-panel overview-requirements" delay={0.04}>
+            <header className="overview-section-heading"><div><h2>Requirements at a glance</h2><p>Applied credit compared with each requirement.</p></div><button className="quiet-button small" onClick={() => navigate("graduation")}>View all</button></header>
+            <div className="overview-requirement-grid">
+              {requirementSnapshot.map(({ item, applied }) => (
+                <article className={item.status} key={item.requirement.id}>
+                  <span>{item.requirement.name}</span>
+                  <strong>{applied.completed}<small> / {item.requirement.credits_required}</small></strong>
+                  <small>{item.status === "complete" ? "Complete" : item.status === "on_track" ? `${applied.current + applied.planned} scheduled` : `${applied.remaining} open`}</small>
+                </article>
+              ))}
+            </div>
+          </AnimatedContent>
+          <div className="overview-side-column">
+            <AnimatedContent delay={0.08}>
+              <button className="overview-course-action" type="button" onClick={() => openCourses("mine")}>
+                <span className="overview-course-icon"><BookOpen size={20} weight="duotone" /></span>
+                <span className="overview-course-copy"><strong>Course plan</strong><small>Review what is done and what comes next.</small></span>
+                <ArrowRight className="overview-course-arrow" size={18} />
+                <dl><div><dt>Done</dt><dd>{courseCounts.completed}</dd></div><div><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div><dt>Planned</dt><dd>{courseCounts.planned}</dd></div></dl>
+              </button>
+            </AnimatedContent>
+            <AnimatedContent className="overview-panel overview-actions" delay={0.12}>
+              <header className="overview-section-heading"><div><h2>Next actions</h2><p>{nextTasks.length ? `${nextTasks.length} open items` : "Nothing is waiting"}</p></div><button className="quiet-button small" onClick={() => navigate("timeline")}>Timeline</button></header>
+              {nextTasks.length ? (
+                <div className="task-list dashboard-tasks">
+                  {nextTasks.map((task) => (
+                    <label className="task-row" key={task.id}>
+                      <input type="checkbox" checked={task.is_completed} onChange={() => void updateTask(task.id, { is_completed: true })} />
+                      <span><strong>{task.title}</strong><small>{task.due_label ?? titleCase(task.category)}</small></span>
+                    </label>
+                  ))}
+                </div>
+              ) : <EmptyState title="No open tasks" body="Generate a timeline from your current grade and plan." action={<button className="secondary-button" onClick={() => void generateTasks()}>Generate timeline</button>} />}
+            </AnimatedContent>
+          </div>
         </div>
-        <section className="planning-note">
-          <header><h2>Latest plan note</h2><span>{missing.length > 0 ? `${missing.length} requirement ${missing.length === 1 ? "area" : "areas"} still need coverage` : "All tracked areas have projected coverage"}</span></header>
-          {summaries[0] ? <blockquote>{summaries[0].content}</blockquote> : <p>Generate a short summary when you want a plain-language review of the saved plan.</p>}
-        </section>
+        {summaries[0] && <AnimatedContent delay={0.16}><section className="overview-plan-note"><Sparkle size={18} /><div><h2>Latest plan note</h2><p>{summaries[0].content}</p></div><span>{openRequirements.length > 0 ? `${openRequirements.length} areas still open` : "All tracked areas covered"}</span></section></AnimatedContent>}
       </div>
     );
   }
@@ -1526,42 +1540,57 @@ export default function PlanningWorkspace() {
         remaining: sum.remaining + applied.remaining
       };
     }, { completed: 0, current: 0, planned: 0, unverified: 0, remaining: 0 });
+    const scheduledCredits = totals.current + totals.planned;
+    const projectedCoveragePercent = trackedCredits > 0
+      ? Math.round(((totals.completed + scheduledCredits) / trackedCredits) * 100)
+      : 0;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="A credit map for completed, current, planned, and unverified work." />
-        <section className="graduation-brief" aria-label="Graduation summary">
-          <div className="graduation-score">
-            <span>Credits earned</span>
-            <strong>{graduationEarnedPercent}<small>%</small></strong>
-            <p>{totals.completed} of {trackedCredits} required credits are complete. Planned and current work is shown separately.</p>
-          </div>
-          <dl className="graduation-totals">
-            <div><dt>Earned</dt><dd>{totals.completed}</dd></div>
-            <div><dt>In progress</dt><dd>{totals.current}</dd></div>
-            <div><dt>Planned</dt><dd>{totals.planned}</dd></div>
-            <div><dt>Still open</dt><dd>{totals.remaining}</dd></div>
-          </dl>
-        </section>
-        <p className="graduation-source-note">Based on the 2025-26 d.tech requirements and the official SMCCD equivalency chart last updated in 2021. Confirm current college-course approval with a counselor.</p>
-        <section className="graduation-map" aria-label="Graduation requirement map">
+        <PageHeader title="Graduation" description="Earned credit first, with scheduled and unverified work kept separate." />
+        <AnimatedContent>
+          <section className="graduation-summary" aria-label="Graduation summary">
+            <div className="graduation-primary-result">
+              <span>Required credit earned</span>
+              <strong><CountUp from={graduationEarnedPercent} to={graduationEarnedPercent} suffix="%" /></strong>
+              <p>{totals.completed} of {trackedCredits} credits are complete.</p>
+            </div>
+            <dl className="graduation-summary-values">
+              <div><dt>Plan coverage</dt><dd><CountUp from={projectedCoveragePercent} to={projectedCoveragePercent} suffix="%" /></dd><span>Earned plus scheduled</span></div>
+              <div><dt>In progress</dt><dd>{totals.current}</dd><span>Applied credits</span></div>
+              <div><dt>Planned</dt><dd>{totals.planned}</dd><span>Applied credits</span></div>
+              <div><dt>Still open</dt><dd>{totals.remaining}</dd><span>Credits without coverage</span></div>
+            </dl>
+          </section>
+          <p className="graduation-method-note">2025-26 d.tech requirements. SMCCD equivalencies use the official chart last updated in 2021. {totals.unverified > 0 ? `${totals.unverified} unverified credits are excluded.` : "Only verified mappings count."}</p>
+        </AnimatedContent>
+        <section className="graduation-requirements" aria-labelledby="graduation-requirements-title">
+          <header className="graduation-section-heading"><div><h2 id="graduation-requirements-title">Requirements</h2><p>Values below are capped at the credit each area can accept.</p></div><button className="secondary-button small" type="button" onClick={() => openCourses("mine")}><BookOpen size={15} /> Manage courses</button></header>
+          <div className="graduation-column-heading" aria-hidden><span>Requirement</span><span><b>Earned</b><b>Scheduled</b><b>Open</b></span><span>Status</span></div>
+          <div className="graduation-requirement-list">
           {progress.map((item) => {
             const requiredCredits = Number(item.requirement.credits_required);
-            const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
+            const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits, unverified: item.unverifiedCredits });
             const statusText = item.status === "complete"
               ? "Complete"
               : item.status === "on_track"
-                ? "Covered in plan"
+                ? "Covered"
                 : item.verifiedProjectedCredits > 0
-                  ? `${applied.remaining} credits open`
+                  ? "Partly covered"
                   : "Not started";
-            return <article className={`graduation-requirement ${item.status}`} key={item.requirement.id}>
-              <header><h2>{item.requirement.name}</h2><span>{statusText}</span></header>
-              <div className="requirement-credit-summary"><strong>{applied.completed} earned</strong><span>{applied.current + applied.planned} scheduled</span></div>
-              <dl className="requirement-credit-breakdown"><div><dt>Earned</dt><dd>{item.completedCredits}</dd></div><div><dt>In progress</dt><dd>{item.currentCredits}</dd></div><div><dt>Planned</dt><dd>{item.plannedCredits}</dd></div><div><dt>Open</dt><dd>{applied.remaining}</dd></div></dl>
-              {item.ruleWarnings.length > 0 && <ul className="requirement-rule-warnings">{item.ruleWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
-              {(item.requirement.notes || item.unverifiedCredits > 0) && <details className="requirement-notes"><summary>Requirement details</summary>{item.requirement.notes && <p>{item.requirement.notes}</p>}{item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={15} /> {item.unverifiedCredits} credits are excluded until their mapping is verified.</p>}</details>}
+            const StatusIcon = item.status === "complete" ? CheckCircle : item.status === "on_track" ? ChartLineUp : Warning;
+            const hasDetails = Boolean(item.requirement.notes || item.unverifiedCredits > 0 || item.ruleWarnings.length > 0);
+            const isExpanded = expandedRequirementIds.has(item.requirement.id);
+            const rowContent = <>
+              <span className="graduation-requirement-title"><strong>{item.requirement.name}</strong><span>{requiredCredits} credits required</span></span>
+              <span className="graduation-requirement-values"><span><span>Earned</span><b>{applied.completed}</b></span><span><span>Scheduled</span><b>{applied.current + applied.planned}</b></span><span><span>Open</span><b>{applied.remaining}</b></span></span>
+              <span className={`graduation-requirement-status ${item.status}`}><StatusIcon size={16} weight={item.status === "complete" ? "fill" : "regular"} /> {statusText}{hasDetails && <CaretDown className="graduation-requirement-caret" size={14} />}</span>
+            </>;
+            return <article className={`graduation-requirement-row ${item.status}`} key={item.requirement.id}>
+              {hasDetails ? <button className="graduation-requirement-main" type="button" aria-expanded={isExpanded} aria-controls={`requirement-details-${item.requirement.id}`} onClick={() => setExpandedRequirementIds((current) => { const next = new Set(current); if (next.has(item.requirement.id)) next.delete(item.requirement.id); else next.add(item.requirement.id); return next; })}>{rowContent}</button> : <div className="graduation-requirement-main">{rowContent}</div>}
+              {hasDetails && isExpanded && <div className="graduation-requirement-details" id={`requirement-details-${item.requirement.id}`}>{item.ruleWarnings.length > 0 && <ul className="requirement-rule-warnings">{item.ruleWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}{item.requirement.notes && <p>{item.requirement.notes}</p>}{item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={15} /> {item.unverifiedCredits} credits are excluded until their mapping is verified.</p>}</div>}
             </article>;
           })}
+          </div>
         </section>
       </div>
     );

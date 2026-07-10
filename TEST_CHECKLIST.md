@@ -53,6 +53,9 @@ Last run: 2026-07-10
 - [x] Graduation tracker excludes unverified mappings
 - [x] Graduation reports earned, current, planned, and open credit separately without presenting scheduled credit as completion
 - [x] Graduation requirement rows use exact values and rule warnings instead of decorative progress bars
+- [x] Overview shows one earned-credit answer, one compact requirement group, and one clearly interactive Course plan destination without duplicated route metrics
+- [x] Graduation uses one stable Requirement / Earned / Scheduled / Open / Status comparison matrix with applied values capped per requirement
+- [x] Requirement rules and verification evidence open from the full row and retain visible keyboard focus
 - [x] Laboratory Science requires Biology, Chemistry, and a third science at 10 credits each
 - [x] A verified Level 3/III world-language course satisfies the full 20-credit requirement without requiring lower levels
 - [x] GPA calculations separate current/projected and weighted/unweighted results
@@ -85,6 +88,8 @@ Last run: 2026-07-10
 - [x] Unified Courses, SMCCD, and AI connection browser flows pass with no console errors
 - [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
 - [x] Mobile course kanban, inline editor, d.tech discovery, SMCCD search, overview, navigation, and graduation visually pass at 390x844
+- [x] Overview and Graduation pass five populated UI review loops covering hierarchy, comparison, interaction density, 390x844 dark responsiveness, and desktop light contrast
+- [x] Overview and Graduation render exact decision-critical percentages immediately; no animated intermediate value is presented as current data
 - [x] Unified Courses workspace visually passes in both light and dark themes
 - [x] Motion workspace tabs respect reduced-motion preferences and pass Left/Right/Home/End keyboard navigation
 - [x] Twenty-six populated desktop/mobile/light/dark states across every authenticated destination have zero horizontal overflow, zero rendered text below 10 px, and zero browser console errors
