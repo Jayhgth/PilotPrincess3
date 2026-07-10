@@ -11,12 +11,14 @@ import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { calculateSmccdProgramProgress, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
 import { programProfileFit } from "@/lib/profile-planning";
 import { schoolYearForGrade } from "@/lib/planning";
+import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import type {
   GradeLevel,
   PlanCourse,
   PlanVersion,
   SmccdCollege,
   SmccdCourse,
+  SmccdHighSchoolEquivalency,
   SmccdProgram,
   SmccdProgramRequirement,
   SmccdRequirementCourse,
@@ -31,6 +33,7 @@ interface Props {
   profile: StudentProfile;
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
+  equivalencies: SmccdHighSchoolEquivalency[];
   onCourseAdded: (course: PlanCourse) => void;
   onCourseRemoved: (id: string) => void;
   onOpenMyCourses?: () => void;
@@ -48,6 +51,7 @@ export default function SmccdPlanner({
   profile,
   activeVersion,
   planCourses,
+  equivalencies,
   onCourseAdded,
   onCourseRemoved,
   onOpenMyCourses
@@ -145,6 +149,13 @@ export default function SmccdPlanner({
       .filter((course) => !query || `${course.course_code} ${course.title} ${course.subject}`.toLowerCase().includes(query))
       .slice(0, 80);
   }, [collegeFilter, courses, search, transferFilter]);
+  const equivalencyMap = useMemo(
+    () => new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency])),
+    [equivalencies]
+  );
+  const selectedEquivalency = selectedCourse
+    ? equivalencyMap.get(normalizeCollegeCourseCode(selectedCourse.course_code) ?? "") ?? null
+    : null;
 
   const primaryGoal = goals.find((goal) => goal.is_primary) ?? null;
   const goalProgram = programs.find((program) => program.id === primaryGoal?.program_id) ?? null;
@@ -172,13 +183,14 @@ export default function SmccdPlanner({
   const districtRows = planCourses.filter((row) => Number(row.college_units ?? 0) > 0 || row.smccd_course_id);
 
   function chooseCourse(course: SmccdCourse) {
+    const equivalency = equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") ?? null;
     setSelectedCourse(course);
     setCourseDraft({
       gradeLevel: (profile.grade_level ?? 11) as GradeLevel,
       status: "planned",
       term: "fall",
       collegeUnits: Number(course.units_max ?? course.units_min),
-      dtechCredits: 0
+      dtechCredits: equivalency?.high_school_credits ?? 0
     });
     setError(null);
     setNotice(null);
@@ -232,15 +244,20 @@ export default function SmccdPlanner({
         credits: courseDraft.dtechCredits,
         college_units: courseDraft.collegeUnits,
         is_weighted: true,
-        mapping_verified: false,
+        mapping_verified: Boolean(selectedEquivalency),
         user_edited: true,
-        notes: `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. Verify schedule availability, prerequisites, d.tech approval, and transcript delivery.`,
+        notes: selectedEquivalency
+          ? `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. The official d.tech equivalency chart (updated 2021) lists ${selectedEquivalency.high_school_credits} high-school credits as ${selectedEquivalency.high_school_equivalent}. Confirm current approval, prerequisites, schedule, and transcript delivery.`
+          : `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. Verify schedule availability, prerequisites, d.tech approval, and transcript delivery.`,
+        requirement_area_override: selectedEquivalency?.requirement_area ?? null,
         sort_order: planCourses.length
       }).select("*").single();
       if (insertError) throw insertError;
       onCourseAdded(data as unknown as PlanCourse);
       setSelectedCourse(null);
-      setNotice(`${selectedCourse.course_code} added to the academic plan as unverified.`);
+      setNotice(selectedEquivalency
+        ? `${selectedCourse.course_code} added with the source-backed d.tech equivalency. Confirm that the 2021 chart is still current.`
+        : `${selectedCourse.course_code} added to the academic plan as unverified.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The course could not be added.");
     } finally {
@@ -338,7 +355,7 @@ export default function SmccdPlanner({
               <div className="smccd-course-row smccd-course-head" role="row"><span role="columnheader">Course</span><span role="columnheader">College</span><span role="columnheader">Units</span><span role="columnheader">Action</span></div>
               {visibleCourses.map((course) => (
                 <div className={`smccd-course-row ${selectedCourse?.id === course.id ? "selected" : ""}`} role="row" key={course.id}>
-                  <div role="cell"><a href={course.catalog_url} target="_blank" rel="noreferrer"><strong>{course.course_code}</strong> {course.title} <ArrowSquareOut size={13} /></a><small>{course.transfer_credit ?? "Transfer not listed"}{course.attributes.length > 0 ? `, ${course.attributes.slice(0, 1).join(", ")}` : ""}</small></div>
+                  <div role="cell"><a href={course.catalog_url} target="_blank" rel="noreferrer"><strong>{course.course_code}</strong> {course.title} <ArrowSquareOut size={13} /></a><small>{course.transfer_credit ?? "Transfer not listed"}{course.attributes.length > 0 ? `, ${course.attributes.slice(0, 1).join(", ")}` : ""}</small>{equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") && <small className="equivalency-match">d.tech equivalency available</small>}</div>
                   <span role="cell">{course.college_code}</span>
                   <span role="cell">{course.units_max && course.units_max !== course.units_min ? `${course.units_min}-${course.units_max}` : course.units_min}</span>
                   <span role="cell"><button className="secondary-button small" type="button" onClick={() => chooseCourse(course)}>{selectedCourse?.id === course.id ? "Selected" : "Select"}</button></span>
@@ -351,11 +368,12 @@ export default function SmccdPlanner({
           {selectedCourse && <aside className="smccd-selection-panel" aria-live="polite">
               <form className="smccd-course-draft" onSubmit={addCatalogCourse}>
                 <div className="smccd-selected-heading"><BookOpen size={20} /><div><h2>{selectedCourse.course_code}</h2><p>{selectedCourse.title}</p><small>{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</small></div></div>
+                {selectedEquivalency && <div className="equivalency-readout"><strong>{selectedEquivalency.high_school_credits} d.tech credits</strong><span>{selectedEquivalency.high_school_equivalent}</span><small>Official d.tech chart, updated 2021. Confirm it is still approved.</small></div>}
                 <div className="smccd-selection-fields">
                   <label className="form-field"><span>Plan status</span><select value={courseDraft.status} onChange={(event) => setCourseDraft({ ...courseDraft, status: event.target.value as CourseStatus })}><option value="planned">Planned</option><option value="current">Current</option><option value="completed">Completed</option></select></label>
                   <label className="form-field"><span>High-school grade</span><select value={courseDraft.gradeLevel} onChange={(event) => setCourseDraft({ ...courseDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{[9, 10, 11, 12].map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
                   <label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={courseDraft.collegeUnits} onChange={(event) => setCourseDraft({ ...courseDraft, collegeUnits: Number(event.target.value) })} /></label>
-                  <label className="form-field"><span>Proposed d.tech credits</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /><small>Keep at 0 until d.tech confirms.</small></label>
+                  <label className="form-field"><span>{selectedEquivalency ? "d.tech credits" : "Proposed d.tech credits"}</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} readOnly={Boolean(selectedEquivalency)} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /><small>{selectedEquivalency ? "Filled from the official equivalency chart." : "Keep at 0 until d.tech confirms."}</small></label>
                 </div>
                 <button className="primary-button" type="submit" disabled={busy}><Plus size={17} /> Add to plan</button>
                 <button className="quiet-button" type="button" onClick={() => setSelectedCourse(null)}>Clear selection</button>

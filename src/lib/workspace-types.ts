@@ -15,6 +15,7 @@ export type {
   SimulationResult,
   SmccdCollege,
   SmccdCourse,
+  SmccdHighSchoolEquivalency,
   SmccdProgram,
   SmccdProgramRequirement,
   SmccdRequirementCourse,

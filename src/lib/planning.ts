@@ -9,6 +9,7 @@ import type {
   RequirementProgress,
   SimulationConfig,
   SimulationResult,
+  SmccdHighSchoolEquivalency,
   StudentProfile,
   WorkloadSummary
 } from "@/lib/models";
@@ -63,6 +64,24 @@ export function schoolYearForGrade(graduationYear: number, grade: GradeLevel) {
   return `${endYear - 1}-${endYear}`;
 }
 
+export function planCourseMovePatch(
+  profile: StudentProfile,
+  row: PlanCourse,
+  status: PlanCourse["status"],
+  sortOrder: number
+): Partial<PlanCourse> | null {
+  if (row.source_review_item_id) return null;
+  const currentGrade = Math.max(9, Math.min(12, Number(profile.grade_level ?? row.grade_level))) as GradeLevel;
+  const grade = (status === "planned" ? Math.min(12, currentGrade + 1) : currentGrade) as GradeLevel;
+  return {
+    status,
+    grade_level: grade,
+    school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade),
+    letter_grade: status === "completed" ? row.letter_grade : null,
+    sort_order: sortOrder
+  };
+}
+
 export function selectedPlanGrades(profile: StudentProfile) {
   const start = (profile.plan_start_grade ?? profile.grade_level ?? 9) as GradeLevel;
   const end = (profile.plan_end_grade ?? 12) as GradeLevel;
@@ -103,14 +122,19 @@ export function appliedCreditBreakdown({
 }
 
 export function courseDisplayName(planCourse: PlanCourse, courseMap: Map<string, Course>) {
+  if (planCourse.source_review_item_id && planCourse.custom_course_name) return planCourse.custom_course_name;
   return planCourse.course_id ? courseMap.get(planCourse.course_id)?.name ?? "Unavailable course" : planCourse.custom_course_name ?? "Custom course";
 }
 
 export function calculateRequirementProgress(
   requirements: GraduationRequirement[],
   planCourses: PlanCourse[],
-  mappings: CourseRequirementMapping[]
+  mappings: CourseRequirementMapping[],
+  courses: Course[] = [],
+  equivalencies: SmccdHighSchoolEquivalency[] = []
 ): RequirementProgress[] {
+  const courseMap = new Map(courses.map((course) => [course.id, course]));
+  const equivalencyMap = new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency]));
   const mappingsByCourse = new Map<string, CourseRequirementMapping[]>();
   for (const mapping of mappings) {
     const existing = mappingsByCourse.get(mapping.course_id) ?? [];
@@ -123,6 +147,7 @@ export function calculateRequirementProgress(
     let currentCredits = 0;
     let plannedCredits = 0;
     let unverifiedCredits = 0;
+    const verifiedRows: Array<{ status: PlanCourse["status"]; credits: number; name: string; equivalent: string | null }> = [];
 
     for (const planCourse of planCourses) {
       const overrideMatches = planCourse.requirement_area_override === requirement.area;
@@ -141,6 +166,76 @@ export function calculateRequirementProgress(
       if (planCourse.status === "completed") completedCredits += credits;
       if (planCourse.status === "current") currentCredits += credits;
       if (planCourse.status === "planned") plannedCredits += credits;
+      verifiedRows.push({
+        status: planCourse.status,
+        credits,
+        name: courseDisplayName(planCourse, courseMap),
+        equivalent: planCourse.smccd_course_id
+          ? equivalencyMap.get(planCourse.smccd_course_id.split(":").at(-1)?.toUpperCase() ?? "")?.high_school_equivalent ?? null
+          : null
+      });
+    }
+
+    const ruleWarnings: string[] = [];
+    if (requirement.area === "world_language") {
+      const proficiencyRows = verifiedRows.filter((row) => {
+        const evidence = row.equivalent ?? row.name;
+        return /\b(?:3|iii)\b/i.test(evidence) || /meets the requirement for the 2nd year/i.test(evidence);
+      });
+      const qualifyingStatus = (["completed", "current", "planned"] as PlanCourse["status"][])
+        .find((status) => proficiencyRows.some((row) => row.status === status));
+      if (qualifyingStatus) {
+        const requiredCredits = Number(requirement.credits_required);
+        completedCredits = Math.min(completedCredits, requiredCredits);
+        if (qualifyingStatus === "completed") {
+          completedCredits = requiredCredits;
+          currentCredits = 0;
+          plannedCredits = 0;
+        } else {
+          currentCredits = Math.min(currentCredits, Math.max(0, requiredCredits - completedCredits));
+          if (qualifyingStatus === "current") {
+            currentCredits = Math.max(0, requiredCredits - completedCredits);
+            plannedCredits = 0;
+          } else {
+            plannedCredits = Math.max(0, requiredCredits - completedCredits - currentCredits);
+          }
+        }
+      } else if (verifiedRows.length > 0 && completedCredits + currentCredits + plannedCredits < requirement.credits_required) {
+        ruleWarnings.push(
+          `A verified Level 3 language course satisfies the full sequence; otherwise ${requirement.credits_required} credits are needed.`
+        );
+      }
+    }
+    if (requirement.area === "lab_science") {
+      const allocation = { completed: 0, current: 0, planned: 0 };
+      const statusOrder: PlanCourse["status"][] = ["completed", "current", "planned"];
+      const classify = (name: string) => /\bbiol(?:ogy)?\b|biological/i.test(name)
+        ? "biology"
+        : /\bchem(?:istry)?\b/i.test(name)
+          ? "chemistry"
+          : "other";
+      const scienceRows = verifiedRows.map((row) => ({ ...row, lane: classify(row.name), remaining: row.credits }));
+      const allocate = (candidates: typeof scienceRows, limit: number) => {
+        let remaining = limit;
+        for (const status of statusOrder) {
+          for (const row of candidates.filter((candidate) => candidate.status === status)) {
+            const applied = Math.min(row.remaining, remaining);
+            allocation[status] += applied;
+            row.remaining -= applied;
+            remaining -= applied;
+            if (remaining <= 0) return limit;
+          }
+        }
+        return limit - remaining;
+      };
+      const biologyApplied = allocate(scienceRows.filter((row) => row.lane === "biology"), 10);
+      const chemistryApplied = allocate(scienceRows.filter((row) => row.lane === "chemistry"), 10);
+      allocate(scienceRows.filter((row) => row.remaining > 0), 10);
+      completedCredits = allocation.completed;
+      currentCredits = allocation.current;
+      plannedCredits = allocation.planned;
+      if (biologyApplied < 10) ruleWarnings.push(`${10 - biologyApplied} Biology credits still need coverage.`);
+      if (chemistryApplied < 10) ruleWarnings.push(`${10 - chemistryApplied} Chemistry credits still need coverage.`);
     }
 
     const verifiedProjectedCredits = completedCredits + currentCredits + plannedCredits;
@@ -160,7 +255,8 @@ export function calculateRequirementProgress(
       verifiedProjectedCredits: round(verifiedProjectedCredits, 1),
       unverifiedCredits: round(unverifiedCredits, 1),
       percent,
-      status
+      status,
+      ruleWarnings
     };
   });
 }
@@ -396,6 +492,12 @@ export function overallGraduationPercent(progress: RequirementProgress[]) {
   const required = progress.reduce((total, item) => total + item.requirement.credits_required, 0);
   const projected = progress.reduce((total, item) => total + Math.min(item.verifiedProjectedCredits, item.requirement.credits_required), 0);
   return required > 0 ? clamp(Math.round((projected / required) * 100), 0, 100) : 0;
+}
+
+export function overallCompletedPercent(progress: RequirementProgress[]) {
+  const required = progress.reduce((total, item) => total + item.requirement.credits_required, 0);
+  const completed = progress.reduce((total, item) => total + Math.min(item.completedCredits, item.requirement.credits_required), 0);
+  return required > 0 ? clamp(Math.round((completed / required) * 100), 0, 100) : 0;
 }
 
 export function simulatePlan(

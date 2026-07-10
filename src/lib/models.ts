@@ -171,6 +171,19 @@ export interface SmccdCourse {
   source_year: string;
 }
 
+export interface SmccdHighSchoolEquivalency {
+  normalized_course_code: string;
+  college_course_code: string;
+  description: string;
+  college_units: number;
+  high_school_credits: number;
+  high_school_equivalent: string;
+  requirement_area: RequirementArea;
+  pairing_note: string | null;
+  source_id: string;
+  confidence: Confidence;
+}
+
 export interface SmccdProgram {
   id: string;
   college_code: SmccdCollege["code"];
@@ -264,6 +277,7 @@ export interface RequirementProgress {
   unverifiedCredits: number;
   percent: number;
   status: "complete" | "on_track" | "missing";
+  ruleWarnings: string[];
 }
 
 export interface GpaSummary {

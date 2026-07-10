@@ -127,6 +127,21 @@ Separator rules:
 - Each section has a short purpose statement and its controls; do not wrap the complete profile in one giant card.
 - Keep the downstream-effects summary compact and adjacent to the save area.
 
+### Course kanban
+
+- Preserve the left-to-right model `Done`, `In progress`, `Planned`. Do not reorder the stages to make the mutable state appear first.
+- Keep columns neutral. Status is already communicated by position, heading, icon, and description; do not add decorative colored side rails to cards.
+- A card shows only course identity, grade, credit, source/subject, and a result when one exists. Secondary controls remain behind Edit.
+- Editable cards expose a dedicated drag handle and retain the status selector as the keyboard/mobile fallback. Transcript-backed cards expose a lock in the same control position and never drag.
+- On narrow screens preserve all three columns in a horizontal board rather than replacing the relationship with unrelated status tabs.
+
+### Graduation
+
+- Treat earned, in-progress, planned, unverified, and open credit as distinct states. Never include scheduled credit in a headline labeled completion or earned.
+- Prefer exact labeled values and rule warnings over progress bars when the underlying requirement has structural rules or exceptions.
+- Place source age and counselor-confirmation boundaries next to the result they qualify.
+- Requirement rows are one quiet vertical register. Do not add accent rails, separate cards, or repeated outlines to each subject area.
+
 ## Review checklist
 
 - One type family and the documented type roles only.

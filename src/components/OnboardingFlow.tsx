@@ -22,6 +22,7 @@ import type {
   PlanVersion,
   RequirementArea,
   School,
+  SmccdHighSchoolEquivalency,
   StudentProfile
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
@@ -63,6 +64,7 @@ interface OnboardingFlowProps {
   requirements: GraduationRequirement[];
   courses: Course[];
   mappings: CourseRequirementMapping[];
+  equivalencies: SmccdHighSchoolEquivalency[];
   activeVersion: PlanVersion;
   existingPlanCourses: PlanCourse[];
   mode?: "initial" | "replay";
@@ -79,6 +81,7 @@ export default function OnboardingFlow({
   requirements,
   courses,
   mappings,
+  equivalencies,
   activeVersion,
   existingPlanCourses,
   mode = "initial",
@@ -290,7 +293,7 @@ export default function OnboardingFlow({
       const candidates = selectedTranscriptItems
         .filter((item) => !existingReviewIds.has(item.id))
         .map((item, index) => ({
-          ...transcriptPlanCourseDraft(payloadFor(item), profile, courses, mappings, item.id),
+          ...transcriptPlanCourseDraft(payloadFor(item), profile, courses, mappings, item.id, equivalencies),
           plan_version_id: activeVersion.id,
           user_id: session.user.id,
           sort_order: existingPlanCourses.length + index

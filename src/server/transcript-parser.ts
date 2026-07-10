@@ -6,7 +6,7 @@ const GRADE_CREDIT_PATTERN = /\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F|P|I|IP|NP
 const COLLEGE_CODE_PATTERN = /^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)\b/;
 const DISTRICT_COLLEGES = ["College of San Mateo", "Skyline College", "Cañada College", "Canada College"];
 
-export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.1.0";
+export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.2.0";
 
 interface TranscriptSection {
   schoolYear: string;
@@ -93,7 +93,7 @@ export function parseDtechTranscriptText(text: string): ParsedTranscriptResult {
       term: termForTitle(rawTitle, gradeMatches.length),
       letter_grade: grades.at(-1) ?? null,
       credits,
-      weighted: pending.section.isCollege || /\bhonors?\b/i.test(courseName) ? true : null,
+      weighted: pending.section.isCollege || /\bhonors?\b/i.test(courseName),
       institution_name: pending.section.institution,
       college_units: null,
       confidence: differentGpaBands ? "uncertain" : gradeMatches.length > 1 ? "likely" : "verified",

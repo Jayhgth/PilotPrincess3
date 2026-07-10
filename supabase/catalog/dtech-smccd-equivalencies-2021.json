@@ -1,0 +1,1209 @@
+{
+  "title": "d.tech SMCCD College Equivalency Chart",
+  "source_url": "https://docs.google.com/spreadsheets/d/1DShfEovBYe-N9VlR1QM6Pyy3pmJ4cMMc6bE91QUzLIw/edit?gid=0#gid=0",
+  "source_updated": "2021-04-26",
+  "retrieved": "2026-07-09",
+  "rows": [
+    {
+      "college_course_code": "Math 130",
+      "normalized_course_code": "MATH 130",
+      "description": "Trigonometry",
+      "college_units": 5,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Precalculus (fall)",
+      "requirement_area": "math",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Math 222",
+      "normalized_course_code": "MATH 222",
+      "description": "Precalculus",
+      "college_units": 5,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Precalculus (spring)",
+      "requirement_area": "math",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Math 225",
+      "normalized_course_code": "MATH 225",
+      "description": "Path to Calculus",
+      "college_units": 6,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Precalculus (1 Year)",
+      "requirement_area": "math",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Math 200",
+      "normalized_course_code": "MATH 200",
+      "description": "Elem. Probability & Statistics",
+      "college_units": 4,
+      "high_school_credits": 10,
+      "high_school_equivalent": "College level Statistics",
+      "requirement_area": "math",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Math 251",
+      "normalized_course_code": "MATH 251",
+      "description": "Calculus w Analytic Geometry I",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "College level Calculus 1",
+      "requirement_area": "math",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Math 252",
+      "normalized_course_code": "MATH 252",
+      "description": "Calculus W Analytic Geometry II",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "College level Calculus 2",
+      "requirement_area": "math",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ASL 100",
+      "normalized_course_code": "ASL 100",
+      "description": "American Sign Language 1",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "ASL 100 meets the requirement for the 2nd year of a high school language.",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ASL 111",
+      "normalized_course_code": "ASL 111",
+      "description": "American Sign Language 1A",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "ASL 1 (fall)",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ASL 112",
+      "normalized_course_code": "ASL 112",
+      "description": "American Sign Language 1B",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "ASL 1 (spring)",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ASL 110",
+      "normalized_course_code": "ASL 110",
+      "description": "American Sign Language 2",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "ASL 2",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chinese 111",
+      "normalized_course_code": "CHIN 111",
+      "description": "Elementary Chinese 1A",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 1 Fall (must take both 111 & 112 for full year credit)",
+      "requirement_area": "world_language",
+      "pairing_note": "Mandarin 1 Fall (must take both 111 & 112 for full year credit)"
+    },
+    {
+      "college_course_code": "Chinese 112",
+      "normalized_course_code": "CHIN 112",
+      "description": "Elementary Chinese 1B",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 1 Spring (must take both 111 & 112 for full year credit)",
+      "requirement_area": "world_language",
+      "pairing_note": "Mandarin 1 Spring (must take both 111 & 112 for full year credit)"
+    },
+    {
+      "college_course_code": "Chinese 121",
+      "normalized_course_code": "CHIN 121",
+      "description": "Adv Elem Chinese 1A",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 2 Fall",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chinese 122",
+      "normalized_course_code": "CHIN 122",
+      "description": "Adv Elem Chinese 1B",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 2 Spring",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chinese 131",
+      "normalized_course_code": "CHIN 131",
+      "description": "Intermediate Chinese 1",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 3 Fall",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chinese 132",
+      "normalized_course_code": "CHIN 132",
+      "description": "Intermediate Chinese 2",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 3 Spring",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chinese 211",
+      "normalized_course_code": "CHIN 211",
+      "description": "Colloquial Chinese 1",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 3 Fall",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chinese 212",
+      "normalized_course_code": "CHIN 212",
+      "description": "Colloquial Chinese 2",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Mandarin 3 Spring",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Spanish 110",
+      "normalized_course_code": "SPAN 110",
+      "description": "Elementary Spanish 1",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Spanish 1",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Spanish 111",
+      "normalized_course_code": "SPAN 111",
+      "description": "Elem Spanish 1A",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Spanish 1 Fall (must take both 111 & 112)",
+      "requirement_area": "world_language",
+      "pairing_note": "Spanish 1 Fall (must take both 111 & 112)"
+    },
+    {
+      "college_course_code": "Spanish 112",
+      "normalized_course_code": "SPAN 112",
+      "description": "Elem Spanish 1B",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Spanish 2 Spring (must take both 111 & 112)",
+      "requirement_area": "world_language",
+      "pairing_note": "Spanish 2 Spring (must take both 111 & 112)"
+    },
+    {
+      "college_course_code": "Spanish 120",
+      "normalized_course_code": "SPAN 120",
+      "description": "Adv Elementary Spanish 1",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Spanish 2",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Spanish 121",
+      "normalized_course_code": "SPAN 121",
+      "description": "Adv Elem Spanish 1A",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Spanish 2 Fall",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Spanish 122",
+      "normalized_course_code": "SPAN 122",
+      "description": "Adv Elem Spanish 1B",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Spanish 2 Spring",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Spanish 131",
+      "normalized_course_code": "SPAN 131",
+      "description": "Intermediate Spanish 1",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Spanish 3 Fall",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Spanish 132",
+      "normalized_course_code": "SPAN 132",
+      "description": "Intermediate Spanish 2",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Spanish 3 Spring",
+      "requirement_area": "world_language",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Biology 110",
+      "normalized_course_code": "BIOL 110",
+      "description": "Gen Principles of Biology",
+      "college_units": 4,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Biology",
+      "requirement_area": "lab_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Chem. 210",
+      "normalized_course_code": "CHEM 210",
+      "description": "Inc Lab General Chemistry I",
+      "college_units": 5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Chemistry",
+      "requirement_area": "lab_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Physics 210",
+      "normalized_course_code": "PHYS 210",
+      "description": "General Physics I",
+      "college_units": 4,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Physics",
+      "requirement_area": "lab_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Physics 220",
+      "normalized_course_code": "PHYS 220",
+      "description": "General Physics II",
+      "college_units": 4,
+      "high_school_credits": 10,
+      "high_school_equivalent": "Physics II",
+      "requirement_area": "lab_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Economics 100",
+      "normalized_course_code": "ECON 100",
+      "description": "Prin of Macroeconomics",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Economics",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Economics 102",
+      "normalized_course_code": "ECON 102",
+      "description": "Prin of Microeconomics",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Economics",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "History 100",
+      "normalized_course_code": "HIST 100",
+      "description": "Hist of Western Civilization I",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "World History Fall or Spring",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "History 101",
+      "normalized_course_code": "HIST 101",
+      "description": "Hist of Western Civilization II",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "World History Fall or Spring",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "History 201",
+      "normalized_course_code": "HIST 201",
+      "description": "US History I",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "US History Fall",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "History 202",
+      "normalized_course_code": "HIST 202",
+      "description": "US History II",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "US History Spring",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Political Science 200",
+      "normalized_course_code": "PLSC 200",
+      "description": "National, State & Local Governments",
+      "college_units": 5,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Government",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "Political Science 210",
+      "normalized_course_code": "PLSC 210",
+      "description": "American Politics",
+      "college_units": 3,
+      "high_school_credits": 5,
+      "high_school_equivalent": "Government",
+      "requirement_area": "social_science",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 101",
+      "normalized_course_code": "ART 101",
+      "description": "Art and Architecture from the Ancient World to Medieval Times, (c. 1400)",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 102",
+      "normalized_course_code": "ART 102",
+      "description": "Art and Architecture of Renaissance and Baroque (c. 1300-1700)",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 103",
+      "normalized_course_code": "ART 103",
+      "description": "Art of Europe and America: Neoclassicial (c. 1750 to the Present)::",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 104",
+      "normalized_course_code": "ART 104",
+      "description": "Modern Art",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 105",
+      "normalized_course_code": "ART 105",
+      "description": "Asian Art and Architecture",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 124",
+      "normalized_course_code": "ART 124",
+      "description": "Old Master's Aesthetics and Techniques",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 129",
+      "normalized_course_code": "ART 129",
+      "description": "New Masters' Aesthetics and Techniques",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 200",
+      "normalized_course_code": "ART 200",
+      "description": "Portfolio Preparation",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 203",
+      "normalized_course_code": "ART 203",
+      "description": "Plein Air Painting",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 204",
+      "normalized_course_code": "ART 204",
+      "description": "Drawing I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 205",
+      "normalized_course_code": "ART 205",
+      "description": "Drawing II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 206",
+      "normalized_course_code": "ART 206",
+      "description": "Expressive Figure Drawing and Portraiture",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 207",
+      "normalized_course_code": "ART 207",
+      "description": "Life Drawing",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 208",
+      "normalized_course_code": "ART 208",
+      "description": "Portrait Drawing I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 209",
+      "normalized_course_code": "ART 209",
+      "description": "Portrait Drawing II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 213",
+      "normalized_course_code": "ART 213",
+      "description": "Life Drawing II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 214",
+      "normalized_course_code": "ART 214",
+      "description": "Color",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 215",
+      "normalized_course_code": "ART 215",
+      "description": "Portraiture III",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 216",
+      "normalized_course_code": "ART 216",
+      "description": "Portraiture IV",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 223",
+      "normalized_course_code": "ART 223",
+      "description": "Oil Painting I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 224",
+      "normalized_course_code": "ART 224",
+      "description": "Oil Painting II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 225",
+      "normalized_course_code": "ART 225",
+      "description": "Acrylic Painting I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 226",
+      "normalized_course_code": "ART 226",
+      "description": "Acrylic Painting II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 230",
+      "normalized_course_code": "ART 230",
+      "description": "Expressive Figure Drawing and Portraiture II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 231",
+      "normalized_course_code": "ART 231",
+      "description": "Watercolor I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 232",
+      "normalized_course_code": "ART 232",
+      "description": "Watercolor II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 233",
+      "normalized_course_code": "ART 233",
+      "description": "Watercolor III",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 243",
+      "normalized_course_code": "ART 243",
+      "description": "Watercolor IV",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 244",
+      "normalized_course_code": "ART 244",
+      "description": "Oil Painting III",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 247",
+      "normalized_course_code": "ART 247",
+      "description": "Oil Painting IV",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 251",
+      "normalized_course_code": "ART 251",
+      "description": "Acrylic Painting III",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 252",
+      "normalized_course_code": "ART 252",
+      "description": "Acrylic Painting IV",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 253",
+      "normalized_course_code": "ART 253",
+      "description": "Plein Air Painting II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 254",
+      "normalized_course_code": "ART 254",
+      "description": "Plein Air Painting III",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 255",
+      "normalized_course_code": "ART 255",
+      "description": "Plein Air Painting IV",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 301",
+      "normalized_course_code": "ART 301",
+      "description": "Two-Dimensional Design",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 347",
+      "normalized_course_code": "ART 347",
+      "description": "The History of Photography (1900 - present)",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 348",
+      "normalized_course_code": "ART 348",
+      "description": "Photographic Composition Using Handheld Devices",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 350",
+      "normalized_course_code": "ART 350",
+      "description": "Visual Perception",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 351",
+      "normalized_course_code": "ART 351",
+      "description": "Beginning Black and White Photography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 352",
+      "normalized_course_code": "ART 352",
+      "description": "Intermediate Black and White Photography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 353",
+      "normalized_course_code": "ART 353",
+      "description": "Advanced Black and White Photography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 381",
+      "normalized_course_code": "ART 381",
+      "description": "Beginning Digital Photography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 383",
+      "normalized_course_code": "ART 383",
+      "description": "Intermediate Digital Photography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 384",
+      "normalized_course_code": "ART 384",
+      "description": "Advanced Digital Photography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 385",
+      "normalized_course_code": "ART 385",
+      "description": "Master Portfolio-Digital Photography",
+      "college_units": 3.5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 388",
+      "normalized_course_code": "ART 388",
+      "description": "Master Photography Portfolio",
+      "college_units": 3.5,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 391",
+      "normalized_course_code": "ART 391",
+      "description": "Experimental Photography I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 392",
+      "normalized_course_code": "ART 392",
+      "description": "Experimental Photography 2",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 393",
+      "normalized_course_code": "ART 393",
+      "description": "Experimental Photography 3",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 394",
+      "normalized_course_code": "ART 394",
+      "description": "Experimental Photography 4",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 396",
+      "normalized_course_code": "ART 396",
+      "description": "Documentary Photography 1",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 397",
+      "normalized_course_code": "ART 397",
+      "description": "Documentary Photography 2",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 398",
+      "normalized_course_code": "ART 398",
+      "description": "Documentary Photography 3",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 399",
+      "normalized_course_code": "ART 399",
+      "description": "Documentary Photography 4",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 401",
+      "normalized_course_code": "ART 401",
+      "description": "Three-Dimensional Design",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 405",
+      "normalized_course_code": "ART 405",
+      "description": "Sculpture I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 406",
+      "normalized_course_code": "ART 406",
+      "description": "Sculpture II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 409",
+      "normalized_course_code": "ART 409",
+      "description": "Sculpture III-Extended Expertise",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 410",
+      "normalized_course_code": "ART 410",
+      "description": "Scultpure IV -Advanced Expression",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 411",
+      "normalized_course_code": "ART 411",
+      "description": "Ceramics I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 412",
+      "normalized_course_code": "ART 412",
+      "description": "Ceramics II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 417",
+      "normalized_course_code": "ART 417",
+      "description": "Ceramics Glaze",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "ART 418",
+      "normalized_course_code": "ART 418",
+      "description": "Ceramics III",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "DANC 390",
+      "normalized_course_code": "DANC 390",
+      "description": "Dance Composition/Theory/Choreography",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "FILM 100",
+      "normalized_course_code": "FILM 100",
+      "description": "Introduction to Film",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "FILM 120",
+      "normalized_course_code": "FILM 120",
+      "description": "Film History I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "FILM 121",
+      "normalized_course_code": "FILM 121",
+      "description": "Film History II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "FILM 200",
+      "normalized_course_code": "FILM 200",
+      "description": "Film in Focus",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "FILM 215",
+      "normalized_course_code": "FILM 215",
+      "description": "Film and New Digital Media",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 100",
+      "normalized_course_code": "MUS 100",
+      "description": "Fundamentals of Music",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 120",
+      "normalized_course_code": "MUS 120",
+      "description": "Songwriting",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 131",
+      "normalized_course_code": "MUS 131",
+      "description": "Harmony I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 202",
+      "normalized_course_code": "MUS 202",
+      "description": "Music Appreciation",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 210",
+      "normalized_course_code": "MUS 210",
+      "description": "From Blues to Hip Hop: A History of American Popular Music",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 250",
+      "normalized_course_code": "MUS 250",
+      "description": "World Music",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 275",
+      "normalized_course_code": "MUS 275",
+      "description": "History of Jazz",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 280",
+      "normalized_course_code": "MUS 280",
+      "description": "History of Electronic Music",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 290",
+      "normalized_course_code": "MUS 290",
+      "description": "Electronic Music I",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 291",
+      "normalized_course_code": "MUS 291",
+      "description": "Electronic Music II",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 292",
+      "normalized_course_code": "MUS 292",
+      "description": "Sound Creation: Sampling and Synthesis",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    },
+    {
+      "college_course_code": "MUS. 293",
+      "normalized_course_code": "MUS 293",
+      "description": "Audio for Visual Media",
+      "college_units": 3,
+      "high_school_credits": 10,
+      "high_school_equivalent": "1 year of VAPA credit",
+      "requirement_area": "visual_performing_arts",
+      "pairing_note": null
+    }
+  ]
+}
+

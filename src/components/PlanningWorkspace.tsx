@@ -16,7 +16,6 @@ import {
   HouseIcon as House,
   ListChecksIcon as ListChecks,
   MoonIcon as Moon,
-  PencilSimpleIcon as PencilSimple,
   PlusIcon as Plus,
   ScalesIcon as Scales,
   SignOutIcon as SignOut,
@@ -48,8 +47,9 @@ import {
   generateSuggestedPlan,
   generateTimeline,
   GRADE_LEVELS,
-  LETTER_GRADES,
+  overallCompletedPercent,
   overallGraduationPercent,
+  planCourseMovePatch,
   schoolYearForGrade,
   simulatePlan
 } from "@/lib/planning";
@@ -63,7 +63,8 @@ import {
 import { transcriptPlanCourseDraft, type TranscriptCoursePayload } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
-import { CoverageSegments, CreditComposition, DataPair } from "@/components/AcademicVisuals";
+import CourseKanban from "@/components/CourseKanban";
+import { DataPair } from "@/components/AcademicVisuals";
 import SmccdPlanner from "@/components/SmccdPlanner";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
@@ -80,6 +81,7 @@ import type {
   PlanCourse,
   PlanVersion,
   School,
+  SmccdHighSchoolEquivalency,
   SimulationConfig,
   SimulationResult,
   StudentProfile,
@@ -119,8 +121,6 @@ const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
 
 type CourseArea = "mine" | "dtech" | "smccd";
-type CourseStatusView = "current" | "planned" | "completed";
-
 const DEFAULT_SIMULATION: SimulationConfig = {
   majorDirection: "undecided",
   pathIntensity: "balanced",
@@ -230,7 +230,6 @@ export default function PlanningWorkspace() {
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
-  const [courseStatus, setCourseStatus] = useState<CourseStatusView>("current");
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
 
   const [school, setSchool] = useState<School | null>(null);
@@ -239,6 +238,7 @@ export default function PlanningWorkspace() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [requirements, setRequirements] = useState<GraduationRequirement[]>([]);
   const [mappings, setMappings] = useState<CourseRequirementMapping[]>([]);
+  const [equivalencies, setEquivalencies] = useState<SmccdHighSchoolEquivalency[]>([]);
   const [plan, setPlan] = useState<FourYearPlan | null>(null);
   const [versions, setVersions] = useState<PlanVersion[]>([]);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
@@ -274,8 +274,8 @@ export default function PlanningWorkspace() {
     [profile, requirements]
   );
   const progress = useMemo(
-    () => calculateRequirementProgress(trackedRequirements, planCourses, mappings),
-    [trackedRequirements, planCourses, mappings]
+    () => calculateRequirementProgress(trackedRequirements, planCourses, mappings, courses, equivalencies),
+    [trackedRequirements, planCourses, mappings, courses, equivalencies]
   );
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
   const workload = useMemo(
@@ -283,6 +283,7 @@ export default function PlanningWorkspace() {
     [profile, planCourses, courses, activities]
   );
   const graduationPercent = useMemo(() => overallGraduationPercent(progress), [progress]);
+  const graduationEarnedPercent = useMemo(() => overallCompletedPercent(progress), [progress]);
 
   const loadWorkspace = useCallback(async () => {
     if (!supabase) return;
@@ -303,6 +304,7 @@ export default function PlanningWorkspace() {
         courseResult,
         requirementResult,
         mappingResult,
+        equivalencyResult,
         planResult,
         activityResult,
         taskResult,
@@ -315,6 +317,7 @@ export default function PlanningWorkspace() {
         supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
         supabase.from("graduation_requirements").select("*").eq("review_status", "approved").order("name"),
         supabase.from("course_requirement_mappings").select("*"),
+        supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code"),
         supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
         supabase.from("activities").select("*").eq("user_id", userId).order("created_at"),
         supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
@@ -327,6 +330,7 @@ export default function PlanningWorkspace() {
         courseResult.error,
         requirementResult.error,
         mappingResult.error,
+        equivalencyResult.error,
         planResult.error
       ].find(Boolean);
       if (firstError) throw firstError;
@@ -364,6 +368,7 @@ export default function PlanningWorkspace() {
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
+      setEquivalencies((equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[]);
       setPlan(loadedPlan);
       setVersions(loadedVersions);
       const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
@@ -472,9 +477,8 @@ export default function PlanningWorkspace() {
     void logEvent("view_opened", { view: nextView });
   }
 
-  function openCourses(area: CourseArea = "mine", status?: CourseStatusView) {
+  function openCourses(area: CourseArea = "mine") {
     setCourseArea(area);
-    if (status) setCourseStatus(status);
     setEditingCourseId(null);
     navigate("courses");
   }
@@ -566,6 +570,16 @@ export default function PlanningWorkspace() {
       setPlanCourses((current) => current.map((row) => (row.id === id ? { ...row, ...safePatch } : row)));
       await logEvent("plan_edited", { plan_course_id: id });
     });
+  }
+
+  function movePlanCourse(row: PlanCourse, status: PlanCourse["status"]) {
+    if (!profile) return;
+    if (row.source_review_item_id) {
+      setToast("Transcript records stay in Done. Correct the transcript review instead of moving them.");
+      return;
+    }
+    const patch = planCourseMovePatch(profile, row, status, planCourses.filter((candidate) => candidate.status === status).length);
+    if (patch) void updatePlanCourse(row.id, patch);
   }
 
   async function removePlanCourse(id: string) {
@@ -816,7 +830,7 @@ export default function PlanningWorkspace() {
 
         const inserts: Array<Record<string, unknown>> = [];
         for (const { item, payload } of prepared) {
-          const draft = transcriptPlanCourseDraft(payload as unknown as TranscriptCoursePayload, profile, courses, mappings, item.id);
+          const draft = transcriptPlanCourseDraft(payload as unknown as TranscriptCoursePayload, profile, courses, mappings, item.id, equivalencies);
           const existing = draft.course_id
             ? planCourses.find((row) => row.course_id === draft.course_id)
             : null;
@@ -1069,6 +1083,7 @@ export default function PlanningWorkspace() {
         requirements={requirements}
         courses={courses}
         mappings={mappings}
+        equivalencies={equivalencies}
         activeVersion={activeVersion}
         existingPlanCourses={planCourses}
         mode={replayingOnboarding ? "replay" : "initial"}
@@ -1121,7 +1136,11 @@ export default function PlanningWorkspace() {
     if (!profile) return null;
     const nextTasks = tasks.filter((task) => !task.is_completed).slice(0, 4);
     const missing = progress.filter((item) => item.status === "missing");
-    const coveredAreas = progress.filter((item) => item.status !== "missing").length;
+    const requiredCredits = progress.reduce((total, item) => total + Number(item.requirement.credits_required), 0);
+    const dashboardCredits = progress.reduce((sum, item) => {
+      const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
+      return { completed: sum.completed + applied.completed, scheduled: sum.scheduled + applied.current + applied.planned, remaining: sum.remaining + applied.remaining };
+    }, { completed: 0, scheduled: 0, remaining: 0 });
     return (
       <div className="dashboard-page page-frame">
         <PageHeader
@@ -1131,10 +1150,9 @@ export default function PlanningWorkspace() {
         />
         <section className="route-brief" aria-label="Plan summary">
           <div className="route-coverage">
-            <span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span>
-            <strong>{graduationPercent}<small>%</small></strong>
-            <CoverageSegments items={progress.map((item) => ({ label: item.requirement.name, status: item.status }))} label={`${coveredAreas} of ${trackedRequirements.length} requirement areas covered`} />
-            <p>{coveredAreas} of {trackedRequirements.length} requirement areas have verified projected credit.</p>
+            <span>{profile.tracker_mode === "selected" ? "Tracked credits earned" : "Graduation credits earned"}</span>
+            <strong>{graduationEarnedPercent}<small>%</small></strong>
+            <p>{dashboardCredits.completed} of {requiredCredits} earned. {dashboardCredits.scheduled} scheduled, {dashboardCredits.remaining} still open.</p>
             <button className="quiet-button small" type="button" onClick={() => navigate("graduation")}>Open graduation map</button>
           </div>
           <div className="route-readouts">
@@ -1143,7 +1161,7 @@ export default function PlanningWorkspace() {
           </div>
         </section>
         {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
-        <button className="course-overview-row" type="button" onClick={() => openCourses("mine", courseCounts.current > 0 ? "current" : courseCounts.planned > 0 ? "planned" : "completed")}>
+        <button className="course-overview-row" type="button" onClick={() => openCourses("mine")}>
           <span><strong>Courses</strong><small>Everything currently in the plan</small></span>
           <dl className="course-stage-strip"><div className="current"><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div className="planned"><dt>Planned</dt><dd>{courseCounts.planned}</dd></div><div className="completed"><dt>Done</dt><dd>{courseCounts.completed}</dd></div></dl>
           <span>Open</span>
@@ -1155,7 +1173,7 @@ export default function PlanningWorkspace() {
               {progress.map((item) => {
                 const requiredCredits = Number(item.requirement.credits_required);
                 const applied = appliedCreditBreakdown({ required: requiredCredits, completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
-                return <article className={item.status} key={item.requirement.id}><span>{item.requirement.name}</span><strong>{applied.total}<small> / {item.requirement.credits_required}</small></strong><small>{item.status === "complete" ? "Complete" : item.status === "on_track" ? "On track" : `${applied.remaining} credits left`}</small></article>;
+                return <article className={item.status} key={item.requirement.id}><span>{item.requirement.name}</span><strong>{applied.completed}<small> / {item.requirement.credits_required}</small></strong><small>{item.status === "complete" ? "Complete" : item.status === "on_track" ? `${applied.current + applied.planned} scheduled` : `${applied.remaining} credits open`}</small></article>;
               })}
             </div>
           </section>
@@ -1302,7 +1320,7 @@ export default function PlanningWorkspace() {
             <div><h2 id="transcript-results-title">Courses found</h2><p>{availableItems.length ? `${selectedCount} of ${availableItems.length} selected` : "All courses imported"}</p></div>
             {availableItems.length > 0
               ? <button className="primary-button" type="button" onClick={() => void importSelectedTranscriptCourses(latestTranscript?.id ?? null)} disabled={Boolean(busyLabel) || selectedCount === 0}><Check size={17} /> Import selected</button>
-              : <button className="secondary-button" type="button" onClick={() => openCourses("mine", "completed")}><BookOpen size={17} /> Open Done</button>}
+              : <button className="secondary-button" type="button" onClick={() => openCourses("mine")}><BookOpen size={17} /> Open Done</button>}
           </header>
           <div className="transcript-course-table" role="table" aria-label="Extracted transcript courses">
             <div className="transcript-course-head" role="row">
@@ -1388,27 +1406,27 @@ export default function PlanningWorkspace() {
         completed: sum.completed + applied.completed,
         current: sum.current + applied.current,
         planned: sum.planned + applied.planned,
-        unverified: sum.unverified + applied.unverified
+        unverified: sum.unverified + applied.unverified,
+        remaining: sum.remaining + applied.remaining
       };
-    }, { completed: 0, current: 0, planned: 0, unverified: 0 });
+    }, { completed: 0, current: 0, planned: 0, unverified: 0, remaining: 0 });
     return (
       <div className="graduation-page page-frame">
         <PageHeader title="Graduation" description="A credit map for completed, current, planned, and unverified work." />
         <section className="graduation-brief" aria-label="Graduation summary">
           <div className="graduation-score">
-            <span>Verified projected coverage</span>
-            <strong>{graduationPercent}<small>%</small></strong>
-            <CoverageSegments items={progress.map((item) => ({ label: item.requirement.name, status: item.status }))} label={`${graduationPercent}% verified projected coverage`} />
-            <p>{profile.tracker_mode === "selected" ? `${trackedRequirements.length} selected areas, ${trackedCredits} required credits.` : `${trackedCredits} required credits across ${trackedRequirements.length} areas.`} Totals at right count only credits applied.</p>
+            <span>Credits earned</span>
+            <strong>{graduationEarnedPercent}<small>%</small></strong>
+            <p>{totals.completed} of {trackedCredits} required credits are complete. Planned and current work is shown separately.</p>
           </div>
           <dl className="graduation-totals">
-            <div><dt>Completed</dt><dd>{totals.completed}</dd></div>
+            <div><dt>Earned</dt><dd>{totals.completed}</dd></div>
             <div><dt>In progress</dt><dd>{totals.current}</dd></div>
             <div><dt>Planned</dt><dd>{totals.planned}</dd></div>
-            <div><dt>Unverified</dt><dd>{totals.unverified}</dd></div>
+            <div><dt>Still open</dt><dd>{totals.remaining}</dd></div>
           </dl>
         </section>
-        <p className="graduation-source-note">Based on labeled 2025-26 d.tech requirements. This is a planning estimate, not an official audit.</p>
+        <p className="graduation-source-note">Based on the 2025-26 d.tech requirements and the official SMCCD equivalency chart last updated in 2021. Confirm current college-course approval with a counselor.</p>
         <section className="graduation-map" aria-label="Graduation requirement map">
           {progress.map((item) => {
             const requiredCredits = Number(item.requirement.credits_required);
@@ -1416,16 +1434,16 @@ export default function PlanningWorkspace() {
             const statusText = item.status === "complete"
               ? "Complete"
               : item.status === "on_track"
-                ? "On track"
+                ? "Covered in plan"
                 : item.verifiedProjectedCredits > 0
-                  ? `${applied.remaining} credits left`
+                  ? `${applied.remaining} credits open`
                   : "Not started";
             return <article className={`graduation-requirement ${item.status}`} key={item.requirement.id}>
               <header><h2>{item.requirement.name}</h2><span>{statusText}</span></header>
-              <div className="requirement-credit-total"><strong>{applied.total}</strong><span>of {item.requirement.credits_required} verified projected credits</span></div>
-              <CreditComposition completed={item.completedCredits} current={item.currentCredits} planned={item.plannedCredits} unverified={item.unverifiedCredits} required={Number(item.requirement.credits_required)} />
-              <dl className="requirement-credit-breakdown"><div><dt>Done</dt><dd>{item.completedCredits}</dd></div><div><dt>Current</dt><dd>{item.currentCredits}</dd></div><div><dt>Planned</dt><dd>{item.plannedCredits}</dd></div><div><dt>Unverified</dt><dd>{item.unverifiedCredits}</dd></div></dl>
-              {(item.requirement.notes || item.unverifiedCredits > 0) && <details className="requirement-notes"><summary>Details</summary>{item.requirement.notes && <p>{item.requirement.notes}</p>}{item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={15} /> {item.unverifiedCredits} credits stay outside the projection until their mapping is verified.</p>}</details>}
+              <div className="requirement-credit-summary"><strong>{applied.completed} earned</strong><span>{applied.current + applied.planned} scheduled</span></div>
+              <dl className="requirement-credit-breakdown"><div><dt>Earned</dt><dd>{item.completedCredits}</dd></div><div><dt>In progress</dt><dd>{item.currentCredits}</dd></div><div><dt>Planned</dt><dd>{item.plannedCredits}</dd></div><div><dt>Open</dt><dd>{applied.remaining}</dd></div></dl>
+              {item.ruleWarnings.length > 0 && <ul className="requirement-rule-warnings">{item.ruleWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+              {(item.requirement.notes || item.unverifiedCredits > 0) && <details className="requirement-notes"><summary>Requirement details</summary>{item.requirement.notes && <p>{item.requirement.notes}</p>}{item.unverifiedCredits > 0 && <p className="verification-note"><Warning size={15} /> {item.unverifiedCredits} credits are excluded until their mapping is verified.</p>}</details>}
             </article>;
           })}
         </section>
@@ -1448,7 +1466,7 @@ export default function PlanningWorkspace() {
         </section>
         <div className="notice-strip"><Gauge size={19} /><span>A+, A, and A- are 4 points; B variants are 3; C variants are 2; D variants are 1. Every SMCCD and d.tech Honors course receives one added point. P is excluded from GPA.</span></div>
         <section className="dashboard-section gpa-course-section">
-          <header className="section-heading"><div><h2>GPA courses</h2><p>Exact transcript marks are preserved even when the d.tech point value is the same.</p></div><button className="quiet-button" onClick={() => openCourses("mine", "completed")}>Open Done courses</button></header>
+          <header className="section-heading"><div><h2>GPA courses</h2><p>Exact transcript marks are preserved even when the d.tech point value is the same.</p></div><button className="quiet-button" onClick={() => openCourses("mine")}>Open Done courses</button></header>
           {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
         </section>
       </div>
@@ -1458,13 +1476,6 @@ export default function PlanningWorkspace() {
   function renderMineCourses() {
     if (!profile) return null;
     const snapshots = versions.filter((version) => version.kind === "snapshot");
-    const statusContent: Record<CourseStatusView, { label: string; description: string }> = {
-      current: { label: "In progress", description: "Courses you are taking now." },
-      planned: { label: "Planned", description: "Future courses that can still be changed." },
-      completed: { label: "Done", description: "Finished courses, transcript grades, and pass credits." }
-    };
-    const statusIcons = { current: Gauge, planned: ListChecks, completed: CheckCircle };
-    const statusOrder: CourseStatusView[] = ["current", "planned", "completed"];
     const selectedSnapshot = snapshots.find((version) => version.id === compareVersionId) ?? null;
     const comparisonKey = (row: PlanCourse) => `${row.course_id ?? row.custom_course_name ?? row.id}:${row.grade_level}`;
     const activeByKey = new Map(planCourses.map((row) => [comparisonKey(row), row]));
@@ -1481,73 +1492,25 @@ export default function PlanningWorkspace() {
       );
     });
     const snapshotGpa = calculateGpa(compareCourses);
-    const snapshotProgress = calculateRequirementProgress(requirements, compareCourses, mappings);
-
-    const renderCourseRecord = (row: PlanCourse) => {
-      const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
-      const isSmccd = Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0);
-      const isPass = row.letter_grade?.toUpperCase() === "P";
-      const weighted = isSmccd || row.is_weighted;
-      const result = row.status === "completed"
-        ? isPass ? "Pass" : row.letter_grade ? `Grade ${row.letter_grade}` : "Done"
-        : row.status === "current" ? "In progress" : "Planned";
-      const metadata = [
-        isSmccd ? "SMCCD" : catalogCourse?.subject ?? (row.requirement_area_override === "personal_development" ? "Personal Development" : "Custom course"),
-        row.credits ? formatCredits(Number(row.credits)) : "Credits need review",
-        weighted ? "Weighted" : null,
-        isPass ? "Not in GPA" : null,
-        !row.mapping_verified ? "Requirement needs verification" : null
-      ].filter(Boolean) as string[];
-      const editing = editingCourseId === row.id;
-      return <article className={`course-record ${editing ? "editing" : ""}`} key={row.id}>
-        <div className="course-record-summary">
-          <div className="course-record-name"><strong>{courseDisplayName(row, courseMap)}</strong><span>{metadata.map((item) => <span key={item}>{item}</span>)}</span></div>
-          <div className="course-record-result"><strong>{result}</strong><span>{row.school_year}</span></div>
-          <button className="icon-button course-edit-button" type="button" onClick={() => setEditingCourseId(editing ? null : row.id)} aria-expanded={editing} aria-label={`${editing ? "Close editor for" : "Edit"} ${courseDisplayName(row, courseMap)}`}><PencilSimple size={15} /></button>
-        </div>
-        {editing && <div className="course-record-editor">
-          <label><span>Status</span><select value={row.status} onChange={(event) => void updatePlanCourse(row.id, { status: event.target.value as PlanCourse["status"] })}><option value="current">In progress</option><option value="planned">Planned</option><option value="completed">Done</option></select></label>
-          <label><span>Final grade</span><select value={row.letter_grade ?? ""} onChange={(event) => void updatePlanCourse(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((gradeValue) => <option value={gradeValue} key={gradeValue}>{gradeValue || "Not entered"}</option>)}</select></label>
-          <label><span>Grade level</span><select value={row.grade_level} onChange={(event) => { const nextGrade = Number(event.target.value) as GradeLevel; void updatePlanCourse(row.id, { grade_level: nextGrade, school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, nextGrade) }); }}>{GRADE_LEVELS.map((value) => <option value={value} key={value}>Grade {value}</option>)}</select></label>
-          <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => void updatePlanCourse(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "SMCCD courses are weighted" : "Weighted or honors"}</span></label>
-          <button className="danger-button small" type="button" onClick={() => void removePlanCourse(row.id)}><Trash size={15} /> Remove</button>
-        </div>}
-      </article>;
-    };
+    const snapshotProgress = calculateRequirementProgress(requirements, compareCourses, mappings, courses, equivalencies);
 
     return (
       <>
-        {planExplanation && <div className="notice-strip"><Sparkle size={19} /><span>{planExplanation}</span></div>}
-        <WorkspaceTabs
-          className="course-status-mobile-tabs"
-          items={statusOrder.map((status) => ({ id: status, label: statusContent[status].label, count: courseCounts[status] }))}
-          value={courseStatus}
-          onChange={(status) => { setCourseStatus(status); setEditingCourseId(null); }}
-          label="Course status"
-          layoutId="course-status-mobile-indicator"
+        {planExplanation && <p className="plan-explanation">{planExplanation}</p>}
+        <CourseKanban
+          rows={planCourses}
+          courses={courses}
+          profile={profile}
+          editingCourseId={editingCourseId}
+          busy={Boolean(busyLabel)}
+          onEditingChange={setEditingCourseId}
+          onMove={movePlanCourse}
+          onUpdate={(id, patch) => void updatePlanCourse(id, patch)}
+          onRemove={(id) => void removePlanCourse(id)}
+          onGeneratePlan={() => void generatePlan()}
+          onImportTranscript={() => navigate("sources")}
+          onBrowseCourses={() => setCourseArea("dtech")}
         />
-        <section className="course-stage-board" aria-label="Courses by status">
-          {statusOrder.map((status) => {
-            const StageIcon = statusIcons[status];
-            const rows = planCourses.filter((row) => row.status === status);
-            const grades = GRADE_LEVELS
-              .filter((grade) => rows.some((row) => row.grade_level === grade))
-              .sort((a, b) => status === "completed" ? b - a : a - b);
-            return <section className={`course-stage ${status} ${courseStatus === status ? "mobile-active" : ""}`} aria-labelledby={`course-stage-${status}`} key={status}>
-              <header className="course-stage-heading">
-                <div><StageIcon size={18} weight={status === "completed" ? "fill" : "regular"} /><div><h2 id={`course-stage-${status}`}>{statusContent[status].label}</h2><p>{statusContent[status].description}</p></div></div>
-                <strong>{rows.length}</strong>
-              </header>
-              {status === "planned" && <button className="course-stage-action" type="button" onClick={() => void generatePlan()} disabled={Boolean(busyLabel)}><Sparkle size={14} /> Suggest courses</button>}
-              <div className="course-stage-body">
-                {grades.length ? grades.map((grade) => {
-                  const gradeRows = rows.filter((row) => row.grade_level === grade);
-                  return <section className="course-grade-group" key={grade}><header><h3>Grade {grade}</h3><span>{profile.graduation_year ? schoolYearForGrade(profile.graduation_year, grade) : gradeRows[0]?.school_year}</span></header><div className="course-record-list">{gradeRows.map(renderCourseRecord)}</div></section>;
-                }) : <div className="course-stage-empty"><strong>No courses here</strong><p>{status === "completed" ? "Import a transcript to add finished classes." : status === "current" ? "Move a planned course here when it begins." : "Add courses from either catalog."}</p><button className="quiet-button small" type="button" onClick={() => status === "completed" ? navigate("sources") : setCourseArea("dtech")}>{status === "completed" ? "Import transcript" : "Find courses"}</button></div>}
-              </div>
-            </section>;
-          })}
-        </section>
         <details className="course-version-section">
           <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
           <div className="course-version-body"><button className="secondary-button small" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={15} /> Save snapshot</button>
@@ -1571,7 +1534,7 @@ export default function PlanningWorkspace() {
   function renderCourses() {
     if (!supabase || !session || !profile || !activeVersion) return null;
     return <div className="courses-page page-frame wide">
-      <PageHeader title="Courses" description="In progress, next, and finished courses stay visibly separate." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
+      <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
       <WorkspaceTabs items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
@@ -1580,6 +1543,7 @@ export default function PlanningWorkspace() {
         profile={profile}
         activeVersion={activeVersion}
         planCourses={planCourses}
+        equivalencies={equivalencies}
         onCourseAdded={(course) => setPlanCourses((current) => [...current, course])}
         onCourseRemoved={(id) => setPlanCourses((current) => current.filter((row) => row.id !== id))}
         onOpenMyCourses={() => setCourseArea("mine")}

@@ -6,6 +6,7 @@ import type {
   CourseRequirementMapping,
   GraduationRequirement,
   PlanCourse,
+  SmccdHighSchoolEquivalency,
   SmccdProgram,
   StudentProfile
 } from "@/lib/models";
@@ -17,6 +18,8 @@ import {
   generateSuggestedPlan,
   generateTimeline,
   overallGraduationPercent,
+  overallCompletedPercent,
+  planCourseMovePatch,
   requirementsForProfile,
   schoolYearForGrade,
   selectedPlanGrades,
@@ -191,6 +194,99 @@ describe("graduation requirement calculations", () => {
     expect(progress.completedCredits).toBe(2.5);
     expect(progress.unverifiedCredits).toBe(0);
   });
+
+  it("satisfies World Language from a verified Level 3 course", () => {
+    const worldLanguage: GraduationRequirement = {
+      ...englishRequirement,
+      id: "requirement-world-language",
+      area: "world_language",
+      name: "World Language",
+      credits_required: 20
+    };
+    const equivalency: SmccdHighSchoolEquivalency = {
+      normalized_course_code: "CHIN 132",
+      college_course_code: "Chinese 132",
+      description: "Intermediate Chinese 2",
+      college_units: 3,
+      high_school_credits: 5,
+      high_school_equivalent: "Mandarin 3 Spring",
+      requirement_area: "world_language",
+      pairing_note: null,
+      source_id: "source-equivalency",
+      confidence: "verified"
+    };
+    const [result] = calculateRequirementProgress(
+      [worldLanguage],
+      [planCourse({
+        course_id: null,
+        custom_course_name: "CHIN 132 Intermediate Chinese II",
+        credits: 5,
+        smccd_course_id: "CSM:CHIN 132",
+        requirement_area_override: "world_language"
+      })],
+      [],
+      [],
+      [equivalency]
+    );
+    expect(result.completedCredits).toBe(20);
+    expect(result.percent).toBe(100);
+    expect(result.status).toBe("complete");
+  });
+
+  it("enforces the Biology, Chemistry, and third-science sequence", () => {
+    const scienceRequirement: GraduationRequirement = {
+      ...englishRequirement,
+      id: "requirement-science",
+      area: "lab_science",
+      name: "Laboratory Science",
+      credits_required: 30
+    };
+    const scienceCourses = [
+      course({ id: "chemistry", name: "Chemistry", subject: "Laboratory Science" }),
+      course({ id: "physics", name: "Advanced Physics", subject: "Laboratory Science" }),
+      course({ id: "biology", name: "Biology", subject: "Laboratory Science" })
+    ];
+    const mappings = scienceCourses.map((item, index) => ({ ...verifiedMapping, id: `science-map-${index}`, course_id: item.id, requirement_id: scienceRequirement.id }));
+    const withoutBiology = calculateRequirementProgress(
+      [scienceRequirement],
+      [
+        planCourse({ id: "chemistry-row", course_id: "chemistry", credits: 20 }),
+        planCourse({ id: "physics-row", course_id: "physics", credits: 10 })
+      ],
+      mappings,
+      scienceCourses
+    )[0];
+    expect(withoutBiology.completedCredits).toBe(20);
+    expect(withoutBiology.percent).toBe(67);
+    expect(withoutBiology.ruleWarnings).toContain("10 Biology credits still need coverage.");
+
+    const complete = calculateRequirementProgress(
+      [scienceRequirement],
+      [
+        planCourse({ id: "chemistry-row", course_id: "chemistry", credits: 10 }),
+        planCourse({ id: "physics-row", course_id: "physics", credits: 10 }),
+        planCourse({ id: "biology-row", course_id: "biology", credits: 10 })
+      ],
+      mappings,
+      scienceCourses
+    )[0];
+    expect(complete.completedCredits).toBe(30);
+    expect(complete.status).toBe("complete");
+    expect(complete.ruleWarnings).toEqual([]);
+  });
+
+  it("separates earned graduation progress from projected plan coverage", () => {
+    const progress = calculateRequirementProgress(
+      [englishRequirement],
+      [
+        planCourse({ credits: 20 }),
+        planCourse({ id: "planned", status: "planned", credits: 20 })
+      ],
+      [verifiedMapping]
+    );
+    expect(overallCompletedPercent(progress)).toBe(50);
+    expect(overallGraduationPercent(progress)).toBe(100);
+  });
 });
 
 describe("GPA and workload calculations", () => {
@@ -315,6 +411,14 @@ describe("profile-driven planning", () => {
 });
 
 describe("planning and simulation", () => {
+  it("moves editable courses to the status grade and locks transcript rows", () => {
+    const planned = planCourseMovePatch(profile, planCourse({ status: "current", letter_grade: "A" }), "planned", 3);
+    expect(planned).toMatchObject({ status: "planned", grade_level: 11, school_year: "2026-2027", letter_grade: null, sort_order: 3 });
+    const current = planCourseMovePatch(profile, planCourse({ grade_level: 12, status: "planned" }), "current", 1);
+    expect(current).toMatchObject({ status: "current", grade_level: 10, school_year: "2025-2026" });
+    expect(planCourseMovePatch(profile, planCourse({ source_review_item_id: "review-locked" }), "planned", 0)).toBeNull();
+  });
+
   it("generates the source-backed flow without duplicating manual courses", () => {
     const catalog = [
       course({ id: "english-2", name: "English 2", grade_levels: [10] }),
@@ -468,6 +572,65 @@ describe("transcript import", () => {
     expect(draft.mapping_verified).toBe(false);
   });
 
+  it("applies the official Chinese equivalency to world-language credit", () => {
+    const equivalency: SmccdHighSchoolEquivalency = {
+      normalized_course_code: "CHIN 132",
+      college_course_code: "Chinese 132",
+      description: "Intermediate Chinese 2",
+      college_units: 3,
+      high_school_credits: 5,
+      high_school_equivalent: "Mandarin 3 Spring",
+      requirement_area: "world_language",
+      pairing_note: null,
+      source_id: "source-equivalency",
+      confidence: "verified"
+    };
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "CHIN 132 Intermediate Chinese II",
+        course_code: "CHIN 132",
+        institution_name: "College of San Mateo",
+        credits: 0,
+        letter_grade: "A",
+        matched_smccd_course_id: "CSM:CHIN 132"
+      },
+      profile,
+      [],
+      [],
+      "review-chinese",
+      [equivalency]
+    );
+    expect(draft.credits).toBe(5);
+    expect(draft.requirement_area_override).toBe("world_language");
+    expect(draft.mapping_verified).toBe(true);
+    expect(draft.notes).toContain("Mandarin 3 Spring");
+  });
+
+  it("keeps a UC-approved standard Chemistry row unweighted", () => {
+    const chemistry = course({
+      id: "chemistry",
+      name: "Chemistry / Chemistry Honors",
+      subject: "Laboratory Science",
+      is_honors: true,
+      is_weighted: true
+    });
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "Chemistry",
+        institution_name: "Design Tech High School",
+        credits: 10,
+        letter_grade: "A",
+        weighted: false,
+        matched_course_id: chemistry.id
+      },
+      profile,
+      [chemistry],
+      [{ ...verifiedMapping, course_id: chemistry.id }],
+      "review-chemistry"
+    );
+    expect(draft.is_weighted).toBe(false);
+  });
+
   it("imports an intersession pass as Personal Development outside GPA", () => {
     const draft = transcriptPlanCourseDraft(
       {
@@ -534,7 +697,7 @@ describe("transcript import", () => {
     );
 
     expect(draft.course_id).toBe(designLabCourse.id);
-    expect(draft.custom_course_name).toBeNull();
+    expect(draft.custom_course_name).toBe("D.Lab: Innovation Diploma Honors");
     expect(draft.mapping_verified).toBe(true);
     expect(draft.credits).toBe(10);
   });

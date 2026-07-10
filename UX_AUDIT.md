@@ -1,10 +1,10 @@
 # UX Audit
 
-Last reviewed: 2026-07-09
+Last reviewed: 2026-07-10
 
 ## Outcome
 
-Strict final grade: **98/100**. The workspace is calm, readable, and usable on desktop and mobile. Overview, course status, discovery, graduation, transcript import, and editing now share one predictable academic-workspace structure.
+Strict UI/UX grade: **91/100**. Strict student-usefulness grade: **86/100**. The primary flow is now coherent and trustworthy enough for an MVP: completed work is visibly separate from scheduled work, Courses has one predictable interaction model, and source-backed rules are explained where they affect results. The remaining deductions are substantive product gaps, not polish points.
 
 The repeatable implementation rules are maintained in `UI_DESIGN_SYSTEM.md`; this audit records the measured result, while that document is the reference for future UI work.
 
@@ -30,7 +30,7 @@ The repeatable implementation rules are maintained in `UI_DESIGN_SYSTEM.md`; thi
 - Several labels and metadata lines were 7 to 9 px. All visible audited text is now at least 10 px, with normal product copy generally 12 to 14 px.
 - Metrics were visually dominant at 48 to 54 px and 144 px tall. They are now 26 to 34 px within compact 104 px regions.
 - Courses were split across Academic plan, Course catalog, SMCCD planning, transcript history, and GPA. One Courses destination now owns the editable records, with separate `In progress`, `Planned`, and `Done` lists and read-only links from outcome views.
-- Switching among status tabs hid the relationship between current, future, and completed work. Desktop now shows a three-column stage board with distinct current keyline, planned dashed boundary, and dense transcript-style Done column; mobile keeps one stage visible at a time.
+- Switching among status tabs hid the relationship between current, future, and completed work. Courses now uses one neutral kanban ordered `Done`, `In progress`, `Planned`. Editable cards drag across columns; transcript-backed rows expose a lock instead of a handle. Narrow screens keep the same mental model in a horizontal board.
 - Repeated full-width course cards exposed status, grade, year, weighting, verification, and delete controls at once. Compact rows now show only identity, useful metadata, result, and Edit; the full editor is disclosed per record.
 - Each d.tech catalog result offered competing status and add controls. Each row now has one `Add to Planned` action and an explicit existing-status label.
 - Full-width disabled catalog buttons still consumed mobile space after a course was added. They are now compact semantic status markers; only available actions are button-sized.
@@ -39,7 +39,10 @@ The repeatable implementation rules are maintained in `UI_DESIGN_SYSTEM.md`; thi
 - The 131-program AA/AS native select offered little discovery help. It is now a searchable ranked browser with profile matches, existing-course progress, complete-catalog modes, visible match reasons, and compact progress summaries.
 - Major direction, interests, career ideas, workload tolerance, and stress were unexplained form fields. The profile now groups them by purpose, states the output each answer changes, and shows a live downstream-effects summary.
 - Graduation rows reported partial progress as `Missing`. They now use `N credits left`, while completed and projected-complete states remain explicit.
-- Graduation and Overview could display raw mapped totals such as `90 / 40`, making correct overall percentages look inconsistent. Applied totals and composition bars now cap each requirement, while raw completed/current/planned/unverified mapping values remain visible inside the detail card.
+- Graduation and Overview could display raw mapped totals such as `90 / 40`, and the prominent percentage included planned work. The headline now measures earned credit only; current, planned, open, and unverified values remain separate. Decorative composition bars were removed because their visual precision exceeded the underlying rule model.
+- Laboratory Science previously behaved like one unrestricted 30-credit bucket. It now checks Biology, Chemistry, and a third science independently and states the missing lane in plain language.
+- World Language previously added raw credits only. A verified Level 3/III course now grants the full 20-credit sequence requirement without inventing lower-level history, and the credit remains Done/In progress/Planned according to the actual course.
+- Transcript weighting previously conflated the d.tech A-G `*` marker with Honors. Weighting now requires explicit Honors evidence for d.tech courses, every SMCCD course remains weighted, and the reviewed course title is preserved in the interface.
 - Repeated overview metrics competed for attention. A route brief now combines graduation coverage, GPA, and workload; a compact course stage strip, requirement index, next actions, and latest note form a deliberate reading order.
 - Generic status tabs used abrupt state changes. The shared indicator now uses one 160 ms Motion transition with reduced-motion support and full arrow/Home/End keyboard behavior.
 - The AI page was a binary connection button. It is now a bounded conversation that reports model and latency, explains what the test proves, and states that it cannot access student records or files.
@@ -62,25 +65,41 @@ The repeatable implementation rules are maintained in `UI_DESIGN_SYSTEM.md`; thi
 - Workspace keyboard tabs: Left, Right, Home, and End pass with roving tab focus.
 - Course navigation entries removed: three (`Academic plan`, `Course catalog`, and `SMCCD planning`) consolidated into `Courses`.
 - Populated redesign QA: 14 Done, 6 Planned, and 4 In progress records remained distinguishable without horizontal overflow; desktop editing stayed inside its column and mobile editing stayed inside 390 px.
+- Kanban QA: Done is leftmost; transcript Chemistry is locked; an editable course moved from In progress to Planned and changed from grade 11 to grade 12; no outer-page overflow occurred at 390x844.
+- Equivalency QA: CHIN 132 resolves to `Mandarin 3 Spring`, 5 d.tech credits, and World Language `Covered in plan` at 20 planned credits from the one verified Level 3 course.
 - Live transcript totals from the supplied d.tech PDF: Design Lab 30/40 and Personal Development 10/25.
 - Live transcript GPA from the supplied d.tech PDF: 4.00 unweighted and 4.74 weighted, with 45 pass credits visibly excluded.
 - Live AI conversation: authenticated structured response from the configured `gpt-5.5` low-reasoning runtime, including per-response latency.
 
-## Rubric
+## UI/UX rubric — 91/100
 
-- Navigation and orientation: 10/10
-- Information hierarchy: 10/10
-- Readability and sizing: 10/10
-- Course selection and planning flow: 10/10
-- Progressive disclosure: 10/10
-- Responsive behavior: 10/10
-- Feedback and AI transparency: 10/10
+- Navigation and orientation: 9/10
+- Information hierarchy: 9/10
+- Readability and sizing: 9/10
+- Course selection and planning flow: 9/10
+- Progressive disclosure: 9/10
+- Responsive behavior: 9/10
+- Feedback and AI transparency: 9/10
 - Accessibility and interaction sizing: 9/10
 - Visual restraint and consistency: 10/10
 - Data trust and requirement clarity: 9/10
 
-## Remaining improvements
+## Student-usefulness rubric — 86/100
 
-- Degree and course relevance reasons are deterministic discovery cues, not predictions of student fit or outcomes; future usability research should test whether students understand that boundary without explanation.
-- A future transcript archive picker could expose older preserved uploads without adding clutter to the default latest-transcript flow.
-- A formal production accessibility audit should be repeated on the deployed origin with the final hosting, font-loading, and browser environment.
+- Course and transcript organization: 9/10
+- Transcript/GPA reliability for the supplied d.tech format: 9/10
+- Graduation planning: 8/10
+- SMCCD concurrent-enrollment discovery: 9/10
+- Workload, major, interest, and career decision support: 8/10
+
+## Weak points and remaining improvements
+
+- The d.tech/SMCCD equivalency source is exact but old: the published chart says 2021. The product labels that age and asks for confirmation, but a current counselor-approved source is needed before the app can be treated as authoritative.
+- The requirement engine models the documented science structure and the clarified Level 3 language rule. It does not yet provide a generalized, versioned rule system for substitutions, waivers, repeats, exceptions, or future policy changes.
+- Kanban moves are immediately reversible by moving the card again, but there is no one-click undo. Horizontal drag is naturally less fluid on a 390 px screen; the Edit status selector is retained as the reliable keyboard/mobile fallback.
+- The SMCCD catalog is curriculum, not a live schedule. Students still cannot see current sections, seat availability, time conflicts, instructor, or prerequisite clearance.
+- Associate-degree progress includes parsed major requirements but excludes general education, residency, catalog rights, waivers, and substitutions. It is useful for discovery, not degree certification.
+- Workload guidance covers entered activities and the district's college-unit workload convention. d.tech homework, commute, employment, caregiving, sleep, and recovery remain student-entered or unmodeled, so the stress/tolerance output can still be incomplete.
+- Major, academic-interest, and career outputs are transparent deterministic matches, but they remain shallow compared with a guided exploration workflow using values, evidence, alternatives, and follow-up reflection.
+- The latest transcript workflow is intentionally minimal; older preserved source files do not have an archive picker in the UI.
+- A formal accessibility audit and student usability study are still required on the deployed production origin. The current grade is based on implementation inspection and browser QA, not research participants.

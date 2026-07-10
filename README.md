@@ -84,6 +84,13 @@ pnpm smccd:migration
 pnpm smccd:validate
 ```
 
+The separate `supabase/catalog/dtech-smccd-equivalencies-2021.json` artifact is an exact, dated transcription of d.tech's published equivalency chart. After intentionally replacing that artifact with a reviewed newer source, regenerate its migration and validate both datasets:
+
+```sh
+pnpm equivalencies:generate
+pnpm smccd:validate
+```
+
 Run the production artifact after building:
 
 ```sh
@@ -104,13 +111,16 @@ HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs
 - `src/server/codex.ts` owns Codex isolation, structured runs, concurrency, timeouts, and cleanup.
 - `supabase/migrations/` is the source of truth for schema, triggers, RLS, and storage.
 - `supabase/catalog/smccd-2025-2026.json` is the validated, source-backed SMCCD curriculum artifact used to generate the database migration.
+- `supabase/catalog/dtech-smccd-equivalencies-2021.json` is the validated 120-row d.tech conversion artifact used for exact high-school credits and requirement areas.
 - `supabase/seed.sql` contains official, source-labeled d.tech reference data.
 
 The browser never receives an AI key. User-owned tables and uploads are protected by Supabase RLS. Registration is open to any valid email; the retained domain metadata table is not enforced and can support a future enrollment policy if the product scope changes.
 
 ### Transcript and workload rules
 
-Text-layer PDF extraction, transcript row parsing, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic. On d.tech transcripts, `P` earns credit but does not enter GPA; intersession `P` rows are tracked under Personal Development. Exact marks such as `A-` stay visible, while `A+`, `A`, and `A-` share the four-point GPA band. Every SMCCD course receives the weighted point.
+Text-layer PDF extraction, transcript row parsing, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic. On d.tech transcripts, `P` earns credit but does not enter GPA; intersession `P` rows are tracked under Personal Development. Exact marks such as `A-` stay visible, while `A+`, `A`, and `A-` share the four-point GPA band. The transcript `*` marker means UC A-G approval, not Honors; a d.tech course is weighted only when its reviewed title explicitly says Honors. Every SMCCD course receives the weighted point.
+
+Laboratory Science requires 10 Biology credits, 10 Chemistry credits, and 10 additional lab-science credits. A verified Level 3/III world-language course satisfies the complete 20-credit sequence even when lower levels are absent. The 2021 equivalency chart is visibly labeled and must be confirmed for current approval.
 
 Known weekly workload includes recorded activity time and the current plan year's SMCCD courses at three total class/study hours per unit. The app does not invent d.tech homework time or other unrecorded responsibilities; the student supplies a weekly commitment limit and a demanding-course limit instead.
 
@@ -126,6 +136,7 @@ Codex is used for requested plan/simulator explanations, lightweight wording ass
 - [25/26 Course Catalog](https://docs.google.com/spreadsheets/d/11iRo_SuYTb0_WxaZ2vB1H3L9qtT0Ecbmkj960XvCuB4/edit)
 - [23/24 Flow of Classes](https://docs.google.com/document/d/1dX4WLEyikPmDjZVWMF3sIYjwGiwmCmSZRYfbdywiQuM/edit)
 - [24/25 Concurrent Enrollment Policy](https://docs.google.com/presentation/d/1cVyDYDya2lGkOymkEbmWaNpjOYkn8iBBCGpowiL4xhI/edit)
+- [d.tech / SMCCD College Equivalency Chart](https://docs.google.com/spreadsheets/d/1DShfEovBYe-N9VlR1QM6Pyy3pmJ4cMMc6bE91QUzLIw/edit)
 - [SMCCD Concurrent Enrollment](https://smccd.edu/k-12/)
 - [College of San Mateo Work and Credit](https://collegeofsanmateo.edu/grades/workandcredit.asp)
 - [Cañada College Catalog](https://catalog.canadacollege.edu/current/courses/)

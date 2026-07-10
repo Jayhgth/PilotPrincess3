@@ -1,19 +1,19 @@
 # Test Checklist
 
-Last run: 2026-07-09
+Last run: 2026-07-10
 
 ## Automated
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck` with 0 errors, warnings, or hints
-- [x] `pnpm test` with 31/31 unit tests passing
+- [x] `pnpm test` with 37/37 unit tests passing
 - [x] `pnpm test:e2e` with 4/4 Chromium tests passing
 - [x] Narrow 390x844 authentication layout
 - [x] `pnpm build` standalone Astro SSR output
 - [x] `pnpm peers check`
 - [x] `supabase db lint --linked` with no schema errors
-- [x] All six migrations and seed applied to linked Supabase project; local and remote migration histories match
-- [x] `pnpm smccd:validate` with 2,461 courses and 131 AA/AS programs
+- [x] All nine migrations and seed applied to linked Supabase project; local and remote migration histories match
+- [x] `pnpm smccd:validate` with 2,461 courses, 131 AA/AS programs, and 120 d.tech/SMCCD equivalencies
 
 ## Authentication and Security
 
@@ -37,17 +37,23 @@ Last run: 2026-07-09
 - [x] Focused tracker requires at least one selected requirement area
 - [x] Overview recalculates graduation coverage and workload
 - [x] One Courses destination replaces separate academic-plan, d.tech catalog, and SMCCD navigation entries
-- [x] My courses shows `In progress`, `Planned`, and `Done` simultaneously on desktop, uses count-backed single-stage tabs on mobile, and keeps rows grouped by grade
+- [x] My courses shows a single `Done`, `In progress`, `Planned` kanban in that order on desktop and mobile
+- [x] Editable courses drag between columns and receive destination-appropriate grade/year defaults
+- [x] Transcript-backed courses have a visible lock, no drag handle, and remain in Done
 - [x] Course editing stays hidden until requested and supports status, final grade, grade level, weighting, and removal
 - [x] Official d.tech catalog loads 41 courses and supports search/filter with one explicit `Add to Planned` action
 - [x] Official d.tech catalog paginates 12 courses per page and uses compact markers for courses already in Done, In progress, or Planned
 - [x] Graduation tracker excludes unverified mappings
-- [x] Graduation headline totals and composition bars cap excess mapped credit at each requirement maximum while retaining the raw mapped breakdown
+- [x] Graduation reports earned, current, planned, and open credit separately without presenting scheduled credit as completion
+- [x] Graduation requirement rows use exact values and rule warnings instead of decorative progress bars
+- [x] Laboratory Science requires Biology, Chemistry, and a third science at 10 credits each
+- [x] A verified Level 3/III world-language course satisfies the full 20-credit requirement without requiring lower levels
 - [x] GPA calculations separate current/projected and weighted/unweighted results
 - [x] Exact d.tech method reproduces 4.00 unweighted and 4.74 weighted from the supplied PDF
 - [x] `P` is excluded from GPA and separated as intersession/Personal Development credit
 - [x] `A-` remains visible but uses the same four-point band as `A`
 - [x] Every exact or unmatched SMCCD course is weighted, including rows stored with an older false flag
+- [x] d.tech `*` is treated as UC A-G approval, not Honors; transcript Chemistry remains unweighted
 - [x] Suggested plan is generated without overwriting manual rows
 - [x] Suggested plan generates only grades inside the selected onboarding window
 - [x] Completed courses before the selected window remain visible in transcript history
@@ -60,6 +66,7 @@ Last run: 2026-07-09
 - [x] SMCCD catalog searches and filters 2,461 source-backed records across all three district colleges
 - [x] SMCCD results stay empty before a search, and course search is separated from associate-degree planning
 - [x] Exact SMCCD course selection persists the district foreign key, college units, plan status, and proposed d.tech credit
+- [x] Exact equivalency matches persist source-backed d.tech credits and requirement area; CHIN 132 displays Mandarin 3 Spring and 5 d.tech credits
 - [x] AA/AS discovery searches and ranks all 131 programs by profile fit or existing-course progress, exposes match reasons, persists a goal, and computes parsed major-requirement progress deterministically
 - [x] Computer Science interest does not create a false Political Science match
 - [x] d.tech add-to-Planned and Planned-to-In-progress browser flows pass with live count updates
@@ -69,7 +76,7 @@ Last run: 2026-07-09
 - [x] Select-all imports five reviewed rows to Done in one action and the completed state opens the Done list
 - [x] Unified Courses, SMCCD, and AI connection browser flows pass with no console errors
 - [x] Every authenticated destination has zero audited horizontal overflow and zero visible text below 10 px at 1280x720
-- [x] Mobile Courses status lists, inline editor, d.tech discovery, SMCCD search, overview, navigation, and graduation visually pass at 390x844
+- [x] Mobile course kanban, inline editor, d.tech discovery, SMCCD search, overview, navigation, and graduation visually pass at 390x844
 - [x] Unified Courses workspace visually passes in both light and dark themes
 - [x] Motion workspace tabs respect reduced-motion preferences and pass Left/Right/Home/End keyboard navigation
 - [x] Twenty-six populated desktop/mobile/light/dark states across every authenticated destination have zero horizontal overflow, zero rendered text below 10 px, and zero browser console errors
@@ -92,10 +99,12 @@ Last run: 2026-07-09
 - [x] Actual d.tech text-layer PDF parses 50 completed rows with no parser conflicts and `aiUsed: false`
 - [x] Actual d.tech PDF produces 270 GPA credits, 200 weighted credits, and 45 excluded pass credits
 - [x] All 17 college rows in the regression PDF match exact SMCCD records
+- [x] Official 120-row d.tech/SMCCD equivalency artifact validates for unique codes, units, credits, requirement area, and high-school equivalent
 - [x] Exact transcript course names and aliases match official catalog records deterministically
 - [x] Supplied d.tech PDF aliases produce 30/40 Design Lab and 10/25 Personal Development credits with verified mappings
 - [x] Unmatched transcript courses remain custom and unverified
 - [x] Reviewed transcript rows import as completed with final grade, credits, grade level, and source provenance
+- [x] Reviewed transcript labels remain exact in the UI even when a broader catalog row supplies requirement mapping
 - [x] Existing planned catalog rows reconcile to completed instead of duplicating
 - [x] Completed users can replay onboarding, save changed profile preferences, or exit without persisting draft edits or changing existing courses
 - [x] Confidence and review state remain visible and editable

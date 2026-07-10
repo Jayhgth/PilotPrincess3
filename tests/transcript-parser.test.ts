@@ -13,6 +13,7 @@ GR Course S0 CR S1 CR S2 CR GR Course S0 CR S1 CR S2 CR
 Methods:Java
 A 10.0
 24-25 Design Tech High School
+10 * Chemistry A 5.0 A 5.0
 10 * D.Lab: CoDesigners Honors A 5.0 A- 5.0
 Comments
 Legend
@@ -22,8 +23,8 @@ describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.1.0");
-    expect(result.courses).toHaveLength(5);
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.2.0");
+    expect(result.courses).toHaveLength(6);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
     expect(result.courses[0]).toMatchObject({
@@ -39,7 +40,10 @@ describe("deterministic d.tech transcript parser", () => {
       letter_grade: "P",
       subject: "Personal Development",
       credits: 2.5,
-      weighted: null
+      weighted: false
+    });
+    expect(result.courses.find((course) => course.course_name === "Chemistry")).toMatchObject({
+      weighted: false
     });
   });
 
