@@ -64,13 +64,14 @@ Last updated: 2026-07-09
 
 - Official `@openai/codex-sdk` integration isolated behind authenticated Astro API routes.
 - Structured-output Zod and JSON schemas for source extraction, summaries, plan explanations, and simulator explanations.
-- T3code-inspired server boundary and lifecycle management without copying its code.
+- T3 Code-inspired server boundary and lifecycle management without copying its code.
+- The default runtime is `gpt-5.5` with low reasoning. The bounded diagnostics path omits its synthetic welcome message from model history and disables unrelated Codex plugins, apps, shell tools, hooks, goals, and multi-agent features to reduce startup context and latency.
 - Maximum two concurrent turns, bounded timeouts, per-turn scratch directories, cleanup, read-only sandbox, no network/web search, and no approvals.
 - Prompt-injection boundaries treat all uploads as untrusted data and forbid invention or tool use.
 - Authenticated source parsing accepts extracted text and local image attachments, records jobs/results/latency/fallback state, and always creates a reviewable result.
 - A dedicated transcript prompt excludes planned or in-progress rows, preserves explicit evidence, and never imports a course until the student confirms it.
 - Deterministic planners and calculators remain functional when Codex is unavailable.
-- The authenticated AI connection screen exposes credential mode, model, concurrency, the complete feature boundary, and a bounded conversational test with model and latency on each response.
+- The authenticated AI connection screen uses a T3 Code-style provider probe and exposes connected/unavailable/checking states, authentication method, model, reasoning effort, Codex CLI version, last check time, concurrency, sandbox policy, the complete feature boundary, and a separate live generation check.
 - The AI conversation explicitly cannot access student records, files, the browser, or tools and explains that a successful message proves only the authenticated server-side Codex path and structured response.
 - Codex is explicitly excluded from text-based transcript parsing, graduation, GPA, workload, SMCCD progress, and other deterministic planning calculations.
 
@@ -90,7 +91,8 @@ Last updated: 2026-07-09
 - Remote recovery smoke test: recovery redirect generation, token verification, password update, and login with the replacement password all pass.
 - Supabase Auth site URL and redirect allowlist now target Astro on port 4321, including `/reset-password` through the local wildcard entries.
 - Authenticated Codex source parse: HTTP 200, structured output, 2 review items, `needs_review`, and `likely` confidence.
-- Authenticated Codex connectivity test: HTTP 200 with the configured `gpt-5.4` runtime; the live diagnostics UI returned the requested response in 5,938 ms and kept the server credential private.
+- Authenticated Codex connectivity test: HTTP 200 with the configured `gpt-5.5` runtime at low reasoning; the live diagnostics UI returned the requested response in 6,358 ms and kept the server credential private. A separate live chat response correctly reported the selected model and reasoning effort in 5,521 ms.
+- AI connection browser QA: connected-provider metadata, live-check feedback, and model response metadata were reviewed in light and dark themes at desktop and 390x844 mobile sizes, with zero horizontal overflow.
 - Live transcript onboarding: 7 completed rows parsed and catalog matched, all 7 imported with provenance, all stored as grade 9 completions, GPA recalculated to 3.67, and selected English/Mathematics progress recalculated.
 - Actual `DTech June 2026.pdf` regression: deterministic text extraction returned 50 completed rows with no parser conflicts and `aiUsed` false. The calculation reproduces the PDF's 4.00 unweighted and 4.74 weighted GPA from 270 GPA credits, 200 weighted credits, and 45 excluded pass credits; all 17 community-college rows matched exact SMCCD catalog records.
 - Live import against the linked project matched the four shortened Design Lab and Personal Development labels from the supplied PDF and produced 30/40 Design Lab credits and 10/25 Personal Development credits with no unverified credits in either area.

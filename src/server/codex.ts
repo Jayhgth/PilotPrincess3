@@ -1,12 +1,30 @@
 import { Codex, type Input, type Usage, type UserInput } from "@openai/codex-sdk";
+import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { ZodType } from "zod";
 
 const DEFAULT_TIMEOUT_MS = 9000;
-const DEFAULT_MODEL = "gpt-5.4";
+const DEFAULT_MODEL = "gpt-5.5";
+const DEFAULT_REASONING_EFFORT = "low" as const;
 const MAX_CONCURRENT_TURNS = 2;
+const PROVIDER_PROBE_TTL_MS = 60_000;
+const execFileAsync = promisify(execFile);
+
+type ProviderStatus = "ready" | "needs_auth" | "unavailable";
+
+interface ProviderProbe {
+  providerStatus: ProviderStatus;
+  providerMessage: string;
+  authStatus: "configured" | "authenticated" | "unauthenticated" | "unknown";
+  cliVersion: string | null;
+  checkedAt: string;
+}
+
+let providerProbeCache: { expiresAt: number; value: Promise<ProviderProbe> } | null = null;
 
 class TurnLimiter {
   private active = 0;
@@ -95,7 +113,17 @@ function createCodex() {
   return new Codex({
     ...(apiKey ? { apiKey } : {}),
     config: {
-      show_raw_agent_reasoning: false
+      show_raw_agent_reasoning: false,
+      features: {
+        apps: false,
+        goals: false,
+        hooks: false,
+        multi_agent: false,
+        plugins: false,
+        remote_plugin: false,
+        shell_tool: false,
+        unified_exec: false
+      }
     }
   });
 }
@@ -103,12 +131,87 @@ function createCodex() {
 export function codexRuntimeStatus() {
   const apiKeyConfigured = Boolean(process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY);
   return {
-    configured: apiKeyConfigured,
+    apiKeyConfigured,
     credentialMode: apiKeyConfigured ? "server_api_key" : "local_codex_login",
     localAuthFallbackAvailable: !apiKeyConfigured,
     model: process.env.CODEX_MODEL ?? DEFAULT_MODEL,
+    reasoningEffort: DEFAULT_REASONING_EFFORT,
     maxConcurrentTurns: MAX_CONCURRENT_TURNS,
+    runtime: "Official Codex SDK",
+    accessPolicy: "Read-only sandbox, tools and network disabled",
     features: CODEX_FEATURES
+  };
+}
+
+function resolveCodexCliScript() {
+  const sdkEntry = import.meta.resolve("@openai/codex-sdk");
+  return createRequire(sdkEntry).resolve("@openai/codex/bin/codex.js");
+}
+
+async function runProviderProbe(): Promise<ProviderProbe> {
+  const checkedAt = new Date().toISOString();
+  const apiKeyConfigured = Boolean(process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY);
+  let cliVersion: string | null = null;
+
+  try {
+    const cliScript = resolveCodexCliScript();
+    const versionResult = await execFileAsync(process.execPath, [cliScript, "--version"], {
+      timeout: 3000,
+      windowsHide: true
+    });
+    cliVersion = versionResult.stdout.trim().replace(/^codex-cli\s+/, "") || null;
+
+    if (apiKeyConfigured) {
+      return {
+        providerStatus: "ready",
+        providerMessage: "The bundled Codex runtime and a server API key are configured.",
+        authStatus: "configured",
+        cliVersion,
+        checkedAt
+      };
+    }
+
+    let authenticated = false;
+    try {
+      const authResult = await execFileAsync(process.execPath, [cliScript, "login", "status"], {
+        timeout: 3000,
+        windowsHide: true
+      });
+      authenticated = /logged in/i.test(`${authResult.stdout}\n${authResult.stderr}`);
+    } catch {
+      // An unauthenticated CLI exits non-zero, but the installed provider is still available.
+    }
+    return {
+      providerStatus: authenticated ? "ready" : "needs_auth",
+      providerMessage: authenticated
+        ? "The bundled Codex runtime found an authenticated local Codex session."
+        : "The Codex runtime is installed, but no authenticated local session was found.",
+      authStatus: authenticated ? "authenticated" : "unauthenticated",
+      cliVersion,
+      checkedAt
+    };
+  } catch {
+    return {
+      providerStatus: "unavailable",
+      providerMessage: "The bundled Codex runtime could not be started on this server.",
+      authStatus: "unknown",
+      cliVersion,
+      checkedAt
+    };
+  }
+}
+
+export async function probeCodexRuntimeStatus(options: { force?: boolean } = {}) {
+  const now = Date.now();
+  if (options.force || !providerProbeCache || providerProbeCache.expiresAt <= now) {
+    providerProbeCache = {
+      expiresAt: now + PROVIDER_PROBE_TTL_MS,
+      value: runProviderProbe()
+    };
+  }
+  return {
+    ...codexRuntimeStatus(),
+    ...(await providerProbeCache.value)
   };
 }
 
@@ -127,7 +230,7 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
     const model = process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
-      modelReasoningEffort: options.reasoningEffort ?? "medium",
+      modelReasoningEffort: options.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
       sandboxMode: "read-only",
       approvalPolicy: "never",
       networkAccessEnabled: false,

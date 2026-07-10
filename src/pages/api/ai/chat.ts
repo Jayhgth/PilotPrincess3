@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { runCodexStructured } from "@/server/codex";
+import { codexRuntimeStatus, runCodexStructured } from "@/server/codex";
 
 export const prerender = false;
 
@@ -15,17 +15,15 @@ const requestSchema = z.object({
 });
 
 const responseSchema = z.object({
-  reply: z.string().min(1).max(1200),
-  connection_summary: z.string().min(1).max(160)
+  reply: z.string().min(1).max(1200)
 });
 
 const responseJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["reply", "connection_summary"],
+  required: ["reply"],
   properties: {
-    reply: { type: "string" },
-    connection_summary: { type: "string" }
+    reply: { type: "string" }
   }
 } as const;
 
@@ -39,6 +37,7 @@ export const POST: APIRoute = async ({ request }) => {
   const transcript = parsed.data.messages
     .map((message) => `${message.role === "user" ? "Student" : "Codex"}: ${message.content}`)
     .join("\n\n");
+  const runtime = codexRuntimeStatus();
 
   try {
     const result = await runCodexStructured({
@@ -47,7 +46,7 @@ export const POST: APIRoute = async ({ request }) => {
         "Respond to the final student message in this bounded AI integration test.",
         "Use one to four concise sentences. Do not claim access to any student record, file, database, or tool.",
         "If asked what this test proves, explain that it verifies an authenticated server-side Codex request and structured response, not every product feature.",
-        "Set connection_summary to a short factual statement describing that this response completed successfully.",
+        `The server selected ${runtime.model} with ${runtime.reasoningEffort} reasoning for this request. Treat that runtime metadata as authoritative and state it plainly when asked.`,
         `CONVERSATION:\n${transcript}`
       ].join("\n\n"),
       schema: responseSchema,
@@ -70,8 +69,8 @@ export const POST: APIRoute = async ({ request }) => {
     return new Response(JSON.stringify({
       ok: true,
       reply: result.value.reply,
-      connectionSummary: result.value.connection_summary,
       model: result.model,
+      reasoningEffort: runtime.reasoningEffort,
       latencyMs: result.latencyMs,
       testedAt: new Date().toISOString()
     }), { headers: { "content-type": "application/json" } });

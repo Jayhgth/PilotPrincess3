@@ -53,7 +53,7 @@ Strict final grade: **98/100**. The workspace is calm, readable, and usable on d
 - Populated redesign QA: 14 Done, 6 Planned, and 4 In progress records remained distinguishable without horizontal overflow; desktop editing stayed inside its column and mobile editing stayed inside 390 px.
 - Live transcript totals from the supplied d.tech PDF: Design Lab 30/40 and Personal Development 10/25.
 - Live transcript GPA from the supplied d.tech PDF: 4.00 unweighted and 4.74 weighted, with 45 pass credits visibly excluded.
-- Live AI conversation: authenticated structured response from `gpt-5.4`, including per-response latency.
+- Live AI conversation: authenticated structured response from the configured `gpt-5.5` low-reasoning runtime, including per-response latency.
 
 ## Rubric
 

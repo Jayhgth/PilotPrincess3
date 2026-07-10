@@ -17,17 +17,27 @@ interface CodexFeatureStatus {
 }
 
 interface CodexRuntimeStatus {
-  configured: boolean;
+  apiKeyConfigured: boolean;
   credentialMode: "server_api_key" | "local_codex_login";
+  providerStatus: "ready" | "needs_auth" | "unavailable";
+  providerMessage: string;
+  authStatus: "configured" | "authenticated" | "unauthenticated" | "unknown";
+  cliVersion: string | null;
+  checkedAt: string;
   model: string;
+  reasoningEffort: "low";
   maxConcurrentTurns: number;
+  runtime: string;
+  accessPolicy: string;
   features: CodexFeatureStatus[];
 }
 
 interface CodexTestResult {
   message: string;
   model?: string;
+  reasoningEffort?: string;
   latencyMs?: number;
+  testedAt?: string;
 }
 
 interface ChatMessage {
@@ -35,6 +45,7 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   model?: string;
+  reasoningEffort?: string;
   latencyMs?: number;
 }
 
@@ -47,7 +58,8 @@ const INITIAL_MESSAGE: ChatMessage = {
 export default function AiStatusPanel({ session }: { session: Session }) {
   const [status, setStatus] = useState<CodexRuntimeStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<CodexTestResult | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
@@ -65,7 +77,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
         if (active) setStatus(payload);
       })
       .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : "AI connection details could not be loaded.");
+        if (active) setStatusError(caught instanceof Error ? caught.message : "AI connection details could not be loaded.");
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -75,7 +87,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
 
   async function testConnection() {
     setTesting(true);
-    setError(null);
+    setRequestError(null);
     setTestResult(null);
     try {
       const response = await fetch("/api/ai/test", {
@@ -90,7 +102,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
       if (!response.ok) throw new Error(payload.error ?? "Codex connection test failed.");
       setTestResult(payload);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Codex connection test failed.");
+      setRequestError(caught instanceof Error ? caught.message : "Codex connection test failed.");
     } finally {
       setTesting(false);
     }
@@ -106,7 +118,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
     setMessages(nextMessages);
     setDraft("");
     setSending(true);
-    setError(null);
+    setRequestError(null);
     try {
       const response = await fetch("/api/ai/chat", {
         method: "POST",
@@ -115,12 +127,16 @@ export default function AiStatusPanel({ session }: { session: Session }) {
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          messages: nextMessages.slice(-8).map(({ role, content: messageContent }) => ({ role, content: messageContent }))
+          messages: nextMessages
+            .filter((message) => message.id !== INITIAL_MESSAGE.id)
+            .slice(-8)
+            .map(({ role, content: messageContent }) => ({ role, content: messageContent }))
         })
       });
       const payload = await response.json() as {
         reply?: string;
         model?: string;
+        reasoningEffort?: string;
         latencyMs?: number;
         error?: string;
       };
@@ -130,14 +146,33 @@ export default function AiStatusPanel({ session }: { session: Session }) {
         role: "assistant",
         content: payload.reply!,
         model: payload.model,
+        reasoningEffort: payload.reasoningEffort,
         latencyMs: payload.latencyMs
       }]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Codex diagnostics chat failed.");
+      setRequestError(caught instanceof Error ? caught.message : "Codex diagnostics chat failed.");
     } finally {
       setSending(false);
     }
   }
+
+  const connectionState = status?.providerStatus === "ready"
+    ? "connected"
+    : status
+      ? "unavailable"
+      : "checking";
+  const connectionTitle = connectionState === "connected"
+    ? "Codex connected"
+    : connectionState === "checking"
+      ? "Checking Codex"
+      : "Codex not connected";
+  const connectionDetail = status?.providerMessage ?? "Inspecting the server runtime and authentication state.";
+  const lastCheckedAt = testResult?.testedAt ?? status?.checkedAt;
+  const authenticationLabel = status?.credentialMode === "server_api_key"
+    ? "Server API key"
+    : status?.authStatus === "authenticated"
+      ? "Local Codex login"
+      : "Not authenticated";
 
   return (
     <>
@@ -148,29 +183,56 @@ export default function AiStatusPanel({ session }: { session: Session }) {
         </div>
       </header>
 
-      {loading && <div className="ai-status-loading" role="status">Loading server configuration</div>}
-      {error && <div className="inline-alert error" role="alert"><Warning size={17} /> {error}</div>}
+      {loading && (
+        <section className="ai-connection-card checking ai-status-loading" role="status" aria-label="Checking Codex connection">
+          <div /><div /><div />
+          <span>Checking the Codex runtime and authentication</span>
+        </section>
+      )}
+      {statusError && <div className="inline-alert error" role="alert"><Warning size={17} /> {statusError}</div>}
 
       {status && (
         <div className="ai-status-page">
-          <section className="ai-runtime-strip" aria-label="Codex server configuration">
-            <dl>
-              <div><dt>Connection</dt><dd>{status.configured ? "Server API key" : "Local Codex login"}</dd></div>
+          <section className={`ai-connection-card ${connectionState}`} aria-labelledby="ai-connection-title" aria-live="polite">
+            <div className="ai-connection-summary">
+              <div className="ai-connection-heading">
+                {connectionState === "connected"
+                  ? <CheckCircle size={21} weight="fill" />
+                  : connectionState === "checking"
+                    ? <ArrowClockwise className="spin" size={20} />
+                    : <Warning size={20} weight="fill" />}
+                <div>
+                  <h2 id="ai-connection-title">{connectionTitle}</h2>
+                  <p>{connectionDetail}</p>
+                </div>
+              </div>
+              <button className="secondary-button" type="button" onClick={() => void testConnection()} disabled={testing}>
+                {testing ? <ArrowClockwise className="spin" size={16} /> : <Cpu size={16} />}
+                {testing ? "Running live check" : "Run live check"}
+              </button>
+            </div>
+            <dl className="ai-connection-metadata">
+              <div><dt>Provider</dt><dd>{status.runtime}</dd></div>
+              <div><dt>Authentication</dt><dd>{authenticationLabel}</dd></div>
               <div><dt>Model</dt><dd>{status.model}</dd></div>
-              <div><dt>Capacity</dt><dd>{status.maxConcurrentTurns} concurrent requests</dd></div>
+              <div><dt>Reasoning</dt><dd>Low</dd></div>
+              <div><dt>CLI</dt><dd>{status.cliVersion ? `v${status.cliVersion}` : "Unavailable"}</dd></div>
+              <div><dt>Last checked</dt><dd>{lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "Not checked"}</dd></div>
             </dl>
-            <button className="secondary-button" type="button" onClick={() => void testConnection()} disabled={testing}>
-              {testing ? <ArrowClockwise className="spin" size={16} /> : <Cpu size={16} />}
-              {testing ? "Running check" : "Quick connection check"}
-            </button>
+            <div className="ai-connection-policy">
+              <ShieldCheck size={16} />
+              <span>{status.accessPolicy}. Capacity is limited to {status.maxConcurrentTurns} concurrent requests.</span>
+            </div>
           </section>
 
           {testResult && (
             <div className="inline-alert success ai-test-result" role="status">
               <CheckCircle size={18} weight="fill" />
-              <span><strong>{testResult.message}</strong>{testResult.latencyMs !== undefined ? ` ${testResult.latencyMs} ms using ${testResult.model}.` : ""}</span>
+              <span><strong>{testResult.message}</strong>{testResult.latencyMs !== undefined ? ` ${testResult.model} completed the live check with ${testResult.reasoningEffort ?? "low"} reasoning in ${testResult.latencyMs} ms.` : ""}</span>
             </div>
           )}
+
+          {requestError && <div className="inline-alert error" role="alert"><Warning size={17} /> {requestError}</div>}
 
           <section className="ai-chat-section" aria-labelledby="ai-chat-title">
             <header>
@@ -182,7 +244,13 @@ export default function AiStatusPanel({ session }: { session: Session }) {
                 <article className={`ai-chat-message ${message.role}`} key={message.id}>
                   <span>{message.role === "user" ? "You" : "Codex"}</span>
                   <p>{message.content}</p>
-                  {message.model && <small>{message.model} responded in {message.latencyMs} ms</small>}
+                  {message.model && (
+                    <div className="ai-message-metadata">
+                      <span>{message.model}</span>
+                      <span>{message.reasoningEffort ?? "low"} reasoning</span>
+                      <span>{message.latencyMs} ms</span>
+                    </div>
+                  )}
                 </article>
               ))}
               {sending && <div className="ai-chat-pending" role="status"><ArrowClockwise className="spin" size={15} /> Waiting for Codex</div>}

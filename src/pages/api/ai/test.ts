@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { runCodexStructured } from "@/server/codex";
+import { codexRuntimeStatus, runCodexStructured } from "@/server/codex";
 
 export const prerender = false;
 
@@ -25,6 +25,7 @@ export const POST: APIRoute = async ({ request }) => {
   if (!auth) return jsonError("Authentication required.", 401);
 
   try {
+    const runtime = codexRuntimeStatus();
     const result = await runCodexStructured({
       feature: "connection_test",
       prompt: "Return ok true and the message Codex connection verified. Do not inspect files or use tools.",
@@ -47,6 +48,7 @@ export const POST: APIRoute = async ({ request }) => {
       ok: true,
       message: result.value.message,
       model: result.model,
+      reasoningEffort: runtime.reasoningEffort,
       latencyMs: result.latencyMs,
       testedAt: new Date().toISOString()
     }), { headers: { "content-type": "application/json" } });

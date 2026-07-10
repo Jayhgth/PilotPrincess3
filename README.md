@@ -33,7 +33,7 @@ The planning data is intentionally focused on d.tech and currently uses clearly 
    ```env
    PUBLIC_SUPABASE_URL=https://zqkzgmwptdsaqbzrjngt.supabase.co
    PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
-   CODEX_MODEL=gpt-5.4
+   CODEX_MODEL=gpt-5.5
    CODEX_TIMEOUT_MS=9000
    ```
 
