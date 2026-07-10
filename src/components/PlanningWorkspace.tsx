@@ -227,6 +227,7 @@ export default function PlanningWorkspace() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [moreNavOpen, setMoreNavOpen] = useState(false);
+  const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [courseStatus, setCourseStatus] = useState<CourseStatusView>("current");
@@ -1058,7 +1059,7 @@ export default function PlanningWorkspace() {
     );
   }
 
-  if (!profile.onboarding_complete) {
+  if (!profile.onboarding_complete || replayingOnboarding) {
     return (
       <OnboardingFlow
         supabase={supabase}
@@ -1070,7 +1071,20 @@ export default function PlanningWorkspace() {
         mappings={mappings}
         activeVersion={activeVersion}
         existingPlanCourses={planCourses}
-        onComplete={loadWorkspace}
+        mode={replayingOnboarding ? "replay" : "initial"}
+        onComplete={async () => {
+          await loadWorkspace();
+          if (replayingOnboarding) {
+            setReplayingOnboarding(false);
+            setView("profile");
+            setToast("Onboarding changes saved.");
+          }
+        }}
+        onExit={replayingOnboarding ? () => {
+          setReplayingOnboarding(false);
+          setView("profile");
+          setToast("Onboarding exited without saving changes.");
+        } : undefined}
         onSignOut={signOut}
       />
     );
@@ -1180,7 +1194,7 @@ export default function PlanningWorkspace() {
     };
     return (
       <div className="profile-page page-frame">
-        <PageHeader title="Student profile" description="Each answer below changes a visible planning result." />
+        <PageHeader title="Student profile" description="Each answer below changes a visible planning result." actions={<button className="secondary-button" type="button" onClick={() => setReplayingOnboarding(true)}><ArrowClockwise size={17} /> Run onboarding again</button>} />
         <section className="form-section profile-form">
           <div className="profile-subsection">
             <header><h2>Student and plan</h2><p>Sets the school years and planning window.</p></header>

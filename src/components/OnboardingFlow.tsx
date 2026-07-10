@@ -2,6 +2,7 @@ import {
   ArrowLeftIcon as ArrowLeft,
   ArrowRightIcon as ArrowRight,
   CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
   FileTextIcon as FileText,
   GraduationCapIcon as GraduationCap,
   PathIcon as Path,
@@ -64,7 +65,9 @@ interface OnboardingFlowProps {
   mappings: CourseRequirementMapping[];
   activeVersion: PlanVersion;
   existingPlanCourses: PlanCourse[];
+  mode?: "initial" | "replay";
   onComplete: () => Promise<void>;
+  onExit?: () => void;
   onSignOut: () => Promise<void>;
 }
 
@@ -78,9 +81,12 @@ export default function OnboardingFlow({
   mappings,
   activeVersion,
   existingPlanCourses,
+  mode = "initial",
   onComplete,
+  onExit,
   onSignOut
 }: OnboardingFlowProps) {
+  const isReplay = mode === "replay";
   const [stage, setStage] = useState<OnboardingStage>("student");
   const [profile, setProfile] = useState<StudentProfile>({
     ...initialProfile,
@@ -111,6 +117,7 @@ export default function OnboardingFlow({
   const selectedRequirementCount = profile.tracker_mode === "full"
     ? requirements.length
     : profile.tracked_requirement_areas.length;
+  const completedCourseCount = existingPlanCourses.filter((course) => course.status === "completed").length;
 
   const selectedTranscriptItems = useMemo(
     () => transcriptItems.filter((item) => selectedTranscriptIds.has(item.id)),
@@ -260,7 +267,7 @@ export default function OnboardingFlow({
   async function finishOnboarding() {
     setError(null);
     if (!validateStage()) return;
-    setBusyLabel("Creating your workspace");
+    setBusyLabel(isReplay ? "Saving onboarding changes" : "Creating your workspace");
     try {
       const selectedIds = [...selectedTranscriptIds];
       const rejectedIds = transcriptItems.filter((item) => !selectedTranscriptIds.has(item.id)).map((item) => item.id);
@@ -329,17 +336,18 @@ export default function OnboardingFlow({
         .from("plan_versions")
         .update({
           generation_config: {
+            ...activeVersion.generation_config,
             plan_start_grade: currentGrade,
             plan_end_grade: planEndGrade,
             tracker_mode: completedProfile.tracker_mode,
             tracked_requirement_areas: completedProfile.tracked_requirement_areas,
-            transcript_courses_imported: candidates.length
+            ...(isReplay ? {} : { transcript_courses_imported: candidates.length })
           }
         })
         .eq("id", activeVersion.id);
       if (versionError) throw versionError;
       await supabase.rpc("log_app_event", {
-        event_name: "onboarding_completed",
+        event_name: isReplay ? "onboarding_replayed" : "onboarding_completed",
         properties: {
           plan_years: planYears,
           tracker_mode: completedProfile.tracker_mode,
@@ -358,7 +366,10 @@ export default function OnboardingFlow({
     <main className="onboarding-shell">
       <header className="onboarding-topbar">
         <a className="wordmark" href="/app"><span className="wordmark-mark">PP</span><span>Pilot Princess</span></a>
-        <button className="quiet-button" onClick={() => void onSignOut()} type="button">Sign out</button>
+        <div className="onboarding-topbar-actions">
+          {isReplay && <span>Changes save only when you finish.</span>}
+          <button className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</button>
+        </div>
       </header>
       <div className="onboarding-layout">
         <aside className="onboarding-progress" aria-label="Onboarding progress">
@@ -375,7 +386,7 @@ export default function OnboardingFlow({
             <strong>Grade {currentGrade} to {planEndGrade}</strong>
             <span>{planYears} school {planYears === 1 ? "year" : "years"}</span>
             <span>{selectedRequirementCount} requirement areas</span>
-            <span>{selectedTranscriptIds.size} completed courses ready</span>
+            <span>{isReplay ? `${completedCourseCount} saved courses kept` : `${selectedTranscriptIds.size} completed courses ready`}</span>
           </div>
         </aside>
 
@@ -432,8 +443,11 @@ export default function OnboardingFlow({
           </>}
 
           {stage === "transcript" && <>
-            <header><FileText size={25} weight="duotone" /><h1>Add completed classes</h1><p>Upload a transcript or paste its text. Nothing counts until you review and import it.</p></header>
-            {transcriptItems.length === 0 ? <div className="transcript-entry">
+            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates your profile and planning preferences without changing saved courses." : "Upload a transcript or paste its text. Nothing counts until you review and import it."}</p></header>
+            {isReplay ? <div className="onboarding-replay-summary">
+              <CheckCircle size={20} weight="duotone" />
+              <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save the profile, plan window, and tracker choices from this walkthrough. Exit onboarding to discard them all.</p></div>
+            </div> : transcriptItems.length === 0 ? <div className="transcript-entry">
               <label className="form-field"><span>Transcript label</span><input value={transcriptTitle} onChange={(event) => setTranscriptTitle(event.target.value)} /></label>
               <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setTranscriptFile(event.target.files?.[0] ?? null)} /></label>
               <div className="or-divider"><span>or paste text</span></div>
@@ -457,7 +471,7 @@ export default function OnboardingFlow({
             {stageIndex > 0 ? <button className="secondary-button" type="button" onClick={previousStage} disabled={Boolean(busyLabel)}><ArrowLeft size={17} /> Back</button> : <span />}
             {stage !== "transcript"
               ? <button className="primary-button" type="button" onClick={nextStage}>Continue <ArrowRight size={17} /></button>
-              : <button className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel === "Creating your workspace" ? "Creating workspace" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></button>}
+              : <button className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel ? (isReplay ? "Saving changes" : "Creating workspace") : isReplay ? "Save changes" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></button>}
           </footer>
         </section>
       </div>
