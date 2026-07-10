@@ -120,6 +120,14 @@ const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
 
+// Demo-only placement metadata. The durable product entry point is the
+// Student profile "Review setup" action; remove this sidebar shortcut after demos.
+const DEMO_ONBOARDING_SHORTCUT = {
+  label: "Replay onboarding",
+  currentPlacement: "sidebar-footer",
+  intendedPlacement: "student-profile-review-setup"
+} as const;
+
 type CourseArea = "mine" | "dtech" | "smccd";
 const DEFAULT_SIMULATION: SimulationConfig = {
   majorDirection: "undecided",
@@ -1657,6 +1665,20 @@ export default function PlanningWorkspace() {
         </nav>
         <div className="sidebar-footer">
           <div className="school-chip"><GraduationCap size={18} weight="duotone" /><span><strong>{school.short_name}</strong><small>{school.source_year} sources</small></span></div>
+          <button
+            className="sidebar-utility"
+            data-demo-only="true"
+            data-current-placement={DEMO_ONBOARDING_SHORTCUT.currentPlacement}
+            data-intended-placement={DEMO_ONBOARDING_SHORTCUT.intendedPlacement}
+            onClick={() => {
+              setMobileNavOpen(false);
+              setReplayingOnboarding(true);
+            }}
+            type="button"
+          >
+            <ArrowClockwise size={17} />
+            <span>{DEMO_ONBOARDING_SHORTCUT.label}</span>
+          </button>
           <button className="sidebar-utility" onClick={toggleTheme} type="button">{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
           <button className="sidebar-utility" onClick={() => void signOut()} type="button"><SignOut size={17} /><span>Sign out</span></button>
         </div>

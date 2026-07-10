@@ -95,6 +95,11 @@ Separator rules:
 
 ## Page patterns
 
+### Sidebar utilities
+
+- Theme and sign-out controls live in the footer below school context.
+- `Replay onboarding` may appear above the theme control during demos only. Its permanent product home is Student profile under `Review setup`; retain the `data-demo-only` and intended-placement metadata until the sidebar shortcut is removed.
+
 ### Onboarding
 
 - One clear question per step with a 28px title and one short explanation.

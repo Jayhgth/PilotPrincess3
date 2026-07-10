@@ -108,6 +108,7 @@ Last run: 2026-07-10
 - [x] Reviewed transcript labels remain exact in the UI even when a broader catalog row supplies requirement mapping
 - [x] Existing planned catalog rows reconcile to completed instead of duplicating
 - [x] Completed users can replay onboarding, save changed profile preferences, or exit without persisting draft edits or changing existing courses
+- [x] Demo-only `Replay onboarding` appears above the sidebar theme control and carries machine-readable metadata pointing to Student profile as its intended permanent location
 - [x] Confidence and review state remain visible and editable
 - [x] Codex runs server-side with structured schema validation
 - [x] AI connection tab displays provider/auth status, model, reasoning effort, CLI version, last check, access policy, concurrency, and an explicit used/not-used feature matrix
