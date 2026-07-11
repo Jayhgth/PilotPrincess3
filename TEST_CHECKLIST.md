@@ -45,6 +45,7 @@ Before a production release, confirm all applicable items once:
 - [ ] Codex remains unavailable until the student explicitly approves, successfully tests the selected model, and saves; declining AI leaves deterministic planning usable.
 - [ ] Pilot image input accepts PNG, JPEG, and WebP by picker, paste, and drag/drop; shows removable previews; enforces eight images and 10 MB each; supports an image-only message; restores private signed previews after reload; and never sends a draft image before submit.
 - [ ] Pilot conversations can be archived from active history and restored from centered settings without deleting messages, attachments, events, or tool calls. Docked width and floating size/position survive reload; mobile removes movement and resize controls.
+- [ ] Student accounts do not render administrator or demo shortcuts. An administrator can open Admin settings, but reset remains disabled until `RESET`; an authorized reset clears owned database/storage records, restarts onboarding, and preserves the auth account and administrator membership.
 - [ ] Retrieved app-guidance titles are readable, relevant to the active page, and do not replace live student-data reads.
 - [ ] Manual mode shows exact arguments, does nothing when rejected, and revalidates normal product rules when confirmed.
 - [ ] Auto-review shows its separate risk decision, applies only an approved low-risk proposal, and leaves destructive, grade-changing, identity-sensitive, uncertain, or high-risk proposals for the student.

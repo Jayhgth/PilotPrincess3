@@ -1,0 +1,136 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: rgb(9 11 13 / 0.56);
+  padding: 20px;
+  animation: admin-backdrop-in 150ms ease both;
+}
+
+.dialog {
+  width: min(620px, 100%);
+  max-height: min(720px, calc(100dvh - 40px));
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 24px 64px rgb(8 10 12 / 0.28);
+  animation: admin-dialog-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.header {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px 10px 18px;
+}
+.header > div { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.header > div > span:last-child { display: grid; min-width: 0; gap: 1px; }
+.header strong { color: var(--ink); font-size: 14px; }
+.header small { color: var(--ink-faint); font-size: 11px; }
+.icon { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.header button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+}
+.header button:hover { background: var(--surface-muted); color: var(--ink); }
+
+.body { display: grid; gap: 22px; padding: 22px; }
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--success);
+  font-size: 12px;
+}
+.identity > span { display: grid; gap: 1px; }
+.identity strong { color: var(--ink); font-size: 12px; }
+.identity small { color: var(--ink-faint); font-size: 11px; }
+
+.intro { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 11px; }
+.intro > svg { margin-top: 2px; color: var(--accent); }
+.intro h2 { margin: 0; color: var(--ink); font-size: 16px; letter-spacing: -0.02em; }
+.intro p { max-width: 62ch; margin: 5px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+
+.resetSection {
+  display: grid;
+  gap: 16px;
+  border-radius: 9px;
+  background: var(--surface-muted);
+  padding: 17px;
+}
+.resetSection h3 { margin: 0; color: var(--ink); font-size: 14px; letter-spacing: -0.015em; }
+.resetSection p { max-width: 66ch; margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.resetButton, .confirmReset {
+  display: inline-flex;
+  min-height: 38px;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line));
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--danger);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.resetButton:hover { background: var(--danger-soft); }
+
+.confirmation { display: grid; gap: 8px; }
+.confirmation label { color: var(--ink-soft); font-size: 12px; }
+.confirmation label strong { color: var(--ink); }
+.confirmation input {
+  min-height: 40px;
+  border: 1px solid var(--control-line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 11px;
+  font-size: 13px;
+}
+.confirmation > div { display: flex; justify-content: flex-end; gap: 7px; }
+.confirmation > div > button:first-child {
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.confirmation > div > button:first-child:hover { background: var(--surface-raised); color: var(--ink); }
+.confirmReset { background: var(--danger); color: #fff; }
+.confirmReset:hover:not(:disabled) { filter: brightness(0.94); }
+
+.error { display: flex; align-items: flex-start; gap: 8px; color: var(--danger); font-size: 12px; line-height: 1.5; }
+.error svg { flex: 0 0 auto; margin-top: 1px; }
+
+@keyframes admin-backdrop-in { from { opacity: 0; } }
+@keyframes admin-dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.99); } }
+
+@media (max-width: 560px) {
+  .backdrop { align-items: end; padding: 10px; }
+  .dialog { max-height: calc(100dvh - 20px); border-radius: 12px; }
+  .body { padding: 18px; }
+  .confirmation > div { display: grid; }
+  .confirmation > div button, .resetButton, .confirmReset { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop, .dialog { animation: none; }
+}

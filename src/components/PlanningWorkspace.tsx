@@ -9,6 +9,7 @@ import {
   FileArrowUpIcon as FileArrowUp,
   FlagIcon as Flag,
   FloppyDiskIcon as FloppyDisk,
+  GearSixIcon as GearSix,
   GaugeIcon as Gauge,
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
@@ -65,6 +66,7 @@ import {
   type TranscriptCoursePayload
 } from "@/lib/transcript";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
+import AdminSettingsDialog from "@/components/AdminSettingsDialog";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
@@ -250,6 +252,8 @@ export default function PlanningWorkspace() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [moreNavOpen, setMoreNavOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
@@ -357,7 +361,8 @@ export default function PlanningWorkspace() {
         planResult,
         activityResult,
         taskResult,
-        reviewResult
+        reviewResult,
+        adminResult
       ] = await Promise.all([
         supabase.from("schools").select("*").eq("slug", "design-tech-high-school").single(),
         supabase.from("student_profiles").select("*").eq("id", userId).single(),
@@ -369,7 +374,8 @@ export default function PlanningWorkspace() {
         supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
         supabase.from("activities").select("*").eq("user_id", userId).order("created_at"),
         supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
-        supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false })
+        supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+        supabase.rpc("is_app_admin")
       ]);
       const firstError = [
         schoolResult.error,
@@ -435,6 +441,7 @@ export default function PlanningWorkspace() {
       setActivities((activityResult.data ?? []) as unknown as Activity[]);
       setTasks((taskResult.data ?? []) as unknown as TimelineTask[]);
       setReviewItems(loadedReviewItems);
+      setIsAdmin(adminResult.data === true && !adminResult.error);
       setSelectedTranscriptIds((current) => {
         const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
         const availableIds = loadedReviewItems
@@ -1798,34 +1805,39 @@ export default function PlanningWorkspace() {
         </nav>
         <div className="sidebar-footer">
           <div className="school-chip"><GraduationCap size={18} weight="duotone" /><span><strong>{school.short_name}</strong><small>{school.source_year} sources</small></span></div>
-          <button
-            className="sidebar-utility"
-            data-demo-only="true"
-            data-current-placement={DEMO_ONBOARDING_SHORTCUT.currentPlacement}
-            data-intended-placement={DEMO_ONBOARDING_SHORTCUT.intendedPlacement}
-            onClick={() => {
-              setMobileNavOpen(false);
-              setReplayingOnboarding(true);
-            }}
-            type="button"
-          >
-            <ArrowClockwise size={17} />
-            <span>{DEMO_ONBOARDING_SHORTCUT.label}</span>
-          </button>
-          <button
-            className="sidebar-utility"
-            data-demo-only="true"
-            data-current-placement={DEMO_LOGIN_SHORTCUT.currentPlacement}
-            data-intended-placement={DEMO_LOGIN_SHORTCUT.intendedPlacement}
-            onClick={() => {
-              setMobileNavOpen(false);
-              window.location.assign("/?demo=login");
-            }}
-            type="button"
-          >
-            <House size={17} />
-            <span>{DEMO_LOGIN_SHORTCUT.label}</span>
-          </button>
+          {isAdmin && <>
+            <button className="sidebar-utility" onClick={() => { setMobileNavOpen(false); setAdminSettingsOpen(true); }} type="button"><GearSix size={17} /><span>Admin settings</span></button>
+            <button
+              className="sidebar-utility"
+              data-demo-only="true"
+              data-admin-only="true"
+              data-current-placement={DEMO_ONBOARDING_SHORTCUT.currentPlacement}
+              data-intended-placement={DEMO_ONBOARDING_SHORTCUT.intendedPlacement}
+              onClick={() => {
+                setMobileNavOpen(false);
+                setReplayingOnboarding(true);
+              }}
+              type="button"
+            >
+              <ArrowClockwise size={17} />
+              <span>{DEMO_ONBOARDING_SHORTCUT.label}</span>
+            </button>
+            <button
+              className="sidebar-utility"
+              data-demo-only="true"
+              data-admin-only="true"
+              data-current-placement={DEMO_LOGIN_SHORTCUT.currentPlacement}
+              data-intended-placement={DEMO_LOGIN_SHORTCUT.intendedPlacement}
+              onClick={() => {
+                setMobileNavOpen(false);
+                window.location.assign("/?demo=login");
+              }}
+              type="button"
+            >
+              <House size={17} />
+              <span>{DEMO_LOGIN_SHORTCUT.label}</span>
+            </button>
+          </>}
           <button className="sidebar-utility" onClick={toggleTheme} type="button">{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
           <button className="sidebar-utility" onClick={() => void signOut()} type="button"><SignOut size={17} /><span>Sign out</span></button>
         </div>
@@ -1858,6 +1870,12 @@ export default function PlanningWorkspace() {
           } : current);
         }}
       /></Suspense>
+      {isAdmin && adminSettingsOpen && <AdminSettingsDialog
+        accessToken={session.access_token}
+        email={session.user.email ?? "Administrator account"}
+        onClose={() => setAdminSettingsOpen(false)}
+        onResetComplete={() => window.location.assign("/app?reset=1")}
+      />}
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}{toast}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
     </div>
