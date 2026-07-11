@@ -301,6 +301,19 @@ export interface AiMessage {
   content: string;
   page_context: Record<string, unknown>;
   created_at: string;
+  attachments?: AiMessageAttachment[];
+}
+
+export interface AiMessageAttachment {
+  id: string;
+  conversation_id: string;
+  message_id: string;
+  user_id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  preview_url: string;
+  created_at: string;
 }
 
 export interface AiEvent {

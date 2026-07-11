@@ -43,6 +43,7 @@ Before a production release, confirm all applicable items once:
 - [ ] Representative authenticated desktop and 390px states pass in both themes with keyboard focus and no horizontal overflow.
 - [ ] A live assistant turn persists across reload, shows readable reasoning/tool activity, and answers from an allowlisted student-data read.
 - [ ] Codex remains unavailable until the student explicitly approves, successfully tests the selected model, and saves; declining AI leaves deterministic planning usable.
+- [ ] Pilot image input accepts PNG, JPEG, and WebP by picker, paste, and drag/drop; shows removable previews; enforces eight images and 10 MB each; supports an image-only message; restores private signed previews after reload; and never sends a draft image before submit.
 - [ ] Retrieved app-guidance titles are readable, relevant to the active page, and do not replace live student-data reads.
 - [ ] Manual mode shows exact arguments, does nothing when rejected, and revalidates normal product rules when confirmed.
 - [ ] Auto-review shows its separate risk decision, applies only an approved low-risk proposal, and leaves destructive, grade-changing, identity-sensitive, uncertain, or high-risk proposals for the student.

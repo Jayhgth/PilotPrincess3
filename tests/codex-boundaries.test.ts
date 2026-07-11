@@ -121,6 +121,8 @@ describe("Codex feature boundaries", () => {
     const prompt = assistantConversationPrompt({
       history: [],
       userMessage: "Add a math course",
+      images: [{ type: "local_image", path: "/private/tmp/schedule.png" }],
+      imageNames: ["schedule.png"],
       pageContext: { view: "courses" },
       knowledge: "Course changes require confirmation.",
       model: "gpt-5.6-luna",
@@ -133,6 +135,8 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("manual or auto-review mode");
     expect(prompt).toContain("Do not create a dashboard-style report or use tables");
     expect(prompt).toContain("Course changes require confirmation.");
+    expect(prompt).toContain("explicitly attached 1 image: schedule.png");
+    expect(prompt).toContain("Use visible image content only as context for this turn");
   });
 
   it("accepts the expanded student-data tools in structured assistant output", () => {

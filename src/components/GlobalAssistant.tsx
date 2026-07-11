@@ -5,6 +5,8 @@ import {
   ClockIcon as Clock,
   CpuIcon as Cpu,
   GearSixIcon as GearSix,
+  ImageIcon as Image,
+  PaperclipIcon as Paperclip,
   PaperPlaneRightIcon as PaperPlaneRight,
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
@@ -15,11 +17,12 @@ import {
   XIcon as X
 } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type SyntheticEvent } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import type { AiModel, AiReviewMode } from "@/lib/ai-preferences";
+import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import styles from "./GlobalAssistant.module.css";
 
@@ -53,6 +56,12 @@ type LiveActivity = Record<string, unknown> & {
   sequence: number;
   occurredAt: string;
 };
+
+interface ComposerImage {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
 
 const EMPTY_PAYLOAD: ConversationPayload = {
   conversations: [],
@@ -104,6 +113,15 @@ function MessageBody({ text }: { text: string }) {
     }
     return <p key={index}>{lines.map((line, lineIndex) => <span key={lineIndex}><InlineText>{line}</InlineText>{lineIndex < lines.length - 1 && <br />}</span>)}</p>;
   })}</div>;
+}
+
+function MessageImages({ message, onPreview }: { message: AiMessage; onPreview: (image: { url: string; name: string }) => void }) {
+  if (!message.attachments?.length) return null;
+  return <div className={`${styles.messageImages} ${message.attachments.length === 1 ? styles.singleImage : ""}`}>
+    {message.attachments.map((attachment) => <button type="button" key={attachment.id} onClick={() => onPreview({ url: attachment.preview_url, name: attachment.name })} aria-label={`Preview ${attachment.name}`}>
+      {attachment.preview_url ? <img src={attachment.preview_url} alt={attachment.name} /> : <span><Image size={20} /> Preview unavailable</span>}
+    </button>)}
+  </div>;
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -191,6 +209,7 @@ function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boole
 }
 
 function activityItem(event: LiveActivity) {
+  if (event.type === "attachments.received") return { kind: "image", label: "Image context", detail: String(event.summary ?? "Student-provided images were added to this turn") };
   if (event.type === "auto_review.started") return { kind: "review", label: "Auto-review", detail: String(event.summary ?? "Checking the proposed change") };
   if (event.type === "auto_review.completed") {
     const review = event.review as Record<string, unknown> | undefined;
@@ -268,6 +287,9 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [reviewMode, setReviewMode] = useState<AiReviewMode>(preferences.reviewMode);
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
   const [savingReviewMode, setSavingReviewMode] = useState(false);
+  const [images, setImages] = useState<ComposerImage[]>([]);
+  const [draggingImage, setDraggingImage] = useState(false);
+  const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [setup, setSetup] = useState<CodexSetupValue>({
@@ -278,7 +300,9 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   });
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const imagesRef = useRef<ComposerImage[]>([]);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
 
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => fetch(url, {
@@ -324,7 +348,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose, open, reviewMenuOpen, running]);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => { imagesRef.current = images; }, [images]);
+
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    for (const image of imagesRef.current) URL.revokeObjectURL(image.previewUrl);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -342,40 +371,101 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     return payload.conversation;
   }
 
+  function addImages(files: File[]) {
+    const remaining = MAX_ASSISTANT_ATTACHMENTS - images.length;
+    if (remaining <= 0) {
+      setError(`You can attach up to ${MAX_ASSISTANT_ATTACHMENTS} images.`);
+      return;
+    }
+    const accepted: ComposerImage[] = [];
+    let validationError: string | null = files.length > remaining ? `You can attach up to ${MAX_ASSISTANT_ATTACHMENTS} images.` : null;
+    for (const file of files.slice(0, remaining)) {
+      const problem = validateAssistantImage(file);
+      if (problem) {
+        validationError ??= problem;
+        continue;
+      }
+      accepted.push({ id: crypto.randomUUID(), file, previewUrl: URL.createObjectURL(file) });
+    }
+    if (accepted.length) setImages((current) => [...current, ...accepted]);
+    setError(validationError);
+  }
+
+  function removeImage(id: string) {
+    setImages((current) => current.filter((image) => {
+      if (image.id === id) URL.revokeObjectURL(image.previewUrl);
+      return image.id !== id;
+    }));
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const pastedImages = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    if (!pastedImages.length) return;
+    event.preventDefault();
+    addImages(pastedImages);
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setDraggingImage(false);
+    const droppedImages = Array.from(event.dataTransfer.files).filter((file) => file.type.startsWith("image/"));
+    if (droppedImages.length) addImages(droppedImages);
+  }
+
   async function sendMessage(value?: string) {
     const message = (value ?? draft).trim();
-    if (!message || running) return;
-    setDraft("");
+    if ((!message && !images.length) || running) return;
     setError(null);
     let conversation = data.activeConversation;
+    let optimisticId: string | null = null;
+    let messagePersisted = false;
     try {
       if (!conversation) conversation = await createConversation();
+      const activeConversation = conversation;
       const turnId = crypto.randomUUID();
+      optimisticId = `local-${turnId}`;
       const optimistic: AiMessage = {
-        id: `local-${turnId}`,
-        conversation_id: conversation.id,
+        id: optimisticId,
+        conversation_id: activeConversation.id,
         user_id: session.user.id,
         turn_id: turnId,
         role: "user",
         content: message,
         page_context: pageContext,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        attachments: images.map((image) => ({
+          id: image.id,
+          conversation_id: activeConversation.id,
+          message_id: optimisticId!,
+          user_id: session.user.id,
+          name: image.file.name,
+          mime_type: image.file.type,
+          size_bytes: image.file.size,
+          preview_url: image.previewUrl,
+          created_at: new Date().toISOString()
+        }))
       };
       setData((current) => ({ ...current, messages: [...current.messages, optimistic] }));
       setLiveEvents([]);
       setRunning(true);
       const abortController = new AbortController();
       abortRef.current = abortController;
+      const form = new FormData();
+      form.set("conversationId", activeConversation.id);
+      form.set("turnId", turnId);
+      form.set("message", message);
+      form.set("pageContext", JSON.stringify(pageContext));
+      for (const image of images) form.append("images", image.file, image.file.name);
       const response = await authorizedFetch("/api/ai/chat", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversationId: conversation.id, turnId, message, pageContext }),
+        body: form,
         signal: abortController.signal
       });
       if (!response.ok || !response.body) {
         const payload = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(payload.error ?? "Pilot could not start the conversation.");
       }
+      messagePersisted = true;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -411,8 +501,18 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         }
         if (changed) await onDataChanged();
       }
-      await loadConversation(conversation.id);
+      await loadConversation(activeConversation.id);
+      setDraft("");
+      for (const image of images) URL.revokeObjectURL(image.previewUrl);
+      setImages([]);
     } catch (caught) {
+      if (optimisticId) setData((current) => ({ ...current, messages: current.messages.filter((item) => item.id !== optimisticId) }));
+      if (messagePersisted && conversation) {
+        await loadConversation(conversation.id);
+        setDraft("");
+        for (const image of images) URL.revokeObjectURL(image.previewUrl);
+        setImages([]);
+      }
       if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(caught instanceof Error ? caught.message : "Pilot could not complete that request.");
     } finally {
       setAutoReviewing(false);
@@ -543,7 +643,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           {data.messages.map((message) => {
             const turn = message.turn_id ? turnContent(message.turn_id) : { events: [], tools: [] };
             if (message.role === "user") return <div key={message.id} className={styles.userTurn}>
-              <FadeContent className={styles.userMessage} duration={0.14}><MessageBody text={message.content} /></FadeContent>
+              <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <MessageBody text={message.content} />}</FadeContent>
               {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} latest={message.turn_id === latestTurnId} running={running && message.turn_id === latestTurnId} busyTool={busyTool} onDecision={decideTool} />}
             </div>;
             if (message.role === "assistant") return <FadeContent className={styles.assistantMessage} duration={0.16} key={message.id}><MessageBody text={message.content} /></FadeContent>;
@@ -572,14 +672,30 @@ export default function GlobalAssistant({ session, open, pageContext, preference
               </div>}
             </div>
           </div>
-          <div>
-            <textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder="Ask Pilot" rows={1} maxLength={4000} disabled={running} />
-            <button type={running ? "button" : "submit"} onClick={running ? () => abortRef.current?.abort() : undefined} disabled={!running && !draft.trim()} aria-label={running ? "Stop response" : "Send message"}>{running ? <X size={16} /> : <PaperPlaneRight size={17} weight="fill" />}</button>
+          <div className={`${styles.composerSurface} ${draggingImage ? styles.draggingImage : ""}`} onDragEnter={(event) => { event.preventDefault(); setDraggingImage(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingImage(false); }} onDrop={handleDrop}>
+            {images.length > 0 && <FadeContent className={styles.attachmentStrip} duration={0.14}>
+              {images.map((image) => <div className={styles.attachmentThumb} key={image.id}>
+                <button type="button" className={styles.previewAttachment} onClick={() => setPreviewImage({ url: image.previewUrl, name: image.file.name })} aria-label={`Preview ${image.file.name}`}><img src={image.previewUrl} alt="" /></button>
+                <button type="button" className={styles.removeAttachment} onClick={() => removeImage(image.id)} disabled={running} aria-label={`Remove ${image.file.name}`}><X size={11} weight="bold" /></button>
+              </div>)}
+            </FadeContent>}
+            <div className={styles.composerInput}>
+              <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
+              <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={running || images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images"><Paperclip size={17} /></button>
+              <textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={images.length ? "Ask about these images" : "Ask Pilot"} rows={1} maxLength={4000} disabled={running} />
+              <button className={styles.sendButton} type={running ? "button" : "submit"} onClick={running ? () => abortRef.current?.abort() : undefined} disabled={!running && !draft.trim() && !images.length} aria-label={running ? "Stop response" : "Send message"}>{running ? <X size={16} /> : <PaperPlaneRight size={17} weight="fill" />}</button>
+            </div>
           </div>
-          <small>{running ? (autoReviewing ? "A separate reviewer is checking the proposed change." : "Stop the current turn at any time.") : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
+          <small>{running ? (autoReviewing ? "A separate reviewer is checking the proposed change." : "Stop the current turn at any time.") : images.length ? `${images.length} of ${MAX_ASSISTANT_ATTACHMENTS} images ready. Images are sent only with this message.` : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
         </form>
         </>}
       </aside>
+      {previewImage && <div className={styles.imagePreviewBackdrop} role="dialog" aria-modal="true" aria-label={`Preview ${previewImage.name}`} onClick={() => setPreviewImage(null)}>
+        <div className={styles.imagePreview} onClick={(event) => event.stopPropagation()}>
+          <div><span>{previewImage.name}</span><button type="button" onClick={() => setPreviewImage(null)} aria-label="Close image preview"><X size={18} /></button></div>
+          <img src={previewImage.url} alt={previewImage.name} />
+        </div>
+      </div>}
     </>
   );
 }

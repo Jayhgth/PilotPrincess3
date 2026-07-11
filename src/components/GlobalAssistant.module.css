@@ -158,6 +158,24 @@
 .messageBody p, .messageBody ul, .messageBody ol { margin: 0; }
 .messageBody ul, .messageBody ol { display: grid; gap: 5px; padding-left: 20px; }
 .messageBody code { border-radius: 4px; background: var(--surface-muted); padding: 1px 4px; font-size: 12px; }
+.messageImages {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.messageImages.singleImage { grid-template-columns: minmax(0, 220px); }
+.messageImages button {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 0;
+}
+.messageImages img { display: block; width: 100%; height: 112px; object-fit: cover; }
+.messageImages.singleImage img { height: auto; max-height: 220px; }
+.messageImages span { display: flex; min-height: 80px; align-items: center; justify-content: center; gap: 6px; color: var(--ink-faint); padding: 10px; font-size: 11px; }
 
 .turnWork { margin: 7px 2px 2px; }
 .turnWork > summary {
@@ -293,17 +311,37 @@
 .reviewMenu span { display: grid; gap: 2px; }
 .reviewMenu strong { font-size: 12px; font-weight: 650; }
 .reviewMenu small { color: var(--ink-faint); font-size: 11px; line-height: 1.4; }
-.composer > div {
+.composerSurface {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
-  align-items: end;
-  gap: 7px;
+  gap: 6px;
   border: 1px solid var(--line-strong);
   border-radius: 9px;
   background: var(--surface-muted);
   padding: 6px;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
-.composer > div:focus-within { border-color: color-mix(in srgb, var(--accent) 68%, var(--line-strong)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
+.composerSurface:focus-within { border-color: color-mix(in srgb, var(--accent) 68%, var(--line-strong)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
+.composerSurface.draggingImage { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface-muted)); box-shadow: inset 0 0 0 1px var(--accent); }
+.composerInput {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 36px;
+  align-items: end;
+  gap: 4px;
+}
+.fileInput { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.attachButton, .sendButton {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+}
+.attachButton { background: transparent; color: var(--ink-soft); }
+.attachButton:hover:not(:disabled) { background: var(--surface-strong); color: var(--ink); }
+.sendButton { background: var(--ink); color: var(--surface); }
+.attachButton:disabled, .sendButton:disabled { opacity: 0.35; }
 .composer textarea {
   min-height: 34px;
   max-height: 150px;
@@ -318,18 +356,66 @@
   line-height: 1.45;
 }
 .composer textarea::placeholder { color: var(--ink-faint); }
-.composer > div > button {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border: 0;
+.composer > small { display: block; margin: 7px 2px 0; color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
+
+.attachmentStrip {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 1px 1px 4px;
+  scrollbar-width: thin;
+}
+.attachmentThumb { position: relative; flex: 0 0 58px; width: 58px; height: 58px; }
+.previewAttachment {
+  display: block;
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  border: 1px solid var(--line);
   border-radius: 7px;
+  background: var(--surface);
+  padding: 0;
+}
+.previewAttachment img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.removeAttachment {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  width: 19px;
+  height: 19px;
+  place-items: center;
+  border: 2px solid var(--surface-muted);
+  border-radius: 999px;
   background: var(--ink);
   color: var(--surface);
+  padding: 0;
 }
-.composer > div > button:disabled { opacity: 0.35; }
-.composer > small { display: block; margin: 7px 2px 0; color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
+
+.imagePreviewBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgb(10 11 13 / 0.82);
+  padding: 20px;
+}
+.imagePreview {
+  display: grid;
+  width: min(900px, 94vw);
+  max-height: 90vh;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.15);
+  border-radius: 11px;
+  background: #151619;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.45);
+}
+.imagePreview > div { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 12px; color: #f7f7f6; padding: 0 10px 0 14px; font-size: 12px; font-weight: 650; }
+.imagePreview > div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.imagePreview > div button { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 7px; background: transparent; color: inherit; }
+.imagePreview > div button:hover { background: rgb(255 255 255 / 0.08); }
+.imagePreview > img { display: block; width: 100%; max-height: calc(90vh - 46px); object-fit: contain; }
 
 @keyframes assistant-drawer-in { from { opacity: 0; transform: translateX(18px); } }
 @keyframes assistant-backdrop-in { from { opacity: 0; } }
@@ -352,4 +438,5 @@
 @media (prefers-reduced-motion: reduce) {
   .drawer, .backdrop { animation: none; }
   .timeline { scroll-behavior: auto; }
+  .composerSurface { transition: none; }
 }

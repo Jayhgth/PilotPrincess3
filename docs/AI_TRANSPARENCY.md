@@ -76,6 +76,8 @@ Student records are not copied into the retrieval corpus. Current courses, profi
 
 Each request runs in an isolated temporary workspace and Codex home. The app replays bounded conversation history and selected page context into the turn, executes only its own allowlisted student-data tools, and deletes the temporary runtime after the request. Product persistence therefore lives in Supabase rather than Codex CLI history.
 
+Student-attached images follow the same boundary. The composer accepts up to eight PNG, JPEG, or WebP files of at most 10 MB each through selection, paste, or drag and drop. The student sees and can remove local previews before sending. After send, originals live in a private per-user Supabase Storage path, chat history receives short-lived signed preview URLs, and the turn timeline records readable attachment names, types, and sizes without embedding image bytes in event logs. Codex receives temporary local copies only for that explicit turn; those copies are removed when the turn ends.
+
 The SDK may emit thread/turn lifecycle, agent messages, reasoning summaries, todos, command, file, MCP, web-search, usage, and failure items. Pilot Princess preserves and renders only applicable sanitized events. It never fabricates plugin, skill, tool, file, or subagent activity. Shell, files, MCP, web, plugins, skills, and subagents are disabled, so those event classes should not occur in student turns.
 
 ## Reasoning safety
@@ -86,7 +88,7 @@ The SDK may emit thread/turn lifecycle, agent messages, reasoning summaries, tod
 
 Each assistant turn uses a read-only Codex sandbox, disabled network, an allowlisted child-process environment, and an empty temporary working directory. Local authenticated Codex fallback is development-only unless an operator explicitly enables it; production should use a server credential.
 
-Selected conversation history, page context, and tool results are sent to OpenAI Codex. In Auto-review mode, the student's triggering message and the exact proposed action are also sent through a separate Codex turn for risk review. Provider-side handling follows the configured OpenAI account. Temporary local runtimes are deleted after each turn, while the product conversation, reviewer summary, and sanitized activity persist in Supabase until an application retention or deletion policy removes them. Per-user RLS prevents another student from reading or changing those records.
+Selected conversation history, page context, tool results, and images explicitly attached to the current message are sent to OpenAI Codex. In Auto-review mode, the student's triggering message and the exact proposed action are also sent through a separate Codex turn for risk review. Provider-side handling follows the configured OpenAI account. Temporary local runtimes are deleted after each turn, while the product conversation, private image attachments, reviewer summary, and sanitized activity persist in Supabase until an application retention or deletion policy removes them. Per-user RLS and private storage policies prevent another student from reading or changing those records.
 
 ## Review gate
 

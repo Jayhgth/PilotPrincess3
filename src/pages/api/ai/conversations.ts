@@ -31,17 +31,43 @@ export const GET: APIRoute = async ({ request }) => {
     });
   }
 
-  const [messageResult, eventResult, toolResult] = await Promise.all([
+  const [messageResult, eventResult, toolResult, attachmentResult] = await Promise.all([
     auth.supabase.from("ai_messages").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: false }).limit(100),
     auth.supabase.from("ai_events").select("*").eq("conversation_id", activeConversation.id).order("id", { ascending: false }).limit(400),
-    auth.supabase.from("ai_tool_calls").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: false }).limit(120)
+    auth.supabase.from("ai_tool_calls").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: false }).limit(120),
+    auth.supabase.from("ai_message_attachments").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: true }).limit(800)
   ]);
-  const error = messageResult.error ?? eventResult.error ?? toolResult.error;
+  const error = messageResult.error ?? eventResult.error ?? toolResult.error ?? attachmentResult.error;
   if (error) return jsonError(error.message, 500);
+  const attachments = attachmentResult.data ?? [];
+  const signedResult = attachments.length
+    ? await auth.supabase.storage.from("ai-attachments").createSignedUrls(attachments.map((attachment) => attachment.storage_path), 3600)
+    : { data: [], error: null };
+  if (signedResult.error) return jsonError(signedResult.error.message, 500);
+  const previewByPath = new Map((signedResult.data ?? []).map((entry) => [entry.path, entry.signedUrl]));
+  const attachmentsByMessage = new Map<string, Array<Record<string, unknown>>>();
+  for (const attachment of attachments) {
+    const rows = attachmentsByMessage.get(attachment.message_id) ?? [];
+    rows.push({
+      id: attachment.id,
+      conversation_id: attachment.conversation_id,
+      message_id: attachment.message_id,
+      user_id: attachment.user_id,
+      name: attachment.name,
+      mime_type: attachment.mime_type,
+      size_bytes: attachment.size_bytes,
+      preview_url: previewByPath.get(attachment.storage_path) ?? "",
+      created_at: attachment.created_at
+    });
+    attachmentsByMessage.set(attachment.message_id, rows);
+  }
   return new Response(JSON.stringify({
     conversations,
     activeConversation,
-    messages: [...(messageResult.data ?? [])].reverse(),
+    messages: [...(messageResult.data ?? [])].reverse().map((message) => ({
+      ...message,
+      attachments: attachmentsByMessage.get(message.id) ?? []
+    })),
     events: [...(eventResult.data ?? [])].reverse(),
     toolCalls: [...(toolResult.data ?? [])].reverse()
   }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
