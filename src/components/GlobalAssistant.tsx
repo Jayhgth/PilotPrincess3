@@ -23,9 +23,11 @@ import type { Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
+import AssistantMarkdown from "@/components/AssistantMarkdown";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import type { AiModel, AiReviewMode } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
+import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import styles from "./GlobalAssistant.module.css";
 
@@ -137,36 +139,6 @@ function contextSuggestions(context: Record<string, unknown>) {
     simulator: ["Explain the current load-check assumptions.", "Would one SMCCD course fit my saved limit?", "What information is missing from this load check?"],
     profile: ["What courses match my saved interests?", "Help me test one career direction.", "Which planning preference is still unclear?"]
   } as Record<string, string[]>)[view] ?? ["What should I focus on next?", "Check my current plan.", "What can you help me change?"];
-}
-
-function InlineText({ children }: { children: string }) {
-  const parts = children.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
-  return parts.map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
-    return part;
-  });
-}
-
-function MessageBody({ text }: { text: string }) {
-  const blocks = text.trim().split(/\n{2,}/).filter(Boolean);
-  return <div className={styles.messageBody}>{blocks.map((block, index) => {
-    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-    const bullets = lines.every((line) => /^[-*]\s+/.test(line));
-    const numbers = lines.every((line) => /^\d+[.)]\s+/.test(line));
-    if (bullets || numbers) {
-      const List = numbers ? "ol" : "ul";
-      return <List key={index}>{lines.map((line, lineIndex) => <li key={lineIndex}><InlineText>{line.replace(bullets ? /^[-*]\s+/ : /^\d+[.)]\s+/, "")}</InlineText></li>)}</List>;
-    }
-    const firstBullet = lines.findIndex((line) => /^[-*]\s+/.test(line));
-    if (firstBullet > 0 && lines.slice(firstBullet).every((line) => /^[-*]\s+/.test(line))) {
-      return <div className={styles.mixedBlock} key={index}>
-        <p>{lines.slice(0, firstBullet).map((line, lineIndex) => <span key={lineIndex}><InlineText>{line}</InlineText>{lineIndex < firstBullet - 1 && <br />}</span>)}</p>
-        <ul>{lines.slice(firstBullet).map((line, lineIndex) => <li key={lineIndex}><InlineText>{line.replace(/^[-*]\s+/, "")}</InlineText></li>)}</ul>
-      </div>;
-    }
-    return <p key={index}>{lines.map((line, lineIndex) => <span key={lineIndex}><InlineText>{line}</InlineText>{lineIndex < lines.length - 1 && <br />}</span>)}</p>;
-  })}</div>;
 }
 
 function MessageImages({ message, onPreview }: { message: AiMessage; onPreview: (image: { url: string; name: string }) => void }) {
@@ -303,20 +275,38 @@ function activityItem(event: LiveActivity) {
   return null;
 }
 
-function TurnActivity({ events, tools, latest, running, busyTool, onDecision }: {
+function LiveElapsed({ startedAt }: { startedAt: string }) {
+  const textRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const startedAtMs = Date.parse(startedAt);
+    const update = () => {
+      if (textRef.current) textRef.current.textContent = formatAssistantDuration(Date.now() - startedAtMs);
+    };
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, [startedAt]);
+  return <span ref={textRef} className={styles.turnDuration}>0s</span>;
+}
+
+function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   events: LiveActivity[];
   tools: AiToolCall[];
-  latest: boolean;
   running: boolean;
   busyTool: string | null;
   onDecision: (call: AiToolCall, decision: "confirm" | "reject") => void;
 }) {
   const items = events.map(activityItem).filter((item): item is NonNullable<ReturnType<typeof activityItem>> => Boolean(item));
   const hasFailure = items.some((item) => item.kind === "error") || tools.some((tool) => tool.status === "failed");
+  const hasPendingChange = tools.some((tool) => tool.status === "pending_confirmation");
+  const forceOpen = running || hasFailure || hasPendingChange;
+  const startedAt = assistantTurnStartedAt(events);
+  const duration = assistantTurnDuration(events);
   if (!items.length && !tools.length && !running) return null;
+  const toolCount = tools.length;
   return (
-    <details className={styles.turnWork} open={latest || running || hasFailure || tools.some((tool) => tool.status === "pending_confirmation")}>
-      <summary><span>{running ? <ShinyText text="Pilot is working" speed={1.8} /> : hasFailure ? "Work stopped" : tools.length ? `${tools.length} tool ${tools.length === 1 ? "call" : "calls"}` : "Reasoning"}</span><CaretDown size={13} /></summary>
+    <details className={styles.turnWork} key={forceOpen ? "active" : "settled"} open={forceOpen || undefined}>
+      <summary><span className={styles.turnWorkLabel}>{running ? <><ShinyText text="Working" speed={1.8} />{startedAt && <> for <LiveElapsed startedAt={startedAt} /></>}</> : hasFailure ? duration ? `Stopped after ${duration}` : "Work stopped" : duration ? `Worked for ${duration}` : toolCount ? `${toolCount} tool ${toolCount === 1 ? "call" : "calls"}` : "Reasoning"}{!running && duration && toolCount > 0 && <small> · {toolCount} tool {toolCount === 1 ? "call" : "calls"}</small>}</span><CaretDown size={13} /></summary>
       <div className={styles.turnWorkBody}>
         {items.map((item, index) => <details className={`${styles.workRow} ${item.kind === "error" ? styles.failed : ""}`} key={`${item.label}-${index}`} open={item.kind === "error"}>
           <summary><span className={styles.workIcon}>{item.kind === "reasoning" ? <Brain size={15} /> : item.kind === "review" ? <ShieldCheck size={15} /> : item.kind === "error" ? <Warning size={15} /> : <Clock size={15} />}</span><span><strong>{item.label}</strong>{item.detail && <small>{item.detail.slice(0, 110)}</small>}</span><CaretDown size={13} /></summary>
@@ -869,10 +859,10 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           {data.messages.map((message) => {
             const turn = message.turn_id ? turnContent(message.turn_id) : { events: [], tools: [] };
             if (message.role === "user") return <div key={message.id} className={styles.userTurn}>
-              <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <MessageBody text={message.content} />}</FadeContent>
-              {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} latest={message.turn_id === latestTurnId} running={running && message.turn_id === latestTurnId} busyTool={busyTool} onDecision={decideTool} />}
+              <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <AssistantMarkdown text={message.content} />}</FadeContent>
+              {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} running={running && message.turn_id === latestTurnId} busyTool={busyTool} onDecision={decideTool} />}
             </div>;
-            if (message.role === "assistant") return <FadeContent className={styles.assistantMessage} duration={0.16} key={message.id}><MessageBody text={message.content} /></FadeContent>;
+            if (message.role === "assistant") return <FadeContent className={styles.assistantMessage} duration={0.16} key={message.id}><AssistantMarkdown text={message.content} /></FadeContent>;
             return <p className={styles.toolOutcome} key={message.id}><CheckCircle size={14} /> {message.content}</p>;
           })}
           {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={autoReviewing ? "Auto-review is checking" : "Pilot is working"} speed={1.8} /></div>}

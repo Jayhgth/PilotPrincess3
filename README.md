@@ -75,7 +75,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
 - `src/components/AdminSettingsDialog.tsx` and `src/pages/api/admin/reset.ts`: administrator-only QA controls with a server- and database-enforced self-reset that preserves auth and role membership.
 - `src/components/student-tools/`: lazy-loaded, single-purpose Experiences, Next steps, Load check, and Planning preferences views.
-- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation rail with readable reasoning summaries, student-data tool activity, reversible conversation archiving, a compact Manual/Auto-review selector, a centered settings dialog, and persisted docked/floating panel layout.
+- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation rail with sanitized GFM answers, timed and folded reasoning summaries, student-data tool activity, reversible conversation archiving, a compact Manual/Auto-review selector, a centered settings dialog, and persisted docked/floating panel layout.
 - `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.

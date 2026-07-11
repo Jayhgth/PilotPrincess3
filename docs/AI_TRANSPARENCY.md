@@ -9,9 +9,10 @@ Pilot Princess uses Codex as an optional conversational layer over deterministic
 Pilot Assistant is one global, persistent rail available from the authenticated workspace after opt-in setup. It follows the useful parts of t3code and coding-agent interfaces without copying developer telemetry into a student product:
 
 - student messages appear as compact bubbles and assistant answers as readable conversation text;
+- assistant answers render sanitized GitHub Flavored Markdown, including structured lists, task lists, tables, links, blockquotes, and code fences;
 - the current turn streams visible progress;
 - safe reasoning summaries and actual student-data tool calls remain inspectable under that turn;
-- completed work folds to keep the conversation calm;
+- running work shows live elapsed time, while settled work folds automatically behind a persisted **Worked for …** duration label;
 - conversations reload from Supabase, can be continued from any workspace page, and can be reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
