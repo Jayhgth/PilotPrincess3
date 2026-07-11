@@ -8,20 +8,31 @@ const createSchema = z.object({
   title: z.string().trim().min(1).max(120).optional()
 });
 
+const archiveSchema = z.object({
+  conversationId: z.uuid(),
+  archived: z.boolean()
+});
+
 export const GET: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
   if (!auth) return jsonError("Authentication required.", 401);
   const url = new URL(request.url);
   const requestedId = url.searchParams.get("conversationId");
+  const archived = url.searchParams.get("archived") === "true";
   const conversationResult = await auth.supabase
     .from("ai_conversations")
     .select("*")
     .eq("user_id", auth.user.id)
-    .eq("is_archived", false)
+    .eq("is_archived", archived)
     .order("updated_at", { ascending: false })
-    .limit(20);
+    .limit(archived ? 100 : 20);
   if (conversationResult.error) return jsonError(conversationResult.error.message, 500);
   const conversations = conversationResult.data ?? [];
+  if (archived) {
+    return new Response(JSON.stringify({ conversations, activeConversation: null, messages: [], events: [], toolCalls: [] }), {
+      headers: { "content-type": "application/json", "cache-control": "no-store" }
+    });
+  }
   const activeConversation = requestedId
     ? conversations.find((conversation) => conversation.id === requestedId) ?? null
     : conversations[0] ?? null;
@@ -85,6 +96,24 @@ export const POST: APIRoute = async ({ request }) => {
   if (error) return jsonError(error.message, 500);
   return new Response(JSON.stringify({ conversation: data }), {
     status: 201,
+    headers: { "content-type": "application/json", "cache-control": "no-store" }
+  });
+};
+
+export const PATCH: APIRoute = async ({ request }) => {
+  const auth = await authenticateRequest(request);
+  if (!auth) return jsonError("Authentication required.", 401);
+  const parsed = archiveSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid archive request.", 400);
+  const { data, error } = await auth.supabase
+    .from("ai_conversations")
+    .update({ is_archived: parsed.data.archived })
+    .eq("id", parsed.data.conversationId)
+    .eq("user_id", auth.user.id)
+    .select("*")
+    .single();
+  if (error || !data) return jsonError(error?.message ?? "Conversation not found.", error?.code === "PGRST116" ? 404 : 500);
+  return new Response(JSON.stringify({ conversation: data }), {
     headers: { "content-type": "application/json", "cache-control": "no-store" }
   });
 };

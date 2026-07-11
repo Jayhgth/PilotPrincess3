@@ -12,10 +12,10 @@ Pilot Assistant is one global, persistent rail available from the authenticated 
 - the current turn streams visible progress;
 - safe reasoning summaries and actual student-data tool calls remain inspectable under that turn;
 - completed work folds to keep the conversation calm;
-- conversations reload from Supabase and can be continued from any workspace page; and
+- conversations reload from Supabase, can be continued from any workspace page, and can be reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
-Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection settings remain available from the global rail.
+Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection, archived conversations, and panel layout live in a centered settings dialog opened from the global rail.
 
 Raw JSON, validation internals, event names, model protocol fields, and hidden chain-of-thought are not the primary interface. Errors are translated into a useful student-facing message. Sanitized technical evidence remains available to developers through server logs and tests rather than being presented as the answer.
 
@@ -63,6 +63,8 @@ Supabase stores four RLS-protected records per user:
 - `ai_tool_calls`: validated arguments, explanation, approval state, and bounded result.
 
 The browser receives newline-delimited activity while a turn runs, then reloads the canonical persisted conversation. Tool events already represented by a persisted tool call are de-duplicated. A turn identifier keeps messages, events, and approvals grouped after reload.
+
+Archiving sets the owning conversation's existing `is_archived` flag. It removes that conversation from active history without deleting messages, attachments, events, or tool calls. The student can restore it from Pilot settings. Per-user RLS applies to both actions.
 
 ## Retrieval boundary
 

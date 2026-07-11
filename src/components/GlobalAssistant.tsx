@@ -1,4 +1,6 @@
 import {
+  ArchiveIcon as Archive,
+  ArrowSquareOutIcon as ArrowSquareOut,
   BrainIcon as Brain,
   CaretDownIcon as CaretDown,
   CheckCircleIcon as CheckCircle,
@@ -9,6 +11,7 @@ import {
   PaperclipIcon as Paperclip,
   PaperPlaneRightIcon as PaperPlaneRight,
   PlusIcon as Plus,
+  PushPinIcon as PushPin,
   ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkle,
   UserCircleCheckIcon as UserCircleCheck,
@@ -17,7 +20,7 @@ import {
   XIcon as X
 } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
@@ -61,6 +64,57 @@ interface ComposerImage {
   id: string;
   file: File;
   previewUrl: string;
+}
+
+type AssistantPanelMode = "docked" | "floating";
+type AssistantSettingsSection = "connection" | "archive" | "interface";
+
+interface FloatingLayout {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+const PANEL_WIDTH_KEY = "pilot-princess:assistant-width";
+const PANEL_MODE_KEY = "pilot-princess:assistant-mode";
+const PANEL_FLOATING_LAYOUT_KEY = "pilot-princess:assistant-floating-layout";
+const DEFAULT_PANEL_WIDTH = 420;
+const MIN_PANEL_WIDTH = 340;
+const MAX_PANEL_WIDTH = 680;
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function loadStoredNumber(key: string, fallback: number) {
+  if (typeof window === "undefined") return fallback;
+  const value = Number(window.localStorage.getItem(key));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function loadPanelMode(): AssistantPanelMode {
+  if (typeof window === "undefined") return "docked";
+  return window.localStorage.getItem(PANEL_MODE_KEY) === "floating" ? "floating" : "docked";
+}
+
+function loadFloatingLayout(): FloatingLayout {
+  const fallback = { left: Math.max(16, (typeof window === "undefined" ? 1440 : window.innerWidth) - 452), top: 16, width: 420, height: Math.max(560, (typeof window === "undefined" ? 900 : window.innerHeight) - 32) };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PANEL_FLOATING_LAYOUT_KEY) ?? "null") as Partial<FloatingLayout> | null;
+    if (!saved) return fallback;
+    const width = clamp(Number(saved.width) || fallback.width, MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, window.innerWidth - 24));
+    const height = clamp(Number(saved.height) || fallback.height, 460, window.innerHeight - 24);
+    return {
+      left: clamp(Number(saved.left) || fallback.left, 12, Math.max(12, window.innerWidth - width - 12)),
+      top: clamp(Number(saved.top) || fallback.top, 12, Math.max(12, window.innerHeight - height - 12)),
+      width,
+      height
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 const EMPTY_PAYLOAD: ConversationPayload = {
@@ -291,6 +345,13 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [draggingImage, setDraggingImage] = useState(false);
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
+  const [settingsSection, setSettingsSection] = useState<AssistantSettingsSection>("connection");
+  const [archivedConversations, setArchivedConversations] = useState<AiConversation[]>([]);
+  const [loadingArchived, setLoadingArchived] = useState(false);
+  const [busyArchive, setBusyArchive] = useState<string | null>(null);
+  const [panelMode, setPanelModeState] = useState<AssistantPanelMode>(loadPanelMode);
+  const [panelWidth, setPanelWidth] = useState(() => clamp(loadStoredNumber(PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH), MIN_PANEL_WIDTH, MAX_PANEL_WIDTH));
+  const [floatingLayout, setFloatingLayout] = useState<FloatingLayout>(loadFloatingLayout);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [setup, setSetup] = useState<CodexSetupValue>({
     enabled: preferences.enabled,
@@ -302,7 +363,10 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
   const imagesRef = useRef<ComposerImage[]>([]);
+  const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
+  const panelDragRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
 
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => fetch(url, {
@@ -327,26 +391,60 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }, [authorizedFetch]);
 
+  const loadArchivedConversations = useCallback(async () => {
+    setLoadingArchived(true);
+    try {
+      const response = await authorizedFetch("/api/ai/conversations?archived=true");
+      const payload = await response.json() as ConversationPayload & { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Archived conversations could not be loaded.");
+      setArchivedConversations(payload.conversations);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Archived conversations could not be loaded.");
+    } finally {
+      setLoadingArchived(false);
+    }
+  }, [authorizedFetch]);
+
   useEffect(() => {
-    if (!open || !preferences.enabled || settingsOpen) return;
+    if (!open || !preferences.enabled) return;
     const loadTimer = window.setTimeout(() => void loadConversation(data.activeConversation?.id), 0);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 180);
     return () => {
       window.clearTimeout(loadTimer);
       window.clearTimeout(focusTimer);
     };
-  }, [open, preferences.enabled, settingsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, preferences.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!settingsOpen || settingsSection !== "archive") return;
+    const timer = window.setTimeout(() => void loadArchivedConversations(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadArchivedConversations, settingsOpen, settingsSection]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.assistantMode = panelMode;
+    root.style.setProperty("--assistant-panel-width", `${panelWidth}px`);
+    window.localStorage.setItem(PANEL_MODE_KEY, panelMode);
+    window.localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
+    return () => {
+      delete root.dataset.assistantMode;
+      root.style.removeProperty("--assistant-panel-width");
+    };
+  }, [panelMode, panelWidth]);
 
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || running) return;
-      if (reviewMenuOpen) setReviewMenuOpen(false);
+      if (previewImage) setPreviewImage(null);
+      else if (settingsOpen) setSettingsOpen(false);
+      else if (reviewMenuOpen) setReviewMenuOpen(false);
       else onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open, reviewMenuOpen, running]);
+  }, [onClose, open, previewImage, reviewMenuOpen, running, settingsOpen]);
 
   useEffect(() => { imagesRef.current = images; }, [images]);
 
@@ -369,6 +467,131 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     setLiveEvents([]);
     setHistoryOpen(false);
     return payload.conversation;
+  }
+
+  function openSettings(section: AssistantSettingsSection = "connection") {
+    setSettingsSection(section);
+    setHistoryOpen(false);
+    setSettingsOpen(true);
+  }
+
+  function changePanelMode(mode: AssistantPanelMode) {
+    if (mode === "floating") {
+      const width = clamp(panelWidth, MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, window.innerWidth - 24));
+      const height = clamp(window.innerHeight - 32, 460, window.innerHeight - 24);
+      const next = { left: Math.max(12, window.innerWidth - width - 16), top: 16, width, height };
+      setFloatingLayout(next);
+      window.localStorage.setItem(PANEL_FLOATING_LAYOUT_KEY, JSON.stringify(next));
+    }
+    setPanelModeState(mode);
+  }
+
+  function commitFloatingLayout() {
+    if (panelMode !== "floating" || !drawerRef.current || window.innerWidth < 1200) return;
+    const rect = drawerRef.current.getBoundingClientRect();
+    const next = {
+      left: clamp(rect.left, 12, Math.max(12, window.innerWidth - rect.width - 12)),
+      top: clamp(rect.top, 12, Math.max(12, window.innerHeight - rect.height - 12)),
+      width: clamp(rect.width, MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, window.innerWidth - 24)),
+      height: clamp(rect.height, 460, window.innerHeight - 24)
+    };
+    setFloatingLayout(next);
+    window.localStorage.setItem(PANEL_FLOATING_LAYOUT_KEY, JSON.stringify(next));
+  }
+
+  function handleDockResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
+    if (panelMode !== "docked" || event.button !== 0 || !drawerRef.current) return;
+    dockResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: drawerRef.current.getBoundingClientRect().width };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.documentElement.dataset.assistantResizing = "true";
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }
+
+  function handleDockResizeMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = dockResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId || !drawerRef.current) return;
+    const maxWidth = Math.min(MAX_PANEL_WIDTH, window.innerWidth - 360);
+    const width = clamp(resize.startWidth - (event.clientX - resize.startX), MIN_PANEL_WIDTH, maxWidth);
+    drawerRef.current.style.width = `${width}px`;
+    document.documentElement.style.setProperty("--assistant-panel-width", `${width}px`);
+  }
+
+  function handleDockResizeEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    const resize = dockResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const width = drawerRef.current?.getBoundingClientRect().width ?? panelWidth;
+    setPanelWidth(width);
+    window.localStorage.setItem(PANEL_WIDTH_KEY, String(width));
+    dockResizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    document.body.style.removeProperty("cursor");
+    document.body.style.removeProperty("user-select");
+    delete document.documentElement.dataset.assistantResizing;
+  }
+
+  function handlePanelDragStart(event: ReactPointerEvent<HTMLElement>) {
+    if (panelMode !== "floating" || event.button !== 0 || !drawerRef.current || (event.target as HTMLElement).closest("button, input, textarea")) return;
+    const rect = drawerRef.current.getBoundingClientRect();
+    panelDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startLeft: rect.left, startTop: rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    document.body.style.cursor = "move";
+    document.body.style.userSelect = "none";
+  }
+
+  function handlePanelDragMove(event: ReactPointerEvent<HTMLElement>) {
+    const drag = panelDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !drawerRef.current) return;
+    const rect = drawerRef.current.getBoundingClientRect();
+    const left = clamp(drag.startLeft + event.clientX - drag.startX, 12, Math.max(12, window.innerWidth - rect.width - 12));
+    const top = clamp(drag.startTop + event.clientY - drag.startY, 12, Math.max(12, window.innerHeight - rect.height - 12));
+    drawerRef.current.style.left = `${left}px`;
+    drawerRef.current.style.top = `${top}px`;
+  }
+
+  function handlePanelDragEnd(event: ReactPointerEvent<HTMLElement>) {
+    const drag = panelDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    panelDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    document.body.style.removeProperty("cursor");
+    document.body.style.removeProperty("user-select");
+    commitFloatingLayout();
+  }
+
+  async function updateConversationArchive(conversationId: string, archived: boolean) {
+    if (running || busyArchive) return;
+    setBusyArchive(conversationId);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/ai/conversations", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ conversationId, archived })
+      });
+      const payload = await response.json() as { conversation?: AiConversation; error?: string };
+      if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "The conversation could not be updated.");
+      if (archived) {
+        setHistoryOpen(false);
+        if (data.activeConversation?.id === conversationId) await loadConversation();
+        else setData((current) => ({ ...current, conversations: current.conversations.filter((conversation) => conversation.id !== conversationId) }));
+      } else {
+        await loadConversation(data.activeConversation?.id);
+      }
+      if (settingsOpen && settingsSection === "archive") await loadArchivedConversations();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The conversation could not be updated.");
+    } finally {
+      setBusyArchive(null);
+    }
+  }
+
+  function resetPanelLayout() {
+    const next = { left: Math.max(12, window.innerWidth - DEFAULT_PANEL_WIDTH - 16), top: 16, width: DEFAULT_PANEL_WIDTH, height: Math.max(460, window.innerHeight - 32) };
+    setPanelWidth(DEFAULT_PANEL_WIDTH);
+    setFloatingLayout(next);
+    window.localStorage.setItem(PANEL_WIDTH_KEY, String(DEFAULT_PANEL_WIDTH));
+    window.localStorage.setItem(PANEL_FLOATING_LAYOUT_KEY, JSON.stringify(next));
   }
 
   function addImages(files: File[]) {
@@ -575,7 +798,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Pilot settings could not be saved.");
       await onPreferencesChanged();
-      if (setup.enabled) setSettingsOpen(false);
+      setSettingsOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Pilot settings could not be saved.");
     } finally {
@@ -602,35 +825,38 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       tools
     };
   };
+  const drawerStyle: CSSProperties = panelMode === "floating"
+    ? { left: floatingLayout.left, top: floatingLayout.top, width: floatingLayout.width, height: floatingLayout.height }
+    : { width: panelWidth };
 
   if (!open) return null;
   return (
     <>
       <button className={styles.backdrop} type="button" onClick={() => !running && onClose()} aria-label="Close Pilot Assistant" />
-      <aside className={`${styles.drawer} ${settingsOpen ? styles.settingsDrawer : ""}`} role="dialog" aria-modal="false" aria-label="Pilot Assistant">
-        <header className={styles.header}>
-          {settingsOpen ? <div className={styles.settingsTitle}><Cpu size={17} /><span>Pilot setup</span></div> : <div className={styles.conversationPicker}>
+      <aside ref={drawerRef} style={drawerStyle} className={`${styles.drawer} ${panelMode === "floating" ? styles.floatingDrawer : styles.dockedDrawer}`} role="dialog" aria-modal="false" aria-label="Pilot Assistant" onPointerUpCapture={commitFloatingLayout}>
+        <div className={styles.resizeRail} role="separator" aria-label="Resize Pilot Assistant" aria-orientation="vertical" onPointerDown={handleDockResizeStart} onPointerMove={handleDockResizeMove} onPointerUp={handleDockResizeEnd} onPointerCancel={handleDockResizeEnd}><span /></div>
+        <header className={styles.header} onPointerDown={handlePanelDragStart} onPointerMove={handlePanelDragMove} onPointerUp={handlePanelDragEnd} onPointerCancel={handlePanelDragEnd}>
+          <div className={styles.conversationPicker}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
-              <Sparkle size={17} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={13} />
+              <Sparkle size={15} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={11} />
             </button>
             {historyOpen && <div className={styles.historyMenu}>
-              <button type="button" onClick={() => void createConversation()}><Plus size={14} /> New conversation</button>
-              {data.conversations.map((conversation) => <button type="button" className={conversation.id === activeId ? styles.activeConversation : ""} key={conversation.id} onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}>{conversation.title}</button>)}
+              <button className={styles.newConversation} type="button" onClick={() => void createConversation()}><Plus size={14} /> New conversation</button>
+              <div className={styles.historyList}>{data.conversations.map((conversation) => <div className={`${styles.historyRow} ${conversation.id === activeId ? styles.activeConversation : ""}`} key={conversation.id}>
+                <button className={styles.historySelect} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}><span>{conversation.title}</span></button>
+                <button className={styles.archiveConversation} type="button" onClick={() => void updateConversationArchive(conversation.id, true)} disabled={running || busyArchive === conversation.id} aria-label={`Archive ${conversation.title}`} title="Archive conversation"><Archive size={14} /></button>
+              </div>)}</div>
             </div>}
-          </div>}
+          </div>
           <div className={styles.headerActions}>
-            {!settingsOpen && <button type="button" onClick={() => void createConversation()} aria-label="New conversation"><Plus size={17} /></button>}
-            {preferences.enabled && <button type="button" onClick={() => setSettingsOpen((current) => !current)} aria-label={settingsOpen ? "Return to conversation" : "Pilot settings"}>{settingsOpen ? <Sparkle size={17} /> : <GearSix size={17} />}</button>}
-            <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant"><X size={18} /></button>
+            <button type="button" onClick={() => void createConversation()} aria-label="New conversation" title="New conversation"><Plus size={15} /></button>
+            <button className={styles.panelModeButton} type="button" onClick={() => changePanelMode(panelMode === "docked" ? "floating" : "docked")} aria-label={panelMode === "docked" ? "Float assistant panel" : "Dock assistant panel"} title={panelMode === "docked" ? "Float panel" : "Dock panel"}>{panelMode === "docked" ? <ArrowSquareOut size={15} /> : <PushPin size={15} />}</button>
+            <button type="button" onClick={() => openSettings("connection")} aria-label="Pilot settings" title="Settings"><GearSix size={15} /></button>
+            <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant" title="Close"><X size={16} /></button>
           </div>
         </header>
 
-        {settingsOpen ? <div className={styles.setupPane}>
-          <div className={styles.setupIntro}><h2>{preferences.enabled ? "Pilot connection" : "Connect Pilot"}</h2><p>Choose one model for assistant conversations and optional image-only transcript interpretation.</p></div>
-          <CodexConnectionSetup compact session={session} value={setup} onChange={setSetup} />
-          {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
-          <button className={styles.saveSetup} type="button" onClick={() => void savePreferences()} disabled={savingPreferences || (setup.enabled && (!setup.approved || !setup.testedAt))}>{savingPreferences ? "Saving" : setup.enabled ? "Save connection" : "Keep AI off"}</button>
-        </div> : <>
+        {preferences.enabled ? <>
         <div className={styles.timeline} ref={scrollRef}>
           {loading && !data.messages.length ? <div className={styles.loadingHistory}><ShinyText text="Opening conversation" speed={1.8} /></div> : null}
           {!loading && !data.messages.length && !running ? <div className={styles.empty}>
@@ -688,8 +914,46 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           </div>
           <small>{running ? (autoReviewing ? "A separate reviewer is checking the proposed change." : "Stop the current turn at any time.") : images.length ? `${images.length} of ${MAX_ASSISTANT_ATTACHMENTS} images ready. Images are sent only with this message.` : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
         </form>
-        </>}
+        </> : <div className={styles.disconnected}>
+          <Cpu size={22} />
+          <strong>Connect Pilot to start</strong>
+          <p>Test a Codex model and approve access before sending student context.</p>
+          <button type="button" onClick={() => openSettings("connection")}>Open settings</button>
+        </div>}
       </aside>
+      {settingsOpen && <div className={styles.settingsBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
+        <section className={styles.settingsDialog} role="dialog" aria-modal="true" aria-label="Pilot settings">
+          <header className={styles.settingsHeader}><div><GearSix size={17} /><strong>Pilot settings</strong></div><button type="button" onClick={() => setSettingsOpen(false)} aria-label="Close settings"><X size={17} /></button></header>
+          <div className={styles.settingsLayout}>
+            <nav className={styles.settingsNav} aria-label="Pilot settings sections">
+              <button type="button" className={settingsSection === "connection" ? styles.activeSetting : ""} onClick={() => setSettingsSection("connection")}><Cpu size={16} /> Connection</button>
+              <button type="button" className={settingsSection === "archive" ? styles.activeSetting : ""} onClick={() => setSettingsSection("archive")}><Archive size={16} /> Archive</button>
+              <button type="button" className={settingsSection === "interface" ? styles.activeSetting : ""} onClick={() => setSettingsSection("interface")}><ArrowSquareOut size={16} /> Interface</button>
+            </nav>
+            <div className={styles.settingsContent}>
+              {settingsSection === "connection" && <div className={styles.settingsPane}>
+                <div className={styles.settingsIntro}><h2>{preferences.enabled ? "Connection" : "Connect Pilot"}</h2><p>Choose the model used for assistant conversations and image context.</p></div>
+                <CodexConnectionSetup compact session={session} value={setup} onChange={setSetup} />
+                {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
+                <div className={styles.settingsFooter}><button className={styles.saveSetup} type="button" onClick={() => void savePreferences()} disabled={savingPreferences || (setup.enabled && (!setup.approved || !setup.testedAt))}>{savingPreferences ? "Saving" : setup.enabled ? "Save connection" : "Keep AI off"}</button></div>
+              </div>}
+              {settingsSection === "archive" && <div className={styles.settingsPane}>
+                <div className={styles.settingsIntro}><h2>Archived conversations</h2><p>Archived chats leave the history menu but keep their messages and activity.</p></div>
+                {loadingArchived ? <div className={styles.settingsLoading}><ShinyText text="Loading archive" speed={1.8} /></div> : archivedConversations.length ? <div className={styles.archiveList}>{archivedConversations.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{new Date(conversation.updated_at).toLocaleDateString()}</small></span><button type="button" onClick={() => void updateConversationArchive(conversation.id, false)} disabled={busyArchive === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}><Archive size={20} /><strong>No archived conversations</strong><p>Archive a chat from the conversation menu when you no longer need it in the active list.</p></div>}
+                {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
+              </div>}
+              {settingsSection === "interface" && <div className={styles.settingsPane}>
+                <div className={styles.settingsIntro}><h2>Panel layout</h2><p>Keep Pilot attached to the workspace or move it as a floating panel.</p></div>
+                <div className={styles.layoutOptions}>
+                  <button type="button" className={panelMode === "docked" ? styles.selectedLayout : ""} onClick={() => changePanelMode("docked")}><PushPin size={18} /><span><strong>Docked</strong><small>Resize from the left edge while the workspace stays visible.</small></span>{panelMode === "docked" && <CheckCircle size={15} weight="fill" />}</button>
+                  <button type="button" className={panelMode === "floating" ? styles.selectedLayout : ""} onClick={() => changePanelMode("floating")}><ArrowSquareOut size={18} /><span><strong>Floating</strong><small>Drag the header to move it and resize from the lower-right corner.</small></span>{panelMode === "floating" && <CheckCircle size={15} weight="fill" />}</button>
+                </div>
+                <button className={styles.resetLayout} type="button" onClick={resetPanelLayout}>Reset panel size and position</button>
+              </div>}
+            </div>
+          </div>
+        </section>
+      </div>}
       {previewImage && <div className={styles.imagePreviewBackdrop} role="dialog" aria-modal="true" aria-label={`Preview ${previewImage.name}`} onClick={() => setPreviewImage(null)}>
         <div className={styles.imagePreview} onClick={(event) => event.stopPropagation()}>
           <div><span>{previewImage.name}</span><button type="button" onClick={() => setPreviewImage(null)} aria-label="Close image preview"><X size={18} /></button></div>

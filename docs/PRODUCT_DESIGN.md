@@ -23,7 +23,7 @@ Do not duplicate course management, graduation totals, or action lists across de
 | Next steps | Know the next action and why it comes next | One ordered queue combining requirement gaps, prerequisite checks, plan-derived actions, and student-added steps |
 | Load check | Decide whether added concurrent-enrollment and activity time can fit | Deterministic current-versus-proposed weekly hours using explicit SMCCD units and activity-hour changes |
 | Planning preferences | Set the personal constraints used by matching and workload checks | One readable brief with progressively disclosed direction and capacity editors; school identity stays in onboarding |
-| Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a top-right rail that docks beside the current page, shows readable work, and offers Manual or separate Auto-review routing |
+| Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a compact rail that can be resized, detached and moved, archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
 
@@ -74,6 +74,8 @@ Use alignment, spacing, and surface tone before borders. A divider is reserved f
 React Bits adaptations may clarify loading, selection, reveal, drag, and bounded focus. Motion is never ornamental and must respect reduced motion. Loading removes stale output when it could be mistaken for the new result.
 
 AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps page context and review mode in one quiet metadata row; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. Read tools run automatically. Every write begins as a visible exact proposal. Manual mode uses a focused approval card. Auto-review displays a separate reviewer decision and automatically applies only low-risk proposals; sensitive or uncertain proposals become the same manual card.
+
+Assistant chrome stays secondary to the student's page. The docked rail uses a forgiving invisible resize target and stores its width. Floating mode preserves size and position and uses the header as the move target. Connection and archive management appear in one centered settings dialog rather than replacing chat content inside the rail. Mobile always uses a full-width rail and a bottom-aligned settings surface, with movement and resize controls removed.
 
 The Pilot control sits in the authenticated top-right toolbar. At wide desktop sizes, the 420px rail docks without obscuring the current page; at narrower sizes it becomes a dismissible overlay and then a full-width mobile surface. Setup uses one recommended model, optional alternatives, one consent statement, one connection test, and one save action. No student is opted in by default.
 
