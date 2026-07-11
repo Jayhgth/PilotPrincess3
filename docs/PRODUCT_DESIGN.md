@@ -1,0 +1,81 @@
+# Product and design reference
+
+Last reviewed: 2026-07-10
+
+Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a d.tech student understand what is finished, what is happening now, what decisions come next, and how concurrent enrollment changes the path.
+
+## Product hierarchy
+
+1. **Overview** answers: what is true now, what needs attention, and where should I go next?
+2. **Courses** is the only place where Done, In progress, and Planned courses are organized or changed.
+3. **Graduation** explains diploma, A-G, and selected associate-degree evidence.
+4. **Transcript import** converts completed records into reviewable Done courses.
+5. **Decision tools** each own one distinct student job.
+
+Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
+
+## Decision tools
+
+| Tool | Student job | Standout capability |
+| --- | --- | --- |
+| GPA lenses | Understand why different GPA numbers exist | d.tech transcript method beside a conservative UC capped-weighted planning lens, with exact included/excluded evidence |
+| Experience portfolio | Preserve time, responsibility, contribution, and growth | Weekly capacity plus application-ready history without turning activities into a prestige score |
+| Decision timeline | Know what to do next and why | Plan-derived academic checks separated from exploration tasks, with prerequisite blockers and editable rationale |
+| Scenario lab | See a tradeoff before changing the plan | Deterministic current-versus-scenario assumptions, saved comparison, and optional transparent Codex review |
+| Student compass | Explore direction without prematurely choosing a major | Academic interests, RIASEC-inspired work interests, values, open questions, and capacity constraints |
+| AI connection | Verify what AI can actually do | Live provider test, feature inventory, access policy, exact diagnostics input, and transparency contract |
+
+The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
+
+## Research synthesis
+
+The current interaction model was checked against more than ten contemporary references:
+
+- BigFuture interest areas and career/major exploration: interest categories should open exploration rather than prescribe one answer.
+- O*NET Interest Profiler: RIASEC is useful as a vocabulary for interests; Pilot Princess uses student-selected descriptions, not a copied assessment or diagnostic score.
+- Common App activity guidance: time, role, responsibility, and concrete contribution are more reusable than a generic activity count.
+- UC admissions guidance: UC GPA is a separate methodology using grade 10-11 A-G work, no plus/minus distinction, and capped honors semesters.
+- CaliforniaColleges.edu: academic plan, career plan, goals, experiences, documents, and tasks should connect without becoming one undifferentiated dashboard.
+- Xello: grade-aware tasks, course planning, career exploration, experience hours, and resume evidence benefit from separate focused workflows.
+- SMCCD K-12 guidance: prerequisites, approval, calendars, college record, and registration remain explicit concurrent-enrollment boundaries.
+- REL/NCES career-exploration guidance: interests, career research, work-based experiences, and a portfolio create stronger exploration than keyword matching alone.
+- Baymard catalog/list research: search, high-value filters, comparable rows, and honest hidden-result explanations reduce discovery friction.
+- Shopify Polaris resource lists and tabs: related views use concise tabs; list rows summarize while a stable detail view owns action and evidence.
+- Tailwind application UI patterns: strong alignment, restrained surfaces, predictable controls, and clear table/list density fit decision dashboards better than card grids.
+- Linear, GitHub, and Stripe product patterns: hierarchy comes from spacing, typography, state, and interaction rather than outlines around every item.
+- Artificial Analysis-style benchmark presentation: name the method, show the evidence behind the number, and keep comparisons aligned; do not use vague decorative bars.
+- t3code: stream and fold agent work while retaining inspectable reasoning-summary, tool, file, and elapsed-time detail.
+
+External references inform the local rules; they are not product requirements.
+
+## Visual system
+
+Use Manrope and the semantic tokens in `src/styles/global.css`. The production palette is Pilot Graphite. Dark mode uses deep neutral graphite, never a gray veil. d.tech uses official orange `#EF5024` and charcoal `#20242C` only in institution-scoped identity. SMCCD colleges use their official marks and scoped colors.
+
+Type roles: 28px page title, 16px section title, 14px body/control, 12px label/supporting, 20px numeric, and at most one 40px primary answer in a view. Use weights 450-650.
+
+Spacing uses 4, 8, 12, 16, 24, 32, and 48px. Controls are at least 40px and touch targets 44px where practical. Default radii are 6-10px.
+
+Use alignment, spacing, and surface tone before borders. A divider is reserved for control boundaries, table headers, selected states, or major regions. Never outline every row and every parent.
+
+## Institution and state language
+
+- Course provenance is always written, not carried by color alone.
+- Done, In progress, and Planned remain distinct everywhere.
+- Earned, current, planned, unverified, and open credit remain distinct.
+- Ready, blocked, and needs review include text and evidence.
+- d.tech, SMCCD, CSM, Skyline, and Cañada marks render through `InstitutionMark`; do not invent monograms.
+
+## Interaction and motion
+
+React Bits adaptations may clarify loading, selection, reveal, drag, and bounded focus. Motion is never ornamental and must respect reduced motion. Loading removes stale output when it could be mistaken for the new result.
+
+Course cards are draggable from the card body, animate pickup and destination, and retain keyboard/mobile status controls. Transcript-backed courses remain locked. Workspace tabs support Left, Right, Home, and End.
+
+## Responsive and accessibility gate
+
+- No horizontal overflow at 390px except the intentional three-column course board, which uses a labeled horizontal viewport.
+- Product text stays at or above 12px except inspectable code/telemetry detail.
+- Focus is visible, state is not color-only, form labels remain explicit, and content order is meaningful.
+- Review populated, empty, loading, error, editing, and selected states in both themes.
+- Review representative authenticated desktop and mobile pages without console errors.

@@ -170,7 +170,21 @@ export const POST: APIRoute = async ({ request }) => {
       properties: { source_id: source.id, review_item_count: rows.length }
     });
     return new Response(
-      JSON.stringify({ reviewItemCount: rows.length, fallbackUsed: false, summary: codexResult.value.summary }),
+      JSON.stringify({
+        reviewItemCount: rows.length,
+        fallbackUsed: false,
+        summary: codexResult.value.summary,
+        aiUsed: true,
+        aiTransparency: {
+          model: codexResult.model,
+          reasoningEffort: "low",
+          instruction: prompt,
+          input: extractedText ? "Extracted document text" : `${attachments.length} source image ${attachments.length === 1 ? "page" : "pages"}`,
+          toolsUsed: [],
+          filesChanged: [],
+          mutations: "Proposed items were saved to the review queue only. Nothing was approved automatically."
+        }
+      }),
       { headers: { "content-type": "application/json" } }
     );
   } catch (error) {

@@ -8,7 +8,7 @@ This file is a release gate, not a historical log. Detailed implementation evide
 
 - [x] `pnpm lint`
 - [x] `pnpm typecheck`
-- [x] `pnpm test` with 97 tests passing.
+- [x] `pnpm test` with 110 tests passing.
 - [x] `pnpm test:e2e` with 6 Chromium tests passing.
 - [x] `pnpm build`
 - [x] `pnpm colors:validate`
@@ -22,7 +22,8 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Any valid email may register and receives a profile, active plan, and active version.
 - [x] Sign-in, sign-out, recovery token, password update, and replacement-password login work.
 - [x] User-owned records and private source files are isolated by RLS and storage policies.
-- [x] AI credentials remain server-only; authenticated diagnostics cannot access student files or browser state.
+- [x] AI credentials remain server-only; authenticated student reviews cannot access the browser, network, files, or tools and cannot mutate plan data.
+- [x] Transparent reviews expose exact input, safe reasoning summaries, SDK lifecycle, tool/file state, structured output, usage, model, latency, thread, and limits.
 - [ ] Production SMTP, confirmation delivery, redirect allowlist, HTTPS, and recovery delivery pass on the deployed origin.
 
 ## Core student flow
@@ -38,7 +39,8 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Graduation and GPA reproduce the supplied d.tech PDF rules, including pass/fail, A-minus bands, Honors evidence, science lanes, and Level 3 language completion.
 - [x] SMCCD course and AA/AS discovery preserve college, units, transfer status, prerequisites, source year, and directional equivalency evidence.
 - [x] Workload uses only recorded activities and current-year college study time and explains missing inputs.
-- [x] Timeline, Activities, Simulator, Profile, GPA, and AI connection persist user-owned changes.
+- [x] Experience portfolio, Decision timeline, Scenario lab, Student compass, GPA lenses, and AI connection persist user-owned changes.
+- [x] UC GPA planning lens includes only verified grade 10-11 A-G coursework, ignores plus/minus distinctions, caps eligible honors semesters, and reports unresolved rows.
 
 ## Selected Overview
 
@@ -56,6 +58,7 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Course, transcript, institution, loading, empty, and error states do not rely on color alone.
 - [x] Workspace tabs support Left, Right, Home, and End.
 - [x] Representative local desktop/mobile states show no horizontal overflow or console errors.
+- [x] Overview and every decision tool pass authenticated desktop light/dark and 390px composition checks; a live transparent review completes with inspectable lifecycle and input data.
 - [x] d.tech and SMCCD catalog components pass light/dark 1,440px and 390px composition checks, including official marks, selected rows, details, and compact college filters.
 - [ ] Production automated accessibility and screen-reader review passes.
 - [ ] Task-based student usability study covers transcript import, course planning, graduation interpretation, and SMCCD discovery.

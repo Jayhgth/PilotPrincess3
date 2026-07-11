@@ -2,8 +2,11 @@ import {
   ArrowClockwiseIcon as ArrowClockwise,
   CheckCircleIcon as CheckCircle,
   CpuIcon as Cpu,
+  BrainIcon as Brain,
+  FileTextIcon as FileText,
   PaperPlaneTiltIcon as PaperPlaneTilt,
   ShieldCheckIcon as ShieldCheck,
+  TerminalWindowIcon as TerminalWindow,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
@@ -56,6 +59,7 @@ const INITIAL_MESSAGE: ChatMessage = {
 };
 
 function formatReasoningEffort(value: string) {
+  if (value === "low") return "Light";
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
@@ -187,6 +191,12 @@ export default function AiStatusPanel({ session }: { session: Session }) {
         </div>
       </header>
 
+      <section className="ai-transparency-contract" aria-label="AI transparency contract">
+        <div><Brain size={18} /><span><strong>Reasoning summaries</strong><small>Visible while transparent reviews run. Hidden chain-of-thought is never requested.</small></span></div>
+        <div><TerminalWindow size={18} /><span><strong>Tool activity</strong><small>Every tool call appears in the run timeline. Student reviews currently allow none.</small></span></div>
+        <div><FileText size={18} /><span><strong>File and plan changes</strong><small>Every change would be listed. Current AI reviews are read-only and propose actions only.</small></span></div>
+      </section>
+
       {loading && (
         <section className="ai-connection-card checking ai-status-loading" role="status" aria-label="Checking Codex connection">
           <div /><div /><div />
@@ -232,7 +242,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
           {testResult && (
             <div className="inline-alert success ai-test-result" role="status">
               <CheckCircle size={18} weight="fill" />
-              <span><strong>{testResult.message}</strong>{testResult.latencyMs !== undefined ? ` ${testResult.model} completed the live check with ${testResult.reasoningEffort ?? "low"} reasoning in ${testResult.latencyMs} ms.` : ""}</span>
+              <span><strong>{testResult.message}</strong>{testResult.latencyMs !== undefined ? ` ${testResult.model} completed the live check with ${formatReasoningEffort(testResult.reasoningEffort ?? "low")} reasoning in ${testResult.latencyMs} ms.` : ""}</span>
             </div>
           )}
 
@@ -251,7 +261,7 @@ export default function AiStatusPanel({ session }: { session: Session }) {
                   {message.model && (
                     <div className="ai-message-metadata">
                       <span>{message.model}</span>
-                      <span>{message.reasoningEffort ?? "low"} reasoning</span>
+                      <span>{formatReasoningEffort(message.reasoningEffort ?? "low")} reasoning</span>
                       <span>{message.latencyMs} ms</span>
                     </div>
                   )}
@@ -266,6 +276,10 @@ export default function AiStatusPanel({ session }: { session: Session }) {
               </label>
               <div><span>{draft.length} / 1200</span><button className="primary-button" type="submit" disabled={sending || !draft.trim()}><PaperPlaneTilt size={16} /> Send</button></div>
             </form>
+            <details className="ai-diagnostics-inspector">
+              <summary>Inspect diagnostics request</summary>
+              <div><strong>Server instruction</strong><p>Respond to the final test message in one to four concise sentences. Do not claim access to student records, files, databases, or tools.</p><strong>Conversation sent</strong><pre>{JSON.stringify(messages.filter((message) => message.id !== INITIAL_MESSAGE.id).map(({ role, content }) => ({ role, content })), null, 2)}</pre><p>No tools, files, network, or workspace records are available to this test.</p></div>
+            </details>
           </section>
 
           <details className="ai-boundaries">

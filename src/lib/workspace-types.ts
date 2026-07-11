@@ -23,12 +23,3 @@ export type {
   StudentProfile,
   TimelineTask
 } from "@/lib/models";
-
-export interface GeneratedSummary {
-  id: string;
-  user_id: string;
-  plan_version_id: string | null;
-  content: string;
-  generation_source: "codex" | "fallback";
-  created_at: string;
-}

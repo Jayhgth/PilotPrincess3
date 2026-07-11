@@ -8,7 +8,7 @@ Current reference data is labeled 2025-26. Registration accepts any valid email 
 
 - Astro 7 SSR and React 19
 - Supabase Auth, Postgres, Row Level Security, and Storage
-- Official Codex SDK for language or image-understanding tasks only
+- Official Codex SDK for optional transparent reviews and image-understanding tasks only
 - TypeScript, Zod, Vitest, and Playwright
 
 ## Local setup
@@ -78,6 +78,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 
 - `src/components/OnboardingFlow.tsx`: guided student and tracker setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
+- `src/components/CodexReviewPanel.tsx`: streamed, inspectable Codex review timeline and structured result.
 - `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
@@ -91,7 +92,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 ## Decision rules
 
 - Text-layer PDF extraction, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic.
-- Codex is used for requested explanations, wording assistance, unstructured policy review, and scanned transcripts without a usable text layer.
+- Codex is used only after an explicit transparent-review action, for unstructured policy review, or for scanned transcripts without a usable text layer. Reviews expose their input, lifecycle, safe reasoning summaries, tools/files, output, usage, and limits and never mutate the plan.
 - `P` earns credit but does not enter GPA. Quarter-coded pass/fail rows are intersession records.
 - `A+`, `A`, and `A-` use the same four-point band while preserving the exact mark.
 - A d.tech `*` means UC A-G approval, not Honors. d.tech weighting requires reviewed Honors evidence; every SMCCD course is weighted.
@@ -107,4 +108,4 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 4. Run the full checklist against the deployed origin.
 5. Confirm institutional trademark use and current counseling approval for dated equivalencies.
 
-The permanent UI rules are in [UI_DESIGN_SYSTEM.md](./UI_DESIGN_SYSTEM.md). Current product risks and decisions needing owner input are in [UX_AUDIT.md](./UX_AUDIT.md).
+Durable references are [product and design](./docs/PRODUCT_DESIGN.md), [academic rules](./docs/ACADEMIC_RULES.md), and [Codex transparency](./docs/AI_TRANSPARENCY.md). Current gaps and owner decisions stay in [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md).

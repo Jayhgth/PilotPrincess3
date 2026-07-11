@@ -20,6 +20,26 @@ export const ACADEMIC_INTEREST_OPTIONS = [
   "Languages and culture"
 ] as const;
 
+export const CAREER_INTEREST_AREA_OPTIONS = [
+  { value: "realistic", label: "Build and operate", description: "Work with tools, systems, environments, or physical results." },
+  { value: "investigative", label: "Analyze and discover", description: "Study questions, evidence, patterns, science, or data." },
+  { value: "artistic", label: "Create and express", description: "Make original visual, written, musical, or designed work." },
+  { value: "social", label: "Help and teach", description: "Support, teach, coach, care for, or understand people." },
+  { value: "enterprising", label: "Lead and persuade", description: "Start initiatives, organize people, sell ideas, or decide." },
+  { value: "conventional", label: "Organize and improve", description: "Create order, accuracy, reliable processes, or records." }
+] as const;
+
+export const WORK_VALUE_OPTIONS = [
+  "Creative freedom",
+  "Helping people",
+  "Financial stability",
+  "Flexible time",
+  "Leadership",
+  "Learning and challenge",
+  "Team connection",
+  "Visible impact"
+] as const;
+
 const MAJOR_KEYWORDS: Record<string, string[]> = {
   stem: ["computer", "computing", "engineering", "mathematics", "math", "data", "physics", "chemistry", "biology", "technology"],
   business: ["business", "economics", "accounting", "finance", "marketing", "management", "entrepreneur", "leadership"],

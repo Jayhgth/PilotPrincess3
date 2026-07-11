@@ -172,36 +172,59 @@ export const parsedTranscriptJsonSchema = {
   }
 } as const;
 
-export const explanationSchema = z.object({
-  summary: z.string().min(1).max(1600),
-  what_changed: z.array(z.string().max(400)).max(12),
-  tradeoffs: z.array(z.string().max(500)).max(12),
-  risks: z.array(z.string().max(500)).max(12),
-  counselor_questions: z.array(z.string().max(300)).max(10)
+export const planningReviewSchema = z.object({
+  summary: z.string().min(1).max(1400),
+  findings: z.array(z.object({
+    title: z.string().min(1).max(140),
+    detail: z.string().min(1).max(700),
+    priority: z.enum(["attention", "consider", "clear"]),
+    evidence: z.string().min(1).max(500)
+  })).max(8),
+  proposed_actions: z.array(z.object({
+    label: z.string().min(1).max(120),
+    destination: z.enum(["courses", "graduation", "gpa", "activities", "timeline", "simulator", "profile"]),
+    why: z.string().min(1).max(400)
+  })).max(6),
+  questions: z.array(z.string().max(300)).max(6),
+  limitations: z.array(z.string().max(400)).max(6)
 });
 
-export type ExplanationResult = z.infer<typeof explanationSchema>;
+export type PlanningReviewResult = z.infer<typeof planningReviewSchema>;
 
-export const explanationJsonSchema = {
+export const planningReviewJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "what_changed", "tradeoffs", "risks", "counselor_questions"],
+  required: ["summary", "findings", "proposed_actions", "questions", "limitations"],
   properties: {
     summary: { type: "string" },
-    what_changed: { type: "array", items: { type: "string" } },
-    tradeoffs: { type: "array", items: { type: "string" } },
-    risks: { type: "array", items: { type: "string" } },
-    counselor_questions: { type: "array", items: { type: "string" } }
+    findings: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "detail", "priority", "evidence"],
+        properties: {
+          title: { type: "string" },
+          detail: { type: "string" },
+          priority: { type: "string", enum: ["attention", "consider", "clear"] },
+          evidence: { type: "string" }
+        }
+      }
+    },
+    proposed_actions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["label", "destination", "why"],
+        properties: {
+          label: { type: "string" },
+          destination: { type: "string", enum: ["courses", "graduation", "gpa", "activities", "timeline", "simulator", "profile"] },
+          why: { type: "string" }
+        }
+      }
+    },
+    questions: { type: "array", items: { type: "string" } },
+    limitations: { type: "array", items: { type: "string" } }
   }
-} as const;
-
-export const summarySchema = z.object({
-  summary: z.string().min(1).max(1400)
-});
-
-export const summaryJsonSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["summary"],
-  properties: { summary: { type: "string" } }
 } as const;

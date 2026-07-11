@@ -99,6 +99,9 @@ export default function OnboardingFlow({
   const [stage, setStage] = useState<OnboardingStage>("student");
   const [profile, setProfile] = useState<StudentProfile>({
     ...initialProfile,
+    career_interest_areas: initialProfile.career_interest_areas ?? [],
+    work_values: initialProfile.work_values ?? [],
+    exploration_questions: initialProfile.exploration_questions ?? [],
     tracker_mode: initialProfile.tracker_mode ?? "full",
     tracked_requirement_areas: initialProfile.tracked_requirement_areas?.length
       ? initialProfile.tracked_requirement_areas
@@ -115,6 +118,9 @@ export default function OnboardingFlow({
   const [transcriptItems, setTranscriptItems] = useState<CatalogReviewItem[]>([]);
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
   const [transcriptSummary, setTranscriptSummary] = useState<string | null>(null);
+  const [transcriptAiTransparency, setTranscriptAiTransparency] = useState<{
+    model: string; reasoningEffort: string; instruction: string; input: string; toolsUsed: string[]; filesChanged: string[]; mutations: string;
+  } | null>(null);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -263,6 +269,7 @@ export default function OnboardingFlow({
         ? "This source had no usable text layer, so Codex vision was used for extraction."
         : "Parsed deterministically from the document text. Codex was not used.";
       setTranscriptSummary(`${String(result.summary ?? "Transcript review ready.")} ${parserNote}`);
+      setTranscriptAiTransparency(result.aiUsed === true ? result.aiTransparency as typeof transcriptAiTransparency : null);
       if (items.length === 0) {
         setError("No completed courses were extracted. The source is saved for manual review.");
       }
@@ -466,6 +473,7 @@ export default function OnboardingFlow({
               <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel)}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>
             </div> : <div className="transcript-review">
               {transcriptSummary && <p className="transcript-summary">{transcriptSummary}</p>}
+              {transcriptAiTransparency && <details className="transcript-ai-inspector"><summary>Inspect Codex vision run</summary><div><dl><div><dt>Model</dt><dd>{transcriptAiTransparency.model}</dd></div><div><dt>Reasoning</dt><dd>{transcriptAiTransparency.reasoningEffort === "low" ? "Light (SDK: low)" : transcriptAiTransparency.reasoningEffort}</dd></div><div><dt>Input</dt><dd>{transcriptAiTransparency.input}</dd></div><div><dt>Tools</dt><dd>None</dd></div><div><dt>Files changed</dt><dd>None</dd></div></dl><p>{transcriptAiTransparency.mutations}</p><strong>Exact extraction instruction</strong><pre>{transcriptAiTransparency.instruction}</pre></div></details>}
               <div className="transcript-review-heading"><strong>{academicTranscriptItems.length} GPA courses found</strong><span>Select the rows to import.</span></div>
               <div className="transcript-course-list">{academicTranscriptItems.map((item) => {
                 const payload = payloadFor(item);
@@ -481,7 +489,7 @@ export default function OnboardingFlow({
                 return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{identityLabel}, {resolution.identityResolved ? "resolved" : item.confidence}</em></label>;
               })}</div>
               {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass/fail courses</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA. Passed classes count toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); const passed = payload.letter_grade?.toUpperCase() === "P"; return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{passed ? `Pass, grade ${payload.grade_level}, ${payload.credits ?? 0} Personal Development credits` : `F, grade ${payload.grade_level}, no Personal Development credit`}</small></span><em>Pass/fail · Not in GPA</em></label>; })}</div></details>}
-              <button className="quiet-button" type="button" onClick={() => { setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); }}>Use a different transcript</button>
+              <button className="quiet-button" type="button" onClick={() => { setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); setTranscriptAiTransparency(null); }}>Use a different transcript</button>
             </div>}
           </>}
 

@@ -41,11 +41,11 @@ import {
 import {
   appliedCreditBreakdown,
   calculateGpa,
+  calculateUcGpaEstimate,
   calculateRequirementProgress,
   calculateWorkload,
   courseDisplayName,
   dtechGradePoint,
-  fallbackSummary,
   generateSuggestedPlan,
   generateTimeline,
   GRADE_LEVELS,
@@ -59,9 +59,11 @@ import {
 import { requirementsForProfile } from "@/lib/planning";
 import {
   ACADEMIC_INTEREST_OPTIONS,
+  CAREER_INTEREST_AREA_OPTIONS,
   courseProfileFit,
   MAJOR_DIRECTION_OPTIONS,
-  majorDirectionLabel
+  majorDirectionLabel,
+  WORK_VALUE_OPTIONS
 } from "@/lib/profile-planning";
 import {
   resolveTranscriptCourse,
@@ -71,6 +73,7 @@ import {
 } from "@/lib/transcript";
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
+import CodexReviewPanel, { type ReviewDestination } from "@/components/CodexReviewPanel";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
@@ -78,7 +81,6 @@ import GraduationWorkspace from "@/components/GraduationWorkspace";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import SmccdPlanner from "@/components/SmccdPlanner";
-import SummaryGenerateButton from "@/components/SummaryGenerateButton";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   Activity,
@@ -86,7 +88,6 @@ import type {
   Course,
   CourseRequirementMapping,
   FourYearPlan,
-  GeneratedSummary,
   GraduationRequirement,
   GradeLevel,
   OfficialSource,
@@ -154,6 +155,16 @@ const DEMO_LOGIN_SHORTCUT = {
 
 type CourseArea = "mine" | "dtech" | "smccd";
 type ProfileSection = "basics" | "direction" | "capacity";
+type GpaLens = "transcript" | "uc";
+interface SourceAiTransparency {
+  model: string;
+  reasoningEffort: string;
+  instruction: string;
+  input: string;
+  toolsUsed: string[];
+  filesChanged: string[];
+  mutations: string;
+}
 const DEFAULT_SIMULATION: SimulationConfig = {
   majorDirection: "undecided",
   pathIntensity: "balanced",
@@ -261,6 +272,7 @@ export default function PlanningWorkspace() {
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">("courses");
   const [profileSection, setProfileSection] = useState<ProfileSection>("basics");
+  const [gpaLens, setGpaLens] = useState<GpaLens>("transcript");
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
   const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
@@ -280,7 +292,6 @@ export default function PlanningWorkspace() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [tasks, setTasks] = useState<TimelineTask[]>([]);
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
-  const [summaries, setSummaries] = useState<GeneratedSummary[]>([]);
 
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
@@ -290,9 +301,11 @@ export default function PlanningWorkspace() {
     rawText: "",
     file: null as File | null
   });
+  const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
-  const [activityForm, setActivityForm] = useState({ name: "", kind: "club", role: "", weeklyHours: 2 });
+  const [activityForm, setActivityForm] = useState({ name: "", kind: "club", role: "", organization: "", weeklyHours: 2, weeksPerYear: 20, startGrade: 9, endGrade: 12, impact: "", description: "", isActive: true });
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState({ title: "", category: "admin", dueLabel: "" });
   const [simulationConfig, setSimulationConfig] = useState<SimulationConfig>(DEFAULT_SIMULATION);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
@@ -313,6 +326,7 @@ export default function PlanningWorkspace() {
     [trackedRequirements, planCourses, mappings, courses, equivalencies]
   );
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
+  const ucGpa = useMemo(() => calculateUcGpaEstimate(planCourses, courses), [planCourses, courses]);
   const workload = useMemo(
     () => (profile ? calculateWorkload(profile, planCourses, courses, activities) : null),
     [profile, planCourses, courses, activities]
@@ -343,8 +357,7 @@ export default function PlanningWorkspace() {
         planResult,
         activityResult,
         taskResult,
-        reviewResult,
-        summaryResult
+        reviewResult
       ] = await Promise.all([
         supabase.from("schools").select("*").eq("slug", "design-tech-high-school").single(),
         supabase.from("student_profiles").select("*").eq("id", userId).single(),
@@ -356,8 +369,7 @@ export default function PlanningWorkspace() {
         supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
         supabase.from("activities").select("*").eq("user_id", userId).order("created_at"),
         supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
-        supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-        supabase.from("generated_summaries").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(5)
+        supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false })
       ]);
       const firstError = [
         schoolResult.error,
@@ -389,7 +401,13 @@ export default function PlanningWorkspace() {
         : { data: [], error: null };
       if (planCourseResult.error) throw planCourseResult.error;
 
-      const loadedProfile = profileResult.data as unknown as StudentProfile;
+      const rawProfile = profileResult.data as unknown as StudentProfile;
+      const loadedProfile: StudentProfile = {
+        ...rawProfile,
+        career_interest_areas: rawProfile.career_interest_areas ?? [],
+        work_values: rawProfile.work_values ?? [],
+        exploration_questions: rawProfile.exploration_questions ?? []
+      };
       setSchool(schoolResult.data as unknown as School);
       setProfile(loadedProfile);
       setSimulationConfig((current) => ({
@@ -427,7 +445,6 @@ export default function PlanningWorkspace() {
         const preserved = new Set([...current].filter((id) => availableSet.has(id)));
         return preserved.size > 0 || current.size > 0 ? preserved : new Set(availableIds);
       });
-      setSummaries((summaryResult.data ?? []) as unknown as GeneratedSummary[]);
     } catch (caught) {
       setFatalError(caught instanceof Error ? caught.message : "The workspace could not be loaded.");
     } finally {
@@ -516,6 +533,11 @@ export default function PlanningWorkspace() {
     if (SECONDARY_NAV_ITEMS.some((item) => item.id === nextView)) setMoreNavOpen(true);
     setMobileNavOpen(false);
     void logEvent("view_opened", { view: nextView });
+  }
+
+  function navigateFromReview(destination: ReviewDestination) {
+    if (destination === "simulator") navigate("simulator");
+    else navigate(destination);
   }
 
   function openCourses(area: CourseArea = "mine", smccdSection: "courses" | "degree" = "courses") {
@@ -707,21 +729,10 @@ export default function PlanningWorkspace() {
         if (error) throw error;
         const inserted = (data ?? []) as unknown as PlanCourse[];
         setPlanCourses((current) => [...current, ...inserted]);
-        const explanationPayload = await authorizedPost("/api/ai/explain", {
-          feature: "plan",
-          context: {
-            generated_courses: generated.map((row) => courseMap.get(row.course_id)?.name),
-            grade_level: profile.grade_level,
-            goal_intensity: profile.goal_intensity,
-            workload_tolerance: profile.workload_tolerance
-          },
-          fallbackSummary: "A d.tech flow was added without overwriting manual plan entries. Verify every course and prerequisite before registration."
-        });
-        const result = explanationPayload.result as { summary?: string };
-        const explanation = result.summary ?? "Suggested courses were added from the official d.tech flow.";
+        const explanation = "Suggested courses were added from the official d.tech flow. Verify each placement and prerequisite before registration.";
         setPlanExplanation(explanation);
-        await supabase.from("plan_versions").update({ ai_summary: explanation }).eq("id", activeVersion.id);
-        await logEvent("plan_generated", { course_count: inserted.length });
+        await supabase.from("plan_versions").update({ ai_summary: null }).eq("id", activeVersion.id);
+        await logEvent("plan_generated", { course_count: inserted.length, ai_used: false });
       },
       `${generated.length} suggested courses added.`
     );
@@ -818,6 +829,7 @@ export default function PlanningWorkspace() {
           ? " Codex vision was used because the file had no readable text layer."
           : " Parsed from document text without Codex.";
         setToast(`${String(payload.summary ?? "Transcript review ready.")}${parserNote}`);
+        setSourceAiTransparency(payload.aiUsed === true ? payload.aiTransparency as SourceAiTransparency : null);
       },
     );
   }
@@ -835,6 +847,7 @@ export default function PlanningWorkspace() {
           ? payload.aiUsed === true ? " Codex vision was used because no text layer was available." : " Parsed from text without Codex."
           : "";
         setToast(`${String(payload.summary ?? "Source parsing completed.")}${parserNote}`);
+        setSourceAiTransparency(payload.aiUsed === true ? payload.aiTransparency as SourceAiTransparency : null);
       }
     );
   }
@@ -951,31 +964,56 @@ export default function PlanningWorkspace() {
     );
   }
 
-  async function addActivity(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+  async function saveActivity(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!supabase || !session) return;
+    const record = {
+      user_id: session.user.id,
+      name: activityForm.name.trim(),
+      kind: activityForm.kind,
+      role: activityForm.role.trim() || null,
+      organization: activityForm.organization.trim() || null,
+      weekly_hours: activityForm.weeklyHours,
+      weeks_per_year: activityForm.weeksPerYear,
+      start_grade: activityForm.startGrade,
+      end_grade: activityForm.endGrade,
+      impact: activityForm.impact.trim() || null,
+      description: activityForm.description.trim() || null,
+      is_active: activityForm.isActive
+    };
     await runAction(
-      "Adding activity",
+      editingActivityId ? "Updating experience" : "Adding experience",
       async () => {
-        const { data, error } = await supabase
-          .from("activities")
-          .insert({
-            user_id: session.user.id,
-            name: activityForm.name.trim(),
-            kind: activityForm.kind,
-            role: activityForm.role.trim() || null,
-            weekly_hours: activityForm.weeklyHours,
-            start_grade: profile?.grade_level ?? null
-          })
-          .select("*")
-          .single();
+        const query = editingActivityId
+          ? supabase.from("activities").update(record).eq("id", editingActivityId)
+          : supabase.from("activities").insert(record);
+        const { data, error } = await query.select("*").single();
         if (error) throw error;
-        setActivities((current) => [...current, data as unknown as Activity]);
-        setActivityForm({ name: "", kind: "club", role: "", weeklyHours: 2 });
-        await logEvent("activity_added");
+        const saved = data as unknown as Activity;
+        setActivities((current) => editingActivityId ? current.map((activity) => activity.id === saved.id ? saved : activity) : [...current, saved]);
+        setActivityForm({ name: "", kind: "club", role: "", organization: "", weeklyHours: 2, weeksPerYear: 20, startGrade: profile?.grade_level ?? 9, endGrade: profile?.grade_level ?? 12, impact: "", description: "", isActive: true });
+        setEditingActivityId(null);
+        await logEvent(editingActivityId ? "activity_updated" : "activity_added");
       },
-      "Activity added."
+      editingActivityId ? "Experience updated." : "Experience added."
     );
+  }
+
+  function editActivity(activity: Activity) {
+    setEditingActivityId(activity.id);
+    setActivityForm({
+      name: activity.name,
+      kind: activity.kind,
+      role: activity.role ?? "",
+      organization: activity.organization ?? "",
+      weeklyHours: Number(activity.weekly_hours),
+      weeksPerYear: Number(activity.weeks_per_year ?? 20),
+      startGrade: activity.start_grade ?? profile?.grade_level ?? 9,
+      endGrade: activity.end_grade ?? activity.start_grade ?? profile?.grade_level ?? 12,
+      impact: activity.impact ?? "",
+      description: activity.description ?? "",
+      isActive: activity.is_active ?? true
+    });
   }
 
   async function removeActivity(id: string) {
@@ -1060,16 +1098,7 @@ export default function PlanningWorkspace() {
     const result = simulatePlan(simulationConfig, profile, progress, gpa, workload);
     setSimulationResult(result);
     setSimulationExplanation(null);
-    await runAction("Explaining simulation", async () => {
-      const payload = await authorizedPost("/api/ai/explain", {
-        feature: "simulation",
-        context: { config: simulationConfig, comparison: result },
-        fallbackSummary: "The scenario changes workload and stress estimates but does not alter the saved plan."
-      });
-      const explanation = payload.result as { summary?: string };
-      setSimulationExplanation(explanation.summary ?? null);
-      await logEvent("simulation_started");
-    });
+    await logEvent("simulation_started", { ai_used: false });
   }
 
   async function saveSimulation() {
@@ -1103,41 +1132,6 @@ export default function PlanningWorkspace() {
         await logEvent("simulation_saved");
       },
       "Simulation saved. Your current plan was not changed."
-    );
-  }
-
-  async function generateSummary() {
-    if (!supabase || !session || !profile || !workload) return;
-    const deterministic = fallbackSummary(profile, progress, gpa, workload);
-    await runAction(
-      "Generating summary",
-      async () => {
-        const payload = await authorizedPost("/api/ai/explain", {
-          feature: "summary",
-          context: {
-            preferred_name: profile.preferred_name,
-            graduation_progress_percent: graduationPercent,
-            gpa,
-            workload,
-            missing_requirements: progress.filter((item) => item.status === "missing").map((item) => item.requirement.name)
-          },
-          fallbackSummary: deterministic
-        });
-        const result = payload.result as { summary: string };
-        const { data, error } = await supabase
-          .from("generated_summaries")
-          .insert({
-            user_id: session.user.id,
-            plan_version_id: activeVersion?.id ?? null,
-            content: result.summary,
-            generation_source: payload.fallbackUsed ? "fallback" : "codex"
-          })
-          .select("*")
-          .single();
-        if (error) throw error;
-        setSummaries((current) => [data as unknown as GeneratedSummary, ...current]);
-      },
-      "Summary generated."
     );
   }
 
@@ -1298,7 +1292,6 @@ export default function PlanningWorkspace() {
 
   function renderDashboard() {
     if (!profile) return null;
-    const isGeneratingSummary = busyLabel === "Generating summary";
     const nextTasks = tasks.filter((task) => !task.is_completed).slice(0, 4);
     const requirementSnapshot = progress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
@@ -1335,15 +1328,11 @@ export default function PlanningWorkspace() {
       plannedCourses: planCourses.filter((row) => row.status === "planned").map(overviewCourse),
       courseCounts,
       tasks: nextTasks.map((task) => ({ id: task.id, title: task.title, detail: task.due_label ?? titleCase(task.category) })),
-      summary: isGeneratingSummary ? null : summaries[0]?.content ?? null
+      summary: null
     };
     return (
       <div className="dashboard-page page-frame">
-        <PageHeader
-          title={profile.preferred_name ? `Good to see you, ${profile.preferred_name}` : "Planning overview"}
-          description="What is done, what needs attention, and how the current plan fits."
-          actions={<SummaryGenerateButton loading={isGeneratingSummary} disabled={Boolean(busyLabel)} onClick={() => void generateSummary()} />}
-        />
+        <PageHeader title={profile.preferred_name ? `Good to see you, ${profile.preferred_name}` : "Planning overview"} description="What is done, what needs attention, and how the current plan fits." />
         <OverviewPath
           data={overviewData}
           onOpenGraduation={() => navigate("graduation")}
@@ -1353,6 +1342,7 @@ export default function PlanningWorkspace() {
           onGenerateTimeline={() => void generateTasks()}
           onCompleteTask={(id) => void updateTask(id, { is_completed: true })}
         />
+        {session && <CodexReviewPanel session={session} focus="plan" title="Review the whole path" description="Codex can connect the deterministic trackers into a readable review. Every input and event remains inspectable below." question="Review my current academic and workload path. Identify the most important gap, one sequencing risk, one capacity concern, and the next actions I should review." context={{ overview: overviewData, profile: { grade: profile.grade_level, graduation_year: profile.graduation_year, direction: profile.major_direction, interests: profile.academic_interests, work_values: profile.work_values }, prerequisite_checks: prerequisitePlanChecks.map((check) => ({ course: check.name, status: check.status, message: check.message })) }} onNavigate={navigateFromReview} />}
       </div>
     );
   }
@@ -1367,6 +1357,23 @@ export default function PlanningWorkspace() {
       if (selected.has(interest)) selected.delete(interest);
       else selected.add(interest);
       setProfile({ ...profile, academic_interests: [...selected] });
+    };
+    const toggleProfileList = (field: "career_interest_areas" | "work_values", value: string) => {
+      const selected = new Set(profile[field] ?? []);
+      if (selected.has(value)) selected.delete(value);
+      else selected.add(value);
+      setProfile({ ...profile, [field]: [...selected] });
+    };
+    const profileContext = {
+      current_grade: profile.grade_level,
+      plan_through_grade: profile.plan_end_grade,
+      broad_direction: profile.major_direction,
+      academic_interests: profile.academic_interests,
+      career_interest_areas: profile.career_interest_areas,
+      work_values: profile.work_values,
+      career_ideas: profile.career_direction,
+      exploration_questions: profile.exploration_questions,
+      capacity: { planning_priority: profile.goal_intensity, demanding_course_limit: workload?.demandingCourseLimit ?? null, weekly_commitment_limit: profile.weekly_commitment_limit, current_stress: profile.stress_level, known_weekly_hours: workload?.knownWeeklyHours ?? null }
     };
     const impactRows = profileSection === "basics"
       ? [
@@ -1384,9 +1391,9 @@ export default function PlanningWorkspace() {
           ];
     return (
       <div className="profile-page page-frame">
-        <PageHeader title="Student profile" description="Your profile shapes course matching, workload warnings, and planning scenarios." actions={<button className="secondary-button" type="button" onClick={() => setReplayingOnboarding(true)}><ArrowClockwise size={17} /> Review setup</button>} />
+        <PageHeader title="Student compass" description="Record what interests you, what matters to you, and the limits a useful plan must respect." actions={<button className="secondary-button" type="button" onClick={() => setReplayingOnboarding(true)}><ArrowClockwise size={17} /> Review setup</button>} />
         <WorkspaceTabs
-          items={[{ id: "basics", label: "Basics" }, { id: "direction", label: "Direction" }, { id: "capacity", label: "Capacity" }]}
+          items={[{ id: "basics", label: "School context" }, { id: "direction", label: "Interests and values" }, { id: "capacity", label: "Capacity" }]}
           value={profileSection}
           onChange={setProfileSection}
           label="Student profile sections"
@@ -1408,13 +1415,16 @@ export default function PlanningWorkspace() {
               <label className="confirmation-field"><input type="checkbox" checked={profile.school_confirmed} onChange={(event) => setProfile({ ...profile, school_confirmed: event.target.checked })} /><span><strong>I confirm this plan is for Design Tech High School.</strong><small>Course and graduation data use the labeled 2025-26 source year.</small></span></label>
             </>}
             {profileSection === "direction" && <>
-              <header className="profile-editor-heading"><h2>Academic direction</h2><p>Used to rank courses and associate degrees. These answers do not commit you to a major.</p></header>
-              <fieldset className="profile-choice-grid"><legend>Current direction</legend>{MAJOR_DIRECTION_OPTIONS.map((option) => <label className={profile.major_direction === option.value ? "selected" : ""} key={option.value}><input type="radio" name="major-direction" value={option.value} checked={profile.major_direction === option.value} onChange={() => setProfile({ ...profile, major_direction: option.value })} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</fieldset>
-              <fieldset className="profile-interest-grid"><legend>Academic interests</legend>{ACADEMIC_INTEREST_OPTIONS.map((interest) => <label className={profile.academic_interests.includes(interest) ? "selected" : ""} key={interest}><input type="checkbox" checked={profile.academic_interests.includes(interest)} onChange={() => toggleInterest(interest)} /><span>{interest}</span></label>)}</fieldset>
+              <header className="profile-editor-heading"><h2>Direction without locking in</h2><p>Use interests, work values, and open questions to test possibilities. This is not an assessment or a major commitment.</p></header>
+              <fieldset className="profile-choice-grid"><legend>Broad academic direction</legend>{MAJOR_DIRECTION_OPTIONS.map((option) => <label className={profile.major_direction === option.value ? "selected" : ""} key={option.value}><input type="radio" name="major-direction" value={option.value} checked={profile.major_direction === option.value} onChange={() => setProfile({ ...profile, major_direction: option.value })} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</fieldset>
+              <fieldset className="profile-interest-areas"><legend>What kinds of work sound energizing?</legend><p>Select the descriptions that feel worth testing. These six areas are inspired by the widely used RIASEC exploration model.</p><div>{CAREER_INTEREST_AREA_OPTIONS.map((option) => <label className={profile.career_interest_areas.includes(option.value) ? "selected" : ""} key={option.value}><input type="checkbox" checked={profile.career_interest_areas.includes(option.value)} onChange={() => toggleProfileList("career_interest_areas", option.value)} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</div></fieldset>
+              <fieldset className="profile-interest-grid"><legend>Academic subjects to explore</legend>{ACADEMIC_INTEREST_OPTIONS.map((interest) => <label className={profile.academic_interests.includes(interest) ? "selected" : ""} key={interest}><input type="checkbox" checked={profile.academic_interests.includes(interest)} onChange={() => toggleInterest(interest)} /><span>{interest}</span></label>)}</fieldset>
+              <fieldset className="profile-interest-grid work-values"><legend>Conditions that matter</legend>{WORK_VALUE_OPTIONS.map((value) => <label className={profile.work_values.includes(value) ? "selected" : ""} key={value}><input type="checkbox" checked={profile.work_values.includes(value)} onChange={() => toggleProfileList("work_values", value)} /><span>{value}</span></label>)}</fieldset>
               <div className="form-grid two">
                 <label className="form-field"><span>Other interests</span><input value={otherInterests.join(", ")} onChange={(event) => setProfile({ ...profile, academic_interests: [...profile.academic_interests.filter((interest) => standardInterests.has(interest)), ...event.target.value.split(",").map((item) => item.trim()).filter(Boolean)] })} placeholder="Specific subjects, separated by commas" /></label>
-                <label className="form-field"><span>Career ideas to explore</span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="Software engineering, public health" /><small className="form-hint">Used only as discovery keywords.</small></label>
+                <label className="form-field"><span>Career ideas to test</span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="Software engineering, public health" /><small className="form-hint">Used for discovery, never treated as a final decision.</small></label>
               </div>
+              <label className="form-field"><span>Questions I want experiences to answer</span><textarea rows={3} value={profile.exploration_questions.join("\n")} onChange={(event) => setProfile({ ...profile, exploration_questions: event.target.value.split("\n").map((item) => item.trim()).filter(Boolean) })} placeholder={"Do I enjoy open-ended technical problems?\nDo I want work centered on people or systems?"} /><small className="form-hint">One question per line. Use courses, projects, work, and conversations to gather evidence.</small></label>
             </>}
             {profileSection === "capacity" && <>
               <header className="profile-editor-heading"><h2>Workload and limits</h2><p>These settings power workload warnings and provide the simulator baseline.</p></header>
@@ -1439,6 +1449,7 @@ export default function PlanningWorkspace() {
           </aside>
         </div>
         <div className="profile-save-bar"><span>Save before leaving to apply these changes.</span><button className="primary-button" onClick={() => void saveProfile()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save profile</button></div>
+        {session && <CodexReviewPanel session={session} focus="profile" title="Turn answers into experiments" description="Codex can suggest low-risk ways to test a direction using the answers above. It will not diagnose an interest type or choose a major." question="Review my interests, values, open questions, and capacity. Suggest specific low-risk experiments that could confirm or challenge my current directions." context={profileContext} onNavigate={navigateFromReview} compact />}
       </div>
     );
   }
@@ -1490,6 +1501,10 @@ export default function PlanningWorkspace() {
           {latestTranscript.error_message && <small>{latestTranscript.error_message}</small>}
           {latestTranscript.parse_status !== "processing" && transcriptItems.length === 0 && <button className="secondary-button small" type="button" onClick={() => void parseSource(latestTranscript)} disabled={Boolean(busyLabel)}><ArrowClockwise size={15} /> Read again</button>}
         </div>}
+        {sourceAiTransparency && <details className="transcript-ai-inspector">
+          <summary><Sparkle size={15} /> Codex vision run details</summary>
+          <div><dl><div><dt>Model</dt><dd>{sourceAiTransparency.model}</dd></div><div><dt>Reasoning</dt><dd>{sourceAiTransparency.reasoningEffort === "low" ? "Light (SDK: low)" : titleCase(sourceAiTransparency.reasoningEffort)}</dd></div><div><dt>Input</dt><dd>{sourceAiTransparency.input}</dd></div><div><dt>Tools</dt><dd>{sourceAiTransparency.toolsUsed.length || "None"}</dd></div><div><dt>Files changed</dt><dd>{sourceAiTransparency.filesChanged.length || "None"}</dd></div></dl><p>{sourceAiTransparency.mutations}</p><strong>Exact extraction instruction</strong><pre>{sourceAiTransparency.instruction}</pre></div>
+        </details>}
         {transcriptItems.length > 0 ? <section className="transcript-results" aria-labelledby="transcript-results-title">
           {transcriptSummary && <p className="transcript-result-summary">{transcriptSummary}</p>}
           <header className="transcript-results-heading">
@@ -1632,18 +1647,29 @@ export default function PlanningWorkspace() {
 
   function renderGpa() {
     const gradedRows = planCourses.filter((row) => row.letter_grade && !["IP", "P"].includes(row.letter_grade.toUpperCase()));
+    const gpaContext = {
+      lens: gpaLens,
+      dtech_transcript_method: { current_unweighted: gpa.currentUnweighted, current_weighted: gpa.currentWeighted, projected_unweighted: gpa.projectedUnweighted, projected_weighted: gpa.projectedWeighted, graded_credits: gpa.gradedCredits, weighted_credits: gpa.weightedCredits, pass_credits_excluded: gpa.passCredits },
+      uc_planning_method: ucGpa,
+      graded_courses: gradedRows.map((row) => ({ name: courseDisplayName(row, courseMap), grade_level: row.grade_level, status: row.status, grade: row.letter_grade, credits: row.credits, weighted: row.is_weighted || Boolean(row.smccd_course_id), verified: row.mapping_verified }))
+    };
     return (
       <div className="gpa-page page-frame">
-        <PageHeader title="GPA" description="Current and projected values use the grading behavior printed on the d.tech transcript." />
-        <section className="gpa-summary-panel" aria-label="GPA comparison">
-          <div className="gpa-comparison-table">
-            <div className="gpa-comparison-head"><span>Method</span><strong>Current</strong><strong>Projected</strong></div>
-            <div><span>Unweighted</span><strong>{formatGpa(gpa.currentUnweighted)}</strong><strong>{formatGpa(gpa.projectedUnweighted)}</strong></div>
-            <div><span>Weighted</span><strong>{formatGpa(gpa.currentWeighted)}</strong><strong>{formatGpa(gpa.projectedWeighted)}</strong></div>
-          </div>
-          <dl className="gpa-credit-index"><div><dt>GPA credits</dt><dd>{gpa.gradedCredits}</dd></div><div><dt>Weighted credits</dt><dd>{gpa.weightedCredits}</dd></div><div><dt>Pass credits excluded</dt><dd>{gpa.passCredits}</dd></div></dl>
-        </section>
-        <div className="gpa-method-note"><Gauge size={18} /><span>A+, A, and A- are 4 points. B variants are 3, C variants are 2, and D variants are 1. SMCCD and d.tech Honors courses receive one added point. P is excluded.</span></div>
+        <PageHeader title="GPA lenses" description="See the same coursework through the transcript method and a conservative UC planning method." />
+        <WorkspaceTabs items={[{ id: "transcript", label: "d.tech transcript" }, { id: "uc", label: "UC planning estimate" }]} value={gpaLens} onChange={setGpaLens} label="GPA calculation methods" layoutId="gpa-lens-indicator" className="gpa-lens-tabs" />
+        {gpaLens === "transcript" ? <AnimatedContent className="gpa-lens-workspace" key="transcript">
+          <section className="gpa-answer" aria-label="d.tech transcript GPA">
+            <div><span>Current weighted GPA</span><strong>{formatGpa(gpa.currentWeighted)}</strong><p>Matches completed graded coursework using the transcript legend.</p></div>
+            <dl><div><dt>Current unweighted</dt><dd>{formatGpa(gpa.currentUnweighted)}</dd></div><div><dt>Projected weighted</dt><dd>{formatGpa(gpa.projectedWeighted)}</dd></div><div><dt>Projected unweighted</dt><dd>{formatGpa(gpa.projectedUnweighted)}</dd></div></dl>
+          </section>
+          <div className="gpa-evidence-strip"><Gauge size={18} /><span><strong>Method:</strong> plus and minus marks do not change grade points. d.tech Honors and SMCCD courses receive one added point. Pass marks do not enter GPA.</span><small>{gpa.gradedCredits} graded credits · {gpa.weightedCredits} weighted · {gpa.passCredits} pass credits excluded</small></div>
+        </AnimatedContent> : <AnimatedContent className="gpa-lens-workspace" key="uc">
+          <section className="gpa-answer uc" aria-label="UC GPA planning estimate">
+            <div><span>UC capped weighted estimate</span><strong>{formatGpa(ucGpa.cappedWeighted)}</strong><p>Completed, verified d.tech A-G courses from grades 10 and 11 only.</p></div>
+            <dl><div><dt>Unweighted</dt><dd>{formatGpa(ucGpa.unweighted)}</dd></div><div><dt>Course semesters</dt><dd>{ucGpa.courseSemesters}</dd></div><div><dt>Honors semesters used</dt><dd>{ucGpa.honorsSemestersUsed} / 8</dd></div></dl>
+          </section>
+          <div className={`gpa-evidence-strip ${ucGpa.unresolvedCourses ? "warning" : ""}`}><Warning size={18} /><span><strong>Conservative by design:</strong> custom and college courses stay out until an exact reviewed A-G link exists. UC honors points are capped at eight semesters, with no more than four from grade 10.</span><small>{ucGpa.unresolvedCourses} graded {ucGpa.unresolvedCourses === 1 ? "course needs" : "courses need"} A-G verification</small></div>
+        </AnimatedContent>}
         <details className="gpa-course-details">
           <summary><span><strong>Course calculation details</strong><small>{gradedRows.length} graded courses with exact transcript marks</small></span><CaretDown size={16} /></summary>
           <div className="gpa-course-details-body">
@@ -1651,6 +1677,7 @@ export default function PlanningWorkspace() {
             {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
           </div>
         </details>
+        {session && <CodexReviewPanel session={session} focus="gpa" title="Audit this GPA lens" description="Ask Codex to look for missing evidence or confusing assumptions. The calculation itself remains deterministic." question={`Audit the ${gpaLens === "transcript" ? "d.tech transcript" : "UC planning"} GPA lens. Explain what is supported, what is excluded, and what I should verify.`} context={gpaContext} onNavigate={navigateFromReview} compact />}
       </div>
     );
   }
@@ -1745,47 +1772,78 @@ export default function PlanningWorkspace() {
 
   function renderActivities() {
     const activityHours = workload?.weeklyActivityHours ?? 0;
+    const activeActivities = activities.filter((activity) => activity.is_active ?? true);
+    const pastActivities = activities.filter((activity) => !(activity.is_active ?? true));
+    const annualHours = activities.reduce((total, activity) => total + Number(activity.weekly_hours) * Number(activity.weeks_per_year ?? 0), 0);
+    const needsStory = activities.filter((activity) => !activity.impact?.trim() || !activity.description?.trim()).length;
+    const activitiesContext = {
+      weekly_activity_hours: activityHours,
+      known_weekly_workload: workload?.knownWeeklyHours ?? null,
+      weekly_limit: profile?.weekly_commitment_limit ?? null,
+      experiences: activities.map((activity) => ({ name: activity.name, type: activity.kind, role: activity.role, organization: activity.organization, hours_per_week: activity.weekly_hours, weeks_per_year: activity.weeks_per_year, grades: [activity.start_grade, activity.end_grade], active: activity.is_active, description: activity.description, impact: activity.impact }))
+    };
     return (
       <div className="activity-page page-frame">
-        <PageHeader title="Activities" description="Track recurring commitments that affect your weekly capacity." />
-        <AnimatedContent>
-          <section className="secondary-summary" aria-label="Activity workload summary">
-            <div className="secondary-summary-primary"><span>Activity time</span><strong>{activityHours}</strong><p>hours in a typical week</p></div>
-            <dl><div><dt>Commitments</dt><dd>{activities.length}</dd><span>Active entries</span></div><div><dt>Total known workload</dt><dd>{workload?.knownWeeklyHours ?? 0}</dd><span>Activities plus SMCCD</span></div><div><dt>Saved weekly limit</dt><dd>{profile?.weekly_commitment_limit ?? "Not set"}</dd><span>{workload ? titleCase(workload.level) : "Complete the profile"}</span></div></dl>
-          </section>
+        <PageHeader title="Experience portfolio" description="Keep the commitments that shape your time, growth, and application stories in one place." />
+        <AnimatedContent className="experience-balance">
+          <div><span>Typical week</span><strong>{activityHours} hours</strong><p>{profile?.weekly_commitment_limit ? `${Math.max(0, profile.weekly_commitment_limit - (workload?.knownWeeklyHours ?? 0))} hours remain inside your saved outside-school limit.` : "Set a weekly limit in Student profile to see remaining capacity."}</p></div>
+          <dl><div><dt>Active experiences</dt><dd>{activeActivities.length}</dd></div><div><dt>Estimated annual time</dt><dd>{Math.round(annualHours)}h</dd></div><div><dt>Stories to finish</dt><dd>{needsStory}</dd></div></dl>
         </AnimatedContent>
-        <div className="activity-layout">
-          <section className="activity-register">
-            <header className="register-heading"><div><h2>Weekly commitments</h2><p>These entries are included in workload and simulator results.</p></div></header>
-            {activities.length ? <div className="activity-list">{activities.map((activity) => <article key={activity.id}><div><strong>{activity.name}</strong><span>{titleCase(activity.kind)}{activity.role ? ` · ${activity.role}` : ""}</span></div><b>{activity.weekly_hours}h</b><button className="icon-button danger" onClick={() => void removeActivity(activity.id)} aria-label={`Remove ${activity.name}`}><Trash size={16} /></button></article>)}</div> : <EmptyState title="No activities yet" body="Add clubs, work, athletics, service, internships, or family responsibilities." />}
+        <div className="experience-layout">
+          <section className="experience-register">
+            <header className="register-heading"><div><h2>Your experiences</h2><p>Hours power workload checks. Description and impact preserve what actually mattered.</p></div></header>
+            {activities.length ? <div className="experience-list">
+              {activeActivities.map((activity) => <article className="experience-row" key={activity.id}>
+                <div className="experience-row-main"><span>{titleCase(activity.kind)}{activity.organization ? ` · ${activity.organization}` : ""}</span><h3>{activity.name}</h3><p>{activity.role || "Role not recorded"} · {activity.weekly_hours}h/week · {activity.weeks_per_year ?? "?"} weeks/year</p>{activity.impact ? <blockquote>{activity.impact}</blockquote> : <em>Add one concrete contribution, result, or lesson.</em>}</div>
+                <div className="experience-row-actions"><button type="button" onClick={() => editActivity(activity)}>Edit</button><button type="button" className="danger" onClick={() => void removeActivity(activity.id)} aria-label={`Remove ${activity.name}`}><Trash size={15} /></button></div>
+              </article>)}
+              {pastActivities.length > 0 && <details className="past-experiences"><summary>{pastActivities.length} past {pastActivities.length === 1 ? "experience" : "experiences"}</summary><div>{pastActivities.map((activity) => <button type="button" onClick={() => editActivity(activity)} key={activity.id}><span><strong>{activity.name}</strong><small>{activity.role ?? titleCase(activity.kind)}</small></span><span>Grades {activity.start_grade ?? "?"}-{activity.end_grade ?? "?"}</span></button>)}</div></details>}
+            </div> : <EmptyState title="No experiences recorded" body="Start with anything that regularly uses your time: a club, job, sport, family responsibility, project, service, or internship." />}
           </section>
-          <form className="tool-rail activity-composer" onSubmit={addActivity}>
-            <header className="tool-rail-heading"><h2>Add an activity</h2><p>Use the typical hours for one week.</p></header>
+          <form className="tool-rail activity-composer" onSubmit={saveActivity}>
+            <header className="tool-rail-heading"><h2>{editingActivityId ? "Edit experience" : "Add an experience"}</h2><p>Capture enough detail to make this useful later.</p></header>
             <label className="form-field"><span>Activity name</span><input value={activityForm.name} onChange={(event) => setActivityForm({ ...activityForm, name: event.target.value })} required /></label>
             <label className="form-field"><span>Type</span><select value={activityForm.kind} onChange={(event) => setActivityForm({ ...activityForm, kind: event.target.value })}><option value="club">Club</option><option value="athletics">Athletics</option><option value="service">Service</option><option value="work">Work</option><option value="family">Family responsibility</option><option value="internship">Internship</option><option value="other">Other</option></select></label>
-            <label className="form-field"><span>Role <small>(optional)</small></span><input value={activityForm.role} onChange={(event) => setActivityForm({ ...activityForm, role: event.target.value })} /></label>
-            <label className="form-field"><span>Hours per week</span><input type="number" min={0} max={80} step={0.5} value={activityForm.weeklyHours} onChange={(event) => setActivityForm({ ...activityForm, weeklyHours: Number(event.target.value) })} /></label>
-            <button className="primary-button" type="submit"><Plus size={17} /> Add activity</button>
+            <div className="form-grid two"><label className="form-field"><span>Role</span><input value={activityForm.role} onChange={(event) => setActivityForm({ ...activityForm, role: event.target.value })} placeholder="Member, captain, caregiver" /></label><label className="form-field"><span>Organization</span><input value={activityForm.organization} onChange={(event) => setActivityForm({ ...activityForm, organization: event.target.value })} placeholder="Optional" /></label></div>
+            <div className="form-grid two"><label className="form-field"><span>Hours per week</span><input type="number" min={0} max={80} step={0.5} value={activityForm.weeklyHours} onChange={(event) => setActivityForm({ ...activityForm, weeklyHours: Number(event.target.value) })} /></label><label className="form-field"><span>Weeks per year</span><input type="number" min={0} max={52} step={1} value={activityForm.weeksPerYear} onChange={(event) => setActivityForm({ ...activityForm, weeksPerYear: Number(event.target.value) })} /></label></div>
+            <div className="form-grid two"><label className="form-field"><span>Start grade</span><select value={activityForm.startGrade} onChange={(event) => setActivityForm({ ...activityForm, startGrade: Number(event.target.value) })}>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="form-field"><span>End grade</span><select value={activityForm.endGrade} onChange={(event) => setActivityForm({ ...activityForm, endGrade: Number(event.target.value) })}>{GRADE_LEVELS.filter((grade) => grade >= activityForm.startGrade).map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label></div>
+            <label className="form-field"><span>What you did</span><textarea rows={3} value={activityForm.description} onChange={(event) => setActivityForm({ ...activityForm, description: event.target.value })} placeholder="Responsibilities, projects, or regular work" /></label>
+            <label className="form-field"><span>Contribution or growth</span><textarea rows={3} value={activityForm.impact} onChange={(event) => setActivityForm({ ...activityForm, impact: event.target.value })} placeholder="A result, change, responsibility, or lesson you can support" /></label>
+            <label className="toggle-field"><input type="checkbox" checked={activityForm.isActive} onChange={(event) => setActivityForm({ ...activityForm, isActive: event.target.checked })} /><span>Currently active</span></label>
+            <div className="activity-form-actions"><button className="primary-button" type="submit"><Plus size={17} /> {editingActivityId ? "Save changes" : "Add experience"}</button>{editingActivityId && <button className="text-button" type="button" onClick={() => { setEditingActivityId(null); setActivityForm({ name: "", kind: "club", role: "", organization: "", weeklyHours: 2, weeksPerYear: 20, startGrade: profile?.grade_level ?? 9, endGrade: profile?.grade_level ?? 12, impact: "", description: "", isActive: true }); }}>Cancel</button>}</div>
           </form>
         </div>
+        {session && <CodexReviewPanel session={session} focus="activities" title="Review the portfolio" description="Find missing context, workload conflicts, and experience details worth preserving. Codex does not score the student or rewrite entries silently." question="Review these experiences for workload balance, missing evidence, and useful reflection questions. Suggest specific improvements without exaggerating impact." context={activitiesContext} onNavigate={navigateFromReview} compact />}
       </div>
     );
   }
 
   function renderTimeline() {
-    const openTaskCount = tasks.filter((task) => !task.is_completed).length;
-    const completedTaskCount = tasks.length - openTaskCount;
+    const openTasks = tasks.filter((task) => !task.is_completed);
+    const completedTasks = tasks.filter((task) => task.is_completed);
+    const academicTasks = openTasks.filter((task) => task.category === "academics" || task.category === "admin");
+    const explorationTasks = openTasks.filter((task) => task.category === "college" || task.category === "activities" || task.category === "summer");
+    const timelineContext = {
+      current_grade: profile?.grade_level ?? null,
+      graduation_year: profile?.graduation_year ?? null,
+      open_requirement_areas: progress.filter((item) => item.status === "missing").map((item) => ({ name: item.requirement.name, verified_projected_credits: item.verifiedProjectedCredits, required_credits: item.requirement.credits_required })),
+      prerequisite_checks: prerequisitePlanChecks.map((check) => ({ course: check.name, status: check.status, message: check.message })),
+      open_tasks: openTasks.map((task) => ({ title: task.title, category: task.category, timing: task.due_label, generated_from_plan: task.is_generated, rationale: task.explanation }))
+    };
+    const taskRow = (task: TimelineTask) => <article className={`decision-task ${task.is_completed ? "completed" : ""}`} key={task.id}>
+      <input type="checkbox" checked={task.is_completed} onChange={(event) => void updateTask(task.id, { is_completed: event.target.checked })} aria-label={`Mark ${task.title} complete`} />
+      <div><input className="task-title-input" value={task.title} onChange={(event) => setTasks((current) => current.map((candidate) => candidate.id === task.id ? { ...candidate, title: event.target.value } : candidate))} onBlur={() => void updateTask(task.id, { title: task.title })} /><span>{task.due_label ?? titleCase(task.category)}{task.is_generated ? " · From current plan" : " · Added by you"}</span>{task.explanation && <p>{task.explanation}</p>}</div>
+      <button className="icon-button danger" onClick={async () => { if (!supabase) return; await supabase.from("timeline_tasks").delete().eq("id", task.id); setTasks((current) => current.filter((candidate) => candidate.id !== task.id)); }} aria-label={`Delete ${task.title}`}><Trash size={16} /></button>
+    </article>;
     return (
       <div className="timeline-page page-frame">
-        <PageHeader title="Timeline" description="Keep planning tasks in one editable checklist." actions={<button className="secondary-button" onClick={() => void generateTasks()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Generate tasks</button>} />
-        <AnimatedContent>
-          <section className="secondary-summary" aria-label="Timeline summary">
-            <div className="secondary-summary-primary"><span>Open tasks</span><strong>{openTaskCount}</strong><p>{openTaskCount === 1 ? "item needs attention" : "items need attention"}</p></div>
-            <dl><div><dt>Completed</dt><dd>{completedTaskCount}</dd><span>Checklist items</span></div><div><dt>Course checks</dt><dd>{prerequisitePlanChecks.length}</dd><span>Prerequisite review</span></div><div><dt>Total</dt><dd>{tasks.length}</dd><span>Editable tasks</span></div></dl>
-          </section>
+        <PageHeader title="Decision timeline" description="Turn plan gaps, prerequisites, and your own goals into a short sequence of next actions." actions={<button className="secondary-button" onClick={() => void generateTasks()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Sync from plan</button>} />
+        <AnimatedContent className="timeline-focus">
+          <div><span>Do next</span><strong>{openTasks[0]?.title ?? "Nothing urgent"}</strong><p>{openTasks[0]?.explanation ?? "Sync from the plan or add a decision you want to remember."}</p></div>
+          <dl><div><dt>Open decisions</dt><dd>{openTasks.length}</dd></div><div><dt>Course checks</dt><dd>{prerequisitePlanChecks.length}</dd></div><div><dt>Finished</dt><dd>{completedTasks.length}</dd></div></dl>
         </AnimatedContent>
-        {prerequisitePlanChecks.length > 0 && <details className="course-checks">
-          <summary><span><strong>Course checks</strong><small>Prerequisite issues in the current sequence</small></span><span>{prerequisitePlanChecks.length} to review <CaretDown size={15} /></span></summary>
+        {prerequisitePlanChecks.length > 0 && <section className="timeline-course-checks">
+          <header><div><span>Blocking evidence</span><h2>Course checks before registration</h2></div><strong>{prerequisitePlanChecks.length}</strong></header>
           <div>{prerequisitePlanChecks.slice(0, 6).map((check) => <button className={`prerequisite-followup-row ${check.status}`} key={check.row.id} type="button" onClick={() => {
             if (check.source === "dtech") {
               const course = courseMap.get(check.courseId);
@@ -1796,37 +1854,52 @@ export default function PlanningWorkspace() {
             setCourseArea(check.source);
             setView("courses");
           }}><span><strong>{check.name}</strong><small>{check.message}</small></span><span>{check.status === "blocked" ? "Missing requirement" : "Needs review"}</span></button>)}</div>
-        </details>}
-        <div className="timeline-layout">
-          <section className="timeline-register">
-            <header className="register-heading"><div><h2>Checklist</h2><p>Edit the task title directly or mark it complete.</p></div></header>
-            {tasks.length ? <div className="task-list">{tasks.map((task) => <article className={`timeline-row ${task.is_completed ? "completed" : ""}`} key={task.id}><input type="checkbox" checked={task.is_completed} onChange={(event) => void updateTask(task.id, { is_completed: event.target.checked })} aria-label={`Mark ${task.title} complete`} /><div><input className="task-title-input" value={task.title} onChange={(event) => setTasks((current) => current.map((candidate) => candidate.id === task.id ? { ...candidate, title: event.target.value } : candidate))} onBlur={() => void updateTask(task.id, { title: task.title })} /><span>{task.due_label ?? titleCase(task.category)}{task.is_generated ? " - Generated" : ""}</span>{task.explanation && <p>{task.explanation}</p>}</div><button className="icon-button danger" onClick={async () => { if (!supabase) return; await supabase.from("timeline_tasks").delete().eq("id", task.id); setTasks((current) => current.filter((candidate) => candidate.id !== task.id)); }} aria-label={`Delete ${task.title}`}><Trash size={16} /></button></article>)}</div> : <EmptyState title="No timeline tasks" body="Generate tasks from the current plan or add your own." />}
+        </section>}
+        <div className="decision-timeline-layout">
+          <section className="decision-track">
+            <header className="register-heading"><div><h2>Academic and admin</h2><p>Requirements, registration, prerequisites, and verification.</p></div><span>{academicTasks.length}</span></header>
+            {academicTasks.length ? <div className="decision-task-list">{academicTasks.map(taskRow)}</div> : <p className="decision-track-empty">No academic actions are waiting.</p>}
+          </section>
+          <section className="decision-track">
+            <header className="register-heading"><div><h2>Explore and build</h2><p>Interests, activities, college exploration, and summer choices.</p></div><span>{explorationTasks.length}</span></header>
+            {explorationTasks.length ? <div className="decision-task-list">{explorationTasks.map(taskRow)}</div> : <p className="decision-track-empty">No exploration actions are waiting.</p>}
           </section>
           <form className="tool-rail task-composer" onSubmit={addCustomTask}><header className="tool-rail-heading"><h2>Add a task</h2><p>For anything not already on the checklist.</p></header><label className="form-field"><span>Task</span><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required /></label><label className="form-field"><span>Category</span><select value={taskForm.category} onChange={(event) => setTaskForm({ ...taskForm, category: event.target.value })}><option value="academics">Academics</option><option value="activities">Activities</option><option value="college">College readiness</option><option value="summer">Summer</option><option value="admin">Admin</option></select></label><label className="form-field"><span>When <small>(optional)</small></span><input value={taskForm.dueLabel} onChange={(event) => setTaskForm({ ...taskForm, dueLabel: event.target.value })} placeholder="Before registration" /></label><button className="primary-button" type="submit"><Plus size={17} /> Add task</button></form>
         </div>
+        {completedTasks.length > 0 && <details className="completed-decisions"><summary>{completedTasks.length} completed {completedTasks.length === 1 ? "task" : "tasks"}</summary><div>{completedTasks.map(taskRow)}</div></details>}
+        {session && <CodexReviewPanel session={session} focus="timeline" title="Prioritize the next moves" description="Codex can explain dependencies and point out vague tasks while the saved checklist stays under your control." question="Review this decision timeline. Identify the three most useful next actions, explain dependencies, and flag any task that is vague or unsupported." context={timelineContext} onNavigate={navigateFromReview} compact />}
       </div>
     );
   }
 
   function renderSimulator() {
     if (!profile) return null;
+    const scenarioContext = simulationResult ? {
+      assumptions: simulationConfig,
+      current: simulationResult.current,
+      scenario: simulationResult.simulated,
+      deterministic_changes: simulationResult.changes,
+      deterministic_risks: simulationResult.risks,
+      saved_capacity: { weekly_limit: profile.weekly_commitment_limit, demanding_course_limit: workload?.demandingCourseLimit ?? null, stress_baseline: profile.stress_level }
+    } : null;
     return (
       <div className="simulator-page page-frame">
-        <PageHeader title="Simulator" description="Compare one scenario without changing your saved plan." actions={simulationResult && <button className="secondary-button" onClick={() => void saveSimulation()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save scenario</button>} />
+        <PageHeader title="Scenario lab" description="Make one hypothetical tradeoff visible before changing the real course plan." actions={simulationResult && <button className="secondary-button" onClick={() => void saveSimulation()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save comparison</button>} />
+        <div className="scenario-contract"><ShieldCheckIcon /><span><strong>Safe sandbox:</strong> the comparison changes assumptions only. It never edits courses, grades, activities, or profile answers.</span></div>
         <div className="simulator-layout">
           <section className="tool-rail sim-controls">
-            <header className="tool-rail-heading"><h2>Scenario settings</h2><p>Change only the assumptions you want to compare.</p></header>
+            <header className="tool-rail-heading"><h2>Change the assumptions</h2><p>Each control states exactly what the deterministic model adds or removes.</p></header>
             <label className="form-field"><span>Planning direction</span><select value={simulationConfig.majorDirection} onChange={(event) => setSimulationConfig({ ...simulationConfig, majorDirection: event.target.value as SimulationConfig["majorDirection"] })}>{MAJOR_DIRECTION_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select><small className="form-hint">Changes profile matching only. It does not invent major requirements.</small></label>
             <label className="form-field"><span>Path intensity</span><select value={simulationConfig.pathIntensity} onChange={(event) => setSimulationConfig({ ...simulationConfig, pathIntensity: event.target.value as SimulationConfig["pathIntensity"] })}><option value="lower_stress">One fewer demanding course</option><option value="balanced">Keep current target</option><option value="competitive">One more demanding course</option></select></label>
             <label className="form-field"><span>Course style</span><select value={simulationConfig.courseStyle} onChange={(event) => setSimulationConfig({ ...simulationConfig, courseStyle: event.target.value as SimulationConfig["courseStyle"] })}><option value="more_regular">One fewer weighted course</option><option value="more_honors">Add one Honors course</option><option value="more_dual_enrollment">Add one 3-unit SMCCD course</option></select><small className="form-hint">The SMCCD scenario adds 9 weekly student-work hours.</small></label>
             <label className="form-field"><span>Activity load</span><select value={simulationConfig.activityLoad} onChange={(event) => setSimulationConfig({ ...simulationConfig, activityLoad: event.target.value as SimulationConfig["activityLoad"] })}><option value="lower">3 fewer hours per week</option><option value="same">No change</option><option value="higher">4 more hours per week</option></select></label>
-            <button className="primary-button" onClick={() => void runSimulation()} disabled={Boolean(busyLabel)}><Scales size={17} /> Run comparison</button>
+            <button className="primary-button" onClick={() => void runSimulation()} disabled={Boolean(busyLabel)}><Scales size={17} /> Compare with current plan</button>
           </section>
           <section className="scenario-output">
-            {simulationResult ? <><header className="scenario-output-heading"><h2>Scenario comparison</h2><p>Only the assumptions changed at left are different.</p></header><div className="comparison-table"><div className="comparison-head"><span>Measure</span><strong>Current</strong><strong>Scenario</strong></div><div><span>Planning direction</span><strong>{majorDirectionLabel(profile.major_direction)}</strong><strong>{majorDirectionLabel(simulationConfig.majorDirection)}</strong></div><div><span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span><strong>{simulationResult.current.graduationPercent}%</strong><strong>{simulationResult.simulated.graduationPercent}%</strong></div><div><span>Projected weighted GPA</span><strong>{formatGpa(simulationResult.current.projectedWeightedGpa)}</strong><strong>{formatGpa(simulationResult.simulated.projectedWeightedGpa)}</strong></div><div><span>Known weekly hours</span><strong>{simulationResult.current.workloadScore}</strong><strong>{simulationResult.simulated.workloadScore}</strong></div><div><span>Demanding courses</span><strong>{simulationResult.current.demandingCourseCount}</strong><strong>{simulationResult.simulated.demandingCourseCount}</strong></div><div><span>Stress baseline</span><strong>{simulationResult.current.stressLevel} / 5</strong><strong>{simulationResult.simulated.stressLevel} / 5</strong></div><div><span>Activity hours</span><strong>{simulationResult.current.activityHours}</strong><strong>{simulationResult.simulated.activityHours}</strong></div></div>{simulationExplanation && <div className="simulation-explanation"><h2>What changed and why</h2><p>{simulationExplanation}</p></div>}<div className="simulation-notes"><div><h3>Changes</h3><ul>{simulationResult.changes.map((change) => <li key={change}>{change}</li>)}</ul></div><div><h3>Limits and checks</h3><ul>{simulationResult.risks.length ? simulationResult.risks.map((risk) => <li key={risk}>{risk}</li>) : <li>The scenario stays inside the limits currently saved in the profile.</li>}</ul></div></div></> : <EmptyState title="No scenario yet" body="Choose the settings at left, then run the comparison." />}
+            {simulationResult ? <><header className="scenario-output-heading"><span>Deterministic result</span><h2>What the assumption changes</h2><p>No AI is used for these values.</p></header><div className="comparison-table"><div className="comparison-head"><span>Measure</span><strong>Current</strong><strong>Scenario</strong></div><div><span>Planning direction</span><strong>{majorDirectionLabel(profile.major_direction)}</strong><strong>{majorDirectionLabel(simulationConfig.majorDirection)}</strong></div><div><span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span><strong>{simulationResult.current.graduationPercent}%</strong><strong>{simulationResult.simulated.graduationPercent}%</strong></div><div><span>Projected weighted GPA</span><strong>{formatGpa(simulationResult.current.projectedWeightedGpa)}</strong><strong>{formatGpa(simulationResult.simulated.projectedWeightedGpa)}</strong></div><div><span>Known weekly hours</span><strong>{simulationResult.current.workloadScore}</strong><strong>{simulationResult.simulated.workloadScore}</strong></div><div><span>Demanding courses</span><strong>{simulationResult.current.demandingCourseCount}</strong><strong>{simulationResult.simulated.demandingCourseCount}</strong></div><div><span>Stress baseline</span><strong>{simulationResult.current.stressLevel} / 5</strong><strong>{simulationResult.simulated.stressLevel} / 5</strong></div><div><span>Activity hours</span><strong>{simulationResult.current.activityHours}</strong><strong>{simulationResult.simulated.activityHours}</strong></div></div><div className="simulation-notes"><div><h3>Assumptions applied</h3><ul>{simulationResult.changes.map((change) => <li key={change}>{change}</li>)}</ul></div><div><h3>Limits and checks</h3><ul>{simulationResult.risks.length ? simulationResult.risks.map((risk) => <li key={risk}>{risk}</li>) : <li>The scenario stays inside the limits currently saved in the profile.</li>}</ul></div></div></> : <EmptyState title="No comparison yet" body="Choose a few explicit assumptions, then compare them with the current plan." />}
           </section>
         </div>
-        <div className="quiet-note"><ShieldCheckIcon /><span>Running or saving a scenario never overwrites the active plan.</span></div>
+        {session && scenarioContext && <CodexReviewPanel session={session} focus="scenario" title="Ask for a tradeoff review" description="After the math runs, Codex can explain the tradeoffs and questions worth checking. Its review remains separate from the scenario values." question="Review this scenario comparison. Explain the tradeoffs, challenge unsupported assumptions, and give me questions to resolve before changing my real plan." context={scenarioContext} onNavigate={navigateFromReview} compact />}
       </div>
     );
   }

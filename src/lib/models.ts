@@ -29,6 +29,9 @@ export interface StudentProfile {
   grade_level: number | null;
   graduation_year: number | null;
   academic_interests: string[];
+  career_interest_areas: string[];
+  work_values: string[];
+  exploration_questions: string[];
   major_direction: string;
   career_direction: string;
   goal_intensity: "lower_stress" | "balanced" | "competitive";
@@ -254,6 +257,11 @@ export interface Activity {
   start_grade: number | null;
   end_grade: number | null;
   notes: string | null;
+  organization: string | null;
+  weeks_per_year: number | null;
+  impact: string | null;
+  description: string | null;
+  is_active: boolean;
 }
 
 export interface TimelineTask {

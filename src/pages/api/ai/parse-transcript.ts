@@ -90,6 +90,7 @@ export const POST: APIRoute = async ({ request }) => {
     let parserMethod: "deterministic_text" | "codex_vision";
     let model: string | null = null;
     let parserLatencyMs: number;
+    let aiInstruction: string | null = null;
     if (extractedText.trim()) {
       const parserStartedAt = Date.now();
       parsedResult = parseDtechTranscriptText(extractedText);
@@ -105,6 +106,7 @@ export const POST: APIRoute = async ({ request }) => {
         "Evidence must be a short location or wording from the transcript, not invented context.",
         extractionNote
       ].join("\n\n");
+      aiInstruction = prompt;
       const codexResult = await runCodexStructured({
         feature: "transcript_image_ocr",
         prompt,
@@ -191,7 +193,16 @@ export const POST: APIRoute = async ({ request }) => {
         fallbackUsed: parserMethod === "codex_vision",
         parserMethod,
         parserVersion: TRANSCRIPT_PARSER_VERSION,
-        aiUsed: parserMethod === "codex_vision"
+        aiUsed: parserMethod === "codex_vision",
+        aiTransparency: parserMethod === "codex_vision" ? {
+          model,
+          reasoningEffort: "low",
+          instruction: aiInstruction,
+          input: `${attachments.length} transcript image ${attachments.length === 1 ? "page" : "pages"}`,
+          toolsUsed: [],
+          filesChanged: [],
+          mutations: "Extracted rows were saved to the review queue only. Nothing was imported automatically."
+        } : null
       }),
       { headers: { "content-type": "application/json" } }
     );

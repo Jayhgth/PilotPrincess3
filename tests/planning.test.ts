@@ -13,6 +13,7 @@ import type {
 import {
   appliedCreditBreakdown,
   calculateGpa,
+  calculateUcGpaEstimate,
   calculateRequirementProgress,
   calculateWorkload,
   generateSuggestedPlan,
@@ -41,6 +42,9 @@ const profile: StudentProfile = {
   grade_level: 10,
   graduation_year: 2028,
   academic_interests: ["engineering"],
+  career_interest_areas: [],
+  work_values: [],
+  exploration_questions: [],
   major_direction: "stem",
   career_direction: "",
   goal_intensity: "balanced",
@@ -334,6 +338,25 @@ describe("GPA and workload calculations", () => {
     expect(summary.weightedCredits).toBe(10);
   });
 
+  it("keeps the UC planning estimate to verified grade 10-11 A-G coursework and caps honors semesters", () => {
+    const honors = course({ id: "honors", name: "English 2 Honors", grade_levels: [10], is_honors: true, is_weighted: true });
+    const standard = course({ id: "standard", name: "US History", subject: "Social Science", grade_levels: [11], uc_ag_area: "a" });
+    const estimate = calculateUcGpaEstimate([
+      planCourse({ id: "ten-honors", course_id: honors.id, grade_level: 10, credits: 10, letter_grade: "A-" }),
+      planCourse({ id: "eleven-standard", course_id: standard.id, grade_level: 11, credits: 10, letter_grade: "B+" }),
+      planCourse({ id: "nine-excluded", course_id: honors.id, grade_level: 9, credits: 10, letter_grade: "A" }),
+      planCourse({ id: "custom-unresolved", course_id: null, custom_course_name: "College Seminar", grade_level: 11, credits: 5, letter_grade: "A" })
+    ], [honors, standard]);
+
+    expect(estimate).toEqual({
+      unweighted: 3.5,
+      cappedWeighted: 4,
+      courseSemesters: 4,
+      honorsSemestersUsed: 2,
+      unresolvedCourses: 1
+    });
+  });
+
   it("combines academic and activity load and warns above profile tolerance", () => {
     const activities: Activity[] = [{
       id: "activity-1",
@@ -344,7 +367,12 @@ describe("GPA and workload calculations", () => {
       weekly_hours: 30,
       start_grade: 10,
       end_grade: 12,
-      notes: null
+      notes: null,
+      organization: null,
+      weeks_per_year: 20,
+      impact: null,
+      description: null,
+      is_active: true
     }];
     const workload = calculateWorkload(
       { ...profile, workload_tolerance: "light" },
