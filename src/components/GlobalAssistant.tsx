@@ -3,18 +3,22 @@ import {
   ArrowSquareOutIcon as ArrowSquareOut,
   BrainIcon as Brain,
   CaretDownIcon as CaretDown,
+  CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
   ClockIcon as Clock,
+  CopyIcon as Copy,
   CpuIcon as Cpu,
   GearSixIcon as GearSix,
   ImageIcon as Image,
   PaperclipIcon as Paperclip,
   PaperPlaneRightIcon as PaperPlaneRight,
+  PencilSimpleIcon as PencilSimple,
   PlusIcon as Plus,
   PushPinIcon as PushPin,
   ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkle,
   UserCircleCheckIcon as UserCircleCheck,
+  ArrowCounterClockwiseIcon as ArrowCounterClockwise,
   WrenchIcon as Wrench,
   WarningIcon as Warning,
   XIcon as X
@@ -28,6 +32,7 @@ import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexCo
 import type { AiModel, AiReviewMode } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
+import { assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import styles from "./GlobalAssistant.module.css";
 
@@ -148,6 +153,54 @@ function MessageImages({ message, onPreview }: { message: AiMessage; onPreview: 
       {attachment.preview_url ? <img src={attachment.preview_url} alt={attachment.name} /> : <span><Image size={20} /> Preview unavailable</span>}
     </button>)}
   </div>;
+}
+
+function MessageActions({ message, align = "left", canRetry = false, onRetry }: { message: AiMessage; align?: "left" | "right"; canRetry?: boolean; onRetry?: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function copyMessage() {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      // Clipboard availability depends on the browser security context.
+    }
+  }
+  return <div className={`${styles.messageActions} ${align === "right" ? styles.messageActionsRight : ""}`}>
+    <time dateTime={message.created_at} title={formatMessageTimeTitle(message.created_at)}>{formatMessageTime(message.created_at)}</time>
+    <button type="button" onClick={() => void copyMessage()} aria-label={copied ? "Message copied" : "Copy message"} title={copied ? "Copied" : "Copy message"}>{copied ? <Check size={13} /> : <Copy size={13} />}</button>
+    {canRetry && onRetry && <button type="button" onClick={onRetry} aria-label="Retry response" title="Send this prompt again as a new turn"><ArrowCounterClockwise size={13} /></button>}
+  </div>;
+}
+
+function StructuredQuestions({ questions, answered, busy, onSubmit }: { questions: AssistantQuestion[]; answered: boolean; busy: boolean; onSubmit: (answers: Record<string, string>) => Promise<void> }) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const complete = questions.every((question) => Boolean(answers[question.id]?.trim()));
+  async function submit() {
+    if (!complete || answered || busy) return;
+    setSubmitting(true);
+    try { await onSubmit(answers); } finally { setSubmitting(false); }
+  }
+  return <section className={styles.questionSet} aria-label="Pilot questions">
+    {questions.map((question) => <fieldset key={question.id} disabled={answered || busy || submitting}>
+      <legend>{question.prompt}</legend>
+      <div className={styles.questionOptions}>{question.options.map((option) => <button type="button" key={option.id} className={answers[question.id] === option.label ? styles.selectedQuestionOption : ""} onClick={() => setAnswers((current) => ({ ...current, [question.id]: option.label }))}>{option.label}</button>)}</div>
+      {question.allow_custom && <input value={question.options.some((option) => option.label === answers[question.id]) ? "" : answers[question.id] ?? ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} placeholder="Or write your answer" aria-label={`Custom answer: ${question.prompt}`} />}
+    </fieldset>)}
+    <button className={styles.submitAnswers} type="button" onClick={() => void submit()} disabled={!complete || answered || busy || submitting}>{answered ? "Answered" : submitting ? "Sending" : questions.length > 1 ? "Send answers" : "Send answer"}</button>
+  </section>;
+}
+
+function ChangeReceipt({ message }: { message: AiMessage }) {
+  const details = changeDetailsFromContext(message.page_context);
+  const toolName = String(message.page_context.tool_name ?? "student data");
+  return <FadeContent className={styles.changeReceipt} duration={0.16}>
+    <div><CheckCircle size={16} weight="fill" /><span><strong>Change applied</strong><small>{friendlyToolLabel(toolName)}</small></span></div>
+    <p>{message.content}</p>
+    {details.length > 0 && <dl>{details.map((detail) => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>}
+    <MessageActions message={message} />
+  </FadeContent>;
 }
 
 const TOOL_LABELS: Record<string, string> = {
@@ -296,6 +349,7 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   busyTool: string | null;
   onDecision: (call: AiToolCall, decision: "confirm" | "reject") => void;
 }) {
+  const [showAllTools, setShowAllTools] = useState(false);
   const items = events.map(activityItem).filter((item): item is NonNullable<ReturnType<typeof activityItem>> => Boolean(item));
   const hasFailure = items.some((item) => item.kind === "error") || tools.some((tool) => tool.status === "failed");
   const hasPendingChange = tools.some((tool) => tool.status === "pending_confirmation");
@@ -304,6 +358,7 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   const duration = assistantTurnDuration(events);
   if (!items.length && !tools.length && !running) return null;
   const toolCount = tools.length;
+  const groupedTools = visibleToolCalls(tools, showAllTools);
   return (
     <details className={styles.turnWork} key={forceOpen ? "active" : "settled"} open={forceOpen || undefined}>
       <summary><span className={styles.turnWorkLabel}>{running ? <><ShinyText text="Working" speed={1.8} />{startedAt && <> for <LiveElapsed startedAt={startedAt} /></>}</> : hasFailure ? duration ? `Stopped after ${duration}` : "Work stopped" : duration ? `Worked for ${duration}` : toolCount ? `${toolCount} tool ${toolCount === 1 ? "call" : "calls"}` : "Reasoning"}{!running && duration && toolCount > 0 && <small> · {toolCount} tool {toolCount === 1 ? "call" : "calls"}</small>}</span><CaretDown size={13} /></summary>
@@ -312,7 +367,9 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
           <summary><span className={styles.workIcon}>{item.kind === "reasoning" ? <Brain size={15} /> : item.kind === "review" ? <ShieldCheck size={15} /> : item.kind === "error" ? <Warning size={15} /> : <Clock size={15} />}</span><span><strong>{item.label}</strong>{item.detail && <small>{item.detail.slice(0, 110)}</small>}</span><CaretDown size={13} /></summary>
           {item.detail && <div className={styles.workDetails}><p>{item.detail}</p></div>}
         </details>)}
-        {tools.map((tool) => <ToolCallRow key={tool.id} call={tool} busy={Boolean(busyTool)} onDecision={onDecision} />)}
+        {groupedTools.hiddenCount > 0 && <button className={styles.showMoreTools} type="button" onClick={() => setShowAllTools(true)}><CaretDown size={13} /> Show {groupedTools.hiddenCount} earlier tool {groupedTools.hiddenCount === 1 ? "call" : "calls"}</button>}
+        {groupedTools.visible.map((tool) => <ToolCallRow key={tool.id} call={tool} busy={Boolean(busyTool)} onDecision={onDecision} />)}
+        {showAllTools && tools.length > 2 && <button className={styles.showMoreTools} type="button" onClick={() => setShowAllTools(false)}><CaretDown size={13} className={styles.caretUp} /> Show fewer tool calls</button>}
       </div>
     </details>
   );
@@ -339,6 +396,9 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [archivedConversations, setArchivedConversations] = useState<AiConversation[]>([]);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [busyArchive, setBusyArchive] = useState<string | null>(null);
+  const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [savingRename, setSavingRename] = useState(false);
   const [panelMode, setPanelModeState] = useState<AssistantPanelMode>(loadPanelMode);
   const [panelWidth, setPanelWidth] = useState(() => clamp(loadStoredNumber(PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH), MIN_PANEL_WIDTH, MAX_PANEL_WIDTH));
   const [floatingLayout, setFloatingLayout] = useState<FloatingLayout>(loadFloatingLayout);
@@ -358,6 +418,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const panelDragRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
+  const activeId = data.activeConversation?.id ?? null;
 
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => fetch(url, {
     ...init,
@@ -410,6 +471,11 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     const timer = window.setTimeout(() => void loadArchivedConversations(), 0);
     return () => window.clearTimeout(timer);
   }, [loadArchivedConversations, settingsOpen, settingsSection]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDraft(window.localStorage.getItem(assistantDraftKey(session.user.id, activeId)) ?? ""), 0);
+    return () => window.clearTimeout(timer);
+  }, [activeId, session.user.id]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -576,6 +642,41 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }
 
+  async function renameConversation(conversationId: string) {
+    const title = renameDraft.trim();
+    if (!title || savingRename) return;
+    setSavingRename(true);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/ai/conversations", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ conversationId, title })
+      });
+      const payload = await response.json() as { conversation?: AiConversation; error?: string };
+      if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "The conversation could not be renamed.");
+      const renamed = payload.conversation;
+      setData((current) => ({
+        ...current,
+        conversations: current.conversations.map((conversation) => conversation.id === renamed.id ? renamed : conversation),
+        activeConversation: current.activeConversation?.id === renamed.id ? renamed : current.activeConversation
+      }));
+      setRenamingConversationId(null);
+      setRenameDraft("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The conversation could not be renamed.");
+    } finally {
+      setSavingRename(false);
+    }
+  }
+
+  function updateDraft(value: string) {
+    setDraft(value);
+    const key = assistantDraftKey(session.user.id, activeId);
+    if (value) window.localStorage.setItem(key, value);
+    else window.localStorage.removeItem(key);
+  }
+
   function resetPanelLayout() {
     const next = { left: Math.max(12, window.innerWidth - DEFAULT_PANEL_WIDTH - 16), top: 16, width: DEFAULT_PANEL_WIDTH, height: Math.max(460, window.innerHeight - 32) };
     setPanelWidth(DEFAULT_PANEL_WIDTH);
@@ -625,9 +726,11 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     if (droppedImages.length) addImages(droppedImages);
   }
 
-  async function sendMessage(value?: string) {
+  async function sendMessage(value?: string, extraContext: Record<string, unknown> = {}) {
     const message = (value ?? draft).trim();
     if ((!message && !images.length) || running) return;
+    const clearComposerDraft = value === undefined;
+    const messageContext = { ...pageContext, ...extraContext };
     setError(null);
     let conversation = data.activeConversation;
     let optimisticId: string | null = null;
@@ -644,7 +747,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         turn_id: turnId,
         role: "user",
         content: message,
-        page_context: pageContext,
+        page_context: messageContext,
         created_at: new Date().toISOString(),
         attachments: images.map((image) => ({
           id: image.id,
@@ -667,7 +770,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       form.set("conversationId", activeConversation.id);
       form.set("turnId", turnId);
       form.set("message", message);
-      form.set("pageContext", JSON.stringify(pageContext));
+      form.set("pageContext", JSON.stringify(messageContext));
       for (const image of images) form.append("images", image.file, image.file.name);
       const response = await authorizedFetch("/api/ai/chat", {
         method: "POST",
@@ -715,14 +818,22 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         if (changed) await onDataChanged();
       }
       await loadConversation(activeConversation.id);
-      setDraft("");
+      if (clearComposerDraft) {
+        window.localStorage.removeItem(assistantDraftKey(session.user.id, null));
+        window.localStorage.removeItem(assistantDraftKey(session.user.id, activeConversation.id));
+        setDraft("");
+      }
       for (const image of images) URL.revokeObjectURL(image.previewUrl);
       setImages([]);
     } catch (caught) {
       if (optimisticId) setData((current) => ({ ...current, messages: current.messages.filter((item) => item.id !== optimisticId) }));
       if (messagePersisted && conversation) {
         await loadConversation(conversation.id);
-        setDraft("");
+        if (clearComposerDraft) {
+          window.localStorage.removeItem(assistantDraftKey(session.user.id, null));
+          window.localStorage.removeItem(assistantDraftKey(session.user.id, conversation.id));
+          setDraft("");
+        }
         for (const image of images) URL.revokeObjectURL(image.previewUrl);
         setImages([]);
       }
@@ -796,7 +907,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }
 
-  const activeId = data.activeConversation?.id ?? null;
   const events = useMemo(() => [
     ...data.events.map((event) => event.payload as LiveActivity),
     ...liveEvents
@@ -815,6 +925,10 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       tools
     };
   };
+  const userMessagesByTurn = new Map(data.messages.filter((message) => message.role === "user" && message.turn_id).map((message) => [message.turn_id!, message]));
+  const answeredQuestionMessages = new Set(data.messages
+    .filter((message) => message.role === "user" && typeof message.page_context.structured_answer_to === "string")
+    .map((message) => String(message.page_context.structured_answer_to)));
   const drawerStyle: CSSProperties = panelMode === "floating"
     ? { left: floatingLayout.left, top: floatingLayout.top, width: floatingLayout.width, height: floatingLayout.height }
     : { width: panelWidth };
@@ -833,8 +947,15 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             {historyOpen && <div className={styles.historyMenu}>
               <button className={styles.newConversation} type="button" onClick={() => void createConversation()}><Plus size={14} /> New conversation</button>
               <div className={styles.historyList}>{data.conversations.map((conversation) => <div className={`${styles.historyRow} ${conversation.id === activeId ? styles.activeConversation : ""}`} key={conversation.id}>
-                <button className={styles.historySelect} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}><span>{conversation.title}</span></button>
-                <button className={styles.archiveConversation} type="button" onClick={() => void updateConversationArchive(conversation.id, true)} disabled={running || busyArchive === conversation.id} aria-label={`Archive ${conversation.title}`} title="Archive conversation"><Archive size={14} /></button>
+                {renamingConversationId === conversation.id ? <form className={styles.renameConversation} onSubmit={(event) => { event.preventDefault(); void renameConversation(conversation.id); }}>
+                  <input autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} maxLength={120} aria-label="Conversation title" />
+                  <button type="submit" disabled={!renameDraft.trim() || savingRename} aria-label="Save conversation title" title="Save"><Check size={13} /></button>
+                  <button type="button" onClick={() => setRenamingConversationId(null)} aria-label="Cancel rename" title="Cancel"><X size={13} /></button>
+                </form> : <>
+                  <button className={styles.historySelect} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}><span>{conversation.title}</span></button>
+                  <button className={styles.renameConversationButton} type="button" onClick={() => { setRenamingConversationId(conversation.id); setRenameDraft(conversation.title); }} disabled={running} aria-label={`Rename ${conversation.title}`} title="Rename conversation"><PencilSimple size={14} /></button>
+                  <button className={styles.archiveConversation} type="button" onClick={() => void updateConversationArchive(conversation.id, true)} disabled={running || busyArchive === conversation.id} aria-label={`Archive ${conversation.title}`} title="Archive conversation"><Archive size={14} /></button>
+                </>}
               </div>)}</div>
             </div>}
           </div>
@@ -860,10 +981,20 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             const turn = message.turn_id ? turnContent(message.turn_id) : { events: [], tools: [] };
             if (message.role === "user") return <div key={message.id} className={styles.userTurn}>
               <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <AssistantMarkdown text={message.content} />}</FadeContent>
+              <MessageActions message={message} align="right" />
               {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} running={running && message.turn_id === latestTurnId} busyTool={busyTool} onDecision={decideTool} />}
             </div>;
-            if (message.role === "assistant") return <FadeContent className={styles.assistantMessage} duration={0.16} key={message.id}><AssistantMarkdown text={message.content} /></FadeContent>;
-            return <p className={styles.toolOutcome} key={message.id}><CheckCircle size={14} /> {message.content}</p>;
+            if (message.role === "assistant") {
+              const questions = assistantQuestionsFromContext(message.page_context);
+              const sourceMessage = message.turn_id ? userMessagesByTurn.get(message.turn_id) : undefined;
+              const canRetry = Boolean(sourceMessage && !sourceMessage.attachments?.length && !running && !turn.tools.some((tool) => tool.status === "pending_confirmation"));
+              return <div className={styles.assistantTurn} key={message.id}>
+                <FadeContent className={styles.assistantMessage} duration={0.16}><AssistantMarkdown text={message.content} /></FadeContent>
+                {questions.length > 0 && <StructuredQuestions questions={questions} answered={answeredQuestionMessages.has(message.id)} busy={running} onSubmit={(answers) => sendMessage(formatStructuredAnswers(questions, answers), { structured_answer_to: message.id })} />}
+                <MessageActions message={message} canRetry={canRetry} onRetry={sourceMessage ? () => void sendMessage(sourceMessage.content, { retry_of_turn_id: sourceMessage.turn_id }) : undefined} />
+              </div>;
+            }
+            return <ChangeReceipt message={message} key={message.id} />;
           })}
           {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={autoReviewing ? "Auto-review is checking" : "Pilot is working"} speed={1.8} /></div>}
           {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
@@ -898,7 +1029,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             <div className={styles.composerInput}>
               <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
               <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={running || images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images"><Paperclip size={17} /></button>
-              <textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={images.length ? "Ask about these images" : "Ask Pilot"} rows={1} maxLength={4000} disabled={running} />
+              <textarea ref={inputRef} value={draft} onChange={(event) => updateDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={images.length ? "Ask about these images" : "Ask Pilot"} rows={1} maxLength={4000} disabled={running} />
               <button className={styles.sendButton} type={running ? "button" : "submit"} onClick={running ? () => abortRef.current?.abort() : undefined} disabled={!running && !draft.trim() && !images.length} aria-label={running ? "Stop response" : "Send message"}>{running ? <X size={16} /> : <PaperPlaneRight size={17} weight="fill" />}</button>
             </div>
           </div>

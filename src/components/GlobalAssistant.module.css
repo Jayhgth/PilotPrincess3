@@ -90,7 +90,7 @@
   box-shadow: 0 8px 22px rgb(20 22 26 / 0.12);
   padding: 6px;
 }
-.newConversation, .historySelect, .archiveConversation {
+.newConversation, .historySelect, .archiveConversation, .renameConversationButton {
   display: flex;
   align-items: center;
   border: 0;
@@ -104,13 +104,18 @@
 }
 .newConversation { min-height: 34px; gap: 7px; padding: 6px 8px; }
 .historyList { display: grid; gap: 2px; }
-.historyRow { display: grid; grid-template-columns: minmax(0, 1fr) 30px; align-items: center; border-radius: 6px; }
+.historyRow { display: grid; grid-template-columns: minmax(0, 1fr) 30px 30px; align-items: center; border-radius: 6px; }
 .historyRow:hover, .historyRow.activeConversation { background: var(--surface-muted); }
 .historySelect { min-width: 0; min-height: 34px; padding: 6px 8px; color: var(--ink-soft); }
 .historySelect span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.archiveConversation { display: grid; width: 28px; height: 28px; place-items: center; padding: 0; opacity: 0; }
-.historyRow:hover .archiveConversation, .historyRow:focus-within .archiveConversation { opacity: 1; }
-.newConversation:hover, .historySelect:hover, .archiveConversation:hover { color: var(--ink); }
+.archiveConversation, .renameConversationButton { display: grid; width: 28px; height: 28px; place-items: center; padding: 0; opacity: 0; }
+.historyRow:hover .archiveConversation, .historyRow:focus-within .archiveConversation, .historyRow:hover .renameConversationButton, .historyRow:focus-within .renameConversationButton { opacity: 1; }
+.newConversation:hover, .historySelect:hover, .archiveConversation:hover, .renameConversationButton:hover { color: var(--ink); }
+.renameConversation { display: grid; min-width: 0; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) 28px 28px; gap: 2px; padding: 3px; }
+.renameConversation input { min-width: 0; height: 30px; border: 1px solid var(--line-strong); border-radius: 5px; outline: 0; background: var(--surface); color: var(--ink); padding: 0 7px; font: inherit; font-size: 12px; }
+.renameConversation input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+.renameConversation button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-soft); padding: 0; }
+.renameConversation button:hover { background: var(--surface-strong); color: var(--ink); }
 
 .headerActions { display: flex; gap: 3px; }
 .headerActions button {
@@ -169,7 +174,14 @@
   background: var(--surface-muted);
   padding: 10px 12px;
 }
-.assistantMessage { margin: 0 0 20px; padding: 2px 3px; }
+.assistantTurn { display: grid; margin: 0 0 20px; }
+.assistantMessage { padding: 2px 3px; }
+.messageActions { display: flex; min-height: 23px; align-items: center; gap: 2px; margin: 2px 1px 0; color: var(--ink-faint); }
+.messageActionsRight { justify-self: end; }
+.messageActions time { padding: 0 4px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.messageActions button { display: grid; width: 23px; height: 23px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-faint); padding: 0; opacity: 0; }
+.userTurn:hover > .messageActions button, .userTurn:focus-within > .messageActions button, .assistantTurn:hover > .messageActions button, .assistantTurn:focus-within > .messageActions button, .changeReceipt:hover .messageActions button, .changeReceipt:focus-within .messageActions button { opacity: 1; }
+.messageActions button:hover { background: var(--surface-muted); color: var(--ink); }
 .messageBody { display: grid; gap: 8px; color: var(--ink); font-size: 13px; line-height: 1.55; }
 .messageBody h1, .messageBody h2, .messageBody h3, .messageBody h4 { margin: 5px 0 0; color: var(--ink); font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
 .messageBody h1 { font-size: 17px; }
@@ -231,6 +243,9 @@
 .turnWork > summary::-webkit-details-marker, .workRow > summary::-webkit-details-marker { display: none; }
 .turnWork[open] > summary > svg, .workRow[open] > summary > svg { transform: rotate(180deg); }
 .turnWorkBody { display: grid; gap: 3px; margin-top: 4px; }
+.showMoreTools { display: flex; width: fit-content; min-height: 28px; align-items: center; gap: 5px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-faint); padding: 4px 6px; font: inherit; font-size: 11px; font-weight: 600; }
+.showMoreTools:hover { background: var(--surface-muted); color: var(--ink-soft); }
+.showMoreTools .caretUp { transform: rotate(180deg); }
 
 .workRow { border-radius: 6px; }
 .workRow > summary {
@@ -287,7 +302,29 @@
 }
 .approvalActions button:first-child { border-color: var(--accent); background: var(--accent); color: #fff; }
 
-.toolOutcome { display: flex; align-items: center; gap: 6px; margin: -8px 0 18px 3px; color: var(--success); font-size: 12px; }
+.questionSet { display: grid; gap: 10px; margin: 10px 2px 5px; border-radius: 9px; background: var(--surface-muted); padding: 12px; }
+.questionSet fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
+.questionSet legend { margin-bottom: 8px; color: var(--ink); font-size: 12px; font-weight: 650; line-height: 1.4; }
+.questionOptions { display: flex; flex-wrap: wrap; gap: 5px; }
+.questionOptions button { min-height: 32px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--ink-soft); padding: 0 9px; font: inherit; font-size: 11px; font-weight: 600; }
+.questionOptions button:hover, .questionOptions button.selectedQuestionOption { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.questionSet input { width: 100%; min-height: 34px; margin-top: 6px; border: 1px solid var(--line-strong); border-radius: 7px; outline: 0; background: var(--surface); color: var(--ink); padding: 0 9px; font: inherit; font-size: 11px; }
+.questionSet input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+.submitAnswers { justify-self: start; min-height: 34px; border: 0; border-radius: 7px; background: var(--ink); color: var(--surface); padding: 0 11px; font: inherit; font-size: 11px; font-weight: 650; }
+.submitAnswers:disabled { cursor: not-allowed; opacity: 0.42; }
+
+.changeReceipt { display: grid; gap: 7px; margin: -5px 2px 18px; border-radius: 9px; background: color-mix(in srgb, var(--success) 9%, var(--surface-muted)); padding: 11px; }
+.changeReceipt > div:first-child { display: flex; align-items: center; gap: 7px; }
+.changeReceipt > div:first-child > svg { flex: 0 0 auto; color: var(--success); }
+.changeReceipt > div:first-child > span { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
+.changeReceipt strong { font-size: 12px; font-weight: 700; }
+.changeReceipt small { overflow: hidden; color: var(--ink-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.changeReceipt > p { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.45; }
+.changeReceipt dl { display: grid; gap: 4px; margin: 1px 0 0; }
+.changeReceipt dl > div { display: grid; grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.3fr); gap: 8px; font-size: 11px; }
+.changeReceipt dt { color: var(--ink-faint); }
+.changeReceipt dd { margin: 0; color: var(--ink-soft); overflow-wrap: anywhere; }
+.changeReceipt .messageActions { margin-top: -2px; }
 .error { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; border-radius: 7px; background: var(--danger-soft); color: var(--danger); padding: 10px; font-size: 12px; line-height: 1.5; }
 
 .composer {
@@ -585,6 +622,10 @@
   .settingsNav { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 7px 8px; }
   .settingsNav button { flex: 1 0 auto; justify-content: center; }
   .settingsPane { padding: 20px 16px 26px; }
+}
+
+@media (hover: none) {
+  .messageActions button, .archiveConversation, .renameConversationButton { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -13,7 +13,10 @@ Pilot Assistant is one global, persistent rail available from the authenticated 
 - the current turn streams visible progress;
 - safe reasoning summaries and actual student-data tool calls remain inspectable under that turn;
 - running work shows live elapsed time, while settled work folds automatically behind a persisted **Worked for …** duration label;
-- conversations reload from Supabase, can be continued from any workspace page, and can be reversibly archived; and
+- older tool calls fold behind a readable **Show more** control while pending approvals remain visible;
+- every message has a timestamp and copy action, assistant replies can be retried as a preserved new turn, and unfinished text drafts remain local to that browser and conversation;
+- when a missing preference blocks useful progress, Pilot can ask one to three bounded multiple-choice questions with an optional written answer instead of returning a vague paragraph;
+- conversations reload from Supabase, can be renamed, continued from any workspace page, and reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
 Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection, archived conversations, and panel layout live in a centered settings dialog opened from the global rail.
@@ -64,6 +67,10 @@ Supabase stores four RLS-protected records per user:
 - `ai_tool_calls`: validated arguments, explanation, approval state, and bounded result.
 
 The browser receives newline-delimited activity while a turn runs, then reloads the canonical persisted conversation. Tool events already represented by a persisted tool call are de-duplicated. A turn identifier keeps messages, events, and approvals grouped after reload.
+
+Structured questions are stored in the assistant message's bounded `page_context`. A submitted answer becomes an ordinary user message linked back to that question message, so the choice remains readable in history. Retrying preserves the prior turn and submits the same text as a new turn; it never rewrites history. Unsent text drafts use conversation-scoped browser storage and are never sent until the student submits them. Image drafts remain memory-only.
+
+After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. This is evidence of the exact application-side mutation, not a claim made by the model.
 
 Archiving sets the owning conversation's existing `is_archived` flag. It removes that conversation from active history without deleting messages, attachments, events, or tool calls. The student can restore it from Pilot settings. Per-user RLS applies to both actions.
 

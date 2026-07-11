@@ -135,7 +135,7 @@ export const POST: APIRoute = async ({ request }) => {
         turn_id: toolCall.turn_id,
         role: "tool",
         content: sanitizeCodexText(result.summary, 2000),
-        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, auto_review: review }
+        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, auto_review: review }
       }),
       recordEvent("tool.completed", await nextSequence(), { toolCall: data, review }),
       auth.supabase.from("ai_conversations").update({ updated_at: completedAt }).eq("id", toolCall.conversation_id)

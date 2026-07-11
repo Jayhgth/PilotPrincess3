@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ZodType } from "zod";
-import { assistantTurnJsonSchema, assistantTurnSchema } from "@/server/ai-schemas";
+import { assistantTurnJsonSchema, assistantTurnSchema, type AssistantQuestion } from "@/server/ai-schemas";
 import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
 import { DEFAULT_AI_MODEL, type AiModel, type AiReviewMode } from "@/lib/ai-preferences";
 
@@ -501,6 +501,7 @@ export interface AssistantChatToolActivity {
 
 export interface AssistantChatResult {
   message: string;
+  questions: AssistantQuestion[];
   threadId: string | null;
   usage: Usage | null;
   latencyMs: number;
@@ -547,7 +548,8 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will assess eligible proposals; sensitive changes may still wait for the student." : "Manual. The student must approve every proposed change."}`,
     "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
-    "Do not mention the response schema. Put your student-facing response in assistant_message. Use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
+    "When one missing student preference materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
+    "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Available tools:\n" + assistantToolCatalogPrompt(),
     `Retrieved Pilot Princess guidance:\n${options.knowledge}`,
     `Current page context: ${JSON.stringify(options.pageContext)}`,
@@ -566,6 +568,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
   let isolatedHome: string | null = null;
   let usage: Usage | null = null;
   let latestMessage = "";
+  let latestQuestions: AssistantQuestion[] = [];
 
   try {
     scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-assistant-"));
@@ -603,6 +606,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         continue;
       }
       if (parsed.data.assistant_message) latestMessage = parsed.data.assistant_message.trim();
+      latestQuestions = parsed.data.questions;
 
       const calls: AssistantChatToolActivity[] = [];
       const invalidResults: Array<{ tool: string; error: string }> = [];
@@ -653,6 +657,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         for (const call of mutationCalls) await options.onToolActivity(call);
         return {
           message: latestMessage || (options.reviewMode === "auto_review" ? "I prepared the requested change. Auto-review will check it before anything runs." : "I prepared the requested change. Review it before applying it."),
+          questions: [],
           threadId: thread.id,
           usage,
           latencyMs: Date.now() - startedAt,
@@ -668,6 +673,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
 
       return {
         message: latestMessage || "I could not produce a useful answer from the available context.",
+        questions: latestQuestions,
         threadId: thread.id,
         usage,
         latencyMs: Date.now() - startedAt,
@@ -678,6 +684,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
 
     return {
       message: latestMessage || "I could not complete that request. Try asking one specific planning question.",
+      questions: latestQuestions,
       threadId: thread.id,
       usage,
       latencyMs: Date.now() - startedAt,

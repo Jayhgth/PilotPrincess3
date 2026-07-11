@@ -232,7 +232,7 @@ export const POST: APIRoute = async ({ request }) => {
           turn_id: turnId,
           role: "assistant",
           content: assistantMessage,
-          page_context: { model: result.model, provider_thread_id: result.threadId }
+          page_context: { model: result.model, provider_thread_id: result.threadId, questions: sanitizeCodexValue(result.questions) }
         }).select("*").single();
         if (assistantResult.error) throw new Error(assistantResult.error.message);
         record("assistant.message", { message: assistantResult.data });

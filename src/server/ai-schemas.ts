@@ -200,8 +200,21 @@ export const assistantToolNames = [
   "clear_college_goal"
 ] as const;
 
+export const assistantQuestionSchema = z.object({
+  id: z.string().trim().min(1).max(48).regex(/^[a-z0-9_-]+$/),
+  prompt: z.string().trim().min(1).max(240),
+  options: z.array(z.object({
+    id: z.string().trim().min(1).max(48).regex(/^[a-z0-9_-]+$/),
+    label: z.string().trim().min(1).max(100)
+  })).min(2).max(4),
+  allow_custom: z.boolean()
+});
+
+export type AssistantQuestion = z.infer<typeof assistantQuestionSchema>;
+
 export const assistantTurnSchema = z.object({
   assistant_message: z.string().min(1).nullable(),
+  questions: z.array(assistantQuestionSchema).max(3).default([]),
   tool_calls: z.array(z.object({
     name: z.enum(assistantToolNames),
     arguments_json: z.string().min(2),
@@ -214,9 +227,37 @@ export type AssistantTurnResult = z.infer<typeof assistantTurnSchema>;
 export const assistantTurnJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["assistant_message", "tool_calls"],
+  required: ["assistant_message", "questions", "tool_calls"],
   properties: {
     assistant_message: { type: ["string", "null"] },
+    questions: {
+      type: "array",
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "prompt", "options", "allow_custom"],
+        properties: {
+          id: { type: "string", pattern: "^[a-z0-9_-]+$" },
+          prompt: { type: "string" },
+          options: {
+            type: "array",
+            minItems: 2,
+            maxItems: 4,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "label"],
+              properties: {
+                id: { type: "string", pattern: "^[a-z0-9_-]+$" },
+                label: { type: "string" }
+              }
+            }
+          },
+          allow_custom: { type: "boolean" }
+        }
+      }
+    },
     tool_calls: {
       type: "array",
       maxItems: 3,

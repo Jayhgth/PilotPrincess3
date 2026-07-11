@@ -70,6 +70,20 @@ describe("Codex feature boundaries", () => {
     expect(assistantTurnSchema.parse({ assistant_message: answer, tool_calls: [] }).assistant_message).toBe(answer);
   });
 
+  it("accepts bounded structured student questions without treating them as tools", () => {
+    const parsed = assistantTurnSchema.parse({
+      assistant_message: "Choose the planning priority that fits you.",
+      questions: [{
+        id: "planning_priority",
+        prompt: "What should this plan protect first?",
+        options: [{ id: "capacity", label: "My weekly capacity" }, { id: "rigor", label: "More academic rigor" }],
+        allow_custom: true
+      }],
+      tool_calls: []
+    });
+    expect(parsed.questions[0]?.options).toHaveLength(2);
+  });
+
   it("validates exact tool arguments and marks writes for confirmation", () => {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
@@ -137,6 +151,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Course changes require confirmation.");
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
+    expect(prompt).toContain("ask up to three short structured questions");
   });
 
   it("accepts the expanded student-data tools in structured assistant output", () => {

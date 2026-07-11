@@ -8,10 +8,11 @@ const createSchema = z.object({
   title: z.string().trim().min(1).max(120).optional()
 });
 
-const archiveSchema = z.object({
+const updateSchema = z.object({
   conversationId: z.uuid(),
-  archived: z.boolean()
-});
+  archived: z.boolean().optional(),
+  title: z.string().trim().min(1).max(120).optional()
+}).refine((value) => value.archived !== undefined || value.title !== undefined, "Add a title or archive state.");
 
 export const GET: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
@@ -103,11 +104,16 @@ export const POST: APIRoute = async ({ request }) => {
 export const PATCH: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
   if (!auth) return jsonError("Authentication required.", 401);
-  const parsed = archiveSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid archive request.", 400);
+  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid conversation update.", 400);
+  const patch = {
+    ...(parsed.data.archived !== undefined ? { is_archived: parsed.data.archived } : {}),
+    ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+    updated_at: new Date().toISOString()
+  };
   const { data, error } = await auth.supabase
     .from("ai_conversations")
-    .update({ is_archived: parsed.data.archived })
+    .update(patch)
     .eq("id", parsed.data.conversationId)
     .eq("user_id", auth.user.id)
     .select("*")
