@@ -543,6 +543,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
 
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { queueRef.current = queuedMessages; }, [queuedMessages]);
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
+  }, [draft]);
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -836,6 +842,11 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     const clearComposerDraft = options.clearComposerDraft ?? value === undefined;
     const messageContext = { ...pageContext, ...(options.context ?? {}) };
     setError(null);
+    if (clearComposerDraft) {
+      window.localStorage.removeItem(assistantDraftKey(session.user.id, activeId));
+      setDraft("");
+      setImages([]);
+    }
     runningRef.current = true;
     setRunning(true);
     const abortController = new AbortController();
@@ -924,22 +935,19 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         if (changed) await onDataChanged();
       }
       await loadConversation(activeConversation.id);
-      if (clearComposerDraft) {
-        window.localStorage.removeItem(assistantDraftKey(session.user.id, null));
-        window.localStorage.removeItem(assistantDraftKey(session.user.id, activeConversation.id));
-        setDraft("");
-      }
+      if (clearComposerDraft) window.localStorage.removeItem(assistantDraftKey(session.user.id, activeConversation.id));
       for (const image of messageImages) URL.revokeObjectURL(image.previewUrl);
       if (options.images === undefined) setImages([]);
     } catch (caught) {
       if (optimisticId) setData((current) => ({ ...current, messages: current.messages.filter((item) => item.id !== optimisticId) }));
+      if (clearComposerDraft && !messagePersisted) {
+        setDraft(message);
+        setImages(messageImages);
+        window.localStorage.setItem(assistantDraftKey(session.user.id, conversation?.id ?? activeId), message);
+      }
       if (messagePersisted && conversation) {
         await loadConversation(conversation.id);
-        if (clearComposerDraft) {
-          window.localStorage.removeItem(assistantDraftKey(session.user.id, null));
-          window.localStorage.removeItem(assistantDraftKey(session.user.id, conversation.id));
-          setDraft("");
-        }
+        if (clearComposerDraft) window.localStorage.removeItem(assistantDraftKey(session.user.id, conversation.id));
         for (const image of messageImages) URL.revokeObjectURL(image.previewUrl);
         if (options.images === undefined) setImages([]);
       }
@@ -1132,24 +1140,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
               <button className={styles.removeQueued} type="button" onClick={() => removeQueuedMessage(queued.id)} aria-label={`Remove queued message ${queued.content || "with images"}`} title="Remove from queue"><X size={13} /></button>
             </div>)}</div>
           </div>}
-          <div className={styles.composerMeta}>
-            <span>Using {String(pageContext.label ?? "this page")} context</span>
-            <div className={styles.reviewMode} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReviewMenuOpen(false); }}>
-              <button type="button" onClick={() => setReviewMenuOpen((current) => !current)} disabled={running || savingReviewMode} aria-haspopup="menu" aria-expanded={reviewMenuOpen}>
-                {reviewMode === "auto_review" ? <ShieldCheck size={14} /> : <UserCircleCheck size={14} />}
-                {reviewMode === "auto_review" ? "Auto-review" : "Manual"}
-                <CaretDown size={11} />
-              </button>
-              {reviewMenuOpen && <div className={styles.reviewMenu} role="menu" aria-label="Change review mode">
-                <button type="button" role="menuitemradio" aria-checked={reviewMode === "manual"} onClick={() => void updateReviewMode("manual")}>
-                  <UserCircleCheck size={16} /><span><strong>Manual</strong><small>You approve every proposed change.</small></span>{reviewMode === "manual" && <CheckCircle size={14} weight="fill" />}
-                </button>
-                <button type="button" role="menuitemradio" aria-checked={reviewMode === "auto_review"} onClick={() => void updateReviewMode("auto_review")}>
-                  <ShieldCheck size={16} /><span><strong>Auto-review</strong><small>A separate reviewer may apply low-risk changes. Sensitive changes still wait.</small></span>{reviewMode === "auto_review" && <CheckCircle size={14} weight="fill" />}
-                </button>
-              </div>}
-            </div>
-          </div>
           <div className={`${styles.composerSurface} ${draggingImage ? styles.draggingImage : ""}`} onDragEnter={(event) => { event.preventDefault(); setDraggingImage(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDraggingImage(false); }} onDrop={handleDrop}>
             {images.length > 0 && <FadeContent className={styles.attachmentStrip} duration={0.14}>
               {images.map((image) => <div className={styles.attachmentThumb} key={image.id}>
@@ -1157,15 +1147,35 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 <button type="button" className={styles.removeAttachment} onClick={() => removeImage(image.id)} aria-label={`Remove ${image.file.name}`}><X size={11} weight="bold" /></button>
               </div>)}
             </FadeContent>}
-            <div className={`${styles.composerInput} ${running ? styles.composerInputRunning : ""}`}>
+            <textarea ref={inputRef} value={draft} onChange={(event) => updateDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submitMessage(); } }} placeholder={images.length ? "Ask about these images" : running ? "Message Pilot next" : "Ask Pilot"} rows={1} maxLength={4000} />
+            <div className={styles.composerToolbar}>
               <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-              <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images"><Paperclip size={17} /></button>
-              <textarea ref={inputRef} value={draft} onChange={(event) => updateDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submitMessage(); } }} placeholder={images.length ? "Ask about these images" : running ? "Message Pilot next" : "Ask Pilot"} rows={1} maxLength={4000} />
-              {running && <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={15} weight="fill" /></button>}
-              <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={17} weight="fill" /></button>
+              <div className={styles.composerTools}>
+                <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images" title="Attach images"><Paperclip size={16} /></button>
+                <span className={styles.contextChip} title={`Using ${String(pageContext.label ?? "this page")} context`}>{String(pageContext.label ?? "Page")}</span>
+              </div>
+              <div className={styles.composerActions}>
+                <div className={styles.reviewMode} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReviewMenuOpen(false); }}>
+                  <button type="button" onClick={() => setReviewMenuOpen((current) => !current)} disabled={running || savingReviewMode} aria-label={`Change review mode. Current mode: ${reviewMode === "auto_review" ? "Auto-review" : "Manual"}`} aria-haspopup="menu" aria-expanded={reviewMenuOpen} title="Change review mode">
+                    {reviewMode === "auto_review" ? <ShieldCheck size={14} /> : <UserCircleCheck size={14} />}
+                    <span>{reviewMode === "auto_review" ? "Auto" : "Manual"}</span>
+                    <CaretDown size={10} />
+                  </button>
+                  {reviewMenuOpen && <div className={styles.reviewMenu} role="menu" aria-label="Change review mode">
+                    <button type="button" role="menuitemradio" aria-checked={reviewMode === "manual"} onClick={() => void updateReviewMode("manual")}>
+                      <UserCircleCheck size={16} /><span><strong>Manual</strong><small>You approve every proposed change.</small></span>{reviewMode === "manual" && <CheckCircle size={14} weight="fill" />}
+                    </button>
+                    <button type="button" role="menuitemradio" aria-checked={reviewMode === "auto_review"} onClick={() => void updateReviewMode("auto_review")}>
+                      <ShieldCheck size={16} /><span><strong>Auto-review</strong><small>A separate reviewer may apply low-risk changes. Sensitive changes still wait.</small></span>{reviewMode === "auto_review" && <CheckCircle size={14} weight="fill" />}
+                    </button>
+                  </div>}
+                </div>
+                {running && <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={13} weight="fill" /></button>}
+                <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={15} weight="fill" /></button>
+              </div>
             </div>
           </div>
-          <small>{running ? queuedMessages.length ? `${queuedMessages.length} ${queuedMessages.length === 1 ? "message" : "messages"} queued. Keep typing or steer one to run next.` : autoReviewing ? "Auto-review is running. You can queue the next message now." : "Pilot is working. Send another message to queue it, or stop the current response." : queuedMessages.length ? "A queued message is waiting. Send it now or keep it for the next successful turn." : images.length ? `${images.length} of ${MAX_ASSISTANT_ATTACHMENTS} images ready. Images are sent only with this message.` : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
+          {(running || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : autoReviewing ? "Reviewing change" : "Pilot is working"}</span>}
         </form>
         </> : <div className={styles.disconnected}>
           <Cpu size={22} />

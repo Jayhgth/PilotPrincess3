@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
-import { assistantTurnSchema } from "@/server/ai-schemas";
+import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantKnowledgePrompt } from "@/server/assistant-knowledge";
 import { autoReviewManualReason, autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
@@ -65,9 +65,10 @@ describe("Codex feature boundaries", () => {
     });
   });
 
-  it("accepts a conversational answer without the former review-card length ceiling", () => {
-    const answer = "This response is intentionally longer than the old 240 character next-action field. ".repeat(5);
+  it("accepts a useful short answer and rejects report-length output", () => {
+    const answer = "Design Lab is the only open requirement. Add one verified 10-credit option, then confirm it with your counselor.";
     expect(assistantTurnSchema.parse({ assistant_message: answer, tool_calls: [] }).assistant_message).toBe(answer);
+    expect(() => assistantTurnSchema.parse({ assistant_message: "x".repeat(ASSISTANT_MESSAGE_MAX_LENGTH + 1), tool_calls: [] })).toThrow();
   });
 
   it("accepts bounded structured student questions without treating them as tools", () => {
@@ -90,6 +91,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("update_student_profile", { stress_level: 4, weekly_commitment_limit: 18 })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_experience", { name: "Robotics", kind: "club", weekly_hours: 4 })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("run_load_check", { college_units: 3, activity_hours_change: -2 })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
     expect(() => parseAssistantToolCall("update_experience", { experience_id: crypto.randomUUID() })).toThrow();
@@ -147,7 +149,10 @@ describe("Codex feature boundaries", () => {
     });
     expect(prompt).toContain("Use read-only student-data tools");
     expect(prompt).toContain("manual or auto-review mode");
-    expect(prompt).toContain("Do not create a dashboard-style report or use tables");
+    expect(prompt).toContain("create a dashboard-style report or table");
+    expect(prompt).toContain("Default to one to three short sentences");
+    expect(prompt).toContain("Keep assistant_message under 900 characters");
+    expect(prompt).toContain("use the available mutating tool");
     expect(prompt).toContain("Course changes require confirmation.");
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");

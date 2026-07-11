@@ -340,26 +340,23 @@
 .composer {
   position: relative;
   min-width: 0;
-  overflow: hidden;
-  border-top: 1px solid var(--line);
-  background: var(--surface);
-  padding: 9px 10px 10px;
+  overflow: visible;
+  background: linear-gradient(to bottom, transparent, var(--surface) 16px);
+  padding: 8px 10px 10px;
 }
-.composerMeta { display: flex; min-height: 30px; align-items: center; justify-content: space-between; gap: 10px; margin: 0 2px 7px; }
-.composerMeta > span { min-width: 0; overflow: hidden; color: var(--ink-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .reviewMode { position: relative; flex: 0 0 auto; }
 .reviewMode > button {
   display: flex;
-  min-height: 30px;
+  min-height: 28px;
   align-items: center;
   gap: 5px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--ink-soft);
-  padding: 0 6px;
+  padding: 0 7px;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
 }
 .reviewMode > button:hover, .reviewMode > button[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
@@ -400,55 +397,57 @@
 .reviewMenu small { color: var(--ink-faint); font-size: 11px; line-height: 1.4; }
 .composerSurface {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
-  background: var(--surface-muted);
-  padding: 6px;
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--surface-muted));
+  box-shadow: 0 4px 14px rgb(20 22 26 / 0.1), 0 1px 2px rgb(20 22 26 / 0.06);
+  padding: 8px;
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
-.composerSurface:focus-within { border-color: color-mix(in srgb, var(--accent) 68%, var(--line-strong)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
-.composerSurface.draggingImage { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface-muted)); box-shadow: inset 0 0 0 1px var(--accent); }
-.composerInput {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 36px;
-  align-items: end;
-  gap: 4px;
-}
-.composerInputRunning { grid-template-columns: 34px minmax(0, 1fr) 34px 36px; }
+.composerSurface:focus-within { border-color: color-mix(in srgb, var(--ink-faint) 58%, var(--line-strong)); box-shadow: 0 5px 16px rgb(20 22 26 / 0.12), 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent); }
+.composerSurface.draggingImage { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 25%, var(--surface)); box-shadow: 0 5px 16px rgb(20 22 26 / 0.12), inset 0 0 0 1px var(--accent); }
+.composerToolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
+.composerTools, .composerActions { display: flex; min-width: 0; align-items: center; gap: 3px; }
+.composerActions { flex: 0 0 auto; }
+.contextChip { max-width: 132px; overflow: hidden; color: var(--ink-faint); padding: 0 4px; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .fileInput { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .attachButton, .sendButton, .stopButton {
   display: grid;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: 999px;
   font: inherit;
 }
 .attachButton { background: transparent; color: var(--ink-soft); }
 .attachButton:hover:not(:disabled) { background: var(--surface-strong); color: var(--ink); }
-.sendButton { background: var(--ink); color: var(--surface); }
-.stopButton { width: 34px; background: transparent; color: var(--ink-soft); }
+.sendButton { background: var(--ink); color: var(--surface); transition: transform 140ms ease, opacity 140ms ease; }
+.sendButton:hover:not(:disabled) { transform: scale(1.05); }
+.stopButton { background: var(--danger); color: #fff; }
 .stopButton:hover { background: var(--surface-strong); color: var(--ink); }
 .attachButton:disabled, .sendButton:disabled { opacity: 0.35; }
 .composer textarea {
-  min-height: 34px;
-  max-height: 150px;
-  resize: vertical;
+  field-sizing: content;
+  width: 100%;
+  min-height: 43px;
+  max-height: 140px;
+  overflow-y: auto;
+  resize: none;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--ink);
-  padding: 7px 6px;
+  padding: 8px 8px 4px;
   font: inherit;
   font-size: 13px;
   line-height: 1.45;
 }
 .composer textarea::placeholder { color: var(--ink-faint); }
-.composer > small { display: block; margin: 7px 2px 0; color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
+.composerStatus { display: block; margin: 5px 6px 0; color: var(--ink-faint); font-size: 10px; line-height: 1.3; }
 
-.queueTray { display: grid; min-width: 0; gap: 4px; margin: -1px 0 8px; border-bottom: 1px solid var(--line); padding: 0 2px 8px; }
+.queueTray { display: grid; min-width: 0; gap: 4px; margin: 0 3px 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 3px 10px rgb(20 22 26 / 0.07); padding: 7px; }
 .queueHeading { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 3px 3px; }
 .queueHeading strong { font-size: 11px; font-weight: 700; }
 .queueHeading span { min-width: 0; overflow: hidden; color: var(--ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -645,7 +644,6 @@
   .conversationPicker > button { max-width: calc(100vw - 126px); }
   .userMessage { max-width: 90%; }
   .approvalCard { margin-left: 0; }
-  .composerMeta > span { max-width: 46vw; }
   .queueRow { grid-template-columns: 31px minmax(0, 1fr) auto auto; }
   .queueAttachments { display: none; }
   .settingsBackdrop { align-items: end; padding: 0; }

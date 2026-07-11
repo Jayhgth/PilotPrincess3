@@ -42,11 +42,13 @@ Before a production release, confirm all applicable items once:
 - [ ] Sign-up, sign-in, recovery, transcript import, course planning, graduation interpretation, and SMCCD discovery work on the deployed origin.
 - [ ] Representative authenticated desktop and 390px states pass in both themes with keyboard focus and no horizontal overflow.
 - [ ] A live assistant turn persists across reload, shows readable reasoning/tool activity, and answers from an allowlisted student-data read.
+- [ ] A representative Pilot answer leads with the decision, stays within one to three short sentences or three bullets, avoids ratings/repeated page data, and never persists more than 900 characters.
 - [ ] Codex remains unavailable until the student explicitly approves, successfully tests the selected model, and saves; declining AI leaves deterministic planning usable.
 - [ ] Pilot image input accepts PNG, JPEG, and WebP by picker, paste, and drag/drop; shows removable previews; enforces eight images and 10 MB each; supports an image-only message; restores private signed previews after reload; and never sends a draft image before submit.
 - [ ] Pilot conversations can be archived from active history and restored from centered settings without deleting messages, attachments, events, or tool calls. Docked width and floating size/position survive reload; mobile removes movement and resize controls.
 - [ ] Conversation rename, per-conversation text drafts, copy actions, timestamps, and retry-as-new-turn work across reload without rewriting prior messages; attached-image prompts do not offer a misleading text-only retry.
 - [ ] While Pilot is working, the composer remains enabled, Enter queues text or images, queued items run in order, remove does not send, and Steer records the interrupted turn before starting the selected follow-up. Stop remains a separate control.
+- [ ] Submitting a message clears the floating prompt immediately; a pre-persistence failure restores that draft, while a successful or persisted turn never duplicates it.
 - [ ] At 1300px the assistant uses the 420px overlay without shrinking the workspace; at 1440px it docks at 360px with no horizontal overflow; 390px remains full width. Header, timeline, Markdown, queue, and composer scroll widths never exceed the panel.
 - [ ] Structured questions accept only bounded options or an allowed custom answer, persist the student's response in history, and never bypass the normal write-approval route. Older settled tool calls fold under Show more while pending approvals remain visible.
 - [ ] A confirmed or auto-applied mutation renders a readable Change applied receipt from the server tool result, including the validated changed fields without exposing raw transport JSON.

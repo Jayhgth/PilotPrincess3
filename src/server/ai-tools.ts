@@ -57,6 +57,9 @@ const toolArgumentSchemas = {
     college_units: z.number().min(0).max(18),
     activity_hours_change: z.number().min(-80).max(80)
   }),
+  save_plan_snapshot: z.object({
+    label: z.string().trim().min(1).max(80).optional()
+  }),
   add_dtech_course: z.object({
     course_id: z.uuid(),
     status: courseStatusSchema,
@@ -158,6 +161,7 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Transcript evidence remains read-only in chat.", arguments: "{}" },
   { name: "get_college_goal", mutatesData: false, description: "Read the selected SMCCD associate-degree goal.", arguments: "{}" },
   { name: "run_load_check", mutatesData: false, description: "Run the deterministic current-versus-proposed workload check without saving a scenario.", arguments: '{"college_units":number,"activity_hours_change":number}' },
+  { name: "save_plan_snapshot", mutatesData: true, description: "Propose saving a read-only copy of the active course plan before a larger change.", arguments: '{"label":"optional short label"}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
@@ -195,6 +199,7 @@ export function assistantToolLabel(name: string) {
     get_transcript_sources: "Read transcript sources",
     get_college_goal: "Read college goal",
     run_load_check: "Run load check",
+    save_plan_snapshot: "Save plan snapshot",
     add_dtech_course: "Add d.tech course",
     add_smccd_course: "Add SMCCD course",
     move_plan_course: "Move course",
@@ -531,6 +536,35 @@ export async function executeAssistantMutationTool(
   argumentsValue: Record<string, unknown>
 ): Promise<AssistantToolResult> {
   const workspace = await loadAssistantWorkspace(supabase, userId);
+
+  if (name === "save_plan_snapshot") {
+    const args = toolArgumentSchemas.save_plan_snapshot.parse(argumentsValue);
+    const label = args.label ?? `Snapshot ${new Date().toLocaleDateString("en-US")}`;
+    const { data: snapshot, error } = await supabase.from("plan_versions").insert({
+      plan_id: workspace.plan.id,
+      user_id: userId,
+      label,
+      kind: "snapshot",
+      generation_config: { source_version_id: workspace.activeVersion.id, created_by: "pilot_assistant" }
+    }).select("id").single();
+    if (error) throw new Error(error.message);
+    if (workspace.planCourses.length > 0) {
+      const copies = workspace.planCourses.map(({ id: _id, ...row }) => ({
+        ...row,
+        plan_version_id: snapshot.id
+      }));
+      const copyResult = await supabase.from("plan_courses").insert(copies);
+      if (copyResult.error) {
+        await supabase.from("plan_versions").delete().eq("id", snapshot.id);
+        throw new Error(copyResult.error.message);
+      }
+    }
+    return {
+      summary: `${label} was saved.`,
+      data: { label, course_count: workspace.planCourses.length },
+      changed: { entity: "plan_version", id: snapshot.id }
+    };
+  }
 
   if (name === "add_dtech_course") {
     const args = toolArgumentSchemas.add_dtech_course.parse(argumentsValue);

@@ -183,6 +183,7 @@ export const assistantToolNames = [
   "get_transcript_sources",
   "get_college_goal",
   "run_load_check",
+  "save_plan_snapshot",
   "add_dtech_course",
   "add_smccd_course",
   "move_plan_course",
@@ -200,6 +201,8 @@ export const assistantToolNames = [
   "clear_college_goal"
 ] as const;
 
+export const ASSISTANT_MESSAGE_MAX_LENGTH = 900;
+
 export const assistantQuestionSchema = z.object({
   id: z.string().trim().min(1).max(48).regex(/^[a-z0-9_-]+$/),
   prompt: z.string().trim().min(1).max(240),
@@ -213,7 +216,7 @@ export const assistantQuestionSchema = z.object({
 export type AssistantQuestion = z.infer<typeof assistantQuestionSchema>;
 
 export const assistantTurnSchema = z.object({
-  assistant_message: z.string().min(1).nullable(),
+  assistant_message: z.string().trim().min(1).max(ASSISTANT_MESSAGE_MAX_LENGTH).nullable(),
   questions: z.array(assistantQuestionSchema).max(3).default([]),
   tool_calls: z.array(z.object({
     name: z.enum(assistantToolNames),
@@ -229,7 +232,7 @@ export const assistantTurnJsonSchema = {
   additionalProperties: false,
   required: ["assistant_message", "questions", "tool_calls"],
   properties: {
-    assistant_message: { type: ["string", "null"] },
+    assistant_message: { type: ["string", "null"], maxLength: ASSISTANT_MESSAGE_MAX_LENGTH },
     questions: {
       type: "array",
       maxItems: 3,

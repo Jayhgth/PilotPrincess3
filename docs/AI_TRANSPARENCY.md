@@ -9,13 +9,15 @@ Pilot Princess uses Codex as an optional conversational layer over deterministic
 Pilot Assistant is one global, persistent rail available from the authenticated workspace after opt-in setup. It follows the useful parts of t3code and coding-agent interfaces without copying developer telemetry into a student product:
 
 - student messages appear as compact bubbles and assistant answers as readable conversation text;
+- assistant answers lead with the decision, default to one to three short sentences, use no more than three bullets, and are schema-bounded to 900 characters; longer detail is returned only when the student asks for it;
 - assistant answers render sanitized GitHub Flavored Markdown, including structured lists, task lists, tables, links, blockquotes, and code fences;
 - the current turn streams visible progress;
 - safe reasoning summaries and actual student-data tool calls remain inspectable under that turn;
 - running work shows live elapsed time, while settled work folds automatically behind a persisted **Worked for …** duration label;
 - older tool calls fold behind a readable **Show more** control while pending approvals remain visible;
 - every message has a timestamp and copy action, assistant replies can be retried as a preserved new turn, and unfinished text drafts remain local to that browser and conversation;
-- the composer remains available while Pilot works: submitted follow-ups enter a visible five-message in-memory queue, run automatically in order, and can be removed or promoted to **Steer** next; stopping or steering records a readable cancelled-turn event before the next prompt runs;
+- the compact composer floats above the rail edge as one prompt surface with attachments, page context, review mode, stop, and send controls in its footer; submitted text clears immediately so the next message can be written while Pilot works;
+- submitted follow-ups enter a visible five-message in-memory queue, run automatically in order, and can be removed or promoted to **Steer** next; stopping or steering records a readable cancelled-turn event before the next prompt runs;
 - when a missing preference blocks useful progress, Pilot can ask one to three bounded multiple-choice questions with an optional written answer instead of returning a vague paragraph;
 - conversations reload from Supabase, can be renamed, continued from any workspace page, and reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
@@ -41,6 +43,7 @@ Read tools may run automatically after a student sends a message:
 
 Write tools may prepare these changes:
 
+- save a read-only snapshot of the active course plan;
 - add a d.tech or SMCCD course;
 - move or remove an unlocked plan course;
 - add or complete a next step;
@@ -81,6 +84,8 @@ Archiving sets the owning conversation's existing `is_archived` flag. It removes
 
 `ai_knowledge_chunks` stores concise, source-controlled guidance about Pilot's role, page ownership, academic evidence rules, approval behavior, and answer style. Each turn uses tagged Postgres full-text search to select a bounded set of relevant chunks. The assistant timeline shows the retrieved chunk titles as **App guidance** so the student can understand which product rules shaped the answer.
 
+The role and answer-style chunks enforce a student-specific brevity contract: answer first, include only decision-changing evidence, mention uncertainty once, and avoid ratings, generic motivation, repeated page data, or report-shaped output. The structured response schema rejects assistant messages longer than 900 characters and asks the model to repair them before anything is persisted.
+
 Student records are not copied into the retrieval corpus. Current courses, profile fields, graduation evidence, transcript-source state, experiences, tasks, and college goals are read through allowlisted RLS-protected tools. This keeps static role guidance separate from live private data and prevents stale embeddings from becoming academic evidence.
 
 ## t3code and SDK boundary
@@ -111,5 +116,6 @@ Selected conversation history, page context, tool results, and images explicitly
 - Deterministic results stay available and clearly labeled.
 - Assistant failure cannot corrupt or block deterministic planning.
 - Reasoning and tool labels must be human-readable; raw transport metadata is not a substitute for transparency.
+- Default answers must remain decision-focused and brief; a live representative answer should fit in one to three short sentences without ratings or repeated dashboard data.
 - A live read must persist across reload, and a rejected write proposal must produce no product mutation.
 - Onboarding and rail settings own connection approval, model choice, and health testing; the global rail owns conversation history.
