@@ -16,7 +16,7 @@ const data: OverviewPathData = {
   currentCourses: [{ id: "current", name: "English 4", source: "d.tech", institution: "dtech" }],
   plannedCourses: [{ id: "planned", name: "CIS 127", source: "CSM", institution: "CSM" }],
   courseCounts: { completed: 18, current: 1, planned: 1 },
-  tasks: [{ id: "task", title: "Confirm registration", detail: "This month" }],
+  tasks: [{ id: "task", title: "Confirm registration", detail: "This month", generated: false }],
   summary: "The plan is covered after scheduled coursework."
 };
 
@@ -27,10 +27,11 @@ describe("OverviewPath", () => {
       data={data}
       onOpenGraduation={noop}
       onOpenCourses={noop}
-      onOpenTimeline={noop}
       onOpenProfile={noop}
       onGenerateTimeline={noop}
       onCompleteTask={noop}
+      onAddTask={noop}
+      onDeleteTask={noop}
     />);
 
     expect(html).toContain("Your path to graduation");

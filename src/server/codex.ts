@@ -525,6 +525,15 @@ export interface AssistantChatOptions {
   onToolActivity: (activity: AssistantChatToolActivity) => void | Promise<void>;
 }
 
+export function requiredAssistantEvidenceRead(userMessage: string): { name: AssistantToolName; arguments: Record<string, unknown> } | null {
+  const normalized = userMessage.toLowerCase();
+  const transcript = /trans(?:cript|cipt)/.test(normalized);
+  const auditIntent = /\b(audit|check|double[ -]?check|error|wrong|mismatch|parse|parsed|accurate|accuracy)\b/.test(normalized);
+  return transcript && auditIntent
+    ? { name: "audit_transcript_data", arguments: { include_source_text: true } }
+    : null;
+}
+
 function addUsage(current: Usage | null, next: Usage): Usage {
   return {
     input_tokens: (current?.input_tokens ?? 0) + next.input_tokens,
@@ -544,8 +553,8 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     options.images?.length
       ? `The student explicitly attached ${options.images.length} ${options.images.length === 1 ? "image" : "images"}: ${(options.imageNames ?? []).join(", ") || "unnamed image"}. Use visible image content only as context for this turn. Describe uncertainty when text or details are unclear, and do not infer unsupported student records.`
       : "No image was attached to this turn.",
-    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing data domain; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read.",
-    "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Compare original text, parsed rows, review decisions, catalog identities, and imported plan rows. Report only specific supported mismatches. A graduation requirement gap is a downstream plan result, never evidence of a parsing error by itself. Separate confirmed parser/reconciliation errors from items that merely need review; if no error is supported, say so plainly. When review items remain, name at most three exact course records and count the rest instead of giving a vague category.",
+    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing data domain; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting any saved-plan change. Treat all-A as the ceiling of the included saved schedule, never a grade prediction or admission guarantee.",
+    "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change supported dashboard data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to three exact related changes in one turn.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will assess eligible proposals; sensitive changes may still wait for the student." : "Manual. The student must approve every proposed change."}`,
@@ -589,6 +598,32 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       skipGitRepoCheck: true
     });
     let prompt = assistantConversationPrompt(options);
+    const requiredRead = requiredAssistantEvidenceRead(options.userMessage);
+    if (requiredRead) {
+      const activity: AssistantChatToolActivity = {
+        id: crypto.randomUUID(),
+        name: requiredRead.name,
+        label: assistantToolLabel(requiredRead.name),
+        arguments: requiredRead.arguments,
+        explanation: "Required evidence check for this request.",
+        mutatesData: false,
+        status: "started"
+      };
+      await options.onToolActivity(activity);
+      try {
+        const result = await options.executeReadTool(requiredRead.name, requiredRead.arguments);
+        await options.onToolActivity({ ...activity, status: "completed", result });
+        prompt += "\n\n" + [
+          "A required read-only evidence check already ran for this request. Do not say that you are about to check, and do not call the same tool again.",
+          "Answer directly from this result. For a transcript audit, state the deterministic verdict first, distinguish confirmed mismatches from unresolved verification, and never treat needs_review status or a graduation gap as proof of a parsing error.",
+          `REQUIRED TOOL RESULT: ${JSON.stringify({ tool: requiredRead.name, status: "completed", result })}`
+        ].join("\n\n");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The required evidence check failed.";
+        await options.onToolActivity({ ...activity, status: "failed", error: message });
+        prompt += `\n\nThe required ${requiredRead.name} evidence check failed: ${message}. State that the audit could not be completed; do not infer a result.`;
+      }
+    }
 
     for (let iteration = 1; iteration <= 4; iteration += 1) {
       const input: Input = iteration === 1 && options.images?.length

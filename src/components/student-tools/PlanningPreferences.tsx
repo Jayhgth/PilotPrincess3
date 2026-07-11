@@ -28,6 +28,7 @@ interface PlanningPreferencesProps {
   onSave: () => void | Promise<void>;
   onReviewSetup: () => void;
   onNavigate: (destination: "courses" | "activities") => void;
+  embedded?: boolean;
 }
 
 function toggleValue(values: string[], value: string) {
@@ -54,7 +55,8 @@ export default function PlanningPreferences({
   onChange,
   onSave,
   onReviewSetup,
-  onNavigate
+  onNavigate,
+  embedded = false
 }: PlanningPreferencesProps) {
   const [directionOpen, setDirectionOpen] = useState(false);
   const [capacityOpen, setCapacityOpen] = useState(false);
@@ -72,10 +74,10 @@ export default function PlanningPreferences({
       : `${knownHours} known weekly hours exceed the ${limit} hour limit.`;
 
   return (
-    <div className={styles.page}>
+    <div className={embedded ? styles.embeddedPage : styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <h1>Planning preferences</h1>
+          {embedded ? <h2>Planning preferences</h2> : <h1>Planning preferences</h1>}
           <p>A short brief that tells course matching and workload checks what to prioritize.</p>
         </div>
         <button className={styles.secondaryButton} type="button" onClick={onReviewSetup}>

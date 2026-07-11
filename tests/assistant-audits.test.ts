@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogReviewItem, Course, OfficialSource, PlanCourse } from "@/lib/models";
+import type { CatalogReviewItem, Course, OfficialSource, PlanCourse, SmccdCourse } from "@/lib/models";
 import { buildTranscriptAudit } from "@/server/assistant-audits";
 
 const source: OfficialSource = {
@@ -142,5 +142,104 @@ describe("assistant transcript evidence audit", () => {
     expect(audit.rows[1]?.verification_items).toContain("row is awaiting student review");
     expect(audit.rows[1]?.parser_or_reconciliation_issues).toEqual([]);
     expect(audit.sources[0]?.source_text_excerpt).toBeNull();
+  });
+
+  it("compares printed transcript totals with fully imported rows", () => {
+    const audit = buildTranscriptAudit({
+      sources: [{
+        ...source,
+        raw_text: "Student details    unweighted 9-12 GPA: 4.00\nweighted 9-12 GPA: 4.50\nCredits earned: 10.00\nPre-Calculus Honors A 10.0"
+      }],
+      reviewItems: [reviewItem()],
+      planCourses: [planCourse()],
+      courses: [catalogCourse],
+      smccdCourses: [],
+      includeSourceText: true
+    });
+
+    expect(audit.sources[0]?.printed_totals).toEqual({ unweighted_gpa: 4, weighted_gpa: 4.5, credits_earned: 10 });
+    expect(audit.sources[0]?.total_mismatches).toEqual(["weighted GPA"]);
+    expect(audit.confirmed_total_mismatches[0]).toMatchObject({ metric: "weighted GPA", printed: 4.5, calculated: 5 });
+    expect(audit.summary.verdict).toContain("confirmed");
+  });
+
+  it("flags a catalog link that silently changes the printed course identity", () => {
+    const chemistry: Course = { ...catalogCourse, id: "course-chem", name: "Advanced Chemistry Honors", subject: "Laboratory Science" };
+    const item = reviewItem({
+      id: "review-chem",
+      proposed_payload: {
+        course_name: "Chemistry",
+        grade_level: 10,
+        school_year: "2024-2025",
+        term: "full_year",
+        letter_grade: "A",
+        credits: 10,
+        weighted: false,
+        institution_name: "Design Tech High School",
+        matched_course_id: chemistry.id,
+        matched_course_name: chemistry.name,
+        transcript_classification: "dtech_catalog"
+      }
+    });
+    const audit = buildTranscriptAudit({
+      sources: [source],
+      reviewItems: [item],
+      planCourses: [planCourse({ id: "plan-chem", course_id: chemistry.id, custom_course_name: "Chemistry", source_review_item_id: item.id })],
+      courses: [chemistry],
+      smccdCourses: [],
+      includeSourceText: false
+    });
+
+    expect(audit.rows[0]?.parser_or_reconciliation_issues.join(" ")).toContain("does not match printed title (Chemistry)");
+  });
+
+  it("does not treat an SMCCD course-code prefix as a title mismatch", () => {
+    const smccd: SmccdCourse = {
+      id: "CSM:CIS 127",
+      college_code: "CSM",
+      course_code: "CIS 127",
+      subject: "CIS",
+      course_number: "127",
+      title: "HTML5 and CSS",
+      units_min: 3,
+      units_max: null,
+      degree_applicable: true,
+      transfer_credit: "CSU/UC",
+      attributes: [],
+      prerequisites: [],
+      corequisites: [],
+      recommended_preparation: [],
+      detail_status: "verified",
+      degree_applicability_source: "course_detail",
+      catalog_url: "https://example.com/cis-127",
+      source_year: "2025-2026"
+    };
+    const item = reviewItem({
+      id: "review-cis",
+      proposed_payload: {
+        course_name: "CIS 127 HTML5 and CSS",
+        course_code: "CIS 127",
+        grade_level: 11,
+        school_year: "2025-2026",
+        term: "fall",
+        letter_grade: "A",
+        credits: 5,
+        weighted: true,
+        institution_name: "College of San Mateo",
+        matched_smccd_course_id: smccd.id,
+        matched_smccd_course_name: smccd.title,
+        transcript_classification: "smccd_catalog"
+      }
+    });
+    const audit = buildTranscriptAudit({
+      sources: [source],
+      reviewItems: [item],
+      planCourses: [planCourse({ id: "plan-cis", course_id: null, custom_course_name: "CIS 127 HTML5 and CSS", smccd_course_id: smccd.id, source_review_item_id: item.id, grade_level: 11, credits: 5, is_weighted: true })],
+      courses: [catalogCourse],
+      smccdCourses: [smccd],
+      includeSourceText: false
+    });
+
+    expect(audit.rows[0]?.parser_or_reconciliation_issues).toEqual([]);
   });
 });

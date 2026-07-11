@@ -5,6 +5,18 @@
   color: var(--ink);
 }
 
+.embeddedPage {
+  width: 100%;
+  color: var(--ink);
+}
+
+.embeddedPage .pageHeader h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+}
+
 .pageHeader {
   display: flex;
   align-items: flex-start;

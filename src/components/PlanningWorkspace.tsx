@@ -2,21 +2,15 @@ import {
   AirplaneTiltIcon as AirplaneTilt,
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
-  BriefcaseIcon as Briefcase,
-  CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
   CheckIcon as Check,
   FileArrowUpIcon as FileArrowUp,
-  FlagIcon as Flag,
   FloppyDiskIcon as FloppyDisk,
   GearSixIcon as GearSix,
-  GaugeIcon as Gauge,
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
-  ListChecksIcon as ListChecks,
   MoonIcon as Moon,
   PlusIcon as Plus,
-  ScalesIcon as Scales,
   SignOutIcon as SignOut,
   SparkleIcon as Sparkle,
   SunIcon as Sun,
@@ -42,11 +36,9 @@ import {
 import {
   appliedCreditBreakdown,
   calculateGpa,
-  calculateUcGpaEstimate,
   calculateRequirementProgress,
   calculateWorkload,
   courseDisplayName,
-  dtechGradePoint,
   generateSuggestedPlan,
   generateTimeline,
   overallCompletedPercent,
@@ -54,8 +46,7 @@ import {
   planCourseMovePatch,
   reconcileGeneratedTimelineTasks,
   selectedPlanGrades,
-  schoolYearForGrade,
-  simulatePlan
+  schoolYearForGrade
 } from "@/lib/planning";
 import { requirementsForProfile } from "@/lib/planning";
 import { courseProfileFit } from "@/lib/profile-planning";
@@ -65,21 +56,20 @@ import {
   visibleTranscriptUncertaintyNotes,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
-import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import AdminSettingsDialog from "@/components/AdminSettingsDialog";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
-import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
+import OverviewPath, { type OverviewPathData, type OverviewTaskDraft } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type { ExperienceDraft } from "@/components/student-tools/ExperienceLog";
-import type { CourseCheck, NextStepDraft } from "@/components/student-tools/NextSteps";
 import type {
   Activity,
   CatalogReviewItem,
   Course,
   CourseRequirementMapping,
+  EnrollmentPolicy,
   FourYearPlan,
   GraduationRequirement,
   GradeLevel,
@@ -89,14 +79,14 @@ import type {
   School,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
-  SimulationConfig,
-  SimulationResult,
+  StudentEnrollmentPreference,
   StudentProfile,
   TimelineTask
 } from "@/lib/workspace-types";
+import { defaultEnrollmentPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
-import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
+import { evaluateDtechPlannerPrerequisites } from "@/lib/prerequisites";
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -104,38 +94,24 @@ const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
 const GlobalAssistant = lazy(() => import("@/components/GlobalAssistant"));
 const GraduationWorkspace = lazy(() => import("@/components/GraduationWorkspace"));
 const SmccdPlanner = lazy(() => import("@/components/SmccdPlanner"));
-const ExperienceLog = lazy(() => import("@/components/student-tools/ExperienceLog"));
-const NextSteps = lazy(() => import("@/components/student-tools/NextSteps"));
-const LoadCheck = lazy(() => import("@/components/student-tools/LoadCheck"));
-const PlanningPreferences = lazy(() => import("@/components/student-tools/PlanningPreferences"));
+const GpaPlanningLab = lazy(() => import("@/components/GpaPlanningLab"));
+const StudentProfileDialog = lazy(() => import("@/components/StudentProfileDialog"));
 
 type ViewId =
   | "dashboard"
   | "courses"
-  | "profile"
   | "sources"
   | "graduation"
-  | "gpa"
-  | "activities"
-  | "timeline"
-  | "simulator";
+  | "gpa";
 
 const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
   { id: "courses", label: "Courses", icon: BookOpen },
-  { id: "graduation", label: "Graduation", icon: GraduationCap }
+  { id: "graduation", label: "Graduation", icon: GraduationCap },
+  { id: "gpa", label: "GPA planner", icon: ChartLineUp }
 ];
 
-const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
-  { id: "sources", label: "Transcript import", icon: FileArrowUp },
-  { id: "gpa", label: "GPA", icon: ChartLineUp },
-  { id: "activities", label: "Experiences", icon: Briefcase },
-  { id: "timeline", label: "Next steps", icon: ListChecks },
-  { id: "simulator", label: "Load check", icon: Scales },
-  { id: "profile", label: "Planning preferences", icon: UserCircle }
-];
-
-const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
+const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
 
 // Demo-only placement metadata. The durable product entry point is the
 // Planning preferences "Review setup" action; remove this sidebar shortcut after demos.
@@ -154,12 +130,7 @@ const DEMO_LOGIN_SHORTCUT = {
 } as const;
 
 type CourseArea = "mine" | "dtech" | "smccd";
-type GpaLens = "transcript" | "uc";
 type SourceAiTransparency = TranscriptAiTransparency;
-const DEFAULT_SIMULATION: SimulationConfig = {
-  collegeUnits: 3,
-  activityHoursChange: 0
-};
 
 function titleCase(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -190,17 +161,6 @@ function PageHeader({
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </header>
-  );
-}
-
-function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
-  return (
-    <div className="empty-state">
-      <Flag size={23} weight="duotone" aria-hidden />
-      <strong>{title}</strong>
-      <p>{body}</p>
-      {action}
-    </div>
   );
 }
 
@@ -250,7 +210,7 @@ export default function PlanningWorkspace() {
   const [toastKind, setToastKind] = useState<"info" | "success" | "error">("info");
   const [view, setView] = useState<ViewId>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [moreNavOpen, setMoreNavOpen] = useState(false);
+  const [studentProfileOpen, setStudentProfileOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
@@ -260,10 +220,10 @@ export default function PlanningWorkspace() {
   );
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">("courses");
-  const [gpaLens, setGpaLens] = useState<GpaLens>("transcript");
+  const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
-  const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
+  const [focusedSmccdCourseId] = useState<string | null>(null);
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
 
   const [school, setSchool] = useState<School | null>(null);
@@ -280,6 +240,8 @@ export default function PlanningWorkspace() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [tasks, setTasks] = useState<TimelineTask[]>([]);
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
+  const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
+  const [enrollmentPreference, setEnrollmentPreference] = useState<StudentEnrollmentPreference | null>(null);
 
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
@@ -292,9 +254,6 @@ export default function PlanningWorkspace() {
   const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
-  const [simulationConfig, setSimulationConfig] = useState<SimulationConfig>(DEFAULT_SIMULATION);
-  const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
-  const [simulationBasis, setSimulationBasis] = useState("");
   const [planExplanation, setPlanExplanation] = useState<string | null>(null);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [compareCourses, setCompareCourses] = useState<PlanCourse[]>([]);
@@ -312,7 +271,6 @@ export default function PlanningWorkspace() {
     [trackedRequirements, planCourses, mappings, courses, equivalencies]
   );
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
-  const ucGpa = useMemo(() => calculateUcGpaEstimate(planCourses, courses), [planCourses, courses]);
   const workload = useMemo(
     () => (profile ? calculateWorkload(profile, planCourses, courses, activities) : null),
     [profile, planCourses, courses, activities]
@@ -329,14 +287,6 @@ export default function PlanningWorkspace() {
     () => reconcileGeneratedTimelineTasks(tasks, desiredGeneratedTimelineTasks),
     [tasks, desiredGeneratedTimelineTasks]
   );
-  const currentSimulationBasis = [
-    workload?.knownWeeklyHours ?? "unknown",
-    workload?.weeklyActivityHours ?? "unknown",
-    workload?.demandingCourseCount ?? "unknown",
-    workload?.demandingCourseLimit ?? "unknown",
-    profile?.weekly_commitment_limit ?? "unset",
-    profile?.stress_level ?? "unknown"
-  ].join("|");
 
   const loadWorkspace = useCallback(async () => {
     if (!supabase) return;
@@ -362,6 +312,8 @@ export default function PlanningWorkspace() {
         activityResult,
         taskResult,
         reviewResult,
+        enrollmentPolicyResult,
+        enrollmentPreferenceResult,
         adminResult
       ] = await Promise.all([
         supabase.from("schools").select("*").eq("slug", "design-tech-high-school").single(),
@@ -375,6 +327,8 @@ export default function PlanningWorkspace() {
         supabase.from("activities").select("*").eq("user_id", userId).order("created_at"),
         supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
         supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+        supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
+        supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
         supabase.rpc("is_app_admin")
       ]);
       const firstError = [
@@ -384,7 +338,9 @@ export default function PlanningWorkspace() {
         requirementResult.error,
         mappingResult.error,
         equivalencyResult.error,
-        planResult.error
+        planResult.error,
+        enrollmentPolicyResult.error,
+        enrollmentPreferenceResult.error
       ].find(Boolean);
       if (firstError) throw firstError;
 
@@ -441,6 +397,12 @@ export default function PlanningWorkspace() {
       setActivities((activityResult.data ?? []) as unknown as Activity[]);
       setTasks((taskResult.data ?? []) as unknown as TimelineTask[]);
       setReviewItems(loadedReviewItems);
+      setEnrollmentPolicies((enrollmentPolicyResult.data ?? []) as unknown as EnrollmentPolicy[]);
+      setEnrollmentPreference(
+        enrollmentPreferenceResult.data
+          ? enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference
+          : defaultEnrollmentPreference(userId)
+      );
       setIsAdmin(adminResult.data === true && !adminResult.error);
       setSelectedTranscriptIds((current) => {
         const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
@@ -537,7 +499,6 @@ export default function PlanningWorkspace() {
 
   function navigate(nextView: ViewId) {
     setView(nextView);
-    if (SECONDARY_NAV_ITEMS.some((item) => item.id === nextView)) setMoreNavOpen(true);
     setMobileNavOpen(false);
     void logEvent("view_opened", { view: nextView });
   }
@@ -603,6 +564,26 @@ export default function PlanningWorkspace() {
         await logEvent("planning_preferences_updated");
       },
       "Planning preferences saved."
+    );
+  }
+
+  async function saveEnrollmentPreference() {
+    if (!supabase || !session || !enrollmentPreference) return;
+    await runAction(
+      "Saving college-unit guardrail",
+      async () => {
+        const { data, error } = await supabase.from("student_enrollment_preferences").upsert({
+          user_id: session.user.id,
+          provider_code: enrollmentPreference.provider_code,
+          program_type: enrollmentPreference.program_type,
+          limit_mode: enrollmentPreference.limit_mode,
+          custom_unit_limit: enrollmentPreference.limit_mode === "custom" ? enrollmentPreference.custom_unit_limit : null
+        }, { onConflict: "user_id,provider_code" }).select("*").single();
+        if (error) throw error;
+        setEnrollmentPreference(data as unknown as StudentEnrollmentPreference);
+        await logEvent("enrollment_guardrail_updated", { provider_code: enrollmentPreference.provider_code, limit_mode: enrollmentPreference.limit_mode });
+      },
+      "College-unit guardrail saved."
     );
   }
 
@@ -1066,7 +1047,7 @@ export default function PlanningWorkspace() {
     );
   }
 
-  async function addCustomTask(draft: NextStepDraft) {
+  async function addCustomTask(draft: OverviewTaskDraft) {
     if (!supabase || !session) return false;
     if (!draft.title.trim()) {
       notify("Add a clear next step before saving.", "error");
@@ -1117,14 +1098,6 @@ export default function PlanningWorkspace() {
     if (patch.is_completed) await logEvent("timeline_task_completed", { task_id: id });
   }
 
-  async function runSimulation() {
-    if (!profile || !workload) return;
-    const result = simulatePlan(simulationConfig, profile, progress, gpa, workload);
-    setSimulationResult(result);
-    setSimulationBasis(currentSimulationBasis);
-    await logEvent("simulation_started", { ai_used: false });
-  }
-
   if (!configured) {
     return (
       <main className="fatal-state">
@@ -1166,13 +1139,15 @@ export default function PlanningWorkspace() {
             await loadWorkspace();
             if (replayingOnboarding) {
               setReplayingOnboarding(false);
-              setView("profile");
+              setView("dashboard");
+              setStudentProfileOpen(true);
               notify("Onboarding changes saved.", "success");
             }
           }}
           onExit={replayingOnboarding ? () => {
             setReplayingOnboarding(false);
-            setView("profile");
+            setView("dashboard");
+            setStudentProfileOpen(true);
             notify("Onboarding exited without saving changes.");
           } : undefined}
           onSignOut={signOut}
@@ -1216,14 +1191,6 @@ export default function PlanningWorkspace() {
   const hiddenCatalogTotal = hiddenCatalogCounts.already_in_plan + hiddenCatalogCounts.outside_grade
     + hiddenCatalogCounts.below_math_level + prerequisiteBlockedIds.size;
   const subjects = [...new Set(courses.map((course) => course.subject))];
-  const latestTranscriptSource = sources.find(
-    (source) => !source.is_official && source.document_type === "transcript"
-  );
-  const pendingReviewCount = reviewItems.filter(
-    (item) => item.entity_type === "transcript_course"
-      && item.status === "pending"
-      && item.source_id === latestTranscriptSource?.id
-  ).length;
   const courseCounts = {
     completed: planCourses.filter((row) => row.status === "completed").length,
     current: planCourses.filter((row) => row.status === "current").length,
@@ -1244,44 +1211,6 @@ export default function PlanningWorkspace() {
       )
     : null;
   const plannedSmccdMap = new Map(plannedSmccdCourses.map((course) => [course.id, course]));
-  const prerequisitePlanChecks = planCourses
-    .filter((row) => row.status !== "completed")
-    .flatMap((row) => {
-      const dtech = row.course_id ? courseMap.get(row.course_id) : null;
-      const smccd = row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id) : null;
-      const evaluation = dtech
-        ? evaluateDtechPlannerPrerequisites(
-            dtech,
-            { gradeLevel: row.grade_level, term: row.term, instanceId: row.id },
-            courses,
-            planCourses,
-            plannedSmccdCourses,
-            equivalencies
-          )
-        : smccd
-          ? evaluateSmccdPlannerPrerequisites(
-              smccd,
-              { gradeLevel: row.grade_level, term: row.term, instanceId: row.id },
-              plannedSmccdCourses,
-              planCourses,
-              courses
-            )
-          : null;
-      if (!evaluation || evaluation.originalTexts.length === 0 || evaluation.result.status === "satisfied") return [];
-      const message = evaluation.result.missingCourses[0]?.message
-        ?? evaluation.result.orderingViolations[0]?.message
-        ?? evaluation.result.evidence.find((item) => item.satisfied !== true)?.message
-        ?? "The prerequisite needs review.";
-      return [{
-        row,
-        source: dtech ? "dtech" as const : "smccd" as const,
-        courseId: dtech?.id ?? smccd!.id,
-        name: dtech?.name ?? `${smccd!.course_code} ${smccd!.title}`,
-        status: evaluation.result.status,
-        message
-      }];
-    });
-
   function renderDashboard() {
     if (!profile) return null;
     const nextTasks = timelineTaskSync.visibleTasks.filter((task) => !task.is_completed).slice(0, 4);
@@ -1319,7 +1248,7 @@ export default function PlanningWorkspace() {
       currentCourses: planCourses.filter((row) => row.status === "current").map(overviewCourse),
       plannedCourses: planCourses.filter((row) => row.status === "planned").map(overviewCourse),
       courseCounts,
-      tasks: nextTasks.map((task) => ({ id: task.id, title: task.title, detail: task.due_label ?? titleCase(task.category) })),
+      tasks: nextTasks.map((task) => ({ id: task.id, title: task.title, detail: task.due_label ?? titleCase(task.category), generated: task.is_generated })),
       summary: null
     };
     return (
@@ -1329,47 +1258,16 @@ export default function PlanningWorkspace() {
           data={overviewData}
           onOpenGraduation={() => navigate("graduation")}
           onOpenCourses={() => openCourses("mine")}
-          onOpenTimeline={() => navigate("timeline")}
-          onOpenProfile={() => navigate("profile")}
+          onOpenProfile={() => setStudentProfileOpen(true)}
           onGenerateTimeline={() => void generateTasks()}
           onCompleteTask={(id) => void updateTask(id, { is_completed: true })}
+          onAddTask={addCustomTask}
+          onDeleteTask={deleteTask}
         />
       </div>
     );
   }
 
-  function renderProfile() {
-    if (!profile || !school || !session) return null;
-    const matchingGrade = profile.grade_level as GradeLevel;
-    const matchingCourseCount = courses.filter((course) => {
-      if ((courseFits.get(course.id)?.score ?? 0) <= 0) return false;
-      if (!dtechCatalogEligibility(course, matchingGrade, planCourses, courses).eligible) return false;
-      return evaluateDtechPlannerPrerequisites(
-        course,
-        defaultDtechPlacement(course, matchingGrade),
-        courses,
-        planCourses,
-        plannedSmccdCourses,
-        equivalencies
-      ).result.status !== "blocked";
-    }).length;
-    return (
-      <div className="profile-page page-frame">
-        <PlanningPreferences
-          session={session}
-          profile={profile}
-          schoolName={school.name}
-          matchingCourseCount={matchingCourseCount}
-          workload={workload}
-          busy={Boolean(busyLabel)}
-          onChange={setProfile}
-          onSave={savePlanningPreferences}
-          onReviewSetup={() => setReplayingOnboarding(true)}
-          onNavigate={(destination) => navigate(destination)}
-        />
-      </div>
-    );
-  }
   function renderSources() {
     const latestTranscript = sources.find((source) => !source.is_official && source.document_type === "transcript") ?? null;
     const importedIds = new Set(planCourses.map((row) => row.source_review_item_id).filter(Boolean));
@@ -1559,33 +1457,20 @@ export default function PlanningWorkspace() {
   }
 
   function renderGpa() {
-    const gradedRows = planCourses.filter((row) => row.letter_grade && !["IP", "P"].includes(row.letter_grade.toUpperCase()));
-    return (
-      <div className="gpa-page page-frame">
-        <PageHeader title="GPA lenses" description="See the same coursework through the transcript method and a conservative UC planning method." />
-        <WorkspaceTabs items={[{ id: "transcript", label: "d.tech transcript" }, { id: "uc", label: "UC planning estimate" }]} value={gpaLens} onChange={setGpaLens} label="GPA calculation methods" layoutId="gpa-lens-indicator" className="gpa-lens-tabs" />
-        {gpaLens === "transcript" ? <AnimatedContent className="gpa-lens-workspace" key="transcript">
-          <section className="gpa-answer" aria-label="d.tech transcript GPA">
-            <div><span>Current weighted GPA</span><strong>{formatGpa(gpa.currentWeighted)}</strong><p>Matches completed graded coursework using the transcript legend.</p></div>
-            <dl><div><dt>Current unweighted</dt><dd>{formatGpa(gpa.currentUnweighted)}</dd></div><div><dt>Projected weighted</dt><dd>{formatGpa(gpa.projectedWeighted)}</dd></div><div><dt>Projected unweighted</dt><dd>{formatGpa(gpa.projectedUnweighted)}</dd></div></dl>
-          </section>
-          <div className="gpa-evidence-strip"><Gauge size={18} /><span><strong>Method:</strong> plus and minus marks do not change grade points. d.tech Honors and SMCCD courses receive one added point. Pass marks do not enter GPA.</span><small>{gpa.gradedCredits} graded credits · {gpa.weightedCredits} weighted · {gpa.passCredits} pass credits excluded</small></div>
-        </AnimatedContent> : <AnimatedContent className="gpa-lens-workspace" key="uc">
-          <section className="gpa-answer uc" aria-label="UC GPA planning estimate">
-            <div><span>UC capped weighted estimate</span><strong>{formatGpa(ucGpa.cappedWeighted)}</strong><p>Completed, verified d.tech A-G courses from grades 10 and 11 only.</p></div>
-            <dl><div><dt>Unweighted</dt><dd>{formatGpa(ucGpa.unweighted)}</dd></div><div><dt>Course semesters</dt><dd>{ucGpa.courseSemesters}</dd></div><div><dt>Honors semesters used</dt><dd>{ucGpa.honorsSemestersUsed} / 8</dd></div></dl>
-          </section>
-          <div className={`gpa-evidence-strip ${ucGpa.unresolvedCourses ? "warning" : ""}`}><Warning size={18} /><span><strong>Conservative by design:</strong> custom and college courses stay out until an exact reviewed A-G link exists. UC honors points are capped at eight semesters, with no more than four from grade 10.</span><small>{ucGpa.unresolvedCourses} graded {ucGpa.unresolvedCourses === 1 ? "course needs" : "courses need"} A-G verification</small></div>
-        </AnimatedContent>}
-        <details className="gpa-course-details">
-          <summary><span><strong>Course calculation details</strong><small>{gradedRows.length} graded courses with exact transcript marks</small></span><CaretDown size={16} /></summary>
-          <div className="gpa-course-details-body">
-            <div className="gpa-course-details-action"><p>Review the grades, credits, and weighting used in the calculation.</p><button className="secondary-button small" type="button" onClick={() => openCourses("mine")}>Open Done courses</button></div>
-            {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
-          </div>
-        </details>
-      </div>
-    );
+    if (!enrollmentPreference) return null;
+    return <div className="gpa-page page-frame wide"><GpaPlanningLab
+      rows={planCourses}
+      courses={courses}
+      smccdCourses={plannedSmccdCourses}
+      activities={activities}
+      policies={enrollmentPolicies}
+      enrollmentPreference={enrollmentPreference}
+      busy={Boolean(busyLabel)}
+      onPreferenceChange={setEnrollmentPreference}
+      onSavePreference={saveEnrollmentPreference}
+      onOpenCourses={() => openCourses("mine")}
+      onScenarioChange={setGpaScenarioContext}
+    /></div>;
   }
 
   function renderMineCourses() {
@@ -1672,105 +1557,13 @@ export default function PlanningWorkspace() {
     </div>;
   }
 
-  function renderActivities() {
-    if (!session || !profile) return null;
-    return (
-      <div className="activities-page page-frame">
-        <ExperienceLog
-          session={session}
-          activities={activities}
-          currentGrade={profile.grade_level ?? 9}
-          workload={workload}
-          busy={Boolean(busyLabel)}
-          onSave={saveActivity}
-          onRemove={removeActivity}
-          onNavigate={() => navigate("profile")}
-        />
-      </div>
-    );
-  }
-  function renderTimeline() {
-    if (!session || !profile) return null;
-    const courseChecks: CourseCheck[] = prerequisitePlanChecks.map((check) => ({
-      id: check.row.id,
-      name: check.name,
-      status: check.status === "blocked" ? "blocked" : "needs_review",
-      message: check.message,
-      source: check.source,
-      courseId: check.courseId
-    }));
-    const openRequirements = progress
-      .filter((item) => item.status === "missing")
-      .map((item) => ({
-        id: item.requirement.id,
-        name: item.requirement.name,
-        remainingCredits: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)
-      }));
-    const visibleTasks = timelineTaskSync.visibleTasks;
-    const openCourseCheck = (check: CourseCheck) => {
-      if (check.source === "dtech") {
-        const course = courseMap.get(check.courseId);
-        if (course) chooseDtechCourse(course);
-      } else {
-        setFocusedSmccdCourseId(check.courseId);
-      }
-      setCourseArea(check.source);
-      setView("courses");
-    };
-    return (
-      <div className="timeline-page page-frame">
-        <NextSteps
-          session={session}
-          tasks={visibleTasks}
-          currentGrade={profile.grade_level ?? 9}
-          graduationYear={profile.graduation_year}
-          openRequirements={openRequirements}
-          courseChecks={courseChecks}
-          busy={Boolean(busyLabel)}
-          onSync={generateTasks}
-          onAdd={addCustomTask}
-          onUpdate={updateTask}
-          onDelete={deleteTask}
-          onOpenCourseCheck={openCourseCheck}
-          onNavigate={(destination) => navigate(destination)}
-        />
-      </div>
-    );
-  }
-  function renderSimulator() {
-    if (!profile || !session) return null;
-    const freshSimulationResult = simulationBasis === currentSimulationBasis ? simulationResult : null;
-    return (
-      <div className="simulator-page page-frame">
-        <LoadCheck
-          session={session}
-          profile={profile}
-          workload={workload}
-          config={simulationConfig}
-          result={freshSimulationResult}
-          busy={Boolean(busyLabel)}
-          onConfigChange={(next) => {
-            setSimulationConfig(next);
-            setSimulationResult(null);
-            setSimulationBasis("");
-          }}
-          onCompare={runSimulation}
-          onNavigate={(destination) => navigate(destination)}
-        />
-      </div>
-    );
-  }
   function renderView() {
     switch (view) {
       case "dashboard": return renderDashboard();
       case "courses": return renderCourses();
-      case "profile": return renderProfile();
       case "sources": return renderSources();
       case "graduation": return renderGraduation();
       case "gpa": return renderGpa();
-      case "activities": return renderActivities();
-      case "timeline": return renderTimeline();
-      case "simulator": return renderSimulator();
     }
   }
 
@@ -1779,9 +1572,22 @@ export default function PlanningWorkspace() {
     view,
     label: activeView?.label ?? "workspace",
     ...(view === "courses" ? { course_area: courseArea } : {}),
-    ...(view === "gpa" ? { gpa_lens: gpaLens } : {}),
+    ...(view === "gpa" ? { gpa_scenario: gpaScenarioContext } : {}),
     ...(view === "graduation" ? { graduation_earned_percent: graduationEarnedPercent } : {})
   };
+  const matchingGrade = profile.grade_level as GradeLevel;
+  const matchingCourseCount = courses.filter((course) => {
+    if ((courseFits.get(course.id)?.score ?? 0) <= 0) return false;
+    if (!dtechCatalogEligibility(course, matchingGrade, planCourses, courses).eligible) return false;
+    return evaluateDtechPlannerPrerequisites(
+      course,
+      defaultDtechPlacement(course, matchingGrade),
+      courses,
+      planCourses,
+      plannedSmccdCourses,
+      equivalencies
+    ).result.status !== "blocked";
+  }).length;
 
   return (
     <div className={`app-shell ${assistantOpen ? "assistant-docked" : ""}`}>
@@ -1793,18 +1599,12 @@ export default function PlanningWorkspace() {
         <nav className="sidebar-nav" aria-label="Planning workspace">
           {PRIMARY_NAV_ITEMS.map((item) => {
             const NavIcon = item.icon;
-            const badge = item.id === "sources" && pendingReviewCount > 0 ? pendingReviewCount : null;
-            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span>{badge && <b>{badge}</b>}</button>;
+            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span></button>;
           })}
-          <button className={`sidebar-more-toggle ${moreNavOpen ? "open" : ""}`} onClick={() => setMoreNavOpen((current) => !current)} type="button" aria-expanded={moreNavOpen}><CaretDown size={17} /><span>More tools</span></button>
-          {moreNavOpen && <div className="sidebar-secondary">{SECONDARY_NAV_ITEMS.map((item) => {
-            const NavIcon = item.icon;
-            const badge = item.id === "sources" && pendingReviewCount > 0 ? pendingReviewCount : null;
-            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={17} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span>{badge && <b>{badge}</b>}</button>;
-          })}</div>}
         </nav>
         <div className="sidebar-footer">
           <div className="school-chip"><GraduationCap size={18} weight="duotone" /><span><strong>{school.short_name}</strong><small>{school.source_year} sources</small></span></div>
+          <button className="sidebar-utility" onClick={() => { setMobileNavOpen(false); setStudentProfileOpen(true); }} type="button"><UserCircle size={17} /><span>Student profile</span></button>
           {isAdmin && <>
             <button className="sidebar-utility" onClick={() => { setMobileNavOpen(false); setAdminSettingsOpen(true); }} type="button"><GearSix size={17} /><span>Admin settings</span></button>
             <button
@@ -1869,6 +1669,23 @@ export default function PlanningWorkspace() {
             ai_setup_tested_at: data.ai_setup_tested_at
           } : current);
         }}
+      /></Suspense>
+      <Suspense fallback={null}><StudentProfileDialog
+        session={session}
+        open={studentProfileOpen}
+        profile={profile}
+        schoolName={school.name}
+        matchingCourseCount={matchingCourseCount}
+        workload={workload}
+        activities={activities}
+        busy={Boolean(busyLabel)}
+        onClose={() => setStudentProfileOpen(false)}
+        onProfileChange={setProfile}
+        onSaveProfile={savePlanningPreferences}
+        onReviewSetup={() => { setStudentProfileOpen(false); setReplayingOnboarding(true); }}
+        onOpenCourses={() => { setStudentProfileOpen(false); openCourses("dtech"); }}
+        onSaveActivity={saveActivity}
+        onRemoveActivity={removeActivity}
       /></Suspense>
       {isAdmin && adminSettingsOpen && <AdminSettingsDialog
         accessToken={session.access_token}

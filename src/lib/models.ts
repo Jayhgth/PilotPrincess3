@@ -152,6 +152,7 @@ export interface PlanCourse {
   sort_order: number;
   source_review_item_id: string | null;
   smccd_course_id: string | null;
+  college_provider_code?: string | null;
   requirement_area_override: RequirementArea | null;
 }
 
@@ -251,6 +252,33 @@ export interface StudentSmccdGoal {
   program_id: string;
   is_primary: boolean;
   notes: string;
+}
+
+export interface EnrollmentPolicy {
+  id: string;
+  provider_code: string;
+  provider_name: string;
+  program_type: "concurrent" | "dual";
+  term: "fall" | "spring" | "summer" | "any";
+  unit_system: "semester" | "quarter";
+  recommended_max_units: number;
+  fee_free_max_units: number;
+  absolute_max_units: number;
+  approval_required: boolean;
+  source_url: string;
+  source_label: string;
+  source_year: string;
+  notes: string | null;
+  confidence: Confidence;
+}
+
+export interface StudentEnrollmentPreference {
+  user_id: string;
+  provider_code: string;
+  program_type: EnrollmentPolicy["program_type"];
+  limit_mode: "recommended" | "fee_free" | "absolute" | "custom";
+  custom_unit_limit: number | null;
+  updated_at: string;
 }
 
 export interface Activity {

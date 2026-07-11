@@ -34,6 +34,7 @@ interface ExperienceLogProps {
   onSave: (draft: ExperienceDraft, id: string | null) => boolean | Promise<boolean>;
   onRemove: (id: string) => void | Promise<void>;
   onNavigate: (destination: "profile") => void;
+  embedded?: boolean;
 }
 
 const activityKinds: Array<{ value: Activity["kind"]; label: string }> = [
@@ -91,7 +92,8 @@ export default function ExperienceLog({
   busy,
   onSave,
   onRemove,
-  onNavigate
+  onNavigate,
+  embedded = false
 }: ExperienceLogProps) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -128,10 +130,10 @@ export default function ExperienceLog({
       : `${Math.abs(workload.capacityRemaining)} hours exceed your saved weekly limit.`;
 
   return (
-    <div className={styles.page}>
+    <div className={embedded ? styles.embeddedPage : styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <h1>Experiences</h1>
+          {embedded ? <h2>Experiences</h2> : <h1>Experiences</h1>}
           <p>Keep a factual record of the work, activities, and responsibilities that use your time.</p>
         </div>
         <button className={styles.primaryButton} type="button" onClick={startNew} disabled={!canEdit} aria-expanded={editorOpen} aria-controls="experience-editor">

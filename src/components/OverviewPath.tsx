@@ -7,6 +7,8 @@ import {
   SparkleIcon as Sparkle,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
+import { PlusIcon as Plus, TrashIcon as Trash } from "@phosphor-icons/react";
+import { useState, type SyntheticEvent } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import CountUp from "@/components/reactbits/CountUp";
 import FadeContent from "@/components/reactbits/FadeContent";
@@ -28,6 +30,13 @@ export interface OverviewTaskItem {
   id: string;
   title: string;
   detail: string;
+  generated: boolean;
+}
+
+export interface OverviewTaskDraft {
+  title: string;
+  category: "academics" | "activities" | "college" | "summer" | "admin";
+  dueLabel: string;
 }
 
 export interface OverviewPathData {
@@ -49,13 +58,14 @@ interface Props {
   data: OverviewPathData;
   onOpenGraduation: () => void;
   onOpenCourses: () => void;
-  onOpenTimeline: () => void;
   onOpenProfile: () => void;
   onGenerateTimeline: () => void;
   onCompleteTask: (id: string) => void;
+  onAddTask: (draft: OverviewTaskDraft) => boolean | Promise<boolean>;
+  onDeleteTask: (id: string) => void | Promise<void>;
 }
 
-export default function OverviewPath({ data, onOpenGraduation, onOpenCourses, onOpenTimeline, onOpenProfile, onGenerateTimeline, onCompleteTask }: Props) {
+export default function OverviewPath({ data, onOpenGraduation, onOpenCourses, onOpenProfile, onGenerateTimeline, onCompleteTask, onAddTask, onDeleteTask }: Props) {
   const completedAreas = data.requirements.filter((item) => item.remaining === 0);
   const openAreas = data.requirements.filter((item) => item.remaining > 0);
 
@@ -91,15 +101,25 @@ export default function OverviewPath({ data, onOpenGraduation, onOpenCourses, on
     </div>
 
     <div className="overview-path-lower">
-      <section><header><h2>Next actions</h2><button className="quiet-button small" type="button" onClick={onOpenTimeline}>Open next steps</button></header><TaskList data={data} onCompleteTask={onCompleteTask} onGenerateTimeline={onGenerateTimeline} /></section>
+      <section><header><h2>Next actions</h2></header><TaskList data={data} onCompleteTask={onCompleteTask} onGenerateTimeline={onGenerateTimeline} onAddTask={onAddTask} onDeleteTask={onDeleteTask} /></section>
       <PlanNote summary={data.summary} />
     </div>
   </div>;
 }
 
-function TaskList({ data, onCompleteTask, onGenerateTimeline }: Pick<Props, "data" | "onCompleteTask" | "onGenerateTimeline">) {
-  if (!data.tasks.length) return <div className="overview-task-empty"><ListChecks size={20} /><span><strong>No open tasks</strong><small>Sync next steps from the current grade and plan.</small></span><button className="secondary-button small" type="button" onClick={onGenerateTimeline}>Sync next steps</button></div>;
-  return <div className="overview-concept-tasks">{data.tasks.map((task) => <label key={task.id}><input type="checkbox" onChange={() => onCompleteTask(task.id)} /><span><strong>{task.title}</strong><small>{task.detail}</small></span></label>)}</div>;
+function TaskList({ data, onCompleteTask, onGenerateTimeline, onAddTask, onDeleteTask }: Pick<Props, "data" | "onCompleteTask" | "onGenerateTimeline" | "onAddTask" | "onDeleteTask">) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState<OverviewTaskDraft>({ title: "", category: "academics", dueLabel: "" });
+  async function submit(event: SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!await onAddTask(draft)) return;
+    setDraft({ title: "", category: "academics", dueLabel: "" });
+    setAdding(false);
+  }
+  return <div className="overview-task-workspace">
+    {!data.tasks.length ? <div className="overview-task-empty"><ListChecks size={20} /><span><strong>No open tasks</strong><small>Sync plan-based steps or add your own.</small></span><button className="secondary-button small" type="button" onClick={onGenerateTimeline}>Sync plan steps</button></div> : <div className="overview-concept-tasks">{data.tasks.map((task) => <div className="overview-task-row" key={task.id}><label><input type="checkbox" onChange={() => onCompleteTask(task.id)} /><span><strong>{task.title}</strong><small>{task.detail}</small></span></label>{!task.generated && <button className="icon-button" type="button" onClick={() => void onDeleteTask(task.id)} aria-label={`Delete ${task.title}`}><Trash size={15} /></button>}</div>)}</div>}
+    {adding ? <form className="overview-task-form" onSubmit={submit}><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Add a clear next action" required autoFocus /><div><select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as OverviewTaskDraft["category"] })}><option value="academics">Academics</option><option value="activities">Activities</option><option value="college">College</option><option value="summer">Summer</option><option value="admin">Admin</option></select><input value={draft.dueLabel} onChange={(event) => setDraft({ ...draft, dueLabel: event.target.value })} placeholder="Timing, optional" /><button className="primary-button small" type="submit">Add</button><button className="quiet-button small" type="button" onClick={() => setAdding(false)}>Cancel</button></div></form> : <button className="quiet-button small" type="button" onClick={() => setAdding(true)}><Plus size={15} /> Add action</button>}
+  </div>;
 }
 
 function CourseNameList({ rows, empty }: { rows: OverviewCourseItem[]; empty: string }) {

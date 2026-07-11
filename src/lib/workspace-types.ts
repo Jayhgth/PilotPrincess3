@@ -4,6 +4,7 @@ export type {
   Confidence,
   Course,
   CourseRequirementMapping,
+  EnrollmentPolicy,
   FourYearPlan,
   GraduationRequirement,
   GradeLevel,
@@ -20,6 +21,7 @@ export type {
   SmccdProgramRequirement,
   SmccdRequirementCourse,
   StudentSmccdGoal,
+  StudentEnrollmentPreference,
   StudentProfile,
   TimelineTask
 } from "@/lib/models";

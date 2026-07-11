@@ -6,6 +6,7 @@ import type {
   CatalogReviewItem,
   Course,
   CourseRequirementMapping,
+  EnrollmentPolicy,
   FourYearPlan,
   GradeLevel,
   GraduationRequirement,
@@ -18,6 +19,7 @@ import type {
   SmccdProgramRequirement,
   SmccdRequirementCourse,
   StudentSmccdGoal,
+  StudentEnrollmentPreference,
   StudentProfile,
   TimelineTask
 } from "@/lib/models";
@@ -38,6 +40,8 @@ import { calculateSmccdProgramProgress } from "@/lib/smccd";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import { buildTranscriptAudit } from "@/server/assistant-audits";
+import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
+import { evaluateGpaScenario } from "@/lib/gpa-planner";
 
 const courseStatusSchema = z.enum(["current", "planned"]);
 const termSchema = z.enum(["fall", "spring", "summer", "full_year"]);
@@ -62,6 +66,15 @@ const toolArgumentSchemas = {
   get_student_data_inventory: z.object({}),
   audit_transcript_data: z.object({ include_source_text: z.boolean().default(false) }),
   get_gpa_evidence: z.object({ scope: z.enum(["current", "projected"]).default("projected") }),
+  evaluate_gpa_scenario: z.object({
+    target_weighted_gpa: z.number().min(0).max(5).default(4),
+    choices: z.array(z.object({
+      plan_course_id: z.uuid(),
+      included: z.boolean().default(true),
+      expected_grade: z.enum(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]).nullable()
+    })).max(40)
+  }),
+  get_enrollment_constraints: z.object({}),
   get_plan_versions: z.object({}),
   get_degree_progress: z.object({}),
   get_college_goal: z.object({}),
@@ -109,6 +122,11 @@ const toolArgumentSchemas = {
     stress_level: z.number().int().min(1).max(5).optional(),
     weekly_commitment_limit: z.number().min(1).max(80).nullable().optional()
   }).refine((value) => Object.keys(value).length > 0, "Provide at least one profile field to update."),
+  update_enrollment_preference: z.object({
+    program_type: z.enum(["concurrent", "dual"]),
+    limit_mode: z.enum(["recommended", "fee_free", "absolute", "custom"]),
+    custom_unit_limit: z.number().min(0.5).max(30).nullable().default(null)
+  }),
   add_experience: z.object({
     name: z.string().trim().min(1).max(180),
     kind: activityKindSchema,
@@ -174,6 +192,8 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_student_data_inventory", mutatesData: false, description: "Read a compact inventory of the current student's available records so the assistant can choose the correct evidence tool.", arguments: "{}" },
   { name: "audit_transcript_data", mutatesData: false, description: "Compare transcript source text, parsed rows, review decisions, catalog identities, and imported plan rows. Use source text for an actual extraction audit; never treat a graduation gap as a parsing error.", arguments: '{"include_source_text":boolean}' },
   { name: "get_gpa_evidence", mutatesData: false, description: "Read course-level GPA inclusion, weighting, points, and exclusion evidence for the current or projected calculation.", arguments: '{"scope":"current|projected"}' },
+  { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the saved schedule, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
+  { name: "get_enrollment_constraints", mutatesData: false, description: "Read source-backed concurrent or dual-enrollment limits and evaluate the saved college schedule by term.", arguments: "{}" },
   { name: "get_plan_versions", mutatesData: false, description: "Read active and saved plan versions with labels, creation dates, and course counts.", arguments: "{}" },
   { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for the selected SMCCD associate-degree goal.", arguments: "{}" },
   { name: "get_college_goal", mutatesData: false, description: "Read the selected SMCCD associate-degree goal.", arguments: "{}" },
@@ -185,6 +205,7 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
   { name: "update_plan_course", mutatesData: true, description: "Propose editing the placement, grade, or notes of an unlocked plan course.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","notes":"string|null"}' },
   { name: "update_student_profile", mutatesData: true, description: "Propose changing the student's planning preferences, interests, direction, stress, or weekly capacity.", arguments: "Only include fields the student explicitly requested." },
+  { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing the student's SMCCD concurrent- or dual-enrollment unit guardrail. Source-backed limits are revalidated when the change runs.", arguments: '{"program_type":"concurrent|dual","limit_mode":"recommended|fee_free|absolute|custom","custom_unit_limit":number|null}' },
   { name: "add_experience", mutatesData: true, description: "Propose adding a factual experience and its workload evidence.", arguments: '{"name":"string","kind":"club|athletics|service|work|family|internship|other","weekly_hours":number,...}' },
   { name: "update_experience", mutatesData: true, description: "Propose editing one saved experience by experience_id.", arguments: '{"experience_id":"uuid",...changed fields}' },
   { name: "remove_experience", mutatesData: true, description: "Propose removing one saved experience.", arguments: '{"experience_id":"uuid"}' },
@@ -212,11 +233,13 @@ export function assistantToolLabel(name: string) {
     get_graduation_progress: "Check graduation progress",
     get_next_steps: "Read next steps",
     get_experiences: "Read experiences",
-    get_student_profile: "Read planning preferences",
+    get_student_profile: "Read student profile",
     get_transcript_sources: "Read transcript sources",
     get_student_data_inventory: "Inventory student records",
     audit_transcript_data: "Audit transcript evidence",
     get_gpa_evidence: "Read GPA evidence",
+    evaluate_gpa_scenario: "Evaluate GPA scenario",
+    get_enrollment_constraints: "Check college-unit limits",
     get_plan_versions: "Read plan versions",
     get_degree_progress: "Read degree progress",
     get_college_goal: "Read college goal",
@@ -228,6 +251,7 @@ export function assistantToolLabel(name: string) {
     remove_plan_course: "Remove course",
     update_plan_course: "Update course",
     update_student_profile: "Update planning preferences",
+    update_enrollment_preference: "Update enrollment guardrail",
     add_experience: "Add experience",
     update_experience: "Update experience",
     remove_experience: "Remove experience",
@@ -266,6 +290,8 @@ interface AssistantWorkspace {
   sources: OfficialSource[];
   transcriptReviewItems: CatalogReviewItem[];
   collegeGoals: StudentSmccdGoal[];
+  enrollmentPolicies: EnrollmentPolicy[];
+  enrollmentPreference: StudentEnrollmentPreference;
 }
 
 function firstError(results: ReadonlyArray<{ error: { message: string } | null }>) {
@@ -273,7 +299,7 @@ function firstError(results: ReadonlyArray<{ error: { message: string } | null }
 }
 
 async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string): Promise<AssistantWorkspace> {
-  const [profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult] = await Promise.all([
+  const [profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult] = await Promise.all([
     supabase.from("student_profiles").select("*").eq("id", userId).single(),
     supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
     supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
@@ -284,9 +310,11 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
     supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
     supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
-    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("is_primary", { ascending: false })
+    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("is_primary", { ascending: false }),
+    supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
+    supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle()
   ]);
-  const error = firstError([profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult]);
+  const error = firstError([profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult]);
   if (error) throw new Error(error.message);
 
   const plan = planResult.data as unknown as FourYearPlan;
@@ -322,7 +350,11 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     plannedSmccdCourses: (smccdResult.data ?? []) as unknown as SmccdCourse[],
     sources: (sourceResult.data ?? []) as unknown as OfficialSource[],
     transcriptReviewItems: (reviewResult.data ?? []) as unknown as CatalogReviewItem[],
-    collegeGoals: (goalResult.data ?? []) as unknown as StudentSmccdGoal[]
+    collegeGoals: (goalResult.data ?? []) as unknown as StudentSmccdGoal[],
+    enrollmentPolicies: (policyResult.data ?? []) as unknown as EnrollmentPolicy[],
+    enrollmentPreference: preferenceResult.data
+      ? preferenceResult.data as unknown as StudentEnrollmentPreference
+      : defaultEnrollmentPreference(userId)
   };
 }
 
@@ -569,10 +601,13 @@ export async function executeAssistantReadTool(
         experiences: { count: workspace.activities.length },
         next_steps: { count: workspace.tasks.length, open_count: workspace.tasks.filter((task) => !task.is_completed).length },
         college_goal: { selected: workspace.collegeGoals.length > 0 },
+        enrollment_guardrail: { provider: workspace.enrollmentPreference.provider_code, program_type: workspace.enrollmentPreference.program_type, limit_mode: workspace.enrollmentPreference.limit_mode },
         available_detail_tools: [
           "list_plan_courses",
           "get_graduation_progress",
           "get_gpa_evidence",
+          "evaluate_gpa_scenario",
+          "get_enrollment_constraints",
           "audit_transcript_data",
           "get_plan_versions",
           "get_experiences",
@@ -595,7 +630,7 @@ export async function executeAssistantReadTool(
       includeSourceText: args.include_source_text
     });
     return {
-      summary: `Audited ${data.summary.parsed_course_count} parsed transcript rows against review and import evidence.`,
+      summary: `${data.summary.verdict} Audited ${data.summary.parsed_course_count} parsed rows against printed totals, source text, review decisions, catalog identities, and imports.`,
       data
     };
   }
@@ -632,6 +667,58 @@ export async function executeAssistantReadTool(
         calculation: calculated.gpa,
         policy: "A- and other plus/minus variants use the base letter value. SMCCD and other college rows are weighted. Pass grades earn credit but no GPA points.",
         rows
+      }
+    };
+  }
+
+  if (name === "evaluate_gpa_scenario") {
+    const args = toolArgumentSchemas.evaluate_gpa_scenario.parse(argumentsValue);
+    const openIds = new Set(workspace.planCourses.filter((row) => row.status !== "completed").map((row) => row.id));
+    const unknownIds = args.choices.map((choice) => choice.plan_course_id).filter((id) => !openIds.has(id));
+    if (unknownIds.length) throw new Error("A GPA scenario can reference only current or planned course IDs from the active plan.");
+    const result = evaluateGpaScenario(
+      workspace.planCourses,
+      args.choices.map((choice) => ({ planCourseId: choice.plan_course_id, included: choice.included, expectedGrade: choice.expected_grade })),
+      workspace.courses,
+      args.target_weighted_gpa
+    );
+    return {
+      summary: "Evaluated the selected saved-schedule GPA assumptions without changing student data.",
+      data: {
+        transcript_weighted_gpa: result.baseline.projectedWeighted,
+        scenario_complete: result.missingExpectedGrades === 0,
+        scenario_weighted_gpa: result.missingExpectedGrades === 0 ? result.scenario.projectedWeighted : null,
+        scenario_unweighted_gpa: result.missingExpectedGrades === 0 ? result.scenario.projectedUnweighted : null,
+        saved_schedule_all_a_ceiling: result.bestCase.projectedWeighted,
+        target_weighted_gpa: args.target_weighted_gpa,
+        uniform_grade_needed: result.targetGrade,
+        target_reachable_in_saved_schedule: result.targetReachable,
+        target_already_reached: result.targetAlreadyReached,
+        missing_expected_grades: result.missingExpectedGrades,
+        uc_capped_estimate: result.ucScenario.cappedWeighted,
+        boundary: "This is deterministic arithmetic over user-supplied grade assumptions. It does not predict grades, admissions, course availability, or the best real-world schedule."
+      }
+    };
+  }
+
+  if (name === "get_enrollment_constraints") {
+    const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
+    if (!policy) return { summary: "No enrollment policy matches the saved provider and program.", data: null };
+    const terms = evaluateEnrollmentSchedule(workspace.planCourses, policy, workspace.enrollmentPreference);
+    return {
+      summary: `Checked ${terms.length} open college ${terms.length === 1 ? "term" : "terms"} against ${policy.provider_name} limits.`,
+      data: {
+        provider: policy.provider_name,
+        program_type: policy.program_type,
+        selected_limit_mode: workspace.enrollmentPreference.limit_mode,
+        recommended_max_units: policy.recommended_max_units,
+        fee_free_max_units: policy.fee_free_max_units,
+        absolute_max_units: policy.absolute_max_units,
+        approval_required: policy.approval_required,
+        source: { label: policy.source_label, year: policy.source_year, url: policy.source_url },
+        terms,
+        notes: policy.notes,
+        boundary: "Unit count does not prove registration eligibility. Prerequisites, school and college approval, impacted-course restrictions, materials, fees, and seat availability remain separate."
       }
     };
   }
@@ -823,6 +910,7 @@ export async function executeAssistantMutationTool(
       plan_version_id: workspace.activeVersion.id,
       user_id: userId,
       smccd_course_id: course.id,
+      college_provider_code: "SMCCD",
       custom_course_name: `${course.course_code} ${course.title}`,
       grade_level: args.grade_level,
       school_year: schoolYearForGrade(workspace.profile.graduation_year ?? new Date().getFullYear() + 3, args.grade_level),
@@ -905,6 +993,30 @@ export async function executeAssistantMutationTool(
     const { error } = await supabase.from("student_profiles").update(args).eq("id", userId);
     if (error) throw new Error(error.message);
     return { summary: "Planning preferences were updated.", data: args, changed: { entity: "student_profile", id: userId } };
+  }
+
+  if (name === "update_enrollment_preference") {
+    const args = toolArgumentSchemas.update_enrollment_preference.parse(argumentsValue);
+    const policy = workspace.enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === args.program_type);
+    if (!policy) throw new Error("No source-backed SMCCD policy matches that enrollment type.");
+    if (args.limit_mode === "custom" && args.custom_unit_limit === null) throw new Error("A custom guardrail needs a unit limit.");
+    if (args.custom_unit_limit !== null && args.custom_unit_limit > policy.absolute_max_units) {
+      throw new Error(`The custom guardrail cannot exceed the published ${policy.absolute_max_units}-unit maximum.`);
+    }
+    const customMaxUnits = args.limit_mode === "custom" ? args.custom_unit_limit : null;
+    const { data, error } = await supabase.from("student_enrollment_preferences").upsert({
+      user_id: userId,
+      provider_code: "SMCCD",
+      program_type: args.program_type,
+      limit_mode: args.limit_mode,
+      custom_unit_limit: customMaxUnits
+    }, { onConflict: "user_id,provider_code" }).select("user_id,provider_code").single();
+    if (error) throw new Error(error.message);
+    return {
+      summary: `The SMCCD ${args.program_type === "dual" ? "dual-enrollment" : "concurrent-enrollment"} guardrail was updated.`,
+      data: { provider_code: "SMCCD", ...args, custom_unit_limit: customMaxUnits, published_absolute_max_units: policy.absolute_max_units },
+      changed: { entity: "student_enrollment_preference", id: `${data.user_id}:${data.provider_code}` }
+    };
   }
 
   if (name === "add_experience") {

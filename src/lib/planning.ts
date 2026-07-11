@@ -504,7 +504,7 @@ export function calculateWorkload(
         ? "near_limit"
         : "within_limit";
   const warnings = [] as string[];
-  if (capacityHours === null) warnings.push("Add a weekly commitment limit in Planning preferences to compare this plan with your available time.");
+  if (capacityHours === null) warnings.push("Add a weekly commitment limit in Student profile to compare this plan with your available time.");
   if (capacityRemaining !== null && capacityRemaining < 0) warnings.push(`Known commitments exceed your weekly limit by ${Math.abs(capacityRemaining)} hours.`);
   if (weightedCount > demandingCourseLimit) warnings.push(`${weightedCount} weighted or college courses exceed your selected limit of ${demandingCourseLimit}.`);
   if (profile.stress_level >= 4) warnings.push("Your current stress baseline is high, so increasing commitments should be reviewed carefully.");

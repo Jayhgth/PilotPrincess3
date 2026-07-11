@@ -74,7 +74,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/OnboardingFlow.tsx`: guided student, tracker, and optional Codex consent/setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
 - `src/components/AdminSettingsDialog.tsx` and `src/pages/api/admin/reset.ts`: administrator-only QA controls with a server- and database-enforced self-reset that preserves auth and role membership.
-- `src/components/student-tools/`: lazy-loaded, single-purpose Experiences, Next steps, Load check, and Planning preferences views.
+- `src/components/student-tools/`: embedded Student profile sections for planning context and the factual experience register; next actions live on Overview and load constraints live in the GPA planner.
 - `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation rail with a compact floating composer, concise sanitized GFM answers, timed and folded reasoning summaries, student-data tool activity, reversible conversation archiving, Manual/Auto-review, centered settings, and persisted docked/floating layout.
 - `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.

@@ -360,6 +360,7 @@ export default function SmccdPlanner({
         plan_version_id: activeVersion.id,
         user_id: session.user.id,
         smccd_course_id: selectedCourse.id,
+        college_provider_code: "SMCCD",
         custom_course_name: `${selectedCourse.course_code} ${selectedCourse.title}`,
         grade_level: courseDraft.gradeLevel,
         school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, courseDraft.gradeLevel),

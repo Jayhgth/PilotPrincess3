@@ -190,6 +190,7 @@ export function transcriptPlanCourseDraft(
     sort_order: 0,
     source_review_item_id: reviewItemId,
     smccd_course_id: payload.matched_smccd_course_id ?? null,
+    college_provider_code: isSmccdCourse ? "SMCCD" : null,
     requirement_area_override: equivalency?.requirement_area ?? (isIntersession ? "personal_development" : null)
   };
 }

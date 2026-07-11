@@ -54,7 +54,9 @@ Before a production release, confirm all applicable items once:
 - [ ] A confirmed or auto-applied mutation renders a readable Change applied receipt from the server tool result, including the validated changed fields without exposing raw transport JSON.
 - [ ] Student accounts do not render administrator or demo shortcuts. An administrator can open Admin settings, but reset remains disabled until `RESET`; an authorized reset clears owned database/storage records, restarts onboarding, and preserves the auth account and administrator membership.
 - [ ] Retrieved app-guidance titles are readable, relevant to the active page, and do not replace live student-data reads.
-- [ ] Asking Pilot to audit a transcript uses the transcript evidence audit, compares source text with parsed/reviewed/imported rows, names only supported mismatches, and never presents a graduation gap as proof of a parsing error.
+- [ ] Asking Pilot to audit a transcript always runs the transcript evidence audit before answering, compares printed GPA/credit totals and source text with parsed/reviewed/imported rows, treats neither `needs_review` nor a graduation gap as proof of a parsing error, and names only supported mismatches.
+- [ ] GPA scenarios leave completed transcript grades untouched, clearly label user-entered expected grades, report missing assumptions, and describe the all-A result only as the ceiling of the included saved schedule.
+- [ ] SMCCD concurrent and dual unit checks aggregate CSM, Skyline, and Cañada by term, distinguish the selected, fee-free, and absolute thresholds, and keep prerequisites, approval, fees, materials, and availability as separate boundaries.
 - [ ] Student-data inventory and detail tools remain RLS-scoped and cannot accept model-authored SQL, access auth/admin data, or read another user's records.
 - [ ] Manual mode shows exact arguments, does nothing when rejected, and revalidates normal product rules when confirmed.
 - [ ] Auto-review shows its separate risk decision, applies only an approved low-risk proposal, and leaves destructive, grade-changing, identity-sensitive, uncertain, or high-risk proposals for the student.

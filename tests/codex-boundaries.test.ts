@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus } from "@/server/codex";
+import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, requiredAssistantEvidenceRead } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -89,10 +89,13 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("update_student_profile", { stress_level: 4, weekly_commitment_limit: 18 })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent", limit_mode: "recommended", custom_unit_limit: null })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_experience", { name: "Robotics", kind: "club", weekly_hours: 4 })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("run_load_check", { college_units: 3, activity_hours_change: -2 })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("evaluate_gpa_scenario", { target_weighted_gpa: 4, choices: [] })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("get_enrollment_constraints", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
@@ -152,8 +155,10 @@ describe("Codex feature boundaries", () => {
     });
     expect(prompt).toContain("Use read-only student-data tools");
     expect(prompt).toContain("audit_transcript_data with include_source_text true");
+    expect(prompt).toContain("A source being marked needs_review is not itself an error");
+    expect(prompt).toContain("printed GPA and earned-credit totals");
     expect(prompt).toContain("graduation requirement gap is a downstream plan result");
-    expect(prompt).toContain("name at most three exact course records");
+    expect(prompt).toContain("name at most three exact affected course records");
     expect(prompt).toContain("manual or auto-review mode");
     expect(prompt).toContain("create a dashboard-style report or table");
     expect(prompt).toContain("Default to one to three short sentences");
@@ -171,5 +176,18 @@ describe("Codex feature boundaries", () => {
       arguments_json: '{"stress_level":3}',
       explanation: "Update the requested stress level."
     }] }).tool_calls[0]?.name).toBe("update_student_profile");
+    expect(assistantTurnSchema.parse({ assistant_message: "I checked the saved schedule.", tool_calls: [{
+      name: "evaluate_gpa_scenario",
+      arguments_json: '{"target_weighted_gpa":4.5,"choices":[]}',
+      explanation: "Evaluate the saved schedule."
+    }] }).tool_calls[0]?.name).toBe("evaluate_gpa_scenario");
+  });
+
+  it("requires deterministic evidence before answering transcript audits", () => {
+    expect(requiredAssistantEvidenceRead("Double check my transcript and parsed data for errors")).toEqual({
+      name: "audit_transcript_data",
+      arguments: { include_source_text: true }
+    });
+    expect(requiredAssistantEvidenceRead("What is a transcript?")).toBeNull();
   });
 });

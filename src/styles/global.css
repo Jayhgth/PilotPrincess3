@@ -1783,7 +1783,9 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .overview-concept-note p { display: -webkit-box; overflow: hidden; font-size: var(--type-supporting); line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
 .overview-concept-note.compact p { -webkit-line-clamp: 3; }
 .overview-concept-tasks { display: grid; gap: 6px; }
-.overview-concept-tasks label { display: grid; min-height: 48px; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; border-radius: 6px; background: var(--surface-muted); padding: 9px 10px; }
+.overview-task-workspace { display: grid; gap: 10px; }
+.overview-task-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; border-radius: 6px; background: var(--surface-muted); padding-right: 4px; }
+.overview-concept-tasks label { display: grid; min-height: 48px; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; padding: 9px 10px; }
 .overview-concept-tasks input { width: 16px; min-height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
 .overview-concept-tasks label > span { display: grid; gap: 2px; }
 .overview-concept-tasks strong { font-size: var(--type-supporting); line-height: var(--leading-supporting); }
@@ -1794,6 +1796,10 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .overview-task-empty strong { font-size: var(--type-supporting); }
 .overview-task-empty small { color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .overview-task-empty .secondary-button { grid-column: 2; justify-self: start; }
+.overview-task-form { display: grid; gap: 8px; padding: 10px; border-radius: 7px; background: var(--surface-muted); }
+.overview-task-form > input, .overview-task-form select, .overview-task-form div > input { min-height: 38px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--ink); padding: 7px 10px; }
+.overview-task-form > div { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto auto; gap: 8px; }
+@media (max-width: 620px) { .overview-task-form > div { grid-template-columns: 1fr; } }
 
 /* Production Overview: four-year path */
 .overview-path-layout { display: grid; gap: 16px; }
@@ -2018,9 +2024,6 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .gpa-course-details .grade-table-row:nth-child(odd) { border-radius: 6px; background: var(--surface-muted); }
 
 .activity-page .activity-layout,
-.timeline-page .timeline-layout,
-.simulator-page .simulator-layout { margin-bottom: 0; }
-
 /* Product typography and quiet structure */
 .page-header {
   margin-bottom: 28px;

@@ -20,8 +20,11 @@ The checked-in d.tech and SMCCD curriculum is labeled 2025-26. The d.tech-to-SMC
 - `A+`, `A`, and `A-` share four grade points; B, C, and D variants share their integer band.
 - A d.tech `*` indicates UC A-G approval, not Honors.
 - d.tech weighting requires reviewed Honors evidence. SMCCD rows use the transcript's college-course weighting behavior.
+- Transcript audits compare any printed cumulative GPA and earned-credit totals with the fully reviewed/imported rows. A `needs_review` source status is workflow state, not evidence of an error; catalog-link, parsed-row, import, and downstream graduation issues remain separate.
 
 The UC planning GPA lens is deliberately narrower: only completed grade 10-11 rows linked to an official d.tech A-G course are included. Plus/minus marks are ignored and eligible honors points are capped at eight semesters, with at most four from grade 10. Custom and college rows remain unresolved until an exact reviewed A-G link exists.
+
+The GPA planner may apply user-supplied expected grades to current and planned courses without changing saved course or transcript records. Its all-A result is the ceiling of the currently included saved schedule, not a prediction or proof that the schedule is advisable. A schedule comparison must keep transcript grades locked and show missing grade assumptions. Pilot may explain the deterministic result, but any saved-plan change remains a normal reviewed proposal.
 
 ## Graduation and A-G
 
@@ -68,6 +71,19 @@ The checked-in district artifact contains official course identity, college, uni
 Associate-degree progress distinguishes completed major units, projected major units, degree-applicable units, parsed requirement options, and text rules requiring review. It is not a complete GE, residency, catalog-rights, waiver, substitution, or award-eligibility audit.
 
 The reference-app ideas adopted from DegreeDoesntWorks are indexed search, course-code ranking, college/degree filters, requirement-level evidence, missing-option discovery, and explicit unresolved discipline rules. Promotional ranking, hidden heuristic substitutions, and unsupported certification were not copied.
+
+## Concurrent and dual-enrollment limits
+
+Unit limits are stored in `enrollment_policies` by provider, program type, term, and semester or quarter system. `student_enrollment_preferences` stores which source-backed threshold the student wants enforced. Do not hardcode one district's number into planning logic.
+
+For the reviewed 2026 SMCCD sources:
+
+- concurrent enrollment uses 11 units as the conservative planning threshold because the current CSM page says 11 or fewer avoids enrollment and health fees;
+- the district FAQ lists 11.5 fee-free concurrent units;
+- dual enrollment uses 15 as the conservative threshold and 15.5 as the district fee-free figure; and
+- the district K-12 maximum is 19 units.
+
+Aggregate CSM, Skyline, and Cañada units across the same school year and term. A full-year row counts in fall and spring. Completed rows do not consume a future-term limit. Crossing a selected or fee-free limit produces review, while crossing the sourced absolute maximum blocks the scenario. Unit count never proves course eligibility: prerequisites, placement, school and college approval, impacted-course restrictions, materials, fees, and seat availability stay separate. Other districts require their own reviewed policy rows; do not infer them from SMCCD.
 
 ## Maintenance gate
 
