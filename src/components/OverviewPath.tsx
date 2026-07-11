@@ -91,14 +91,14 @@ export default function OverviewPath({ data, onOpenGraduation, onOpenCourses, on
     </div>
 
     <div className="overview-path-lower">
-      <section><header><h2>Next actions</h2><button className="quiet-button small" type="button" onClick={onOpenTimeline}>Open timeline</button></header><TaskList data={data} onCompleteTask={onCompleteTask} onGenerateTimeline={onGenerateTimeline} /></section>
+      <section><header><h2>Next actions</h2><button className="quiet-button small" type="button" onClick={onOpenTimeline}>Open next steps</button></header><TaskList data={data} onCompleteTask={onCompleteTask} onGenerateTimeline={onGenerateTimeline} /></section>
       <PlanNote summary={data.summary} />
     </div>
   </div>;
 }
 
 function TaskList({ data, onCompleteTask, onGenerateTimeline }: Pick<Props, "data" | "onCompleteTask" | "onGenerateTimeline">) {
-  if (!data.tasks.length) return <div className="overview-task-empty"><ListChecks size={20} /><span><strong>No open tasks</strong><small>Build a timeline from the current grade and plan.</small></span><button className="secondary-button small" type="button" onClick={onGenerateTimeline}>Generate timeline</button></div>;
+  if (!data.tasks.length) return <div className="overview-task-empty"><ListChecks size={20} /><span><strong>No open tasks</strong><small>Sync next steps from the current grade and plan.</small></span><button className="secondary-button small" type="button" onClick={onGenerateTimeline}>Sync next steps</button></div>;
   return <div className="overview-concept-tasks">{data.tasks.map((task) => <label key={task.id}><input type="checkbox" onChange={() => onCompleteTask(task.id)} /><span><strong>{task.title}</strong><small>{task.detail}</small></span></label>)}</div>;
 }
 

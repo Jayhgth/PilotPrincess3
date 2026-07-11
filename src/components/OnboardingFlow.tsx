@@ -34,6 +34,7 @@ import {
   type TranscriptCoursePayload
 } from "@/lib/transcript";
 import BrandMark from "@/components/BrandMark";
+import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 
 type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "transcript";
 
@@ -118,9 +119,7 @@ export default function OnboardingFlow({
   const [transcriptItems, setTranscriptItems] = useState<CatalogReviewItem[]>([]);
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
   const [transcriptSummary, setTranscriptSummary] = useState<string | null>(null);
-  const [transcriptAiTransparency, setTranscriptAiTransparency] = useState<{
-    model: string; reasoningEffort: string; instruction: string; input: string; toolsUsed: string[]; filesChanged: string[]; mutations: string;
-  } | null>(null);
+  const [transcriptAiTransparency, setTranscriptAiTransparency] = useState<TranscriptAiTransparency | null>(null);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -473,7 +472,7 @@ export default function OnboardingFlow({
               <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel)}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>
             </div> : <div className="transcript-review">
               {transcriptSummary && <p className="transcript-summary">{transcriptSummary}</p>}
-              {transcriptAiTransparency && <details className="transcript-ai-inspector"><summary>Inspect Codex vision run</summary><div><dl><div><dt>Model</dt><dd>{transcriptAiTransparency.model}</dd></div><div><dt>Reasoning</dt><dd>{transcriptAiTransparency.reasoningEffort === "low" ? "Light (SDK: low)" : transcriptAiTransparency.reasoningEffort}</dd></div><div><dt>Input</dt><dd>{transcriptAiTransparency.input}</dd></div><div><dt>Tools</dt><dd>None</dd></div><div><dt>Files changed</dt><dd>None</dd></div></dl><p>{transcriptAiTransparency.mutations}</p><strong>Exact extraction instruction</strong><pre>{transcriptAiTransparency.instruction}</pre></div></details>}
+              {transcriptAiTransparency && <TranscriptAiRunDetails run={transcriptAiTransparency} summary="Inspect Codex vision run" />}
               <div className="transcript-review-heading"><strong>{academicTranscriptItems.length} GPA courses found</strong><span>Select the rows to import.</span></div>
               <div className="transcript-course-list">{academicTranscriptItems.map((item) => {
                 const payload = payloadFor(item);

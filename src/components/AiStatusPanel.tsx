@@ -1,16 +1,12 @@
 import {
-  ArrowClockwiseIcon as ArrowClockwise,
   CheckCircleIcon as CheckCircle,
   CpuIcon as Cpu,
-  BrainIcon as Brain,
-  FileTextIcon as FileText,
-  PaperPlaneTiltIcon as PaperPlaneTilt,
   ShieldCheckIcon as ShieldCheck,
-  TerminalWindowIcon as TerminalWindow,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
-import { useEffect, useState, type SyntheticEvent } from "react";
+import { useEffect, useState } from "react";
+import CodexReviewPanel from "@/components/CodexReviewPanel";
 
 interface CodexFeatureStatus {
   id: string;
@@ -19,9 +15,16 @@ interface CodexFeatureStatus {
   condition: string;
 }
 
+interface RuntimeCapability {
+  id: string;
+  label: string;
+  state: "available" | "available_if_emitted" | "disabled";
+  detail: string;
+}
+
 interface CodexRuntimeStatus {
   apiKeyConfigured: boolean;
-  credentialMode: "server_api_key" | "local_codex_login";
+  credentialMode: "server_api_key" | "local_codex_login" | "unconfigured";
   providerStatus: "ready" | "needs_auth" | "unavailable";
   providerMessage: string;
   authStatus: "configured" | "authenticated" | "unauthenticated" | "unknown";
@@ -30,33 +33,14 @@ interface CodexRuntimeStatus {
   model: string;
   reasoningEffort: string;
   maxConcurrentTurns: number;
+  maxWaitingTurns: number;
   runtime: string;
+  transport: string;
   accessPolicy: string;
+  retentionPolicy: string;
   features: CodexFeatureStatus[];
+  capabilities: RuntimeCapability[];
 }
-
-interface CodexTestResult {
-  message: string;
-  model?: string;
-  reasoningEffort?: string;
-  latencyMs?: number;
-  testedAt?: string;
-}
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  model?: string;
-  reasoningEffort?: string;
-  latencyMs?: number;
-}
-
-const INITIAL_MESSAGE: ChatMessage = {
-  id: "welcome",
-  role: "assistant",
-  content: "Send a short message to test the live server connection. Each successful reply shows the model and response time."
-};
 
 function formatReasoningEffort(value: string) {
   if (value === "low") return "Light";
@@ -67,12 +51,6 @@ export default function AiStatusPanel({ session }: { session: Session }) {
   const [status, setStatus] = useState<CodexRuntimeStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<CodexTestResult | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -93,92 +71,10 @@ export default function AiStatusPanel({ session }: { session: Session }) {
     return () => { active = false; };
   }, [session.access_token]);
 
-  async function testConnection() {
-    setTesting(true);
-    setRequestError(null);
-    setTestResult(null);
-    try {
-      const response = await fetch("/api/ai/test", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${session.access_token}`,
-          "content-type": "application/json"
-        },
-        body: "{}"
-      });
-      const payload = await response.json() as CodexTestResult & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Codex connection test failed.");
-      setTestResult(payload);
-    } catch (caught) {
-      setRequestError(caught instanceof Error ? caught.message : "Codex connection test failed.");
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function sendMessage(event: SyntheticEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const content = draft.trim();
-    if (!content || sending) return;
-
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content };
-    const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
-    setDraft("");
-    setSending(true);
-    setRequestError(null);
-    try {
-      const response = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${session.access_token}`,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          messages: nextMessages
-            .filter((message) => message.id !== INITIAL_MESSAGE.id)
-            .slice(-8)
-            .map(({ role, content: messageContent }) => ({ role, content: messageContent }))
-        })
-      });
-      const payload = await response.json() as {
-        reply?: string;
-        model?: string;
-        reasoningEffort?: string;
-        latencyMs?: number;
-        error?: string;
-      };
-      if (!response.ok || !payload.reply) throw new Error(payload.error ?? "Codex did not return a chat reply.");
-      setMessages((current) => [...current, {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: payload.reply!,
-        model: payload.model,
-        reasoningEffort: payload.reasoningEffort,
-        latencyMs: payload.latencyMs
-      }]);
-    } catch (caught) {
-      setRequestError(caught instanceof Error ? caught.message : "Codex diagnostics chat failed.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  const connectionState = status?.providerStatus === "ready"
-    ? "connected"
-    : status
-      ? "unavailable"
-      : "checking";
-  const connectionTitle = connectionState === "connected"
-    ? "Codex connected"
-    : connectionState === "checking"
-      ? "Checking Codex"
-      : "Codex not connected";
-  const connectionDetail = status?.providerMessage ?? "Inspecting the server runtime and authentication state.";
-  const lastCheckedAt = testResult?.testedAt ?? status?.checkedAt;
+  const connected = status?.providerStatus === "ready";
   const authenticationLabel = status?.credentialMode === "server_api_key"
     ? "Server API key"
-    : status?.authStatus === "authenticated"
+    : status?.credentialMode === "local_codex_login" && status?.authStatus === "authenticated"
       ? "Local Codex login"
       : "Not authenticated";
 
@@ -187,118 +83,66 @@ export default function AiStatusPanel({ session }: { session: Session }) {
       <header className="page-header">
         <div>
           <h1>AI connection</h1>
-          <p>Test a real Codex conversation and review exactly which product features use AI.</p>
+          <p>Verify the runtime, run one real request, and inspect the sanitized SDK event record.</p>
         </div>
       </header>
 
-      <section className="ai-transparency-contract" aria-label="AI transparency contract">
-        <div><Brain size={18} /><span><strong>Reasoning summaries</strong><small>Visible while transparent reviews run. Hidden chain-of-thought is never requested.</small></span></div>
-        <div><TerminalWindow size={18} /><span><strong>Tool activity</strong><small>Every tool call appears in the run timeline. Student reviews currently allow none.</small></span></div>
-        <div><FileText size={18} /><span><strong>File and plan changes</strong><small>Every change would be listed. Current AI reviews are read-only and propose actions only.</small></span></div>
-      </section>
-
-      {loading && (
-        <section className="ai-connection-card checking ai-status-loading" role="status" aria-label="Checking Codex connection">
-          <div /><div /><div />
-          <span>Checking the Codex runtime and authentication</span>
-        </section>
-      )}
+      {loading && <section className="ai-connection-card checking ai-status-loading" role="status"><div /><div /><div /><span>Checking the Codex runtime and authentication</span></section>}
       {statusError && <div className="inline-alert error" role="alert"><Warning size={17} /> {statusError}</div>}
 
-      {status && (
-        <div className="ai-status-page">
-          <section className={`ai-connection-card ${connectionState}`} aria-labelledby="ai-connection-title" aria-live="polite">
-            <div className="ai-connection-summary">
-              <div className="ai-connection-heading">
-                {connectionState === "connected"
-                  ? <CheckCircle size={21} weight="fill" />
-                  : connectionState === "checking"
-                    ? <ArrowClockwise className="spin" size={20} />
-                    : <Warning size={20} weight="fill" />}
-                <div>
-                  <h2 id="ai-connection-title">{connectionTitle}</h2>
-                  <p>{connectionDetail}</p>
-                </div>
-              </div>
-              <button className="secondary-button" type="button" onClick={() => void testConnection()} disabled={testing}>
-                {testing ? <ArrowClockwise className="spin" size={16} /> : <Cpu size={16} />}
-                {testing ? "Running live check" : "Run live check"}
-              </button>
-            </div>
-            <dl className="ai-connection-metadata">
-              <div><dt>Provider</dt><dd>{status.runtime}</dd></div>
-              <div><dt>Authentication</dt><dd>{authenticationLabel}</dd></div>
-              <div><dt>Model</dt><dd>{status.model}</dd></div>
-              <div><dt>Reasoning</dt><dd>{formatReasoningEffort(status.reasoningEffort)}</dd></div>
-              <div><dt>CLI</dt><dd>{status.cliVersion ? `v${status.cliVersion}` : "Unavailable"}</dd></div>
-              <div><dt>Last checked</dt><dd>{lastCheckedAt ? new Date(lastCheckedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "Not checked"}</dd></div>
-            </dl>
-            <div className="ai-connection-policy">
-              <ShieldCheck size={16} />
-              <span>{status.accessPolicy}. Capacity is limited to {status.maxConcurrentTurns} concurrent requests.</span>
-            </div>
-          </section>
+      {status && <div className="ai-status-page">
+        <section className={`ai-connection-card ${connected ? "connected" : "unavailable"}`} aria-labelledby="ai-connection-title">
+          <div className="ai-connection-heading">
+            {connected ? <CheckCircle size={21} weight="fill" /> : <Warning size={20} weight="fill" />}
+            <div><h2 id="ai-connection-title">{connected ? "Codex runtime ready" : "Codex runtime needs attention"}</h2><p>{status.providerMessage}</p></div>
+          </div>
+          <dl className="ai-connection-metadata">
+            <div><dt>Provider</dt><dd>{status.runtime}</dd></div>
+            <div><dt>Transport</dt><dd>{status.transport}</dd></div>
+            <div><dt>Authentication</dt><dd>{authenticationLabel}</dd></div>
+            <div><dt>Model</dt><dd>{status.model}</dd></div>
+            <div><dt>Reasoning</dt><dd>{formatReasoningEffort(status.reasoningEffort)}</dd></div>
+            <div><dt>CLI</dt><dd>{status.cliVersion ? `v${status.cliVersion}` : "Unavailable"}</dd></div>
+          </dl>
+          <div className="ai-connection-policy"><ShieldCheck size={16} /><span>{status.accessPolicy}. {status.retentionPolicy}. Capacity is {status.maxConcurrentTurns} active and {status.maxWaitingTurns} waiting turns.</span></div>
+        </section>
 
-          {testResult && (
-            <div className="inline-alert success ai-test-result" role="status">
-              <CheckCircle size={18} weight="fill" />
-              <span><strong>{testResult.message}</strong>{testResult.latencyMs !== undefined ? ` ${testResult.model} completed the live check with ${formatReasoningEffort(testResult.reasoningEffort ?? "low")} reasoning in ${testResult.latencyMs} ms.` : ""}</span>
-            </div>
-          )}
+        <CodexReviewPanel
+          session={session}
+          focus="connection"
+          title="Run a transparent diagnostic"
+          description="This sends the displayed snapshot to OpenAI Codex. The answer, available reasoning summaries, sanitized lifecycle, usage, and exact input stay inspectable for this page visit."
+          question="Confirm that this Codex connection is functional and summarize the access boundary shown in the runtime snapshot."
+          context={{
+            provider_status: status.providerStatus,
+            runtime: status.runtime,
+            transport: status.transport,
+            model: status.model,
+            reasoning: formatReasoningEffort(status.reasoningEffort),
+            access_policy: status.accessPolicy,
+            retention_policy: status.retentionPolicy,
+            capabilities: status.capabilities
+          }}
+        />
 
-          {requestError && <div className="inline-alert error" role="alert"><Warning size={17} /> {requestError}</div>}
+        <section className="ai-capability-section" aria-labelledby="ai-capability-title">
+          <header><h2 id="ai-capability-title">Trace coverage</h2><p>The official TypeScript SDK exposes a smaller event set than the persistent Codex app-server used by t3code. Disabled capabilities are disclosed instead of being presented as unused events.</p></header>
+          <div className="ai-capability-table">
+            {status.capabilities.map((capability) => <div key={capability.id}><span><strong>{capability.label}</strong><small>{capability.detail}</small></span><em>{capability.state === "disabled" ? "Disabled" : capability.state === "available" ? "Available" : "When emitted"}</em></div>)}
+          </div>
+          <p><ShieldCheck size={15} /> Reasoning means Codex-provided summaries only. Hidden chain-of-thought is not requested or shown.</p>
+        </section>
 
-          <section className="ai-chat-section" aria-labelledby="ai-chat-title">
-            <header>
-              <h2 id="ai-chat-title">Live diagnostics chat</h2>
-              <p>This sends an authenticated, server-side Codex request. It cannot read your records, files, or browser.</p>
-            </header>
-            <div className="ai-chat-log" aria-live="polite">
-              {messages.map((message) => (
-                <article className={`ai-chat-message ${message.role}`} key={message.id}>
-                  <span>{message.role === "user" ? "You" : "Codex"}</span>
-                  <p>{message.content}</p>
-                  {message.model && (
-                    <div className="ai-message-metadata">
-                      <span>{message.model}</span>
-                      <span>{formatReasoningEffort(message.reasoningEffort ?? "low")} reasoning</span>
-                      <span>{message.latencyMs} ms</span>
-                    </div>
-                  )}
-                </article>
-              ))}
-              {sending && <div className="ai-chat-pending" role="status"><ArrowClockwise className="spin" size={15} /> Waiting for Codex</div>}
-            </div>
-            <form className="ai-chat-form" onSubmit={sendMessage}>
-              <label className="form-field">
-                <span>Test message</span>
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} maxLength={1200} rows={3} placeholder="Ask what this connection test proves." />
-              </label>
-              <div><span>{draft.length} / 1200</span><button className="primary-button" type="submit" disabled={sending || !draft.trim()}><PaperPlaneTilt size={16} /> Send</button></div>
-            </form>
-            <details className="ai-diagnostics-inspector">
-              <summary>Inspect diagnostics request</summary>
-              <div><strong>Server instruction</strong><p>Respond to the final test message in one to four concise sentences. Do not claim access to student records, files, databases, or tools.</p><strong>Conversation sent</strong><pre>{JSON.stringify(messages.filter((message) => message.id !== INITIAL_MESSAGE.id).map(({ role, content }) => ({ role, content })), null, 2)}</pre><p>No tools, files, network, or workspace records are available to this test.</p></div>
-            </details>
-          </section>
-
-          <details className="ai-boundaries">
-            <summary>Where Codex is used</summary>
-            <p>Deterministic operations stay deterministic. Codex is limited to the tasks listed as used below.</p>
-            <div className="ai-feature-table" role="table" aria-label="Codex feature usage">
-              <div className="ai-feature-row ai-feature-head" role="row"><span role="columnheader">Feature</span><span role="columnheader">Codex</span><span role="columnheader">Rule</span></div>
-              {status.features.map((feature) => (
-                <div className="ai-feature-row" role="row" key={feature.id}>
-                  <strong role="cell">{feature.label}</strong>
-                  <span role="cell" className={feature.usesCodex ? "uses-ai" : "no-ai"}>{feature.usesCodex ? "Used" : "Not used"}</span>
-                  <span role="cell">{feature.condition}</span>
-                </div>
-              ))}
-            </div>
-            <div className="ai-privacy-note"><ShieldCheck size={18} /><span>Credentials stay on the server. Uploaded source content is treated as untrusted data, with no web access and a read-only sandbox.</span></div>
-          </details>
-        </div>
-      )}
+        <details className="ai-boundaries">
+          <summary>Where Codex is used</summary>
+          <p>Calculations and saved-plan changes stay deterministic. Codex starts only for the tasks marked Used.</p>
+          <div className="ai-feature-table" role="table" aria-label="Codex feature usage">
+            <div className="ai-feature-row ai-feature-head" role="row"><span role="columnheader">Feature</span><span role="columnheader">Codex</span><span role="columnheader">Rule</span></div>
+            {status.features.map((feature) => <div className="ai-feature-row" role="row" key={feature.id}><strong role="cell">{feature.label}</strong><span role="cell" className={feature.usesCodex ? "uses-ai" : "no-ai"}>{feature.usesCodex ? "Used" : "Not used"}</span><span role="cell">{feature.condition}</span></div>)}
+          </div>
+          <div className="ai-privacy-note"><Cpu size={18} /><span>The browser receives a sanitized event stream. No local Codex CLI history is retained, and the isolated runtime home is deleted after the turn. Provider handling follows the configured OpenAI account.</span></div>
+        </details>
+      </div>}
     </div>
   );
 }

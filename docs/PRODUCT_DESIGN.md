@@ -1,6 +1,6 @@
 # Product and design reference
 
-Last reviewed: 2026-07-10
+Last reviewed: 2026-07-11
 
 Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a d.tech student understand what is finished, what is happening now, what decisions come next, and how concurrent enrollment changes the path.
 
@@ -19,13 +19,15 @@ Do not duplicate course management, graduation totals, or action lists across de
 | Tool | Student job | Standout capability |
 | --- | --- | --- |
 | GPA lenses | Understand why different GPA numbers exist | d.tech transcript method beside a conservative UC capped-weighted planning lens, with exact included/excluded evidence |
-| Experience portfolio | Preserve time, responsibility, contribution, and growth | Weekly capacity plus application-ready history without turning activities into a prestige score |
-| Decision timeline | Know what to do next and why | Plan-derived academic checks separated from exploration tasks, with prerequisite blockers and editable rationale |
-| Scenario lab | See a tradeoff before changing the plan | Deterministic current-versus-scenario assumptions, saved comparison, and optional transparent Codex review |
-| Student compass | Explore direction without prematurely choosing a major | Academic interests, RIASEC-inspired work interests, values, open questions, and capacity constraints |
-| AI connection | Verify what AI can actually do | Live provider test, feature inventory, access policy, exact diagnostics input, and transparency contract |
+| Experiences | Preserve reusable evidence from activities, work, service, projects, and responsibilities | One factual active/past register with hours, role, contribution, and progressive editing |
+| Next steps | Know the next action and why it comes next | One ordered queue combining requirement gaps, prerequisite checks, plan-derived actions, and student-added steps |
+| Load check | Decide whether added concurrent-enrollment and activity time can fit | Deterministic current-versus-proposed weekly hours using explicit SMCCD units and activity-hour changes |
+| Planning preferences | Set the personal constraints used by matching and workload checks | One readable brief with progressively disclosed direction and capacity editors; school identity stays in onboarding |
+| AI connection | Verify what AI can actually do | Runtime status, one streamed diagnostic, capability inventory, exact input, complete sanitized SDK lifecycle, usage, and retention disclosure |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
+
+Each decision-tool page renders its deterministic student job first. Optional Codex review stays collapsed behind one contextual disclosure so AI never becomes a competing second feature.
 
 ## Research synthesis
 
@@ -69,6 +71,8 @@ Use alignment, spacing, and surface tone before borders. A divider is reserved f
 ## Interaction and motion
 
 React Bits adaptations may clarify loading, selection, reveal, drag, and bounded focus. Motion is never ornamental and must respect reduced motion. Loading removes stale output when it could be mistaken for the new result.
+
+AI results follow progressive disclosure: one direct answer, no more than three evidence-backed observations, at most one proposed action, and one verification note. The complete run record lives in separate Activity and Run details tabs instead of expanding the student answer.
 
 Course cards are draggable from the card body, animate pickup and destination, and retain keyboard/mobile status controls. Transcript-backed courses remain locked. Workspace tabs support Left, Right, Home, and End.
 

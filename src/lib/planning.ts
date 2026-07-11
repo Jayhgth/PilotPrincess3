@@ -11,6 +11,7 @@ import type {
   SimulationResult,
   SmccdHighSchoolEquivalency,
   StudentProfile,
+  TimelineTask,
   WorkloadSummary
 } from "@/lib/models";
 import { courseEquivalenceKeys } from "@/lib/course-names";
@@ -484,7 +485,9 @@ export function calculateWorkload(
     row.is_weighted || Boolean(row.smccd_course_id) || Number(row.college_units ?? 0) > 0 || Boolean(row.course_id && courseMap.get(row.course_id)?.is_weighted)
   ).length;
   const dualUnits = activeCourses.reduce((total, row) => total + Number(row.college_units ?? 0), 0);
-  const weeklyActivityHours = activities.reduce((total, activity) => total + Number(activity.weekly_hours), 0);
+  const weeklyActivityHours = activities
+    .filter((activity) => activity.is_active ?? true)
+    .reduce((total, activity) => total + Number(activity.weekly_hours), 0);
   const collegeWeeklyHours = round(dualUnits * 3, 1);
   const knownWeeklyHours = round(collegeWeeklyHours + weeklyActivityHours, 1);
   const capacityHours = profile.weekly_commitment_limit === null ? null : Number(profile.weekly_commitment_limit);
@@ -501,7 +504,7 @@ export function calculateWorkload(
         ? "near_limit"
         : "within_limit";
   const warnings = [] as string[];
-  if (capacityHours === null) warnings.push("Add a weekly commitment limit in Student profile to compare this plan with your available time.");
+  if (capacityHours === null) warnings.push("Add a weekly commitment limit in Planning preferences to compare this plan with your available time.");
   if (capacityRemaining !== null && capacityRemaining < 0) warnings.push(`Known commitments exceed your weekly limit by ${Math.abs(capacityRemaining)} hours.`);
   if (weightedCount > demandingCourseLimit) warnings.push(`${weightedCount} weighted or college courses exceed your selected limit of ${demandingCourseLimit}.`);
   if (profile.stress_level >= 4) warnings.push("Your current stress baseline is high, so increasing commitments should be reviewed carefully.");
@@ -659,6 +662,53 @@ export function generateTimeline(profile: StudentProfile, progress: RequirementP
   return tasks;
 }
 
+export interface GeneratedTimelineTaskUpdate {
+  id: string;
+  patch: Pick<TimelineTask, "category" | "due_label" | "explanation">;
+}
+
+export function reconcileGeneratedTimelineTasks(
+  savedTasks: TimelineTask[],
+  desiredGeneratedTasks: GeneratedTimelineTask[]
+) {
+  const desiredByTitle = new Map(desiredGeneratedTasks.map((task) => [task.title, task]));
+  const manualTitles = new Set(savedTasks.filter((task) => !task.is_generated).map((task) => task.title));
+  const retainedGeneratedTitles = new Set<string>();
+  const obsoleteIds: string[] = [];
+  const updateTasks: GeneratedTimelineTaskUpdate[] = [];
+
+  for (const task of savedTasks) {
+    if (!task.is_generated) continue;
+    const desired = desiredByTitle.get(task.title);
+    if (!desired || manualTitles.has(task.title) || retainedGeneratedTitles.has(task.title)) {
+      obsoleteIds.push(task.id);
+      continue;
+    }
+    retainedGeneratedTitles.add(task.title);
+    if (
+      task.category !== desired.category
+      || task.due_label !== desired.due_label
+      || task.explanation !== desired.explanation
+    ) {
+      updateTasks.push({
+        id: task.id,
+        patch: {
+          category: desired.category,
+          due_label: desired.due_label,
+          explanation: desired.explanation
+        }
+      });
+    }
+  }
+
+  const obsolete = new Set(obsoleteIds);
+  const visibleTasks = savedTasks.filter((task) => !obsolete.has(task.id));
+  const existingTitles = new Set(visibleTasks.map((task) => task.title));
+  const insertTasks = desiredGeneratedTasks.filter((task) => !existingTitles.has(task.title));
+
+  return { visibleTasks, obsoleteIds, updateTasks, insertTasks };
+}
+
 export function overallGraduationPercent(progress: RequirementProgress[]) {
   const required = progress.reduce((total, item) => total + item.requirement.credits_required, 0);
   const projected = progress.reduce((total, item) => total + Math.min(item.verifiedProjectedCredits, item.requirement.credits_required), 0);
@@ -679,61 +729,31 @@ export function simulatePlan(
   workload: WorkloadSummary
 ): SimulationResult {
   const graduationPercent = overallGraduationPercent(progress);
-  let workloadDelta = 0;
-  let activityDelta = 0;
-  let demandingCourseDelta = 0;
+  const collegeUnits = clamp(Number(config.collegeUnits) || 0, 0, 6);
+  const requestedActivityDelta = clamp(Number(config.activityHoursChange) || 0, -20, 20);
+  const activityDelta = Math.max(requestedActivityDelta, -workload.weeklyActivityHours);
+  const collegeHourDelta = round(collegeUnits * 3, 1);
+  const workloadDelta = round(collegeHourDelta + activityDelta, 1);
   const changes: string[] = [];
   const risks: string[] = [];
 
-  if (config.majorDirection !== profile.major_direction) {
-    changes.push(`Changes profile matching from ${majorDirectionLabel(profile.major_direction)} to ${majorDirectionLabel(config.majorDirection)}.`);
-    risks.push("A major direction changes course and degree sorting only. It does not create requirements or alter the saved plan.");
-  }
-
-  if (config.pathIntensity === "competitive") {
-    demandingCourseDelta += 1;
-    changes.push("Targets one more weighted or college course, subject to the saved workload limits.");
-  } else if (config.pathIntensity === "lower_stress") {
-    demandingCourseDelta -= 1;
-    changes.push("Targets one fewer weighted or college course.");
-  }
-
-  if (config.courseStyle === "more_honors") {
-    demandingCourseDelta += 1;
-    changes.push("Models one additional d.tech Honors course as demanding and weighted.");
-    risks.push("No GPA change is calculated until a specific course and grade are added.");
-  }
-  if (config.courseStyle === "more_dual_enrollment") {
-    workloadDelta += 9;
-    demandingCourseDelta += 1;
-    changes.push("Models one additional 3-unit SMCCD course as 9 weekly student-work hours.");
-    risks.push("No GPA change is calculated until the college course and grade are added.");
+  if (collegeUnits > 0) {
+    changes.push(`Adds ${collegeUnits} SMCCD ${collegeUnits === 1 ? "unit" : "units"}, modeled as ${collegeHourDelta} weekly class-and-study hours.`);
+    risks.push("The estimate uses three weekly student-work hours per college unit. Verify the actual course schedule and your own study needs.");
     risks.push("College calendars, prerequisites, approvals, and transcript delivery must be verified.");
   }
-  if (config.courseStyle === "more_regular") {
-    demandingCourseDelta -= 1;
-    changes.push("Models one fewer weighted or college course where a regular d.tech option exists.");
-  }
-
-  if (config.activityLoad === "higher") {
-    activityDelta = 4;
-    workloadDelta += 4;
-    changes.push("Adds about four activity hours per week.");
-  } else if (config.activityLoad === "lower") {
-    activityDelta = -3;
-    workloadDelta -= 3;
-    changes.push("Returns about three activity hours per week.");
-  }
+  if (activityDelta > 0) changes.push(`Adds ${activityDelta} activity ${activityDelta === 1 ? "hour" : "hours"} per week.`);
+  if (activityDelta < 0) changes.push(`Removes ${Math.abs(activityDelta)} activity ${Math.abs(activityDelta) === 1 ? "hour" : "hours"} per week.`);
+  if (requestedActivityDelta < activityDelta) risks.push(`Only ${workload.weeklyActivityHours} recorded activity hours can be removed from the current week.`);
+  if (changes.length === 0) changes.push("Keeps the recorded weekly commitments unchanged.");
 
   const simulatedHours = round(Math.max(0, workload.knownWeeklyHours + workloadDelta), 1);
-  const simulatedDemandingCourses = Math.max(0, workload.demandingCourseCount + demandingCourseDelta);
+  const simulatedDemandingCourses = workload.demandingCourseCount;
   const newlyOverCapacity = workload.capacityHours !== null && simulatedHours > workload.capacityHours && workload.knownWeeklyHours <= workload.capacityHours;
-  const newlyOverDemandingLimit = simulatedDemandingCourses > workload.demandingCourseLimit && workload.demandingCourseCount <= workload.demandingCourseLimit;
-  const reducedLoad = workloadDelta < 0 && demandingCourseDelta <= 0;
-  const stressDelta = newlyOverCapacity || newlyOverDemandingLimit ? 1 : reducedLoad ? -1 : 0;
+  const reducedLoad = workloadDelta < 0;
+  const stressDelta = newlyOverCapacity ? 1 : reducedLoad ? -1 : 0;
   if (workload.capacityHours === null) risks.push("Add a weekly commitment limit before treating the workload comparison as complete.");
   else if (simulatedHours > workload.capacityHours) risks.push(`The scenario exceeds the saved weekly limit by ${round(simulatedHours - workload.capacityHours, 1)} hours.`);
-  if (simulatedDemandingCourses > workload.demandingCourseLimit) risks.push(`The scenario exceeds the saved demanding-course limit by ${simulatedDemandingCourses - workload.demandingCourseLimit}.`);
 
   return {
     current: {

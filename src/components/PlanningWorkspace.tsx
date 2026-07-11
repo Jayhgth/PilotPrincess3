@@ -1,12 +1,11 @@
 import {
-  ActivityIcon,
   AirplaneTiltIcon as AirplaneTilt,
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
+  BriefcaseIcon as Briefcase,
   CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
   CheckIcon as Check,
-  CheckCircleIcon as CheckCircle,
   CpuIcon as Cpu,
   FileArrowUpIcon as FileArrowUp,
   FlagIcon as Flag,
@@ -21,7 +20,6 @@ import {
   SignOutIcon as SignOut,
   SparkleIcon as Sparkle,
   SunIcon as Sun,
-  TrashIcon as Trash,
   UserCircleIcon as UserCircle,
   WarningIcon as Warning,
   XIcon as X
@@ -33,7 +31,10 @@ import InstitutionMark from "@/components/InstitutionMark";
 import {
   useCallback,
   useEffect,
+  lazy,
   useMemo,
+  useRef,
+  Suspense,
   useState,
   type ReactNode,
   type SyntheticEvent
@@ -48,40 +49,32 @@ import {
   dtechGradePoint,
   generateSuggestedPlan,
   generateTimeline,
-  GRADE_LEVELS,
   overallCompletedPercent,
   overallGraduationPercent,
   planCourseMovePatch,
+  reconcileGeneratedTimelineTasks,
   selectedPlanGrades,
   schoolYearForGrade,
   simulatePlan
 } from "@/lib/planning";
 import { requirementsForProfile } from "@/lib/planning";
-import {
-  ACADEMIC_INTEREST_OPTIONS,
-  CAREER_INTEREST_AREA_OPTIONS,
-  courseProfileFit,
-  MAJOR_DIRECTION_OPTIONS,
-  majorDirectionLabel,
-  WORK_VALUE_OPTIONS
-} from "@/lib/profile-planning";
+import { courseProfileFit } from "@/lib/profile-planning";
 import {
   resolveTranscriptCourse,
   transcriptPlanCourseDraft,
   visibleTranscriptUncertaintyNotes,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
-import OnboardingFlow from "@/components/OnboardingFlow";
-import AiStatusPanel from "@/components/AiStatusPanel";
 import CodexReviewPanel, { type ReviewDestination } from "@/components/CodexReviewPanel";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
-import GraduationWorkspace from "@/components/GraduationWorkspace";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
-import SmccdPlanner from "@/components/SmccdPlanner";
+import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
+import type { ExperienceDraft } from "@/components/student-tools/ExperienceLog";
+import type { CourseCheck, NextStepDraft } from "@/components/student-tools/NextSteps";
 import type {
   Activity,
   CatalogReviewItem,
@@ -107,6 +100,15 @@ import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } 
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
+const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
+const AiStatusPanel = lazy(() => import("@/components/AiStatusPanel"));
+const GraduationWorkspace = lazy(() => import("@/components/GraduationWorkspace"));
+const SmccdPlanner = lazy(() => import("@/components/SmccdPlanner"));
+const ExperienceLog = lazy(() => import("@/components/student-tools/ExperienceLog"));
+const NextSteps = lazy(() => import("@/components/student-tools/NextSteps"));
+const LoadCheck = lazy(() => import("@/components/student-tools/LoadCheck"));
+const PlanningPreferences = lazy(() => import("@/components/student-tools/PlanningPreferences"));
+
 type ViewId =
   | "dashboard"
   | "courses"
@@ -128,17 +130,17 @@ const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
 const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "sources", label: "Transcript import", icon: FileArrowUp },
   { id: "gpa", label: "GPA", icon: ChartLineUp },
-  { id: "activities", label: "Activities", icon: ActivityIcon },
-  { id: "timeline", label: "Timeline", icon: ListChecks },
-  { id: "simulator", label: "Simulator", icon: Scales },
-  { id: "profile", label: "Student profile", icon: UserCircle },
+  { id: "activities", label: "Experiences", icon: Briefcase },
+  { id: "timeline", label: "Next steps", icon: ListChecks },
+  { id: "simulator", label: "Load check", icon: Scales },
+  { id: "profile", label: "Planning preferences", icon: UserCircle },
   { id: "ai_status", label: "AI connection", icon: Cpu }
 ];
 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
 
 // Demo-only placement metadata. The durable product entry point is the
-// Student profile "Review setup" action; remove this sidebar shortcut after demos.
+// Planning preferences "Review setup" action; remove this sidebar shortcut after demos.
 const DEMO_ONBOARDING_SHORTCUT = {
   label: "Replay onboarding",
   currentPlacement: "sidebar-footer",
@@ -154,29 +156,12 @@ const DEMO_LOGIN_SHORTCUT = {
 } as const;
 
 type CourseArea = "mine" | "dtech" | "smccd";
-type ProfileSection = "basics" | "direction" | "capacity";
 type GpaLens = "transcript" | "uc";
-interface SourceAiTransparency {
-  model: string;
-  reasoningEffort: string;
-  instruction: string;
-  input: string;
-  toolsUsed: string[];
-  filesChanged: string[];
-  mutations: string;
-}
+type SourceAiTransparency = TranscriptAiTransparency;
 const DEFAULT_SIMULATION: SimulationConfig = {
-  majorDirection: "undecided",
-  pathIntensity: "balanced",
-  courseStyle: "more_regular",
-  activityLoad: "same"
+  collegeUnits: 3,
+  activityHoursChange: 0
 };
-
-function numberValue(value: unknown) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
 
 function titleCase(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -264,14 +249,16 @@ export default function PlanningWorkspace() {
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [toastKind, setToastKind] = useState<"info" | "success" | "error">("info");
   const [view, setView] = useState<ViewId>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [moreNavOpen, setMoreNavOpen] = useState(false);
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
-  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
+  );
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">("courses");
-  const [profileSection, setProfileSection] = useState<ProfileSection>("basics");
   const [gpaLens, setGpaLens] = useState<GpaLens>("transcript");
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
@@ -304,16 +291,14 @@ export default function PlanningWorkspace() {
   const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
-  const [activityForm, setActivityForm] = useState({ name: "", kind: "club", role: "", organization: "", weeklyHours: 2, weeksPerYear: 20, startGrade: 9, endGrade: 12, impact: "", description: "", isActive: true });
-  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState({ title: "", category: "admin", dueLabel: "" });
   const [simulationConfig, setSimulationConfig] = useState<SimulationConfig>(DEFAULT_SIMULATION);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
-  const [simulationExplanation, setSimulationExplanation] = useState<string | null>(null);
+  const [simulationBasis, setSimulationBasis] = useState("");
   const [planExplanation, setPlanExplanation] = useState<string | null>(null);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [compareCourses, setCompareCourses] = useState<PlanCourse[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
+  const compareRequestRef = useRef(0);
 
   const activeVersion = versions.find((candidate) => candidate.kind === "active") ?? null;
   const courseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
@@ -333,6 +318,24 @@ export default function PlanningWorkspace() {
   );
   const graduationPercent = useMemo(() => overallGraduationPercent(progress), [progress]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(progress), [progress]);
+  const desiredGeneratedTimelineTasks = useMemo(
+    () => profile
+      ? generateTimeline(profile, progress).filter((task) => !task.title.startsWith("Choose a course for "))
+      : [],
+    [profile, progress]
+  );
+  const timelineTaskSync = useMemo(
+    () => reconcileGeneratedTimelineTasks(tasks, desiredGeneratedTimelineTasks),
+    [tasks, desiredGeneratedTimelineTasks]
+  );
+  const currentSimulationBasis = [
+    workload?.knownWeeklyHours ?? "unknown",
+    workload?.weeklyActivityHours ?? "unknown",
+    workload?.demandingCourseCount ?? "unknown",
+    workload?.demandingCourseLimit ?? "unknown",
+    profile?.weekly_commitment_limit ?? "unset",
+    profile?.stress_level ?? "unknown"
+  ].join("|");
 
   const loadWorkspace = useCallback(async () => {
     if (!supabase) return;
@@ -410,13 +413,6 @@ export default function PlanningWorkspace() {
       };
       setSchool(schoolResult.data as unknown as School);
       setProfile(loadedProfile);
-      setSimulationConfig((current) => ({
-        ...current,
-        majorDirection: (MAJOR_DIRECTION_OPTIONS.some((option) => option.value === loadedProfile.major_direction)
-          ? loadedProfile.major_direction
-          : "undecided") as SimulationConfig["majorDirection"],
-        pathIntensity: loadedProfile.goal_intensity
-      }));
       setSources((sourceResult.data ?? []) as unknown as OfficialSource[]);
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
@@ -453,9 +449,8 @@ export default function PlanningWorkspace() {
   }, [supabase]);
 
   useEffect(() => {
-    const currentTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-    setTheme(currentTheme);
-    void loadWorkspace();
+    const timeout = window.setTimeout(() => void loadWorkspace(), 0);
+    return () => window.clearTimeout(timeout);
   }, [loadWorkspace]);
 
   useEffect(() => {
@@ -464,41 +459,43 @@ export default function PlanningWorkspace() {
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  useEffect(() => {
-    if (!supabase || !compareVersionId) {
-      setCompareCourses([]);
+  function notify(message: string, kind: "info" | "success" | "error" = "info") {
+    setToastKind(kind);
+    setToast(message);
+  }
+
+  async function selectComparisonVersion(versionId: string) {
+    const requestId = ++compareRequestRef.current;
+    setCompareVersionId(versionId);
+    setCompareCourses([]);
+    if (!supabase || !versionId) {
+      setCompareLoading(false);
       return;
     }
-    let active = true;
     setCompareLoading(true);
-    void supabase
+    const { data, error } = await supabase
       .from("plan_courses")
       .select("*")
-      .eq("plan_version_id", compareVersionId)
+      .eq("plan_version_id", versionId)
       .order("grade_level")
-      .order("sort_order")
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (error) {
-          setToast(error.message);
-          setCompareCourses([]);
-        } else {
-          setCompareCourses((data ?? []) as unknown as PlanCourse[]);
-        }
-        setCompareLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [compareVersionId, supabase]);
+      .order("sort_order");
+    if (requestId !== compareRequestRef.current) return;
+    if (error) notify(error.message, "error");
+    else setCompareCourses((data ?? []) as unknown as PlanCourse[]);
+    setCompareLoading(false);
+  }
 
   async function runAction<T>(label: string, action: () => Promise<T>, successMessage?: string) {
     setBusyLabel(label);
     try {
       const result = await action();
-      if (successMessage) setToast(successMessage);
+      if (successMessage) {
+        setToastKind("success");
+        setToast(successMessage);
+      }
       return result;
     } catch (caught) {
+      setToastKind("error");
       setToast(caught instanceof Error ? caught.message : "That action could not be completed.");
       return null;
     } finally {
@@ -577,28 +574,30 @@ export default function PlanningWorkspace() {
     window.location.assign("/");
   }
 
-  async function saveProfile() {
-    if (!supabase || !profile || !school) return;
-    if (!profile.age || !profile.grade_level || !profile.graduation_year || !profile.school_confirmed || !profile.plan_end_grade || !profile.weekly_commitment_limit) {
-      setToast("Complete age, grade, graduation year, plan window, weekly commitment limit, and school confirmation.");
-      return;
-    }
-    if (profile.tracker_mode === "selected" && profile.tracked_requirement_areas.length === 0) {
-      setToast("Choose at least one graduation requirement area.");
-      return;
-    }
+  async function savePlanningPreferences() {
+    if (!supabase || !profile) return;
     await runAction(
-      "Saving profile",
+      "Saving planning preferences",
       async () => {
         const { error } = await supabase
           .from("student_profiles")
-          .update({ ...profile, school_id: school.id, plan_start_grade: profile.grade_level, onboarding_complete: true })
+          .update({
+            academic_interests: profile.academic_interests,
+            career_interest_areas: profile.career_interest_areas,
+            work_values: profile.work_values,
+            exploration_questions: profile.exploration_questions,
+            major_direction: profile.major_direction,
+            career_direction: profile.career_direction,
+            goal_intensity: profile.goal_intensity,
+            workload_tolerance: profile.workload_tolerance,
+            weekly_commitment_limit: profile.weekly_commitment_limit,
+            stress_level: profile.stress_level
+          })
           .eq("id", profile.id);
         if (error) throw error;
-        setProfile({ ...profile, school_id: school.id, plan_start_grade: profile.grade_level as GradeLevel, onboarding_complete: true });
-        await logEvent("profile_completed");
+        await logEvent("planning_preferences_updated");
       },
-      "Profile saved."
+      "Planning preferences saved."
     );
   }
 
@@ -621,13 +620,13 @@ export default function PlanningWorkspace() {
   ) {
     if (!supabase || !session || !activeVersion || !profile) return;
     if (planCourses.some((row) => row.course_id === course.id)) {
-      setToast("That course is already in the current plan.");
+      notify("That course is already in the current plan.");
       return;
     }
     const grade = placement.gradeLevel;
     const eligibility = dtechCatalogEligibility(course, grade, planCourses, courses);
     if (!eligibility.eligible) {
-      setToast(eligibility.reason === "outside_grade"
+      notify(eligibility.reason === "outside_grade"
         ? `${course.name} is not offered for grade ${grade}.`
         : eligibility.reason === "below_math_level"
           ? `${course.name} is below the math level already demonstrated in this plan.`
@@ -636,7 +635,7 @@ export default function PlanningWorkspace() {
     }
     const evaluation = evaluateDtechPlannerPrerequisites(course, placement, courses, planCourses, plannedSmccdCourses, equivalencies);
     if (evaluation.result.status === "blocked") {
-      setToast("Complete the listed prerequisite before adding this course in that year.");
+      notify("Complete the listed prerequisite before adding this course in that year.");
       return;
     }
     const mappingVerified = mappings.some(
@@ -687,7 +686,7 @@ export default function PlanningWorkspace() {
   function movePlanCourse(row: PlanCourse, status: PlanCourse["status"]) {
     if (!profile) return;
     if (row.source_review_item_id) {
-      setToast("Transcript records stay in Done. Correct the transcript review instead of moving them.");
+      notify("Transcript records stay in Done. Correct the transcript review instead of moving them.");
       return;
     }
     const patch = planCourseMovePatch(profile, row, status, planCourses.filter((candidate) => candidate.status === status).length);
@@ -712,7 +711,7 @@ export default function PlanningWorkspace() {
     if (!supabase || !session || !activeVersion || !profile) return;
     const generated = generateSuggestedPlan(profile, courses, planCourses);
     if (generated.length === 0) {
-      setToast("The current plan already contains the available d.tech flow courses.");
+      notify("The current plan already contains the available d.tech flow courses.");
       return;
     }
     await runAction(
@@ -774,7 +773,7 @@ export default function PlanningWorkspace() {
     event.preventDefault();
     if (!supabase || !session || !school) return;
     if (!sourceForm.file && !sourceForm.rawText.trim()) {
-      setToast("Choose a transcript file or paste its text.");
+      notify("Choose a transcript file or paste its text.", "error");
       return;
     }
     const form = event.currentTarget;
@@ -828,7 +827,7 @@ export default function PlanningWorkspace() {
         const parserNote = payload.aiUsed === true
           ? " Codex vision was used because the file had no readable text layer."
           : " Parsed from document text without Codex.";
-        setToast(`${String(payload.summary ?? "Transcript review ready.")}${parserNote}`);
+        notify(`${String(payload.summary ?? "Transcript review ready.")}${parserNote}`, "success");
         setSourceAiTransparency(payload.aiUsed === true ? payload.aiTransparency as SourceAiTransparency : null);
       },
     );
@@ -846,7 +845,7 @@ export default function PlanningWorkspace() {
         const parserNote = source.document_type === "transcript"
           ? payload.aiUsed === true ? " Codex vision was used because no text layer was available." : " Parsed from text without Codex."
           : "";
-        setToast(`${String(payload.summary ?? "Source parsing completed.")}${parserNote}`);
+        notify(`${String(payload.summary ?? "Source parsing completed.")}${parserNote}`, "success");
         setSourceAiTransparency(payload.aiUsed === true ? payload.aiTransparency as SourceAiTransparency : null);
       }
     );
@@ -892,7 +891,7 @@ export default function PlanningWorkspace() {
         && !importedIds.has(item.id)
     );
     if (candidates.length === 0) {
-      setToast("Select at least one course to import.");
+      notify("Select at least one course to import.");
       return;
     }
 
@@ -908,7 +907,7 @@ export default function PlanningWorkspace() {
         return { item, payload };
       });
     } catch (caught) {
-      setToast(caught instanceof Error ? caught.message : "One corrected row is not valid JSON.");
+      notify(caught instanceof Error ? caught.message : "One corrected row is not valid JSON.", "error");
       return;
     }
 
@@ -964,56 +963,42 @@ export default function PlanningWorkspace() {
     );
   }
 
-  async function saveActivity(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
-    event.preventDefault();
-    if (!supabase || !session) return;
+  async function saveActivity(draft: ExperienceDraft, editingId: string | null) {
+    if (!supabase || !session) return false;
+    if (!draft.name.trim()) {
+      notify("Add an experience name before saving.", "error");
+      return false;
+    }
     const record = {
       user_id: session.user.id,
-      name: activityForm.name.trim(),
-      kind: activityForm.kind,
-      role: activityForm.role.trim() || null,
-      organization: activityForm.organization.trim() || null,
-      weekly_hours: activityForm.weeklyHours,
-      weeks_per_year: activityForm.weeksPerYear,
-      start_grade: activityForm.startGrade,
-      end_grade: activityForm.endGrade,
-      impact: activityForm.impact.trim() || null,
-      description: activityForm.description.trim() || null,
-      is_active: activityForm.isActive
+      name: draft.name.trim(),
+      kind: draft.kind,
+      role: draft.role.trim() || null,
+      organization: draft.organization.trim() || null,
+      weekly_hours: draft.weeklyHours,
+      weeks_per_year: draft.weeksPerYear,
+      start_grade: draft.startGrade,
+      end_grade: draft.endGrade,
+      impact: draft.impact.trim() || null,
+      description: draft.description.trim() || null,
+      is_active: draft.isActive
     };
-    await runAction(
-      editingActivityId ? "Updating experience" : "Adding experience",
+    const saved = await runAction(
+      editingId ? "Updating experience" : "Adding experience",
       async () => {
-        const query = editingActivityId
-          ? supabase.from("activities").update(record).eq("id", editingActivityId)
+        const query = editingId
+          ? supabase.from("activities").update(record).eq("id", editingId)
           : supabase.from("activities").insert(record);
         const { data, error } = await query.select("*").single();
         if (error) throw error;
         const saved = data as unknown as Activity;
-        setActivities((current) => editingActivityId ? current.map((activity) => activity.id === saved.id ? saved : activity) : [...current, saved]);
-        setActivityForm({ name: "", kind: "club", role: "", organization: "", weeklyHours: 2, weeksPerYear: 20, startGrade: profile?.grade_level ?? 9, endGrade: profile?.grade_level ?? 12, impact: "", description: "", isActive: true });
-        setEditingActivityId(null);
-        await logEvent(editingActivityId ? "activity_updated" : "activity_added");
+        setActivities((current) => editingId ? current.map((activity) => activity.id === saved.id ? saved : activity) : [...current, saved]);
+        await logEvent(editingId ? "activity_updated" : "activity_added");
+        return true;
       },
-      editingActivityId ? "Experience updated." : "Experience added."
+      editingId ? "Experience updated." : "Experience added."
     );
-  }
-
-  function editActivity(activity: Activity) {
-    setEditingActivityId(activity.id);
-    setActivityForm({
-      name: activity.name,
-      kind: activity.kind,
-      role: activity.role ?? "",
-      organization: activity.organization ?? "",
-      weeklyHours: Number(activity.weekly_hours),
-      weeksPerYear: Number(activity.weeks_per_year ?? 20),
-      startGrade: activity.start_grade ?? profile?.grade_level ?? 9,
-      endGrade: activity.end_grade ?? activity.start_grade ?? profile?.grade_level ?? 12,
-      impact: activity.impact ?? "",
-      description: activity.description ?? "",
-      isActive: activity.is_active ?? true
-    });
+    return saved === true;
   }
 
   async function removeActivity(id: string) {
@@ -1027,39 +1012,62 @@ export default function PlanningWorkspace() {
 
   async function generateTasks() {
     if (!supabase || !session || !profile) return;
-    const generated = generateTimeline(profile, progress);
-    const existingTitles = new Set(tasks.map((task) => task.title));
-    const newTasks = generated.filter((task) => !existingTitles.has(task.title));
-    if (newTasks.length === 0) {
-      setToast("The generated timeline is already up to date.");
+    const { obsoleteIds, updateTasks, insertTasks } = timelineTaskSync;
+    const changeCount = obsoleteIds.length + updateTasks.length + insertTasks.length;
+    if (changeCount === 0) {
+      notify("The next-step queue is already up to date.");
       return;
     }
     await runAction(
-      "Generating timeline",
+      "Syncing next steps",
       async () => {
-        const { data, error } = await supabase
-          .from("timeline_tasks")
-          .insert(
-            newTasks.map((task) => ({
+        if (obsoleteIds.length > 0) {
+          const { error } = await supabase.from("timeline_tasks").delete().in("id", obsoleteIds);
+          if (error) throw error;
+        }
+        for (const update of updateTasks) {
+          const { error } = await supabase.from("timeline_tasks").update(update.patch).eq("id", update.id);
+          if (error) throw error;
+        }
+        let insertedTasks: TimelineTask[] = [];
+        if (insertTasks.length > 0) {
+          const { data, error } = await supabase
+            .from("timeline_tasks")
+            .insert(insertTasks.map((task) => ({
               ...task,
               user_id: session.user.id,
               plan_version_id: activeVersion?.id ?? null,
               is_generated: true
-            }))
-          )
-          .select("*");
-        if (error) throw error;
-        setTasks((current) => [...current, ...((data ?? []) as unknown as TimelineTask[])]);
-        await logEvent("timeline_generated", { task_count: newTasks.length });
+            })))
+            .select("*");
+          if (error) throw error;
+          insertedTasks = (data ?? []) as unknown as TimelineTask[];
+        }
+        const obsolete = new Set(obsoleteIds);
+        const updates = new Map(updateTasks.map((update) => [update.id, update.patch]));
+        setTasks((current) => [
+          ...current
+            .filter((task) => !obsolete.has(task.id))
+            .map((task) => updates.has(task.id) ? { ...task, ...updates.get(task.id) } : task),
+          ...insertedTasks
+        ]);
+        await logEvent("timeline_synced", {
+          inserted_count: insertTasks.length,
+          updated_count: updateTasks.length,
+          removed_count: obsoleteIds.length
+        });
       },
-      `${newTasks.length} timeline tasks added.`
+      `${changeCount} next-step ${changeCount === 1 ? "change" : "changes"} synced.`
     );
   }
 
-  async function addCustomTask(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
-    event.preventDefault();
-    if (!supabase || !session) return;
-    await runAction(
+  async function addCustomTask(draft: NextStepDraft) {
+    if (!supabase || !session) return false;
+    if (!draft.title.trim()) {
+      notify("Add a clear next step before saving.", "error");
+      return false;
+    }
+    const added = await runAction(
       "Adding task",
       async () => {
         const { data, error } = await supabase
@@ -1067,26 +1075,37 @@ export default function PlanningWorkspace() {
           .insert({
             user_id: session.user.id,
             plan_version_id: activeVersion?.id ?? null,
-            title: taskForm.title.trim(),
-            category: taskForm.category,
-            due_label: taskForm.dueLabel.trim() || null,
+            title: draft.title.trim(),
+            category: draft.category,
+            due_label: draft.dueLabel.trim() || null,
             is_generated: false
           })
           .select("*")
           .single();
         if (error) throw error;
         setTasks((current) => [...current, data as unknown as TimelineTask]);
-        setTaskForm({ title: "", category: "admin", dueLabel: "" });
+        return true;
       },
       "Task added."
     );
+    return added === true;
+  }
+
+  async function deleteTask(id: string) {
+    if (!supabase) return;
+    const { error } = await supabase.from("timeline_tasks").delete().eq("id", id);
+    if (error) {
+      notify(error.message, "error");
+      return;
+    }
+    setTasks((current) => current.filter((task) => task.id !== id));
   }
 
   async function updateTask(id: string, patch: Partial<TimelineTask>) {
     if (!supabase) return;
     const { error } = await supabase.from("timeline_tasks").update(patch).eq("id", id);
     if (error) {
-      setToast(error.message);
+      notify(error.message, "error");
       return;
     }
     setTasks((current) => current.map((task) => (task.id === id ? { ...task, ...patch } : task)));
@@ -1097,42 +1116,8 @@ export default function PlanningWorkspace() {
     if (!profile || !workload) return;
     const result = simulatePlan(simulationConfig, profile, progress, gpa, workload);
     setSimulationResult(result);
-    setSimulationExplanation(null);
+    setSimulationBasis(currentSimulationBasis);
     await logEvent("simulation_started", { ai_used: false });
-  }
-
-  async function saveSimulation() {
-    if (!supabase || !session || !activeVersion || !simulationResult) return;
-    await runAction(
-      "Saving simulation",
-      async () => {
-        const { data: config, error: configError } = await supabase
-          .from("simulation_configs")
-          .insert({
-            user_id: session.user.id,
-            major_direction: simulationConfig.majorDirection,
-            path_intensity: simulationConfig.pathIntensity,
-            course_style: simulationConfig.courseStyle,
-            activity_load: simulationConfig.activityLoad
-          })
-          .select("id")
-          .single();
-        if (configError) throw configError;
-        const { error } = await supabase.from("simulations").insert({
-          user_id: session.user.id,
-          plan_version_id: activeVersion.id,
-          config_id: config.id,
-          current_result: simulationResult.current,
-          simulated_result: simulationResult.simulated,
-          explanation: simulationExplanation,
-          risks: simulationResult.risks,
-          is_saved: true
-        });
-        if (error) throw error;
-        await logEvent("simulation_saved");
-      },
-      "Simulation saved. Your current plan was not changed."
-    );
   }
 
   if (!configured) {
@@ -1159,33 +1144,35 @@ export default function PlanningWorkspace() {
 
   if (!profile.onboarding_complete || replayingOnboarding) {
     return (
-      <OnboardingFlow
-        supabase={supabase}
-        session={session}
-        school={school}
-        profile={profile}
-        requirements={requirements}
-        courses={courses}
-        mappings={mappings}
-        equivalencies={equivalencies}
-        activeVersion={activeVersion}
-        existingPlanCourses={planCourses}
-        mode={replayingOnboarding ? "replay" : "initial"}
-        onComplete={async () => {
-          await loadWorkspace();
-          if (replayingOnboarding) {
+      <Suspense fallback={<LoadingWorkspace />}>
+        <OnboardingFlow
+          supabase={supabase}
+          session={session}
+          school={school}
+          profile={profile}
+          requirements={requirements}
+          courses={courses}
+          mappings={mappings}
+          equivalencies={equivalencies}
+          activeVersion={activeVersion}
+          existingPlanCourses={planCourses}
+          mode={replayingOnboarding ? "replay" : "initial"}
+          onComplete={async () => {
+            await loadWorkspace();
+            if (replayingOnboarding) {
+              setReplayingOnboarding(false);
+              setView("profile");
+              notify("Onboarding changes saved.", "success");
+            }
+          }}
+          onExit={replayingOnboarding ? () => {
             setReplayingOnboarding(false);
             setView("profile");
-            setToast("Onboarding changes saved.");
-          }
-        }}
-        onExit={replayingOnboarding ? () => {
-          setReplayingOnboarding(false);
-          setView("profile");
-          setToast("Onboarding exited without saving changes.");
-        } : undefined}
-        onSignOut={signOut}
-      />
+            notify("Onboarding exited without saving changes.");
+          } : undefined}
+          onSignOut={signOut}
+        />
+      </Suspense>
     );
   }
 
@@ -1292,7 +1279,7 @@ export default function PlanningWorkspace() {
 
   function renderDashboard() {
     if (!profile) return null;
-    const nextTasks = tasks.filter((task) => !task.is_completed).slice(0, 4);
+    const nextTasks = timelineTaskSync.visibleTasks.filter((task) => !task.is_completed).slice(0, 4);
     const requirementSnapshot = progress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
@@ -1348,112 +1335,65 @@ export default function PlanningWorkspace() {
   }
 
   function renderProfile() {
-    if (!profile || !school) return null;
-    const standardInterests = new Set<string>(ACADEMIC_INTEREST_OPTIONS);
-    const otherInterests = profile.academic_interests.filter((interest) => !standardInterests.has(interest));
-    const matchingCourseCount = courses.filter((course) => courseProfileFit(course, profile).score > 0).length;
-    const toggleInterest = (interest: string) => {
-      const selected = new Set(profile.academic_interests);
-      if (selected.has(interest)) selected.delete(interest);
-      else selected.add(interest);
-      setProfile({ ...profile, academic_interests: [...selected] });
-    };
-    const toggleProfileList = (field: "career_interest_areas" | "work_values", value: string) => {
-      const selected = new Set(profile[field] ?? []);
-      if (selected.has(value)) selected.delete(value);
-      else selected.add(value);
-      setProfile({ ...profile, [field]: [...selected] });
-    };
+    if (!profile || !school || !session) return null;
+    const matchingGrade = profile.grade_level as GradeLevel;
+    const matchingCourseCount = courses.filter((course) => {
+      if ((courseFits.get(course.id)?.score ?? 0) <= 0) return false;
+      if (!dtechCatalogEligibility(course, matchingGrade, planCourses, courses).eligible) return false;
+      return evaluateDtechPlannerPrerequisites(
+        course,
+        defaultDtechPlacement(course, matchingGrade),
+        courses,
+        planCourses,
+        plannedSmccdCourses,
+        equivalencies
+      ).result.status !== "blocked";
+    }).length;
     const profileContext = {
-      current_grade: profile.grade_level,
-      plan_through_grade: profile.plan_end_grade,
       broad_direction: profile.major_direction,
       academic_interests: profile.academic_interests,
       career_interest_areas: profile.career_interest_areas,
       work_values: profile.work_values,
       career_ideas: profile.career_direction,
       exploration_questions: profile.exploration_questions,
-      capacity: { planning_priority: profile.goal_intensity, demanding_course_limit: workload?.demandingCourseLimit ?? null, weekly_commitment_limit: profile.weekly_commitment_limit, current_stress: profile.stress_level, known_weekly_hours: workload?.knownWeeklyHours ?? null }
+      planning_limits: {
+        priority: profile.goal_intensity,
+        demanding_course_limit: workload?.demandingCourseLimit ?? null,
+        weekly_commitment_limit: profile.weekly_commitment_limit,
+        current_stress: profile.stress_level,
+        known_weekly_hours: workload?.knownWeeklyHours ?? null
+      }
     };
-    const impactRows = profileSection === "basics"
-      ? [
-          { label: "Plan range", value: `Grade ${profile.grade_level ?? "not set"} through grade ${profile.plan_end_grade ?? 12}.` },
-          { label: "Graduation tracker", value: profile.tracker_mode === "full" ? "All eight d.tech requirement areas are tracked." : `${profile.tracked_requirement_areas.length} selected areas are tracked.` }
-        ]
-      : profileSection === "direction"
-        ? [
-            { label: "Course discovery", value: `${matchingCourseCount} catalog courses currently match these answers and sort first.` },
-            { label: "Degree discovery", value: "Transcript overlap ranks first, followed by direction, interest, and career keyword matches." }
-          ]
-        : [
-            { label: "Workload", value: workload ? `${workload.knownWeeklyHours} known weekly hours and ${workload.demandingCourseCount} demanding ${workload.demandingCourseCount === 1 ? "course is" : "courses are"} compared with these limits.` : "Calculated from active courses and activities." },
-            { label: "Simulator", value: `Scenarios start from ${majorDirectionLabel(profile.major_direction)}, stress ${profile.stress_level}, and the saved capacity limits.` }
-          ];
     return (
       <div className="profile-page page-frame">
-        <PageHeader title="Student compass" description="Record what interests you, what matters to you, and the limits a useful plan must respect." actions={<button className="secondary-button" type="button" onClick={() => setReplayingOnboarding(true)}><ArrowClockwise size={17} /> Review setup</button>} />
-        <WorkspaceTabs
-          items={[{ id: "basics", label: "School context" }, { id: "direction", label: "Interests and values" }, { id: "capacity", label: "Capacity" }]}
-          value={profileSection}
-          onChange={setProfileSection}
-          label="Student profile sections"
-          layoutId="profile-section-indicator"
-          className="profile-section-tabs"
+        <PlanningPreferences
+          session={session}
+          profile={profile}
+          schoolName={school.name}
+          matchingCourseCount={matchingCourseCount}
+          workload={workload}
+          busy={Boolean(busyLabel)}
+          onChange={setProfile}
+          onSave={savePlanningPreferences}
+          onReviewSetup={() => setReplayingOnboarding(true)}
+          onNavigate={(destination) => navigate(destination)}
         />
-        <div className="profile-editor-layout">
-          <AnimatedContent className="profile-editor" key={profileSection}>
-            {profileSection === "basics" && <>
-              <header className="profile-editor-heading"><h2>Student and school</h2><p>These fields set the years and graduation requirements used throughout the plan.</p></header>
-              <div className="form-grid two">
-                <label className="form-field"><span>Preferred name</span><input value={profile.preferred_name} onChange={(event) => setProfile({ ...profile, preferred_name: event.target.value })} /></label>
-                <label className="form-field"><span>School</span><input value={school.name} readOnly aria-readonly="true" /></label>
-                <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={profile.age ?? ""} onChange={(event) => setProfile({ ...profile, age: numberValue(event.target.value) })} /></label>
-                <label className="form-field"><span>Current grade</span><select value={profile.grade_level ?? ""} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; setProfile({ ...profile, grade_level: grade, plan_start_grade: grade, plan_end_grade: Math.max(grade, profile.plan_end_grade ?? 12) as GradeLevel }); }}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
-                <label className="form-field"><span>Graduation year</span><input type="number" min={2025} max={2040} value={profile.graduation_year ?? ""} onChange={(event) => setProfile({ ...profile, graduation_year: numberValue(event.target.value) })} /></label>
-                <label className="form-field"><span>Plan through</span><select value={profile.plan_end_grade ?? 12} onChange={(event) => setProfile({ ...profile, plan_start_grade: (profile.grade_level ?? 9) as GradeLevel, plan_end_grade: Number(event.target.value) as GradeLevel })}>{GRADE_LEVELS.filter((grade) => grade >= (profile.grade_level ?? 9)).map((grade) => <option value={grade} key={grade}>Grade {grade}{grade === 12 ? " (graduation)" : ""}</option>)}</select></label>
-              </div>
-              <label className="confirmation-field"><input type="checkbox" checked={profile.school_confirmed} onChange={(event) => setProfile({ ...profile, school_confirmed: event.target.checked })} /><span><strong>I confirm this plan is for Design Tech High School.</strong><small>Course and graduation data use the labeled 2025-26 source year.</small></span></label>
-            </>}
-            {profileSection === "direction" && <>
-              <header className="profile-editor-heading"><h2>Direction without locking in</h2><p>Use interests, work values, and open questions to test possibilities. This is not an assessment or a major commitment.</p></header>
-              <fieldset className="profile-choice-grid"><legend>Broad academic direction</legend>{MAJOR_DIRECTION_OPTIONS.map((option) => <label className={profile.major_direction === option.value ? "selected" : ""} key={option.value}><input type="radio" name="major-direction" value={option.value} checked={profile.major_direction === option.value} onChange={() => setProfile({ ...profile, major_direction: option.value })} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</fieldset>
-              <fieldset className="profile-interest-areas"><legend>What kinds of work sound energizing?</legend><p>Select the descriptions that feel worth testing. These six areas are inspired by the widely used RIASEC exploration model.</p><div>{CAREER_INTEREST_AREA_OPTIONS.map((option) => <label className={profile.career_interest_areas.includes(option.value) ? "selected" : ""} key={option.value}><input type="checkbox" checked={profile.career_interest_areas.includes(option.value)} onChange={() => toggleProfileList("career_interest_areas", option.value)} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</div></fieldset>
-              <fieldset className="profile-interest-grid"><legend>Academic subjects to explore</legend>{ACADEMIC_INTEREST_OPTIONS.map((interest) => <label className={profile.academic_interests.includes(interest) ? "selected" : ""} key={interest}><input type="checkbox" checked={profile.academic_interests.includes(interest)} onChange={() => toggleInterest(interest)} /><span>{interest}</span></label>)}</fieldset>
-              <fieldset className="profile-interest-grid work-values"><legend>Conditions that matter</legend>{WORK_VALUE_OPTIONS.map((value) => <label className={profile.work_values.includes(value) ? "selected" : ""} key={value}><input type="checkbox" checked={profile.work_values.includes(value)} onChange={() => toggleProfileList("work_values", value)} /><span>{value}</span></label>)}</fieldset>
-              <div className="form-grid two">
-                <label className="form-field"><span>Other interests</span><input value={otherInterests.join(", ")} onChange={(event) => setProfile({ ...profile, academic_interests: [...profile.academic_interests.filter((interest) => standardInterests.has(interest)), ...event.target.value.split(",").map((item) => item.trim()).filter(Boolean)] })} placeholder="Specific subjects, separated by commas" /></label>
-                <label className="form-field"><span>Career ideas to test</span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="Software engineering, public health" /><small className="form-hint">Used for discovery, never treated as a final decision.</small></label>
-              </div>
-              <label className="form-field"><span>Questions I want experiences to answer</span><textarea rows={3} value={profile.exploration_questions.join("\n")} onChange={(event) => setProfile({ ...profile, exploration_questions: event.target.value.split("\n").map((item) => item.trim()).filter(Boolean) })} placeholder={"Do I enjoy open-ended technical problems?\nDo I want work centered on people or systems?"} /><small className="form-hint">One question per line. Use courses, projects, work, and conversations to gather evidence.</small></label>
-            </>}
-            {profileSection === "capacity" && <>
-              <header className="profile-editor-heading"><h2>Workload and limits</h2><p>These settings power workload warnings and provide the simulator baseline.</p></header>
-              <fieldset className="profile-choice-grid three"><legend>Planning priority</legend>{[
-                { value: "lower_stress", label: "Protect capacity", body: "Prefer fewer simultaneous demanding courses." },
-                { value: "balanced", label: "Balanced", body: "Mix rigor with activities and recovery." },
-                { value: "competitive", label: "More rigorous", body: "Prefer honors when the plan still fits your limits." }
-              ].map((option) => <label className={profile.goal_intensity === option.value ? "selected" : ""} key={option.value}><input type="radio" name="goal-intensity" checked={profile.goal_intensity === option.value} onChange={() => setProfile({ ...profile, goal_intensity: option.value as StudentProfile["goal_intensity"] })} /><span><strong>{option.label}</strong><small>{option.body}</small></span></label>)}</fieldset>
-              <div className="form-grid two">
-                <label className="form-field"><span>Demanding-course limit</span><select value={profile.workload_tolerance} onChange={(event) => setProfile({ ...profile, workload_tolerance: event.target.value as StudentProfile["workload_tolerance"] })}><option value="light">Up to 2 at once</option><option value="balanced">Up to 4 at once</option><option value="high">Up to 6 at once</option></select><small className="form-hint">Weighted and college courses count toward this limit.</small></label>
-                <label className="form-field"><span>Weekly commitment limit</span><input type="number" min={1} max={80} step={0.5} value={profile.weekly_commitment_limit ?? ""} onChange={(event) => setProfile({ ...profile, weekly_commitment_limit: numberValue(event.target.value) })} placeholder="24" /><small className="form-hint">Activities and SMCCD class and study time outside d.tech.</small></label>
-                <label className="form-field"><span>Current stress baseline</span><select value={profile.stress_level} onChange={(event) => setProfile({ ...profile, stress_level: Number(event.target.value) })}><option value={1}>1 - Low</option><option value={2}>2 - Manageable</option><option value={3}>3 - Stretched</option><option value={4}>4 - High</option><option value={5}>5 - Overloaded</option></select><small className="form-hint">Used for warnings only, never to predict grades.</small></label>
-                <label className="form-field"><span>Graduation tracker</span><select value={profile.tracker_mode} onChange={(event) => setProfile({ ...profile, tracker_mode: event.target.value as StudentProfile["tracker_mode"], tracked_requirement_areas: event.target.value === "full" ? requirements.map((requirement) => requirement.area) : [] })}><option value="full">Full d.tech diploma</option><option value="selected">Selected requirement areas</option></select></label>
-              </div>
-              {profile.tracker_mode === "selected" && <fieldset className="profile-requirements"><legend>Tracked requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id}><input type="checkbox" checked={profile.tracked_requirement_areas.includes(requirement.area)} onChange={() => { const selected = new Set(profile.tracked_requirement_areas); if (selected.has(requirement.area)) selected.delete(requirement.area); else selected.add(requirement.area); setProfile({ ...profile, tracked_requirement_areas: [...selected] }); }} /><span>{requirement.name}</span></label>)}</fieldset>}
-            </>}
-          </AnimatedContent>
-          <aside className="profile-impact" aria-label="How these answers change planning">
-            <h2>Planning impact</h2>
-            <p>Only the current section's downstream effects are shown.</p>
-            <dl>{impactRows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
-          </aside>
-        </div>
-        <div className="profile-save-bar"><span>Save before leaving to apply these changes.</span><button className="primary-button" onClick={() => void saveProfile()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save profile</button></div>
-        {session && <CodexReviewPanel session={session} focus="profile" title="Turn answers into experiments" description="Codex can suggest low-risk ways to test a direction using the answers above. It will not diagnose an interest type or choose a major." question="Review my interests, values, open questions, and capacity. Suggest specific low-risk experiments that could confirm or challenge my current directions." context={profileContext} onNavigate={navigateFromReview} compact />}
+        <details className="focused-ai-review">
+          <summary><Sparkle size={15} /> Optional Codex review</summary>
+          <CodexReviewPanel
+            session={session}
+            focus="profile"
+            title="Check the planning brief"
+            description="Codex can surface one useful experiment or one missing constraint. It does not diagnose interests or choose a major."
+            question="Review this planning brief. Give one direct interpretation, up to three evidence-backed observations, and one low-risk next experiment."
+            context={profileContext}
+            onNavigate={navigateFromReview}
+            compact
+          />
+        </details>
       </div>
     );
   }
-
   function renderSources() {
     const latestTranscript = sources.find((source) => !source.is_official && source.document_type === "transcript") ?? null;
     const importedIds = new Set(planCourses.map((row) => row.source_review_item_id).filter(Boolean));
@@ -1501,10 +1441,7 @@ export default function PlanningWorkspace() {
           {latestTranscript.error_message && <small>{latestTranscript.error_message}</small>}
           {latestTranscript.parse_status !== "processing" && transcriptItems.length === 0 && <button className="secondary-button small" type="button" onClick={() => void parseSource(latestTranscript)} disabled={Boolean(busyLabel)}><ArrowClockwise size={15} /> Read again</button>}
         </div>}
-        {sourceAiTransparency && <details className="transcript-ai-inspector">
-          <summary><Sparkle size={15} /> Codex vision run details</summary>
-          <div><dl><div><dt>Model</dt><dd>{sourceAiTransparency.model}</dd></div><div><dt>Reasoning</dt><dd>{sourceAiTransparency.reasoningEffort === "low" ? "Light (SDK: low)" : titleCase(sourceAiTransparency.reasoningEffort)}</dd></div><div><dt>Input</dt><dd>{sourceAiTransparency.input}</dd></div><div><dt>Tools</dt><dd>{sourceAiTransparency.toolsUsed.length || "None"}</dd></div><div><dt>Files changed</dt><dd>{sourceAiTransparency.filesChanged.length || "None"}</dd></div></dl><p>{sourceAiTransparency.mutations}</p><strong>Exact extraction instruction</strong><pre>{sourceAiTransparency.instruction}</pre></div>
-        </details>}
+        {sourceAiTransparency && <TranscriptAiRunDetails run={sourceAiTransparency} />}
         {transcriptItems.length > 0 ? <section className="transcript-results" aria-labelledby="transcript-results-title">
           {transcriptSummary && <p className="transcript-result-summary">{transcriptSummary}</p>}
           <header className="transcript-results-heading">
@@ -1725,7 +1662,7 @@ export default function PlanningWorkspace() {
           <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
           <div className="course-version-body"><button className="secondary-button small" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={15} /> Save snapshot</button>
           {snapshots.length ? <>
-            <div className="compare-controls"><label className="form-field"><span>Saved version</span><select value={compareVersionId} onChange={(event) => setCompareVersionId(event.target.value)}><option value="">Choose a snapshot</option>{snapshots.map((version) => <option value={version.id} key={version.id}>{version.label}</option>)}</select></label><p>{compareVersionId ? "The saved copy stays read-only. Differences below are measured against your active plan." : "Choose a saved snapshot."}</p></div>
+            <div className="compare-controls"><label className="form-field"><span>Saved version</span><select value={compareVersionId} onChange={(event) => void selectComparisonVersion(event.target.value)}><option value="">Choose a snapshot</option>{snapshots.map((version) => <option value={version.id} key={version.id}>{version.label}</option>)}</select></label><p>{compareVersionId ? "The saved copy stays read-only. Differences below are measured against your active plan." : "Choose a saved snapshot."}</p></div>
             {selectedSnapshot && !compareLoading && <div className="snapshot-comparison" aria-live="polite">
               <div className="snapshot-metrics"><div><span>Saved courses</span><strong>{compareCourses.length}</strong></div><div><span>Active courses</span><strong>{planCourses.length}</strong></div><div><span>Saved coverage</span><strong>{overallGraduationPercent(snapshotProgress)}%</strong></div><div><span>Active coverage</span><strong>{graduationPercent}%</strong></div><div><span>Saved projected GPA</span><strong>{formatGpa(snapshotGpa.projectedWeighted)}</strong></div><div><span>Active projected GPA</span><strong>{formatGpa(gpa.projectedWeighted)}</strong></div></div>
               <div className="snapshot-differences">
@@ -1771,143 +1708,175 @@ export default function PlanningWorkspace() {
   }
 
   function renderActivities() {
-    const activityHours = workload?.weeklyActivityHours ?? 0;
-    const activeActivities = activities.filter((activity) => activity.is_active ?? true);
-    const pastActivities = activities.filter((activity) => !(activity.is_active ?? true));
-    const annualHours = activities.reduce((total, activity) => total + Number(activity.weekly_hours) * Number(activity.weeks_per_year ?? 0), 0);
-    const needsStory = activities.filter((activity) => !activity.impact?.trim() || !activity.description?.trim()).length;
+    if (!session || !profile) return null;
     const activitiesContext = {
-      weekly_activity_hours: activityHours,
-      known_weekly_workload: workload?.knownWeeklyHours ?? null,
-      weekly_limit: profile?.weekly_commitment_limit ?? null,
-      experiences: activities.map((activity) => ({ name: activity.name, type: activity.kind, role: activity.role, organization: activity.organization, hours_per_week: activity.weekly_hours, weeks_per_year: activity.weeks_per_year, grades: [activity.start_grade, activity.end_grade], active: activity.is_active, description: activity.description, impact: activity.impact }))
+      capacity: {
+        weekly_limit: profile.weekly_commitment_limit,
+        known_weekly_hours: workload?.knownWeeklyHours ?? null,
+        activity_hours: workload?.weeklyActivityHours ?? null
+      },
+      experiences: activities.map((activity) => ({
+        name: activity.name,
+        type: activity.kind,
+        role: activity.role,
+        organization: activity.organization,
+        hours_per_week: activity.weekly_hours,
+        weeks_per_year: activity.weeks_per_year,
+        grades: [activity.start_grade, activity.end_grade],
+        active: activity.is_active,
+        description: activity.description,
+        contribution_or_growth: activity.impact
+      }))
     };
     return (
-      <div className="activity-page page-frame">
-        <PageHeader title="Experience portfolio" description="Keep the commitments that shape your time, growth, and application stories in one place." />
-        <AnimatedContent className="experience-balance">
-          <div><span>Typical week</span><strong>{activityHours} hours</strong><p>{profile?.weekly_commitment_limit ? `${Math.max(0, profile.weekly_commitment_limit - (workload?.knownWeeklyHours ?? 0))} hours remain inside your saved outside-school limit.` : "Set a weekly limit in Student profile to see remaining capacity."}</p></div>
-          <dl><div><dt>Active experiences</dt><dd>{activeActivities.length}</dd></div><div><dt>Estimated annual time</dt><dd>{Math.round(annualHours)}h</dd></div><div><dt>Stories to finish</dt><dd>{needsStory}</dd></div></dl>
-        </AnimatedContent>
-        <div className="experience-layout">
-          <section className="experience-register">
-            <header className="register-heading"><div><h2>Your experiences</h2><p>Hours power workload checks. Description and impact preserve what actually mattered.</p></div></header>
-            {activities.length ? <div className="experience-list">
-              {activeActivities.map((activity) => <article className="experience-row" key={activity.id}>
-                <div className="experience-row-main"><span>{titleCase(activity.kind)}{activity.organization ? ` · ${activity.organization}` : ""}</span><h3>{activity.name}</h3><p>{activity.role || "Role not recorded"} · {activity.weekly_hours}h/week · {activity.weeks_per_year ?? "?"} weeks/year</p>{activity.impact ? <blockquote>{activity.impact}</blockquote> : <em>Add one concrete contribution, result, or lesson.</em>}</div>
-                <div className="experience-row-actions"><button type="button" onClick={() => editActivity(activity)}>Edit</button><button type="button" className="danger" onClick={() => void removeActivity(activity.id)} aria-label={`Remove ${activity.name}`}><Trash size={15} /></button></div>
-              </article>)}
-              {pastActivities.length > 0 && <details className="past-experiences"><summary>{pastActivities.length} past {pastActivities.length === 1 ? "experience" : "experiences"}</summary><div>{pastActivities.map((activity) => <button type="button" onClick={() => editActivity(activity)} key={activity.id}><span><strong>{activity.name}</strong><small>{activity.role ?? titleCase(activity.kind)}</small></span><span>Grades {activity.start_grade ?? "?"}-{activity.end_grade ?? "?"}</span></button>)}</div></details>}
-            </div> : <EmptyState title="No experiences recorded" body="Start with anything that regularly uses your time: a club, job, sport, family responsibility, project, service, or internship." />}
-          </section>
-          <form className="tool-rail activity-composer" onSubmit={saveActivity}>
-            <header className="tool-rail-heading"><h2>{editingActivityId ? "Edit experience" : "Add an experience"}</h2><p>Capture enough detail to make this useful later.</p></header>
-            <label className="form-field"><span>Activity name</span><input value={activityForm.name} onChange={(event) => setActivityForm({ ...activityForm, name: event.target.value })} required /></label>
-            <label className="form-field"><span>Type</span><select value={activityForm.kind} onChange={(event) => setActivityForm({ ...activityForm, kind: event.target.value })}><option value="club">Club</option><option value="athletics">Athletics</option><option value="service">Service</option><option value="work">Work</option><option value="family">Family responsibility</option><option value="internship">Internship</option><option value="other">Other</option></select></label>
-            <div className="form-grid two"><label className="form-field"><span>Role</span><input value={activityForm.role} onChange={(event) => setActivityForm({ ...activityForm, role: event.target.value })} placeholder="Member, captain, caregiver" /></label><label className="form-field"><span>Organization</span><input value={activityForm.organization} onChange={(event) => setActivityForm({ ...activityForm, organization: event.target.value })} placeholder="Optional" /></label></div>
-            <div className="form-grid two"><label className="form-field"><span>Hours per week</span><input type="number" min={0} max={80} step={0.5} value={activityForm.weeklyHours} onChange={(event) => setActivityForm({ ...activityForm, weeklyHours: Number(event.target.value) })} /></label><label className="form-field"><span>Weeks per year</span><input type="number" min={0} max={52} step={1} value={activityForm.weeksPerYear} onChange={(event) => setActivityForm({ ...activityForm, weeksPerYear: Number(event.target.value) })} /></label></div>
-            <div className="form-grid two"><label className="form-field"><span>Start grade</span><select value={activityForm.startGrade} onChange={(event) => setActivityForm({ ...activityForm, startGrade: Number(event.target.value) })}>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label><label className="form-field"><span>End grade</span><select value={activityForm.endGrade} onChange={(event) => setActivityForm({ ...activityForm, endGrade: Number(event.target.value) })}>{GRADE_LEVELS.filter((grade) => grade >= activityForm.startGrade).map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label></div>
-            <label className="form-field"><span>What you did</span><textarea rows={3} value={activityForm.description} onChange={(event) => setActivityForm({ ...activityForm, description: event.target.value })} placeholder="Responsibilities, projects, or regular work" /></label>
-            <label className="form-field"><span>Contribution or growth</span><textarea rows={3} value={activityForm.impact} onChange={(event) => setActivityForm({ ...activityForm, impact: event.target.value })} placeholder="A result, change, responsibility, or lesson you can support" /></label>
-            <label className="toggle-field"><input type="checkbox" checked={activityForm.isActive} onChange={(event) => setActivityForm({ ...activityForm, isActive: event.target.checked })} /><span>Currently active</span></label>
-            <div className="activity-form-actions"><button className="primary-button" type="submit"><Plus size={17} /> {editingActivityId ? "Save changes" : "Add experience"}</button>{editingActivityId && <button className="text-button" type="button" onClick={() => { setEditingActivityId(null); setActivityForm({ name: "", kind: "club", role: "", organization: "", weeklyHours: 2, weeksPerYear: 20, startGrade: profile?.grade_level ?? 9, endGrade: profile?.grade_level ?? 12, impact: "", description: "", isActive: true }); }}>Cancel</button>}</div>
-          </form>
-        </div>
-        {session && <CodexReviewPanel session={session} focus="activities" title="Review the portfolio" description="Find missing context, workload conflicts, and experience details worth preserving. Codex does not score the student or rewrite entries silently." question="Review these experiences for workload balance, missing evidence, and useful reflection questions. Suggest specific improvements without exaggerating impact." context={activitiesContext} onNavigate={navigateFromReview} compact />}
+      <div className="activities-page page-frame">
+        <ExperienceLog
+          session={session}
+          activities={activities}
+          currentGrade={profile.grade_level ?? 9}
+          workload={workload}
+          busy={Boolean(busyLabel)}
+          onSave={saveActivity}
+          onRemove={removeActivity}
+          onNavigate={() => navigate("profile")}
+        />
+        <details className="focused-ai-review">
+          <summary><Sparkle size={15} /> Optional Codex review</summary>
+          <CodexReviewPanel
+            session={session}
+            focus="activities"
+            title="Check the experience record"
+            description="Codex can identify one missing fact or one workload concern. It never ranks the student or inflates an experience."
+            question="Review this experience record. Give one direct answer, up to three evidence-backed observations, and one useful next edit."
+            context={activitiesContext}
+            onNavigate={navigateFromReview}
+            compact
+          />
+        </details>
       </div>
     );
   }
-
   function renderTimeline() {
-    const openTasks = tasks.filter((task) => !task.is_completed);
-    const completedTasks = tasks.filter((task) => task.is_completed);
-    const academicTasks = openTasks.filter((task) => task.category === "academics" || task.category === "admin");
-    const explorationTasks = openTasks.filter((task) => task.category === "college" || task.category === "activities" || task.category === "summer");
+    if (!session || !profile) return null;
+    const courseChecks: CourseCheck[] = prerequisitePlanChecks.map((check) => ({
+      id: check.row.id,
+      name: check.name,
+      status: check.status === "blocked" ? "blocked" : "needs_review",
+      message: check.message,
+      source: check.source,
+      courseId: check.courseId
+    }));
+    const openRequirements = progress
+      .filter((item) => item.status === "missing")
+      .map((item) => ({
+        id: item.requirement.id,
+        name: item.requirement.name,
+        remainingCredits: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)
+      }));
+    const visibleTasks = timelineTaskSync.visibleTasks;
+    const openTasks = visibleTasks.filter((task) => !task.is_completed);
     const timelineContext = {
-      current_grade: profile?.grade_level ?? null,
-      graduation_year: profile?.graduation_year ?? null,
-      open_requirement_areas: progress.filter((item) => item.status === "missing").map((item) => ({ name: item.requirement.name, verified_projected_credits: item.verifiedProjectedCredits, required_credits: item.requirement.credits_required })),
-      prerequisite_checks: prerequisitePlanChecks.map((check) => ({ course: check.name, status: check.status, message: check.message })),
-      open_tasks: openTasks.map((task) => ({ title: task.title, category: task.category, timing: task.due_label, generated_from_plan: task.is_generated, rationale: task.explanation }))
+      current_grade: profile.grade_level,
+      graduation_year: profile.graduation_year,
+      open_requirement_areas: openRequirements,
+      prerequisite_checks: courseChecks.map(({ name, status, message }) => ({ name, status, message })),
+      open_steps: openTasks.map((task) => ({
+        title: task.title,
+        timing: task.due_label,
+        source: task.is_generated ? "current plan" : "student",
+        rationale: task.explanation
+      }))
     };
-    const taskRow = (task: TimelineTask) => <article className={`decision-task ${task.is_completed ? "completed" : ""}`} key={task.id}>
-      <input type="checkbox" checked={task.is_completed} onChange={(event) => void updateTask(task.id, { is_completed: event.target.checked })} aria-label={`Mark ${task.title} complete`} />
-      <div><input className="task-title-input" value={task.title} onChange={(event) => setTasks((current) => current.map((candidate) => candidate.id === task.id ? { ...candidate, title: event.target.value } : candidate))} onBlur={() => void updateTask(task.id, { title: task.title })} /><span>{task.due_label ?? titleCase(task.category)}{task.is_generated ? " · From current plan" : " · Added by you"}</span>{task.explanation && <p>{task.explanation}</p>}</div>
-      <button className="icon-button danger" onClick={async () => { if (!supabase) return; await supabase.from("timeline_tasks").delete().eq("id", task.id); setTasks((current) => current.filter((candidate) => candidate.id !== task.id)); }} aria-label={`Delete ${task.title}`}><Trash size={16} /></button>
-    </article>;
+    const openCourseCheck = (check: CourseCheck) => {
+      if (check.source === "dtech") {
+        const course = courseMap.get(check.courseId);
+        if (course) chooseDtechCourse(course);
+      } else {
+        setFocusedSmccdCourseId(check.courseId);
+      }
+      setCourseArea(check.source);
+      setView("courses");
+    };
     return (
       <div className="timeline-page page-frame">
-        <PageHeader title="Decision timeline" description="Turn plan gaps, prerequisites, and your own goals into a short sequence of next actions." actions={<button className="secondary-button" onClick={() => void generateTasks()} disabled={Boolean(busyLabel)}><Sparkle size={17} /> Sync from plan</button>} />
-        <AnimatedContent className="timeline-focus">
-          <div><span>Do next</span><strong>{openTasks[0]?.title ?? "Nothing urgent"}</strong><p>{openTasks[0]?.explanation ?? "Sync from the plan or add a decision you want to remember."}</p></div>
-          <dl><div><dt>Open decisions</dt><dd>{openTasks.length}</dd></div><div><dt>Course checks</dt><dd>{prerequisitePlanChecks.length}</dd></div><div><dt>Finished</dt><dd>{completedTasks.length}</dd></div></dl>
-        </AnimatedContent>
-        {prerequisitePlanChecks.length > 0 && <section className="timeline-course-checks">
-          <header><div><span>Blocking evidence</span><h2>Course checks before registration</h2></div><strong>{prerequisitePlanChecks.length}</strong></header>
-          <div>{prerequisitePlanChecks.slice(0, 6).map((check) => <button className={`prerequisite-followup-row ${check.status}`} key={check.row.id} type="button" onClick={() => {
-            if (check.source === "dtech") {
-              const course = courseMap.get(check.courseId);
-              if (course) chooseDtechCourse(course);
-            } else {
-              setFocusedSmccdCourseId(check.courseId);
-            }
-            setCourseArea(check.source);
-            setView("courses");
-          }}><span><strong>{check.name}</strong><small>{check.message}</small></span><span>{check.status === "blocked" ? "Missing requirement" : "Needs review"}</span></button>)}</div>
-        </section>}
-        <div className="decision-timeline-layout">
-          <section className="decision-track">
-            <header className="register-heading"><div><h2>Academic and admin</h2><p>Requirements, registration, prerequisites, and verification.</p></div><span>{academicTasks.length}</span></header>
-            {academicTasks.length ? <div className="decision-task-list">{academicTasks.map(taskRow)}</div> : <p className="decision-track-empty">No academic actions are waiting.</p>}
-          </section>
-          <section className="decision-track">
-            <header className="register-heading"><div><h2>Explore and build</h2><p>Interests, activities, college exploration, and summer choices.</p></div><span>{explorationTasks.length}</span></header>
-            {explorationTasks.length ? <div className="decision-task-list">{explorationTasks.map(taskRow)}</div> : <p className="decision-track-empty">No exploration actions are waiting.</p>}
-          </section>
-          <form className="tool-rail task-composer" onSubmit={addCustomTask}><header className="tool-rail-heading"><h2>Add a task</h2><p>For anything not already on the checklist.</p></header><label className="form-field"><span>Task</span><input value={taskForm.title} onChange={(event) => setTaskForm({ ...taskForm, title: event.target.value })} required /></label><label className="form-field"><span>Category</span><select value={taskForm.category} onChange={(event) => setTaskForm({ ...taskForm, category: event.target.value })}><option value="academics">Academics</option><option value="activities">Activities</option><option value="college">College readiness</option><option value="summer">Summer</option><option value="admin">Admin</option></select></label><label className="form-field"><span>When <small>(optional)</small></span><input value={taskForm.dueLabel} onChange={(event) => setTaskForm({ ...taskForm, dueLabel: event.target.value })} placeholder="Before registration" /></label><button className="primary-button" type="submit"><Plus size={17} /> Add task</button></form>
-        </div>
-        {completedTasks.length > 0 && <details className="completed-decisions"><summary>{completedTasks.length} completed {completedTasks.length === 1 ? "task" : "tasks"}</summary><div>{completedTasks.map(taskRow)}</div></details>}
-        {session && <CodexReviewPanel session={session} focus="timeline" title="Prioritize the next moves" description="Codex can explain dependencies and point out vague tasks while the saved checklist stays under your control." question="Review this decision timeline. Identify the three most useful next actions, explain dependencies, and flag any task that is vague or unsupported." context={timelineContext} onNavigate={navigateFromReview} compact />}
+        <NextSteps
+          session={session}
+          tasks={visibleTasks}
+          currentGrade={profile.grade_level ?? 9}
+          graduationYear={profile.graduation_year}
+          openRequirements={openRequirements}
+          courseChecks={courseChecks}
+          busy={Boolean(busyLabel)}
+          onSync={generateTasks}
+          onAdd={addCustomTask}
+          onUpdate={updateTask}
+          onDelete={deleteTask}
+          onOpenCourseCheck={openCourseCheck}
+          onNavigate={(destination) => navigate(destination)}
+        />
+        <details className="focused-ai-review">
+          <summary><Sparkle size={15} /> Optional Codex review</summary>
+          <CodexReviewPanel
+            session={session}
+            focus="timeline"
+            title="Check the order"
+            description="Codex can point out one dependency or one vague step. The saved queue stays under your control."
+            question="Review this next-step queue. Give one direct priority judgment, up to three evidence-backed observations, and one next action."
+            context={timelineContext}
+            onNavigate={navigateFromReview}
+            compact
+          />
+        </details>
       </div>
     );
   }
-
   function renderSimulator() {
-    if (!profile) return null;
-    const scenarioContext = simulationResult ? {
-      assumptions: simulationConfig,
-      current: simulationResult.current,
-      scenario: simulationResult.simulated,
-      deterministic_changes: simulationResult.changes,
-      deterministic_risks: simulationResult.risks,
-      saved_capacity: { weekly_limit: profile.weekly_commitment_limit, demanding_course_limit: workload?.demandingCourseLimit ?? null, stress_baseline: profile.stress_level }
+    if (!profile || !session) return null;
+    const freshSimulationResult = simulationBasis === currentSimulationBasis ? simulationResult : null;
+    const scenarioContext = freshSimulationResult ? {
+      proposed_change: {
+        additional_smccd_units: simulationConfig.collegeUnits,
+        activity_hours_change: simulationConfig.activityHoursChange
+      },
+      current_week: freshSimulationResult.current,
+      proposed_week: freshSimulationResult.simulated,
+      deterministic_changes: freshSimulationResult.changes,
+      deterministic_limits: freshSimulationResult.risks,
+      saved_weekly_limit: profile.weekly_commitment_limit
     } : null;
     return (
       <div className="simulator-page page-frame">
-        <PageHeader title="Scenario lab" description="Make one hypothetical tradeoff visible before changing the real course plan." actions={simulationResult && <button className="secondary-button" onClick={() => void saveSimulation()} disabled={Boolean(busyLabel)}><FloppyDisk size={17} /> Save comparison</button>} />
-        <div className="scenario-contract"><ShieldCheckIcon /><span><strong>Safe sandbox:</strong> the comparison changes assumptions only. It never edits courses, grades, activities, or profile answers.</span></div>
-        <div className="simulator-layout">
-          <section className="tool-rail sim-controls">
-            <header className="tool-rail-heading"><h2>Change the assumptions</h2><p>Each control states exactly what the deterministic model adds or removes.</p></header>
-            <label className="form-field"><span>Planning direction</span><select value={simulationConfig.majorDirection} onChange={(event) => setSimulationConfig({ ...simulationConfig, majorDirection: event.target.value as SimulationConfig["majorDirection"] })}>{MAJOR_DIRECTION_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select><small className="form-hint">Changes profile matching only. It does not invent major requirements.</small></label>
-            <label className="form-field"><span>Path intensity</span><select value={simulationConfig.pathIntensity} onChange={(event) => setSimulationConfig({ ...simulationConfig, pathIntensity: event.target.value as SimulationConfig["pathIntensity"] })}><option value="lower_stress">One fewer demanding course</option><option value="balanced">Keep current target</option><option value="competitive">One more demanding course</option></select></label>
-            <label className="form-field"><span>Course style</span><select value={simulationConfig.courseStyle} onChange={(event) => setSimulationConfig({ ...simulationConfig, courseStyle: event.target.value as SimulationConfig["courseStyle"] })}><option value="more_regular">One fewer weighted course</option><option value="more_honors">Add one Honors course</option><option value="more_dual_enrollment">Add one 3-unit SMCCD course</option></select><small className="form-hint">The SMCCD scenario adds 9 weekly student-work hours.</small></label>
-            <label className="form-field"><span>Activity load</span><select value={simulationConfig.activityLoad} onChange={(event) => setSimulationConfig({ ...simulationConfig, activityLoad: event.target.value as SimulationConfig["activityLoad"] })}><option value="lower">3 fewer hours per week</option><option value="same">No change</option><option value="higher">4 more hours per week</option></select></label>
-            <button className="primary-button" onClick={() => void runSimulation()} disabled={Boolean(busyLabel)}><Scales size={17} /> Compare with current plan</button>
-          </section>
-          <section className="scenario-output">
-            {simulationResult ? <><header className="scenario-output-heading"><span>Deterministic result</span><h2>What the assumption changes</h2><p>No AI is used for these values.</p></header><div className="comparison-table"><div className="comparison-head"><span>Measure</span><strong>Current</strong><strong>Scenario</strong></div><div><span>Planning direction</span><strong>{majorDirectionLabel(profile.major_direction)}</strong><strong>{majorDirectionLabel(simulationConfig.majorDirection)}</strong></div><div><span>{profile.tracker_mode === "selected" ? "Tracked coverage" : "Graduation coverage"}</span><strong>{simulationResult.current.graduationPercent}%</strong><strong>{simulationResult.simulated.graduationPercent}%</strong></div><div><span>Projected weighted GPA</span><strong>{formatGpa(simulationResult.current.projectedWeightedGpa)}</strong><strong>{formatGpa(simulationResult.simulated.projectedWeightedGpa)}</strong></div><div><span>Known weekly hours</span><strong>{simulationResult.current.workloadScore}</strong><strong>{simulationResult.simulated.workloadScore}</strong></div><div><span>Demanding courses</span><strong>{simulationResult.current.demandingCourseCount}</strong><strong>{simulationResult.simulated.demandingCourseCount}</strong></div><div><span>Stress baseline</span><strong>{simulationResult.current.stressLevel} / 5</strong><strong>{simulationResult.simulated.stressLevel} / 5</strong></div><div><span>Activity hours</span><strong>{simulationResult.current.activityHours}</strong><strong>{simulationResult.simulated.activityHours}</strong></div></div><div className="simulation-notes"><div><h3>Assumptions applied</h3><ul>{simulationResult.changes.map((change) => <li key={change}>{change}</li>)}</ul></div><div><h3>Limits and checks</h3><ul>{simulationResult.risks.length ? simulationResult.risks.map((risk) => <li key={risk}>{risk}</li>) : <li>The scenario stays inside the limits currently saved in the profile.</li>}</ul></div></div></> : <EmptyState title="No comparison yet" body="Choose a few explicit assumptions, then compare them with the current plan." />}
-          </section>
-        </div>
-        {session && scenarioContext && <CodexReviewPanel session={session} focus="scenario" title="Ask for a tradeoff review" description="After the math runs, Codex can explain the tradeoffs and questions worth checking. Its review remains separate from the scenario values." question="Review this scenario comparison. Explain the tradeoffs, challenge unsupported assumptions, and give me questions to resolve before changing my real plan." context={scenarioContext} onNavigate={navigateFromReview} compact />}
+        <LoadCheck
+          session={session}
+          profile={profile}
+          workload={workload}
+          config={simulationConfig}
+          result={freshSimulationResult}
+          busy={Boolean(busyLabel)}
+          onConfigChange={(next) => {
+            setSimulationConfig(next);
+            setSimulationResult(null);
+            setSimulationBasis("");
+          }}
+          onCompare={runSimulation}
+          onNavigate={(destination) => navigate(destination)}
+        />
+        {scenarioContext && <details className="focused-ai-review">
+          <summary><Sparkle size={15} /> Optional Codex review</summary>
+          <CodexReviewPanel
+            session={session}
+            focus="scenario"
+            title="Check the tradeoff"
+            description="The comparison above remains deterministic. Codex can challenge one assumption or identify one question to verify."
+            question="Review this weekly load comparison. Give one direct interpretation, up to three evidence-backed observations, and one verification step."
+            context={scenarioContext}
+            onNavigate={navigateFromReview}
+            compact
+          />
+        </details>}
       </div>
     );
   }
-
-  function ShieldCheckIcon() {
-    return <CheckCircle size={19} weight="duotone" aria-hidden />;
-  }
-
   function renderView() {
     switch (view) {
       case "dashboard": return renderDashboard();
@@ -1980,9 +1949,9 @@ export default function PlanningWorkspace() {
       {mobileNavOpen && <button className="nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation overlay" />}
       <main className="app-main">
         <div className="mobile-bar"><button className="icon-button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><AirplaneTilt size={20} /></button><span>{NAV_ITEMS.find((item) => item.id === view)?.label}</span><button className="icon-button" onClick={toggleTheme} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button></div>
-        <div className="app-content">{renderView()}</div>
+        <div className="app-content"><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></div>
       </main>
-      {toast && <div className="toast" role="status">{busyLabel ? <ArrowClockwise size={16} className="spin" /> : <Check size={16} />}{toast}</div>}
+      {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}{toast}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
     </div>
   );

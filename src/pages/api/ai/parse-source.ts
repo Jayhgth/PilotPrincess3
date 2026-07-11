@@ -5,7 +5,8 @@ import { basename, join } from "node:path";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { parsedSourceJsonSchema, parsedSourceSchema, type ParsedSourceResult } from "@/server/ai-schemas";
-import { runCodexStructured } from "@/server/codex";
+import { CODEX_RUNTIME_CAPABILITIES, runCodexStructuredStream } from "@/server/codex";
+import { codexTraceSummary } from "@/server/codex-events";
 import { extractSource } from "@/server/source-extraction";
 
 export const prerender = false;
@@ -129,15 +130,17 @@ export const POST: APIRoute = async ({ request }) => {
       extractionNote,
       extractedText ? `SOURCE TEXT:\n${extractedText}` : "The source is provided as one or more attached images."
     ].join("\n\n");
-    const codexResult = await runCodexStructured({
+    const codexResult = await runCodexStructuredStream({
       feature: "source_parse",
       prompt,
       input: attachments,
       schema: parsedSourceSchema,
       outputSchema: parsedSourceJsonSchema,
       workingDirectory: scratchDirectory,
-      timeoutMs: 30000
-    });
+      timeoutMs: 30000,
+      signal: request.signal
+    }, () => undefined);
+    const trace = codexTraceSummary(codexResult.events);
     const rows = reviewRows(auth.user.id, source.id, codexResult.value);
     const { error: reviewError } = await auth.supabase.from("catalog_review_items").insert(rows);
     if (reviewError) throw reviewError;
@@ -178,10 +181,15 @@ export const POST: APIRoute = async ({ request }) => {
         aiTransparency: {
           model: codexResult.model,
           reasoningEffort: "low",
+          threadId: codexResult.threadId,
+          latencyMs: codexResult.latencyMs,
+          usage: codexResult.usage,
           instruction: prompt,
           input: extractedText ? "Extracted document text" : `${attachments.length} source image ${attachments.length === 1 ? "page" : "pages"}`,
-          toolsUsed: [],
-          filesChanged: [],
+          capabilities: CODEX_RUNTIME_CAPABILITIES,
+          events: trace.events,
+          toolsUsed: trace.toolsUsed,
+          filesChanged: trace.filesChanged,
           mutations: "Proposed items were saved to the review queue only. Nothing was approved automatically."
         }
       }),

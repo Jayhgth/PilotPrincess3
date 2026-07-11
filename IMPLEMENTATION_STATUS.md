@@ -1,6 +1,6 @@
 # Implementation status
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 ## Current state
 
@@ -43,31 +43,34 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 - Deterministic science lanes, Level 3 language sequence completion, conservative A-G mapping, and exact GPA reproduction for the supplied PDF.
 - Selected four-year Path Overview aligned to the Done/In progress/Planned course model.
 - GPA is now a two-lens evidence workspace: exact d.tech transcript methodology and a conservative UC capped-weighted grade 10-11 A-G estimate.
-- Activities is an experience portfolio with time, duration, organization, role, contribution/growth, active/past state, editing, and workload integration.
-- Timeline is a decision sequence separating academic/admin checks from exploration work and bringing prerequisite blockers into the action flow.
-- Simulator is a deterministic Scenario lab. It runs without AI, states exact assumptions, preserves the real plan, and offers a separate optional tradeoff review.
-- Student profile is now a Student compass with academic interests, RIASEC-inspired self-selected work interests, work values, exploration questions, and capacity constraints.
-- Workload uses recorded activities and current-year college-unit study time and never invents d.tech homework.
+- Experiences is one factual active/past register for time, duration, organization, role, contribution/growth, editing, and workload integration. Past experiences no longer inflate current workload.
+- Next steps is one ordered queue: prerequisite blockers, uncovered requirements, then dated student/plan tasks. Live requirement gaps are not duplicated as generated tasks.
+- Next-step sync is now a reconciliation: obsolete or duplicate generated steps disappear when the underlying plan changes, retained steps refresh their plan-derived detail, and Overview uses the same visible task model.
+- Load check answers one deterministic question about additional SMCCD units and changed activity hours. It states the three-hours-per-unit assumption, clamps impossible reductions, preserves the real plan, and does not claim a capacity judgment until a weekly limit exists.
+- Planning preferences is one readable brief with progressively disclosed direction and capacity editors. It saves independently from onboarding, and its course-match count excludes completed, wrong-grade, below-level, and prerequisite-blocked d.tech courses.
+- Workload uses active experiences and current-year college-unit study time and never invents d.tech homework. Load results invalidate when their underlying activity, course, capacity, or stress inputs change.
 
 ### AI boundary
 
-- Codex SDK runs on authenticated Node routes with streamed structured output, timeout, concurrency, event sanitization, and no browser credential exposure.
-- Overview, GPA, Activities, Timeline, Scenario lab, and Student compass have explicit Run transparent review actions. Each run exposes the exact instruction/snapshot, SDK lifecycle, safe reasoning summaries, tool/file events, structured evidence, proposed navigation actions, usage, latency, model, thread, and limits.
-- Student review threads disable network, tools, file access, and mutations. The UI explicitly reports zero tools/files when none occur. `show_raw_agent_reasoning` remains false.
-- Image-only transcript and unstructured-source responses return an inspectable AI disclosure and still write only to the manual review boundary.
+- Codex SDK runs on authenticated Node routes with structured streaming, cancellation, a bounded two-active/four-waiting queue, recursive secret redaction, payload limits, isolated runtime homes, and no browser credential exposure.
+- Reviews return one direct answer, at most three evidence-backed observations, one proposed action, and one verification note. Focused decision tools keep this optional review collapsed so AI does not become a second page feature.
+- Every review exposes the exact instruction/snapshot, a monotonic sanitized SDK lifecycle, reasoning summaries when emitted, full observed command/MCP/file payloads, structured result, total/queue/execution timing, usage, model, thread, capability limits, and an explicit JSON export. Disabled capabilities are labeled Disabled rather than reported as zero activity.
+- Student review threads explicitly disable network, browser/computer tools, shell, MCP/plugins, skills, file mutation, image generation, workspace tools, and subagents. `show_raw_agent_reasoning` remains false.
+- Image-only transcript and unstructured-source parsing now buffer and return the same sanitized SDK lifecycle, usage, thread, capabilities, and observed tool/file activity. Onboarding and the later transcript workspace share the same progressively disclosed run inspector. They still write only to the manual review boundary.
 - Plan generation and scenario calculation no longer trigger AI automatically.
-- AI connection reports provider, credential mode, model, reasoning, runtime, latency, diagnostics input, transparency contract, and the exact used/not-used feature matrix.
+- AI connection reports provider, credential mode, model, reasoning, runtime, diagnostics input, provider/local-retention boundary, trace coverage, and the exact used/not-used feature matrix.
 - The app requests `gpt-5.6-luna` with `low` reasoning, displayed to users as Light.
 
 ## Verification evidence
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 110 tests passing across 15 files, including catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex prompt/access boundaries, unresolved discipline rules, and the selected Path contract.
-- `pnpm test:e2e`: 6 Chromium tests passing.
-- Authenticated browser QA passes Overview, GPA lenses, Experience portfolio, Decision timeline, Scenario lab, Student compass, and AI connection at desktop light/dark and 390px with no horizontal overflow. The Scenario lab remains deterministic before the optional review appears.
-- A live `gpt-5.6-luna` review completed with Light reasoning, grounded structured output, an inspectable instruction/snapshot, lifecycle rows, and explicit zero-tool/zero-file states.
-- Production build, all four palette contrast validations, linked schema lint, SMCCD catalog validation, and linked migration dry-run pass. Migration `20260710035000_student_decision_tools.sql` is applied and local/remote histories match.
+- `pnpm test`: 116 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex redaction/status boundaries, unresolved discipline rules, and the selected Path contract.
+- `pnpm verify:fast`: passing. The broad working-tree dependency graph currently selects all 116 tests; the command remains the documented iterative entry point.
+- Authenticated browser QA passes Experiences, Next steps, Load check, Planning preferences, and AI connection at 1800px and 390px in light/dark modes with no horizontal overflow or console errors. Focused editors, validation retention, deterministic load output, preference saving, and collapsed optional AI were checked.
+- A final live `gpt-5.6-luna` diagnostic completed with Light reasoning in 8.1 seconds. It returned a moderated answer, seven monotonically sequenced lifecycle events, usage, a thread identifier, exact input, explicit disabled tool/file/skill/plugin/subagent states, a downloadable sanitized record, and no runtime error.
+- Performance check: the authenticated `PlanningWorkspace` entry is now 156 kB raw instead of the previous 539 kB monolith; focused tools, onboarding, graduation, SMCCD, and AI status are lazy chunks. Global CSS decreased from 155 kB to 149 kB, and SMCCD duplicate checks use a memoized O(1) plan index.
+- Current milestone gate (`lint`, typecheck, 116 unit tests, production build) passes. The previously recorded 6-test Chromium suite, palette validation, linked schema lint, SMCCD validation, and migration dry-run were not rerun because this milestone did not change catalog artifacts, semantic palette tokens, auth/RLS/storage, or schema; current user flows were checked directly in the authenticated browser instead.
 
 ## Known limitations
 
@@ -79,11 +82,12 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 6. SMCCD data is curriculum, not live sections, seats, times, or instructors.
 7. AA/AS progress covers parsed major requirements and catalog-tagged GE evidence, not a complete college-specific GE audit, residency, catalog rights, waivers, substitutions, or award eligibility.
 8. Workload omits unentered homework, commute, employment, caregiving, sleep, and recovery.
-9. Student compass is a stronger exploration workflow, but course and degree ranking still uses transparent keyword matching rather than a validated counseling model.
+9. Planning preferences supports exploration, but course and degree ranking still uses transparent keyword matching rather than a validated counseling model.
 10. The UI has no transcript archive picker, generalized substitution/waiver/repeat engine, or one-click kanban undo.
 11. Production accessibility and student usability studies have not been conducted.
 12. Official logo use needs final trademark review before public launch.
-13. The production build passes but still reports a client chunk above 500 kB; route-level code splitting remains a performance follow-up.
+13. The TypeScript Codex SDK does not expose the richer app-server deltas, approval flow, plugin attribution, or subagent events used by t3code. Those capabilities are disabled for student reviews; true protocol parity would require a separate app-server transport project.
+14. The full SMCCD curriculum is still fetched when the college catalog is first opened. Client search and duplicate checks are substantially faster, but server-side pagination remains a production-scale follow-up.
 
 ## Next steps
 

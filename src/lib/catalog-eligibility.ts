@@ -95,16 +95,41 @@ function smccdPlanCode(row: PlanCourse, smccdById: ReadonlyMap<string, SmccdCour
   return custom ? normalizeCollegeCourseCode(custom) : null;
 }
 
+export interface SmccdPlanCourseIndex {
+  courseIds: ReadonlySet<string>;
+  normalizedCourseCodes: ReadonlySet<string>;
+}
+
+export function createSmccdPlanCourseIndex(
+  planCourses: readonly PlanCourse[],
+  smccdCourses: readonly SmccdCourse[]
+): SmccdPlanCourseIndex {
+  const smccdById = new Map(smccdCourses.map((course) => [course.id, course]));
+  const courseIds = new Set<string>();
+  const normalizedCourseCodes = new Set<string>();
+
+  for (const row of planCourses) {
+    if (row.smccd_course_id) courseIds.add(row.smccd_course_id);
+    const code = smccdPlanCode(row, smccdById);
+    if (code) normalizedCourseCodes.add(code);
+  }
+
+  return { courseIds, normalizedCourseCodes };
+}
+
+export function smccdCourseAlreadyInPlanIndex(
+  course: SmccdCourse,
+  index: SmccdPlanCourseIndex
+): boolean {
+  if (index.courseIds.has(course.id)) return true;
+  const candidateCode = normalizeCollegeCourseCode(course.course_code) ?? normalizeCourseKey(course.course_code);
+  return Boolean(candidateCode && index.normalizedCourseCodes.has(candidateCode));
+}
+
 export function smccdCourseAlreadyInPlan(
   course: SmccdCourse,
   planCourses: readonly PlanCourse[],
   smccdCourses: readonly SmccdCourse[]
 ): boolean {
-  const smccdById = new Map(smccdCourses.map((candidate) => [candidate.id, candidate]));
-  const candidateCode = normalizeCollegeCourseCode(course.course_code) ?? normalizeCourseKey(course.course_code);
-  return planCourses.some((row) => {
-    if (row.smccd_course_id === course.id) return true;
-    const plannedCode = smccdPlanCode(row, smccdById);
-    return Boolean(plannedCode && candidateCode && plannedCode === candidateCode);
-  });
+  return smccdCourseAlreadyInPlanIndex(course, createSmccdPlanCourseIndex(planCourses, smccdCourses));
 }

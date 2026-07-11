@@ -11,7 +11,8 @@ import {
   parsedTranscriptSchema,
   type ParsedTranscriptResult
 } from "@/server/ai-schemas";
-import { runCodexStructured } from "@/server/codex";
+import { CODEX_RUNTIME_CAPABILITIES, runCodexStructuredStream } from "@/server/codex";
+import { codexTraceSummary } from "@/server/codex-events";
 import { extractSource } from "@/server/source-extraction";
 import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
 import { transcriptReviewRows } from "@/server/transcript-review";
@@ -91,6 +92,9 @@ export const POST: APIRoute = async ({ request }) => {
     let model: string | null = null;
     let parserLatencyMs: number;
     let aiInstruction: string | null = null;
+    let aiTrace: ReturnType<typeof codexTraceSummary> | null = null;
+    let aiThreadId: string | null = null;
+    let aiUsage: { input_tokens: number; cached_input_tokens: number; output_tokens: number; reasoning_output_tokens: number } | null = null;
     if (extractedText.trim()) {
       const parserStartedAt = Date.now();
       parsedResult = parseDtechTranscriptText(extractedText);
@@ -107,19 +111,23 @@ export const POST: APIRoute = async ({ request }) => {
         extractionNote
       ].join("\n\n");
       aiInstruction = prompt;
-      const codexResult = await runCodexStructured({
+      const codexResult = await runCodexStructuredStream({
         feature: "transcript_image_ocr",
         prompt,
         input: attachments,
         schema: parsedTranscriptSchema,
         outputSchema: parsedTranscriptJsonSchema,
         workingDirectory: scratchDirectory,
-        timeoutMs: 45000
-      });
+        timeoutMs: 45000,
+        signal: request.signal
+      }, () => undefined);
       parsedResult = codexResult.value;
       parserLatencyMs = codexResult.latencyMs;
       parserMethod = "codex_vision";
       model = codexResult.model;
+      aiTrace = codexTraceSummary(codexResult.events);
+      aiThreadId = codexResult.threadId;
+      aiUsage = codexResult.usage;
     }
 
     const { data: catalogData, error: catalogError } = await auth.supabase
@@ -197,10 +205,15 @@ export const POST: APIRoute = async ({ request }) => {
         aiTransparency: parserMethod === "codex_vision" ? {
           model,
           reasoningEffort: "low",
+          threadId: aiThreadId,
+          latencyMs: parserLatencyMs,
+          usage: aiUsage,
           instruction: aiInstruction,
           input: `${attachments.length} transcript image ${attachments.length === 1 ? "page" : "pages"}`,
-          toolsUsed: [],
-          filesChanged: [],
+          capabilities: CODEX_RUNTIME_CAPABILITIES,
+          events: aiTrace?.events ?? [],
+          toolsUsed: aiTrace?.toolsUsed ?? [],
+          filesChanged: aiTrace?.filesChanged ?? [],
           mutations: "Extracted rows were saved to the review queue only. Nothing was imported automatically."
         } : null
       }),

@@ -2,12 +2,13 @@ import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { planningReviewJsonSchema, planningReviewSchema } from "@/server/ai-schemas";
-import { buildTransparentReviewPrompt, codexErrorMessage, codexRuntimeStatus, runCodexStructuredStream } from "@/server/codex";
+import { buildTransparentReviewPrompt, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, runCodexStructuredStream } from "@/server/codex";
+import { sanitizeCodexEvent, sanitizeCodexText } from "@/server/codex-events";
 
 export const prerender = false;
 
 const requestSchema = z.object({
-  focus: z.enum(["plan", "gpa", "activities", "timeline", "scenario", "profile"]),
+  focus: z.enum(["plan", "gpa", "activities", "timeline", "scenario", "profile", "connection"]),
   question: z.string().trim().min(1).max(600),
   context: z.record(z.string(), z.unknown())
 }).superRefine((value, context) => {
@@ -19,28 +20,12 @@ const requestSchema = z.object({
 const focusInstruction = {
   plan: "Review the overall plan for uncovered requirements, sequencing, workload, and decisions that need verification.",
   gpa: "Explain the GPA evidence and methodology. Flag missing grades, uncertain weighting, or interpretations that should not be treated as official.",
-  activities: "Review the experience portfolio for time balance, missing context, reflection opportunities, and application-ready details. Do not rank the student.",
-  timeline: "Prioritize the next few actions, explain dependencies, and identify tasks that are vague or not tied to current evidence.",
-  scenario: "Review the deterministic scenario comparison, its tradeoffs, and assumptions. Do not claim the hypothetical values are predictions.",
-  profile: "Review the student's stated interests, work values, constraints, and open questions. Suggest low-risk ways to test directions without locking in a major."
+  activities: "Review the factual experience record for time balance, missing context, and reusable evidence. Do not rank the student or inflate an experience.",
+  timeline: "Review the next-step queue for ordering, dependencies, and steps that are vague or not tied to current evidence.",
+  scenario: "Review the deterministic weekly load comparison and its stated assumptions. Do not turn the hypothetical values into predictions.",
+  profile: "Review the saved planning preferences, work values, constraints, and open questions. Suggest a low-risk way to test direction without locking in a major.",
+  connection: "Confirm whether this authenticated Codex turn completed and explain the exact access limits shown in the supplied runtime snapshot."
 } as const;
-
-function safeEvent(event: Parameters<Parameters<typeof runCodexStructuredStream>[1]>[0]) {
-  if (event.type === "thread.started") return { type: event.type, threadId: event.thread_id };
-  if (event.type === "turn.started") return { type: event.type };
-  if (event.type === "turn.completed") return { type: event.type, usage: event.usage };
-  if (event.type === "turn.failed") return { type: event.type, message: event.error.message };
-  if (event.type === "error") return { type: event.type, message: event.message };
-  const item = event.item;
-  if (item.type === "reasoning") return { type: event.type, item: { id: item.id, type: item.type, text: item.text } };
-  if (item.type === "agent_message") return { type: event.type, item: { id: item.id, type: item.type, text: event.type === "item.completed" ? item.text : "" } };
-  if (item.type === "command_execution") return { type: event.type, item: { id: item.id, type: item.type, command: item.command, status: item.status, exitCode: item.exit_code } };
-  if (item.type === "file_change") return { type: event.type, item: { id: item.id, type: item.type, changes: item.changes, status: item.status } };
-  if (item.type === "mcp_tool_call") return { type: event.type, item: { id: item.id, type: item.type, server: item.server, tool: item.tool, arguments: item.arguments, status: item.status, error: item.error?.message } };
-  if (item.type === "web_search") return { type: event.type, item: { id: item.id, type: item.type, query: item.query } };
-  if (item.type === "todo_list") return { type: event.type, item: { id: item.id, type: item.type, items: item.items } };
-  return { type: event.type, item: { id: item.id, type: item.type, message: item.message } };
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
@@ -56,18 +41,34 @@ export const POST: APIRoute = async ({ request }) => {
     `SNAPSHOT:\n${JSON.stringify(parsed.data.context)}`
   ].join("\n\n");
   const fullInstruction = buildTransparentReviewPrompt(`${parsed.data.focus}_review`, exactInstruction);
+  const runController = new AbortController();
+  const runSignal = AbortSignal.any([request.signal, runController.signal]);
+  const logBestEffort = (record: Record<string, unknown>) => {
+    void Promise.resolve(auth.supabase.from("event_logs").insert(record)).catch(() => undefined);
+  };
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (payload: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+      const send = (payload: unknown) => {
+        if (runSignal.aborted) return false;
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+          return true;
+        } catch {
+          return false;
+        }
+      };
       const startedAt = Date.now();
+      let runSequence = 0;
       send({
         kind: "run.started",
+        sequence: ++runSequence,
+        occurredAt: new Date().toISOString(),
         focus: parsed.data.focus,
         model: runtime.model,
         reasoningEffort: runtime.reasoningEffort,
         access: { network: false, tools: false, files: false, mutations: false },
-        instruction: fullInstruction,
-        context: parsed.data.context
+        capabilities: CODEX_RUNTIME_CAPABILITIES,
+        instruction: fullInstruction
       });
       try {
         const result = await runCodexStructuredStream({
@@ -76,8 +77,11 @@ export const POST: APIRoute = async ({ request }) => {
           schema: planningReviewSchema,
           outputSchema: planningReviewJsonSchema,
           timeoutMs: 90_000,
-          reasoningEffort: "low"
-        }, (event) => send({ kind: "sdk.event", event: safeEvent(event) }));
+          reasoningEffort: "low",
+          signal: runSignal
+        }, (event) => {
+          send({ kind: "sdk.event", event: sanitizeCodexEvent(event, ++runSequence) });
+        });
         const eventCounts = result.events.reduce<Record<string, number>>((counts, event) => {
           const key = event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed"
             ? `${event.type}:${event.item.type}`
@@ -85,7 +89,9 @@ export const POST: APIRoute = async ({ request }) => {
           counts[key] = (counts[key] ?? 0) + 1;
           return counts;
         }, {});
-        await auth.supabase.from("event_logs").insert({
+        const latencyMs = Date.now() - startedAt;
+        send({ kind: "run.completed", sequence: ++runSequence, occurredAt: new Date().toISOString(), result: result.value, threadId: result.threadId, model: result.model, reasoningEffort: runtime.reasoningEffort, usage: result.usage, latencyMs, executionLatencyMs: result.latencyMs });
+        logBestEffort({
           user_id: auth.user.id,
           event_name: "codex_review_completed",
           feature_name: parsed.data.focus,
@@ -95,10 +101,10 @@ export const POST: APIRoute = async ({ request }) => {
           uncertainty_involved: true,
           properties: { model: result.model, thread_id: result.threadId, usage: result.usage, event_counts: eventCounts }
         });
-        send({ kind: "run.completed", result: result.value, threadId: result.threadId, model: result.model, reasoningEffort: runtime.reasoningEffort, usage: result.usage, latencyMs: result.latencyMs });
       } catch (error) {
-        const message = codexErrorMessage(error, "Codex could not complete this review.");
-        await auth.supabase.from("event_logs").insert({
+        const message = sanitizeCodexText(codexErrorMessage(error, "Codex could not complete this review."), 1200);
+        if (!runSignal.aborted) send({ kind: "run.failed", sequence: ++runSequence, occurredAt: new Date().toISOString(), message });
+        logBestEffort({
           user_id: auth.user.id,
           event_name: "codex_review_failed",
           feature_name: parsed.data.focus,
@@ -106,18 +112,25 @@ export const POST: APIRoute = async ({ request }) => {
           success: false,
           fallback_used: false,
           uncertainty_involved: true,
-          properties: { error: message }
+          properties: { error_category: runSignal.aborted ? "cancelled" : "codex_turn_failed" }
         });
-        send({ kind: "run.failed", message });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // The browser may have already cancelled the response stream.
+        }
       }
+    },
+    cancel(reason) {
+      runController.abort(reason instanceof Error ? reason : new Error("The browser cancelled the Codex review."));
     }
   });
   return new Response(stream, {
     headers: {
       "content-type": "application/x-ndjson; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store, no-transform",
+      "x-accel-buffering": "no"
     }
   });
 };

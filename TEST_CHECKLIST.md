@@ -1,80 +1,55 @@
-# Test checklist
+# Verification policy
 
-Last updated: 2026-07-10
+Last reviewed: 2026-07-11
 
-This file is a release gate, not a historical log. Detailed implementation evidence belongs in `IMPLEMENTATION_STATUS.md`.
+This file defines when checks are required. It is not a command history, and the full release gate is not required after every edit. Completed command results belong in `IMPLEMENTATION_STATUS.md`.
 
-## Automated gate
+## Working loop
 
-- [x] `pnpm lint`
-- [x] `pnpm typecheck`
-- [x] `pnpm test` with 110 tests passing.
-- [x] `pnpm test:e2e` with 6 Chromium tests passing.
-- [x] `pnpm build`
-- [x] `pnpm colors:validate`
-- [x] `pnpm smccd:validate`
-- [x] `supabase db lint --linked`
-- [x] Local and linked migration histories match.
-- [x] `supabase db push --linked --dry-run` reports no unintended change.
+Use the smallest check that can catch a regression in the changed system:
 
-## Authentication and security
+| Change | During implementation | Before handoff |
+| --- | --- | --- |
+| Planning, transcript, GPA, prerequisite, or parser logic | Directly affected Vitest file | Full unit suite at a milestone |
+| React or Astro UI | Typecheck plus the affected browser state | Lint, typecheck, unit suite, build, and one representative user flow |
+| Codex prompt, schema, runtime, or stream | `tests/codex-boundaries.test.ts` plus one streamed diagnostic when credentials are available | Milestone gate and an inspectable live run |
+| Theme or semantic token | Affected light/dark pages | `pnpm colors:validate` and representative desktop/mobile review |
+| SMCCD source or generated artifact | Focused catalog tests | `pnpm smccd:validate` and regeneration check |
+| Migration, RLS, auth, or storage | Focused local test | Linked schema lint, migration-history check, dry-run push, and affected auth/RLS flow |
+| Documentation only | Link and command review | No build unless the documentation changes executable configuration |
 
-- [x] Any valid email may register and receives a profile, active plan, and active version.
-- [x] Sign-in, sign-out, recovery token, password update, and replacement-password login work.
-- [x] User-owned records and private source files are isolated by RLS and storage policies.
-- [x] AI credentials remain server-only; authenticated student reviews cannot access the browser, network, files, or tools and cannot mutate plan data.
-- [x] Transparent reviews expose exact input, safe reasoning summaries, SDK lifecycle, tool/file state, structured output, usage, model, latency, thread, and limits.
-- [ ] Production SMTP, confirmation delivery, redirect allowlist, HTTPS, and recovery delivery pass on the deployed origin.
+Do not run Playwright, SMCCD validation, color validation, or linked Supabase checks for unrelated changes.
 
-## Core student flow
+## Command tiers
 
-- [x] Onboarding saves student, planning-window, tracker, direction, and capacity settings.
-- [x] Transcript PDF/paste parses without Codex when text is available, preserves source data, supports review, and imports selected rows to Done.
-- [x] Imported records preserve exact grade, credits, weighting, institution, school year, match evidence, and transcript lock.
-- [x] Courses uses one Done/In progress/Planned board; editable cards move by drag or status control and transcript rows do not move.
-- [x] Suggestions exclude completed aliases and do not overwrite manual courses.
-- [x] Catalog discovery excludes exact/normalized plan duplicates, courses outside the selected d.tech grade, lower sequential math, and prerequisite-blocked results.
-- [x] Full-year courses preserve grade chronology; standard/Honors aliases satisfy reviewed course-family prerequisites without inventing lateral math ordering.
-- [x] Catalog add handlers repeat the eligibility checks so stale selections cannot bypass the visible result rules.
-- [x] Graduation and GPA reproduce the supplied d.tech PDF rules, including pass/fail, A-minus bands, Honors evidence, science lanes, and Level 3 language completion.
-- [x] SMCCD course and AA/AS discovery preserve college, units, transfer status, prerequisites, source year, and directional equivalency evidence.
-- [x] Workload uses only recorded activities and current-year college study time and explains missing inputs.
-- [x] Experience portfolio, Decision timeline, Scenario lab, Student compass, GPA lenses, and AI connection persist user-owned changes.
-- [x] UC GPA planning lens includes only verified grade 10-11 A-G coursework, ignores plus/minus distinctions, caps eligible honors semesters, and reports unresolved rows.
+- `pnpm verify:fast`: typecheck and tests related to uncommitted changes. Use during a mixed implementation loop.
+- `pnpm verify:milestone`: lint, typecheck, all unit tests, and production build. Use before a meaningful Git milestone.
+- `pnpm verify:release`: milestone gate plus Playwright, palette, and SMCCD validation. Use for a release candidate.
 
-## Selected Overview
+Individual tests remain preferable while debugging, for example:
 
-- [x] Jay selected the four-year Path concept.
-- [x] The temporary selector and four unused concepts are removed.
-- [x] Finished, In progress, and Next render from one deterministic data model.
-- [x] Course source labels preserve d.tech or college provenance in text and scoped color.
-- [x] React Bits motion is limited to reveal and numeric state and respects reduced motion.
-- [x] Selected Path passes populated light/dark desktop/mobile semantic-DOM and overflow review.
+```bash
+pnpm exec vitest run tests/planning.test.ts
+pnpm exec vitest run tests/codex-boundaries.test.ts
+```
 
-## Visual and accessibility gate
+## Release-only gate
 
-- [x] Semantic light/dark tokens and Manrope type roles are shared across authenticated pages.
-- [x] Product text is at least 12px; controls retain visible focus and 44px touch targets where applicable.
-- [x] Course, transcript, institution, loading, empty, and error states do not rely on color alone.
-- [x] Workspace tabs support Left, Right, Home, and End.
-- [x] Representative local desktop/mobile states show no horizontal overflow or console errors.
-- [x] Overview and every decision tool pass authenticated desktop light/dark and 390px composition checks; a live transparent review completes with inspectable lifecycle and input data.
-- [x] d.tech and SMCCD catalog components pass light/dark 1,440px and 390px composition checks, including official marks, selected rows, details, and compact college filters.
-- [ ] Production automated accessibility and screen-reader review passes.
-- [ ] Task-based student usability study covers transcript import, course planning, graduation interpretation, and SMCCD discovery.
+Before a production release, confirm all applicable items once:
 
-## Data and source gate
+- [ ] `pnpm verify:release` passes.
+- [ ] Linked Supabase schema lint passes, local and linked migration histories match, and dry-run push shows no unintended change.
+- [ ] Sign-up, sign-in, recovery, transcript import, course planning, graduation interpretation, and SMCCD discovery work on the deployed origin.
+- [ ] Representative authenticated desktop and 390px states pass in both themes with keyboard focus and no horizontal overflow.
+- [ ] A live Codex diagnostic shows exact input, complete sanitized SDK lifecycle, reasoning summaries, capability limits, result, usage, and retention policy.
+- [ ] Production SMTP, redirect allowlist, HTTPS, monitoring, backups, and retention are configured.
+- [ ] Automated accessibility, screen-reader review, and a task-based student usability study have been completed.
+- [ ] No secret, private transcript, local `.env`, or generated test credential is staged.
 
-- [x] d.tech and SMCCD source years are visible.
-- [x] SMCCD artifact validates 2,461 courses and 131 AA/AS programs.
-- [x] d.tech/SMCCD equivalency artifact validates 120 reviewed rows and remains directional.
-- [x] Unresolved prerequisite prose remains `needs_review` and never becomes success by inference.
-- [ ] Replace or reapprove the 2021 equivalency chart before authoritative public use.
-- [ ] Import and review the 2026-27 d.tech catalog when published.
-- [ ] Confirm official-logo use for the intended production context.
+## Source-specific release checks
 
-## Cleanup
+Only when the referenced data is published or changed:
 
-- [x] Temporary QA accounts and cascaded data are deleted.
-- [ ] No secrets, private transcripts, local `.env`, or generated test credentials are staged.
-- [ ] `IMPLEMENTATION_STATUS.md` records final command results and remaining gaps.
+- replace or reapprove the 2021 d.tech/SMCCD equivalency chart;
+- import and review the 2026-27 d.tech catalog;
+- confirm official-logo use for the intended production context.

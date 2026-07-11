@@ -291,10 +291,8 @@ export interface CatalogReviewItem {
 }
 
 export interface SimulationConfig {
-  majorDirection: "stem" | "business" | "humanities" | "health" | "undecided";
-  pathIntensity: "lower_stress" | "balanced" | "competitive";
-  courseStyle: "more_honors" | "more_dual_enrollment" | "more_regular";
-  activityLoad: "lower" | "same" | "higher";
+  collegeUnits: number;
+  activityHoursChange: number;
 }
 
 export interface RequirementProgress {

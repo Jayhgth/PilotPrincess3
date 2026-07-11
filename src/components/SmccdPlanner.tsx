@@ -24,7 +24,7 @@ import { programProfileFit } from "@/lib/profile-planning";
 import { schoolYearForGrade, selectedPlanGrades } from "@/lib/planning";
 import { createSmccdPlannerPrerequisiteEvaluator } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
-import { smccdCourseAlreadyInPlan } from "@/lib/catalog-eligibility";
+import { createSmccdPlanCourseIndex, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import type {
   GradeLevel,
   PlanCourse,
@@ -184,8 +184,12 @@ export default function SmccdPlanner({
     () => createSmccdPlannerPrerequisiteEvaluator(courses, planCourses, []),
     [courses, planCourses]
   );
+  const planCourseIndex = useMemo(
+    () => createSmccdPlanCourseIndex(planCourses, courses),
+    [courses, planCourses]
+  );
   const smccdUnavailable = useMemo(() => searchedCourses.reduce((counts, course) => {
-    if (smccdCourseAlreadyInPlan(course, planCourses, courses)) {
+    if (smccdCourseAlreadyInPlanIndex(course, planCourseIndex)) {
       counts.already += 1;
       return counts;
     }
@@ -193,7 +197,7 @@ export default function SmccdPlanner({
     if (evaluation.result.status === "blocked") counts.prerequisite += 1;
     else counts.visible.push({ course, evaluation });
     return counts;
-  }, { already: 0, prerequisite: 0, visible: [] as Array<{ course: SmccdCourse; evaluation: ReturnType<typeof prerequisiteEvaluator> }> }), [courses, planCourses, prerequisiteEvaluator, searchedCourses, targetGrade]);
+  }, { already: 0, prerequisite: 0, visible: [] as Array<{ course: SmccdCourse; evaluation: ReturnType<typeof prerequisiteEvaluator> }> }), [planCourseIndex, prerequisiteEvaluator, searchedCourses, targetGrade]);
   const visibleCourses = smccdUnavailable.visible.slice(0, 80);
   const equivalencyMap = useMemo(
     () => new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency])),
@@ -341,7 +345,7 @@ export default function SmccdPlanner({
   async function addCatalogCourse(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!selectedCourse) return;
-    if (smccdCourseAlreadyInPlan(selectedCourse, planCourses, courses)) {
+    if (smccdCourseAlreadyInPlanIndex(selectedCourse, planCourseIndex)) {
       setError("That SMCCD course is already represented in the active plan.");
       return;
     }

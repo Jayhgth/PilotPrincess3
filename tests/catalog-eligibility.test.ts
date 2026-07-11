@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createSmccdPlanCourseIndex,
   dtechCatalogEligibility,
   dtechMathRank,
   highestDemonstratedDtechMathRank,
-  smccdCourseAlreadyInPlan
+  smccdCourseAlreadyInPlan,
+  smccdCourseAlreadyInPlanIndex
 } from "@/lib/catalog-eligibility";
 import type { Course, PlanCourse, SmccdCourse } from "@/lib/models";
 
@@ -128,5 +130,18 @@ describe("catalog eligibility", () => {
     const skyline = smccd({ id: "SKY:MATH 200", college_code: "SKY" });
     const completedAtCsm = planCourse({ course_id: null, smccd_course_id: "CSM:MATH 200", custom_course_name: "MATH 200 Statistics" });
     expect(smccdCourseAlreadyInPlan(skyline, [completedAtCsm], [smccd(), skyline])).toBe(true);
+  });
+
+  it("reuses a plan index for exact, cross-college, and custom-code duplicate checks", () => {
+    const skyline = smccd({ id: "SKY:MATH 200", college_code: "SKY" });
+    const differentCourse = smccd({ id: "SKY:MATH 201", college_code: "SKY", course_code: "MATH 201" });
+    const completedAtCsm = planCourse({ course_id: null, smccd_course_id: "CSM:MATH 200", custom_course_name: "MATH 200 Statistics" });
+    const customOnly = planCourse({ id: "custom", course_id: null, smccd_course_id: null, custom_course_name: "BUS 100 Business Fundamentals" });
+    const index = createSmccdPlanCourseIndex([completedAtCsm, customOnly], [smccd(), skyline, differentCourse]);
+
+    expect(smccdCourseAlreadyInPlanIndex(smccd(), index)).toBe(true);
+    expect(smccdCourseAlreadyInPlanIndex(skyline, index)).toBe(true);
+    expect(smccdCourseAlreadyInPlanIndex(smccd({ id: "SKY:BUS 100", college_code: "SKY", course_code: "BUS 100" }), index)).toBe(true);
+    expect(smccdCourseAlreadyInPlanIndex(differentCourse, index)).toBe(false);
   });
 });

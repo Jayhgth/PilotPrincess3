@@ -8,7 +8,8 @@ import type {
   PlanCourse,
   SmccdHighSchoolEquivalency,
   SmccdProgram,
-  StudentProfile
+  StudentProfile,
+  TimelineTask
 } from "@/lib/models";
 import {
   appliedCreditBreakdown,
@@ -21,6 +22,7 @@ import {
   overallGraduationPercent,
   overallCompletedPercent,
   planCourseMovePatch,
+  reconcileGeneratedTimelineTasks,
   requirementsForProfile,
   schoolYearForGrade,
   selectedPlanGrades,
@@ -400,6 +402,48 @@ describe("GPA and workload calculations", () => {
     expect(workload.collegeWeeklyHours).toBe(9);
     expect(workload.demandingCourseCount).toBe(1);
   });
+
+  it("excludes past experiences from the current weekly workload", () => {
+    const activities: Activity[] = [
+      {
+        id: "current-activity",
+        user_id: profile.id,
+        name: "Robotics",
+        kind: "club",
+        role: null,
+        weekly_hours: 4,
+        start_grade: 10,
+        end_grade: 10,
+        notes: null,
+        organization: null,
+        weeks_per_year: 20,
+        impact: null,
+        description: null,
+        is_active: true
+      },
+      {
+        id: "past-activity",
+        user_id: profile.id,
+        name: "Past job",
+        kind: "work",
+        role: null,
+        weekly_hours: 12,
+        start_grade: 9,
+        end_grade: 9,
+        notes: null,
+        organization: null,
+        weeks_per_year: 12,
+        impact: null,
+        description: null,
+        is_active: false
+      }
+    ];
+
+    const workload = calculateWorkload(profile, [], [], activities);
+
+    expect(workload.weeklyActivityHours).toBe(4);
+    expect(workload.knownWeeklyHours).toBe(4);
+  });
 });
 
 describe("profile-driven planning", () => {
@@ -534,16 +578,60 @@ describe("planning and simulation", () => {
     expect(tasks.some((task) => task.category === "summer")).toBe(true);
   });
 
+  it("reconciles generated next steps with the current deterministic set", () => {
+    const task = (overrides: Partial<TimelineTask>): TimelineTask => ({
+      id: "task-default",
+      user_id: profile.id,
+      plan_version_id: "version-1",
+      title: "Manual step",
+      category: "admin",
+      due_date: null,
+      due_label: null,
+      is_completed: false,
+      is_generated: false,
+      explanation: null,
+      ...overrides
+    });
+    const saved = [
+      task({ id: "manual", title: "Ask my counselor", is_generated: false }),
+      task({ id: "obsolete", title: "Choose a course for English", is_generated: true }),
+      task({ id: "retained", title: "Plan one restorative summer goal", is_generated: true, due_label: "Old timing" }),
+      task({ id: "duplicate", title: "Plan one restorative summer goal", is_generated: true })
+    ];
+    const desired = [
+      {
+        title: "Plan one restorative summer goal",
+        category: "summer" as const,
+        due_label: "Before summer",
+        explanation: "Balance the plan."
+      },
+      {
+        title: "Review senior-year rigor with a counselor",
+        category: "college" as const,
+        due_label: "Before registration",
+        explanation: "Verify the course sequence."
+      }
+    ];
+
+    const result = reconcileGeneratedTimelineTasks(saved, desired);
+
+    expect(result.obsoleteIds).toEqual(["obsolete", "duplicate"]);
+    expect(result.visibleTasks.map((item) => item.id)).toEqual(["manual", "retained"]);
+    expect(result.updateTasks).toEqual([{
+      id: "retained",
+      patch: { category: "summer", due_label: "Before summer", explanation: "Balance the plan." }
+    }]);
+    expect(result.insertTasks.map((item) => item.title)).toEqual(["Review senior-year rigor with a counselor"]);
+  });
+
   it("keeps simulation changes bounded and exposes risks", () => {
     const progress = calculateRequirementProgress([englishRequirement], [planCourse()], [verifiedMapping]);
     const gpa = calculateGpa([planCourse()]);
     const workload = calculateWorkload(profile, [planCourse({ status: "current" })], [course()], []);
     const result = simulatePlan(
       {
-        majorDirection: "stem",
-        pathIntensity: "competitive",
-        courseStyle: "more_honors",
-        activityLoad: "higher"
+        collegeUnits: 3,
+        activityHoursChange: 4
       },
       { ...profile, stress_level: 5 },
       progress,
@@ -552,10 +640,51 @@ describe("planning and simulation", () => {
     );
 
     expect(result.simulated.projectedWeightedGpa).toBe(4);
-    expect(result.risks).toContain("No GPA change is calculated until a specific course and grade are added.");
+    expect(result.risks).toContain("The estimate uses three weekly student-work hours per college unit. Verify the actual course schedule and your own study needs.");
     expect(result.simulated.stressLevel).toBe(5);
     expect(result.simulated.activityHours).toBe(4);
+    expect(result.simulated.demandingCourseCount).toBe(workload.demandingCourseCount);
     expect(result.risks.length).toBeGreaterThan(0);
+  });
+
+  it("cannot remove more activity time than the current week contains", () => {
+    const progress = calculateRequirementProgress([englishRequirement], [planCourse()], [verifiedMapping]);
+    const gpa = calculateGpa([planCourse()]);
+    const activity: Activity = {
+      id: "activity-1",
+      user_id: profile.id,
+      name: "Club",
+      kind: "club",
+      role: null,
+      weekly_hours: 2,
+      start_grade: 10,
+      end_grade: 10,
+      notes: null,
+      organization: null,
+      weeks_per_year: 20,
+      impact: null,
+      description: null,
+      is_active: true
+    };
+    const workload = calculateWorkload(
+      profile,
+      [planCourse({ status: "current", college_units: 3, smccd_course_id: "CSM:CIS 117" })],
+      [],
+      [activity]
+    );
+
+    const result = simulatePlan(
+      { collegeUnits: 0, activityHoursChange: -20 },
+      profile,
+      progress,
+      gpa,
+      workload
+    );
+
+    expect(result.current.workloadScore).toBe(11);
+    expect(result.simulated.workloadScore).toBe(9);
+    expect(result.simulated.activityHours).toBe(0);
+    expect(result.risks).toContain("Only 2 recorded activity hours can be removed from the current week.");
   });
 });
 

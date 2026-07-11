@@ -29,7 +29,7 @@ CODEX_MODEL=gpt-5.6-luna
 CODEX_TIMEOUT_MS=9000
 ```
 
-Never expose an AI credential through a `PUBLIC_` variable. A production host needs `OPENAI_API_KEY` or `CODEX_API_KEY`; local development may use an authenticated Codex installation. The current runtime requests `low` reasoning, which Codex surfaces describe as Light.
+Never expose an AI credential through a `PUBLIC_` variable. A production host needs `OPENAI_API_KEY` or `CODEX_API_KEY`; local development may use an authenticated Codex installation. Local-login fallback is blocked in production unless `CODEX_ALLOW_LOCAL_AUTH=true` is deliberately set. The current runtime requests `low` reasoning, which Codex surfaces describe as Light.
 
 ```sh
 supabase login
@@ -44,16 +44,12 @@ New accounts are auto-confirmed in the linked MVP project because custom SMTP is
 ## Verification
 
 ```sh
-pnpm lint
-pnpm typecheck
-pnpm test
-pnpm test:e2e
-pnpm build
-pnpm smccd:validate
-supabase db lint --linked
+pnpm verify:fast       # implementation loop
+pnpm verify:milestone  # meaningful Git milestone
+pnpm verify:release    # release candidate
 ```
 
-See [TEST_CHECKLIST.md](./TEST_CHECKLIST.md) for release gates and [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for the current evidence and gaps.
+Specialized SMCCD, theme, browser, and linked Supabase checks run only when that system changes or for a release. See [TEST_CHECKLIST.md](./TEST_CHECKLIST.md) for the trigger matrix and [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for current evidence and gaps.
 
 ## Data refreshes
 
@@ -78,21 +74,22 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 
 - `src/components/OnboardingFlow.tsx`: guided student and tracker setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
-- `src/components/CodexReviewPanel.tsx`: streamed, inspectable Codex review timeline and structured result.
+- `src/components/student-tools/`: lazy-loaded, single-purpose Experiences, Next steps, Load check, and Planning preferences views.
+- `src/components/CodexReviewPanel.tsx`: concise review result plus the complete sanitized SDK lifecycle, input, usage, and capability record.
 - `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
-- `src/lib/planning.ts`: deterministic graduation, GPA, workload, timeline, and simulation logic.
+- `src/lib/planning.ts`: deterministic graduation, GPA, workload, next-step, and load-check logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
 - `src/lib/prerequisites/`: exact prerequisite parsing, evaluation, and audits.
-- `src/pages/api/ai/` and `src/server/codex.ts`: authenticated, server-only Codex boundaries.
+- `src/pages/api/ai/`, `src/server/codex.ts`, and `src/server/codex-events.ts`: authenticated runtime, isolation, streaming, and reusable event sanitization.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
 
 ## Decision rules
 
 - Text-layer PDF extraction, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic.
-- Codex is used only after an explicit transparent-review action, for unstructured policy review, or for scanned transcripts without a usable text layer. Reviews expose their input, lifecycle, safe reasoning summaries, tools/files, output, usage, and limits and never mutate the plan.
+- Codex is used only after an explicit transparent-review action, for unstructured policy review, or for scanned transcripts without a usable text layer. Every Codex path returns an inspectable sanitized SDK lifecycle, safe reasoning summaries when emitted, tool/file payloads if emitted, disabled capabilities, output, usage, and limits. Student-review runtimes are isolated, retain no local Codex CLI session history, and never mutate the plan. The selected snapshot is sent to OpenAI, whose provider-side handling follows the configured account.
 - `P` earns credit but does not enter GPA. Quarter-coded pass/fail rows are intersession records.
 - `A+`, `A`, and `A-` use the same four-point band while preserving the exact mark.
 - A d.tech `*` means UC A-G approval, not Honors. d.tech weighting requires reviewed Honors evidence; every SMCCD course is weighted.

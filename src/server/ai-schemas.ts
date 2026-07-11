@@ -173,20 +173,19 @@ export const parsedTranscriptJsonSchema = {
 } as const;
 
 export const planningReviewSchema = z.object({
-  summary: z.string().min(1).max(1400),
-  findings: z.array(z.object({
-    title: z.string().min(1).max(140),
-    detail: z.string().min(1).max(700),
-    priority: z.enum(["attention", "consider", "clear"]),
-    evidence: z.string().min(1).max(500)
-  })).max(8),
-  proposed_actions: z.array(z.object({
+  answer: z.string().min(1).max(420),
+  observations: z.array(z.object({
+    label: z.string().min(1).max(90),
+    detail: z.string().min(1).max(260),
+    kind: z.enum(["attention", "consider", "clear"]),
+    evidence: z.string().min(1).max(220)
+  })).max(3),
+  next_action: z.object({
     label: z.string().min(1).max(120),
     destination: z.enum(["courses", "graduation", "gpa", "activities", "timeline", "simulator", "profile"]),
-    why: z.string().min(1).max(400)
-  })).max(6),
-  questions: z.array(z.string().max(300)).max(6),
-  limitations: z.array(z.string().max(400)).max(6)
+    why: z.string().min(1).max(240)
+  }).nullable(),
+  verification_note: z.string().min(1).max(300)
 });
 
 export type PlanningReviewResult = z.infer<typeof planningReviewSchema>;
@@ -194,26 +193,26 @@ export type PlanningReviewResult = z.infer<typeof planningReviewSchema>;
 export const planningReviewJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "findings", "proposed_actions", "questions", "limitations"],
+  required: ["answer", "observations", "next_action", "verification_note"],
   properties: {
-    summary: { type: "string" },
-    findings: {
+    answer: { type: "string" },
+    observations: {
       type: "array",
+      maxItems: 3,
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "detail", "priority", "evidence"],
+        required: ["label", "detail", "kind", "evidence"],
         properties: {
-          title: { type: "string" },
+          label: { type: "string" },
           detail: { type: "string" },
-          priority: { type: "string", enum: ["attention", "consider", "clear"] },
+          kind: { type: "string", enum: ["attention", "consider", "clear"] },
           evidence: { type: "string" }
         }
       }
     },
-    proposed_actions: {
-      type: "array",
-      items: {
+    next_action: {
+      anyOf: [{ type: "null" }, {
         type: "object",
         additionalProperties: false,
         required: ["label", "destination", "why"],
@@ -222,9 +221,8 @@ export const planningReviewJsonSchema = {
           destination: { type: "string", enum: ["courses", "graduation", "gpa", "activities", "timeline", "simulator", "profile"] },
           why: { type: "string" }
         }
-      }
+      }]
     },
-    questions: { type: "array", items: { type: "string" } },
-    limitations: { type: "array", items: { type: "string" } }
+    verification_note: { type: "string" }
   }
 } as const;

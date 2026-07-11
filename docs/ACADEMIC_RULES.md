@@ -59,7 +59,7 @@ Conservative policies:
 - Directional d.tech-to-SMCCD equivalencies are not reversed.
 - Placement, program admission, licensing, tests, work experience, portfolios, and malformed source clauses remain review items.
 
-Catalog details show source wording, matched evidence, missing/out-of-order requirements, and questions. Timeline links unresolved planned courses back to the relevant catalog record.
+Catalog details show source wording, matched evidence, missing/out-of-order requirements, and questions. Next steps links unresolved planned courses back to the relevant catalog record.
 
 ## SMCCD curriculum and degree evidence
 
