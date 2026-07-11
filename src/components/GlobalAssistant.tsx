@@ -3,6 +3,8 @@ import {
   CaretDownIcon as CaretDown,
   CheckCircleIcon as CheckCircle,
   ClockIcon as Clock,
+  CpuIcon as Cpu,
+  GearSixIcon as GearSix,
   PaperPlaneRightIcon as PaperPlaneRight,
   PlusIcon as Plus,
   SparkleIcon as Sparkle,
@@ -14,6 +16,8 @@ import type { Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
+import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
+import type { AiModel } from "@/lib/ai-preferences";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import styles from "./GlobalAssistant.module.css";
 
@@ -21,8 +25,15 @@ interface GlobalAssistantProps {
   session: Session;
   open: boolean;
   pageContext: Record<string, unknown>;
+  preferences: {
+    enabled: boolean;
+    model: AiModel;
+    approvedAt: string | null;
+    testedAt: string | null;
+  };
   onClose: () => void;
   onDataChanged: () => void | Promise<void>;
+  onPreferencesChanged: () => void | Promise<void>;
 }
 
 interface ConversationPayload {
@@ -58,8 +69,7 @@ function contextSuggestions(context: Record<string, unknown>) {
     activities: ["Where is my experience record incomplete?", "How many current activity hours are recorded?", "Help me make one experience more specific."],
     timeline: ["What is my most important next step?", "Check whether any steps are out of order.", "Add a next step for me."],
     simulator: ["Explain the current load-check assumptions.", "Would one SMCCD course fit my saved limit?", "What information is missing from this load check?"],
-    profile: ["What courses match my saved interests?", "Help me test one career direction.", "Which planning preference is still unclear?"],
-    ai_status: ["What student data can you read?", "Which changes require my confirmation?", "Run a simple connection check."]
+    profile: ["What courses match my saved interests?", "Help me test one career direction.", "Which planning preference is still unclear?"]
   } as Record<string, string[]>)[view] ?? ["What should I focus on next?", "Check my current plan.", "What can you help me change?"];
 }
 
@@ -100,12 +110,25 @@ const TOOL_LABELS: Record<string, string> = {
   get_graduation_progress: "Graduation progress",
   get_next_steps: "Next steps",
   get_experiences: "Experiences",
+  get_student_profile: "Planning preferences",
+  get_transcript_sources: "Transcript sources",
+  get_college_goal: "College goal",
+  run_load_check: "Load check",
   add_dtech_course: "Add d.tech course",
   add_smccd_course: "Add college course",
   move_plan_course: "Move course",
   remove_plan_course: "Remove course",
+  update_plan_course: "Update course",
+  update_student_profile: "Update planning preferences",
+  add_experience: "Add experience",
+  update_experience: "Update experience",
+  remove_experience: "Remove experience",
   add_next_step: "Add next step",
-  complete_next_step: "Complete next step"
+  complete_next_step: "Complete next step",
+  update_next_step: "Update next step",
+  remove_next_step: "Remove next step",
+  set_college_goal: "Set college goal",
+  clear_college_goal: "Clear college goal"
 };
 
 function friendlyToolLabel(name: string) {
@@ -161,6 +184,16 @@ function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boole
 }
 
 function activityItem(event: LiveActivity) {
+  if (event.type === "retrieval.completed") {
+    const sources = Array.isArray(event.sources) ? event.sources as Array<Record<string, unknown>> : [];
+    return {
+      kind: "retrieval",
+      label: "App guidance",
+      detail: sources.length
+        ? sources.map((source) => String(source.title ?? "Pilot guidance")).join(", ")
+        : String(event.summary ?? "Used Pilot Princess guidance")
+    };
+  }
   const toolCall = event.toolCall as Record<string, unknown> | undefined;
   if (toolCall) {
     const status = String(toolCall.status ?? "running");
@@ -210,7 +243,7 @@ function TurnActivity({ events, tools, latest, running, busyTool, onDecision }: 
   );
 }
 
-export default function GlobalAssistant({ session, open, pageContext, onClose, onDataChanged }: GlobalAssistantProps) {
+export default function GlobalAssistant({ session, open, pageContext, preferences, onClose, onDataChanged, onPreferencesChanged }: GlobalAssistantProps) {
   const [data, setData] = useState<ConversationPayload>(EMPTY_PAYLOAD);
   const [liveEvents, setLiveEvents] = useState<LiveActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -219,6 +252,14 @@ export default function GlobalAssistant({ session, open, pageContext, onClose, o
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyTool, setBusyTool] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [setup, setSetup] = useState<CodexSetupValue>({
+    enabled: preferences.enabled,
+    model: preferences.model,
+    approved: Boolean(preferences.approvedAt),
+    testedAt: preferences.testedAt
+  });
   const abortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -247,14 +288,14 @@ export default function GlobalAssistant({ session, open, pageContext, onClose, o
   }, [authorizedFetch]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !preferences.enabled || settingsOpen) return;
     const loadTimer = window.setTimeout(() => void loadConversation(data.activeConversation?.id), 0);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 180);
     return () => {
       window.clearTimeout(loadTimer);
       window.clearTimeout(focusTimer);
     };
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, preferences.enabled, settingsOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
@@ -360,6 +401,26 @@ export default function GlobalAssistant({ session, open, pageContext, onClose, o
     }
   }
 
+  async function savePreferences() {
+    setSavingPreferences(true);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/ai/preferences", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(setup)
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Pilot settings could not be saved.");
+      await onPreferencesChanged();
+      if (setup.enabled) setSettingsOpen(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Pilot settings could not be saved.");
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
+
   const activeId = data.activeConversation?.id ?? null;
   const events = useMemo(() => [
     ...data.events.map((event) => event.payload as LiveActivity),
@@ -384,9 +445,9 @@ export default function GlobalAssistant({ session, open, pageContext, onClose, o
   return (
     <>
       <button className={styles.backdrop} type="button" onClick={() => !running && onClose()} aria-label="Close Pilot Assistant" />
-      <aside className={styles.drawer} role="dialog" aria-modal="true" aria-label="Pilot Assistant">
+      <aside className={`${styles.drawer} ${settingsOpen ? styles.settingsDrawer : ""}`} role="dialog" aria-modal="false" aria-label="Pilot Assistant">
         <header className={styles.header}>
-          <div className={styles.conversationPicker}>
+          {settingsOpen ? <div className={styles.settingsTitle}><Cpu size={17} /><span>Pilot setup</span></div> : <div className={styles.conversationPicker}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
               <Sparkle size={17} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={13} />
             </button>
@@ -394,13 +455,20 @@ export default function GlobalAssistant({ session, open, pageContext, onClose, o
               <button type="button" onClick={() => void createConversation()}><Plus size={14} /> New conversation</button>
               {data.conversations.map((conversation) => <button type="button" className={conversation.id === activeId ? styles.activeConversation : ""} key={conversation.id} onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}>{conversation.title}</button>)}
             </div>}
-          </div>
+          </div>}
           <div className={styles.headerActions}>
-            <button type="button" onClick={() => void createConversation()} aria-label="New conversation"><Plus size={17} /></button>
+            {!settingsOpen && <button type="button" onClick={() => void createConversation()} aria-label="New conversation"><Plus size={17} /></button>}
+            {preferences.enabled && <button type="button" onClick={() => setSettingsOpen((current) => !current)} aria-label={settingsOpen ? "Return to conversation" : "Pilot settings"}>{settingsOpen ? <Sparkle size={17} /> : <GearSix size={17} />}</button>}
             <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant"><X size={18} /></button>
           </div>
         </header>
 
+        {settingsOpen ? <div className={styles.setupPane}>
+          <div className={styles.setupIntro}><h2>{preferences.enabled ? "Pilot connection" : "Connect Pilot"}</h2><p>Choose one model for assistant conversations and optional image-only transcript interpretation.</p></div>
+          <CodexConnectionSetup compact session={session} value={setup} onChange={setSetup} />
+          {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
+          <button className={styles.saveSetup} type="button" onClick={() => void savePreferences()} disabled={savingPreferences || (setup.enabled && (!setup.approved || !setup.testedAt))}>{savingPreferences ? "Saving" : setup.enabled ? "Save connection" : "Keep AI off"}</button>
+        </div> : <>
         <div className={styles.timeline} ref={scrollRef}>
           {loading && !data.messages.length ? <div className={styles.loadingHistory}><ShinyText text="Opening conversation" speed={1.8} /></div> : null}
           {!loading && !data.messages.length && !running ? <div className={styles.empty}>
@@ -431,6 +499,7 @@ export default function GlobalAssistant({ session, open, pageContext, onClose, o
           </div>
           <small>{running ? "Stop the current turn at any time." : "Read tools run automatically. Every change needs your confirmation."}</small>
         </form>
+        </>}
       </aside>
     </>
   );

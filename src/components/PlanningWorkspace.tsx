@@ -6,7 +6,6 @@ import {
   CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
   CheckIcon as Check,
-  CpuIcon as Cpu,
   FileArrowUpIcon as FileArrowUp,
   FlagIcon as Flag,
   FloppyDiskIcon as FloppyDisk,
@@ -100,7 +99,6 @@ import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
-const AiStatusPanel = lazy(() => import("@/components/AiStatusPanel"));
 const GlobalAssistant = lazy(() => import("@/components/GlobalAssistant"));
 const GraduationWorkspace = lazy(() => import("@/components/GraduationWorkspace"));
 const SmccdPlanner = lazy(() => import("@/components/SmccdPlanner"));
@@ -118,8 +116,7 @@ type ViewId =
   | "gpa"
   | "activities"
   | "timeline"
-  | "simulator"
-  | "ai_status";
+  | "simulator";
 
 const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
@@ -133,8 +130,7 @@ const SECONDARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "activities", label: "Experiences", icon: Briefcase },
   { id: "timeline", label: "Next steps", icon: ListChecks },
   { id: "simulator", label: "Load check", icon: Scales },
-  { id: "profile", label: "Planning preferences", icon: UserCircle },
-  { id: "ai_status", label: "AI connection", icon: Cpu }
+  { id: "profile", label: "Planning preferences", icon: UserCircle }
 ];
 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS];
@@ -410,7 +406,12 @@ export default function PlanningWorkspace() {
         ...rawProfile,
         career_interest_areas: rawProfile.career_interest_areas ?? [],
         work_values: rawProfile.work_values ?? [],
-        exploration_questions: rawProfile.exploration_questions ?? []
+        exploration_questions: rawProfile.exploration_questions ?? [],
+        ai_enabled: rawProfile.ai_enabled ?? false,
+        ai_model: rawProfile.ai_model ?? "gpt-5.6-luna",
+        ai_reasoning_effort: rawProfile.ai_reasoning_effort ?? "low",
+        ai_connection_approved_at: rawProfile.ai_connection_approved_at ?? null,
+        ai_setup_tested_at: rawProfile.ai_setup_tested_at ?? null
       };
       setSchool(schoolResult.data as unknown as School);
       setProfile(loadedProfile);
@@ -1400,7 +1401,7 @@ export default function PlanningWorkspace() {
             <summary>Paste transcript text instead</summary>
             <label className="form-field"><span>Transcript text</span><textarea value={sourceForm.rawText} onChange={(event) => setSourceForm((current) => ({ ...current, rawText: event.target.value }))} placeholder="Paste completed course rows, grades, credits, and school years." /></label>
           </details>
-          <p className="transcript-parser-note">Readable document text is parsed locally. Codex is only used for image-only files. <button type="button" onClick={() => navigate("ai_status")}>Check AI connection</button></p>
+          <p className="transcript-parser-note">Readable document text is parsed locally. Codex is only used for image-only files after you approve the connection. <button type="button" onClick={() => setAssistantOpen(true)}>Open Pilot setup</button></p>
         </form>
 
         {latestTranscript && <div className={`transcript-source-status ${latestTranscript.error_message ? "error" : ""}`}>
@@ -1663,10 +1664,6 @@ export default function PlanningWorkspace() {
     </div>;
   }
 
-  function renderAiStatus() {
-    return session ? <AiStatusPanel session={session} onOpenAssistant={() => setAssistantOpen(true)} /> : null;
-  }
-
   function renderActivities() {
     if (!session || !profile) return null;
     return (
@@ -1766,7 +1763,6 @@ export default function PlanningWorkspace() {
       case "activities": return renderActivities();
       case "timeline": return renderTimeline();
       case "simulator": return renderSimulator();
-      case "ai_status": return renderAiStatus();
     }
   }
 
@@ -1780,7 +1776,7 @@ export default function PlanningWorkspace() {
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${assistantOpen ? "assistant-docked" : ""}`}>
       <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
@@ -1792,7 +1788,6 @@ export default function PlanningWorkspace() {
             const badge = item.id === "sources" && pendingReviewCount > 0 ? pendingReviewCount : null;
             return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span>{badge && <b>{badge}</b>}</button>;
           })}
-          <button className={`sidebar-assistant ${assistantOpen ? "active" : ""}`} onClick={() => { setAssistantOpen(true); setMobileNavOpen(false); }} type="button"><Sparkle size={18} weight={assistantOpen ? "fill" : "duotone"} aria-hidden /><span>Ask Pilot</span></button>
           <button className={`sidebar-more-toggle ${moreNavOpen ? "open" : ""}`} onClick={() => setMoreNavOpen((current) => !current)} type="button" aria-expanded={moreNavOpen}><CaretDown size={17} /><span>More tools</span></button>
           {moreNavOpen && <div className="sidebar-secondary">{SECONDARY_NAV_ITEMS.map((item) => {
             const NavIcon = item.icon;
@@ -1837,9 +1832,30 @@ export default function PlanningWorkspace() {
       {mobileNavOpen && <button className="nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation overlay" />}
       <main className="app-main">
         <div className="mobile-bar"><button className="icon-button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><AirplaneTilt size={20} /></button><span>{activeView?.label}</span><div className="mobile-bar-actions"><button className="icon-button" onClick={() => setAssistantOpen(true)} aria-label="Open Pilot Assistant"><Sparkle size={18} weight="duotone" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button></div></div>
+        <div className="app-toolbar"><button className={assistantOpen ? "active" : ""} type="button" onClick={() => setAssistantOpen((current) => !current)}><Sparkle size={17} weight={assistantOpen ? "fill" : "duotone"} /><span>{assistantOpen ? "Collapse Pilot" : profile.ai_enabled ? "Ask Pilot" : "Set up Pilot"}</span></button></div>
         <div className="app-content"><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></div>
       </main>
-      <Suspense fallback={null}><GlobalAssistant session={session} open={assistantOpen} pageContext={assistantPageContext} onClose={() => setAssistantOpen(false)} onDataChanged={loadWorkspace} /></Suspense>
+      <Suspense fallback={null}><GlobalAssistant
+        key={`${profile.ai_enabled}:${profile.ai_model}:${profile.ai_connection_approved_at ?? "off"}`}
+        session={session}
+        open={assistantOpen}
+        pageContext={assistantPageContext}
+        preferences={{ enabled: profile.ai_enabled, model: profile.ai_model, approvedAt: profile.ai_connection_approved_at, testedAt: profile.ai_setup_tested_at }}
+        onClose={() => setAssistantOpen(false)}
+        onDataChanged={loadWorkspace}
+        onPreferencesChanged={async () => {
+          const { data, error } = await supabase.from("student_profiles").select("ai_enabled, ai_model, ai_reasoning_effort, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
+          if (error) throw error;
+          setProfile((current) => current ? {
+            ...current,
+            ai_enabled: data.ai_enabled,
+            ai_model: data.ai_model as StudentProfile["ai_model"],
+            ai_reasoning_effort: data.ai_reasoning_effort as "low",
+            ai_connection_approved_at: data.ai_connection_approved_at,
+            ai_setup_tested_at: data.ai_setup_tested_at
+          } : current);
+        }}
+      /></Suspense>
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}{toast}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
     </div>

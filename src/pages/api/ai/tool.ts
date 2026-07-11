@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { assistantToolLabel, executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
+import { loadUserAiPreferences } from "@/server/ai-preferences";
 
 export const prerender = false;
 
@@ -43,6 +44,9 @@ export const POST: APIRoute = async ({ request }) => {
     });
     return new Response(JSON.stringify({ toolCall: data, result }), { headers: { "content-type": "application/json" } });
   }
+
+  const preferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
+  if (!preferences.enabled || !preferences.approvedAt) return jsonError("Reconnect Pilot Assistant before applying this change.", 403);
 
   const validated = parseAssistantToolCall(toolCall.tool_name, toolCall.arguments);
   if (!validated.mutatesData) return jsonError("This tool does not require confirmation.", 400);

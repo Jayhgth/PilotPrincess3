@@ -6,7 +6,7 @@ Pilot Princess uses Codex as an optional conversational layer over deterministic
 
 ## Student experience
 
-Pilot Assistant is one global, persistent drawer available from the authenticated workspace. It follows the useful parts of t3code and coding-agent interfaces without copying developer telemetry into a student product:
+Pilot Assistant is one global, persistent rail available from the authenticated workspace after opt-in setup. It follows the useful parts of t3code and coding-agent interfaces without copying developer telemetry into a student product:
 
 - student messages appear as compact bubbles and assistant answers as readable conversation text;
 - the current turn streams visible progress;
@@ -14,6 +14,8 @@ Pilot Assistant is one global, persistent drawer available from the authenticate
 - completed work folds to keep the conversation calm;
 - conversations reload from Supabase and can be continued from any workspace page; and
 - page context helps answer the current question but never silently changes saved records.
+
+Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection settings remain available from the global rail.
 
 Raw JSON, validation internals, event names, model protocol fields, and hidden chain-of-thought are not the primary interface. Errors are translated into a useful student-facing message. Sanitized technical evidence remains available to developers through server logs and tests rather than being presented as the answer.
 
@@ -25,15 +27,22 @@ Read tools may run automatically after a student sends a message:
 - Done, In progress, and Planned courses;
 - eligible d.tech and SMCCD catalog search;
 - graduation evidence;
-- next steps; and
-- experiences.
+- next steps;
+- experiences;
+- planning preferences and capacity inputs;
+- transcript-source labels and review state;
+- the selected associate-degree goal; and
+- a deterministic workload scenario.
 
 Write tools may prepare these changes:
 
 - add a d.tech or SMCCD course;
 - move or remove an unlocked plan course;
-- add a next step; and
-- complete a next step.
+- add or complete a next step;
+- edit an unlocked plan course or planning preferences;
+- add, edit, or remove an experience;
+- edit or remove a student-owned next step; and
+- select or clear an associate-degree goal.
 
 Every write is a proposal first. The interface shows the tool's purpose and exact arguments in an approval card. Nothing changes until the student chooses **Apply change**. Rejection is recorded as not applied. Confirmation executes the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; the model cannot bypass them.
 
@@ -49,6 +58,12 @@ Supabase stores four RLS-protected records per user:
 - `ai_tool_calls`: validated arguments, explanation, approval state, and bounded result.
 
 The browser receives newline-delimited activity while a turn runs, then reloads the canonical persisted conversation. Tool events already represented by a persisted tool call are de-duplicated. A turn identifier keeps messages, events, and approvals grouped after reload.
+
+## Retrieval boundary
+
+`ai_knowledge_chunks` stores concise, source-controlled guidance about Pilot's role, page ownership, academic evidence rules, approval behavior, and answer style. Each turn uses tagged Postgres full-text search to select a bounded set of relevant chunks. The assistant timeline shows the retrieved chunk titles as **App guidance** so the student can understand which product rules shaped the answer.
+
+Student records are not copied into the retrieval corpus. Current courses, profile fields, graduation evidence, transcript-source state, experiences, tasks, and college goals are read through allowlisted RLS-protected tools. This keeps static role guidance separate from live private data and prevents stale embeddings from becoming academic evidence.
 
 ## t3code and SDK boundary
 
@@ -70,10 +85,10 @@ Selected conversation history, page context, and tool results are sent to OpenAI
 
 ## Review gate
 
-- AI starts only after a student message, except an explicitly requested image-only transcript interpretation.
+- AI starts only after explicit connection approval, a successful model test, and a student message, except an explicitly requested image-only transcript interpretation by an already-connected student.
 - A read tool may run automatically; a write never runs without exact confirmation.
 - Deterministic results stay available and clearly labeled.
 - Assistant failure cannot corrupt or block deterministic planning.
 - Reasoning and tool labels must be human-readable; raw transport metadata is not a substitute for transparency.
 - A live read must persist across reload, and a rejected write proposal must produce no product mutation.
-- The AI connection page remains the concise capability and health check; the global drawer owns conversation history.
+- Onboarding and rail settings own connection approval, model choice, and health testing; the global rail owns conversation history.

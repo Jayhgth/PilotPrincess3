@@ -3,6 +3,7 @@ import {
   ArrowRightIcon as ArrowRight,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
+  CpuIcon as Cpu,
   FileTextIcon as FileText,
   GraduationCapIcon as GraduationCap,
   PathIcon as Path,
@@ -34,15 +35,17 @@ import {
   type TranscriptCoursePayload
 } from "@/lib/transcript";
 import BrandMark from "@/components/BrandMark";
+import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 
-type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "transcript";
+type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "assistant" | "transcript";
 
 const STAGES: Array<{ id: OnboardingStage; label: string }> = [
   { id: "student", label: "About you" },
   { id: "priorities", label: "Priorities" },
   { id: "plan", label: "Plan window" },
   { id: "requirements", label: "Requirement tracker" },
+  { id: "assistant", label: "Pilot Assistant" },
   { id: "transcript", label: "Transcript" }
 ];
 
@@ -120,6 +123,12 @@ export default function OnboardingFlow({
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
   const [transcriptSummary, setTranscriptSummary] = useState<string | null>(null);
   const [transcriptAiTransparency, setTranscriptAiTransparency] = useState<TranscriptAiTransparency | null>(null);
+  const [aiSetup, setAiSetup] = useState<CodexSetupValue>({
+    enabled: initialProfile.onboarding_complete ? initialProfile.ai_enabled : true,
+    model: initialProfile.ai_model ?? "gpt-5.6-luna",
+    approved: Boolean(initialProfile.ai_connection_approved_at),
+    testedAt: initialProfile.ai_setup_tested_at
+  });
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,11 +168,53 @@ export default function OnboardingFlow({
       setError("Choose at least one requirement area to track.");
       return false;
     }
+    if (stage === "assistant" && aiSetup.enabled && !aiSetup.approved) {
+      setError("Approve the Codex connection before continuing, or choose to continue without AI.");
+      return false;
+    }
+    if (stage === "assistant" && aiSetup.enabled && !aiSetup.testedAt) {
+      setError("Test the selected model before continuing.");
+      return false;
+    }
     return true;
   }
 
-  function nextStage() {
+  async function saveAiPreferences() {
+    const payload = await authorizedPost("/api/ai/preferences", {
+      enabled: aiSetup.enabled,
+      model: aiSetup.model,
+      approved: aiSetup.approved,
+      testedAt: aiSetup.testedAt
+    });
+    const preferences = payload.preferences as {
+      enabled: boolean;
+      model: StudentProfile["ai_model"];
+      approvedAt: string | null;
+      testedAt: string | null;
+    };
+    setProfile((current) => ({
+      ...current,
+      ai_enabled: preferences.enabled,
+      ai_model: preferences.model,
+      ai_reasoning_effort: "low",
+      ai_connection_approved_at: preferences.approvedAt,
+      ai_setup_tested_at: preferences.testedAt
+    }));
+  }
+
+  async function nextStage() {
     if (!validateStage()) return;
+    if (stage === "assistant") {
+      setBusyLabel(aiSetup.enabled ? "Saving Pilot connection" : "Saving AI preference");
+      try {
+        await saveAiPreferences();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "The AI preference could not be saved.");
+        return;
+      } finally {
+        setBusyLabel(null);
+      }
+    }
     const next = STAGES[stageIndex + 1];
     if (next) setStage(next.id);
   }
@@ -336,6 +387,11 @@ export default function OnboardingFlow({
         school_id: school.id,
         school_confirmed: true,
         onboarding_complete: true,
+        ai_enabled: aiSetup.enabled,
+        ai_model: aiSetup.model,
+        ai_reasoning_effort: "low",
+        ai_connection_approved_at: aiSetup.enabled ? (profile.ai_connection_approved_at ?? new Date().toISOString()) : null,
+        ai_setup_tested_at: aiSetup.testedAt,
         plan_start_grade: currentGrade,
         plan_end_grade: planEndGrade,
         tracked_requirement_areas: profile.tracker_mode === "full"
@@ -356,6 +412,8 @@ export default function OnboardingFlow({
             plan_end_grade: planEndGrade,
             tracker_mode: completedProfile.tracker_mode,
             tracked_requirement_areas: completedProfile.tracked_requirement_areas,
+            ai_enabled: completedProfile.ai_enabled,
+            ai_model: completedProfile.ai_model,
             ...(isReplay ? {} : { transcript_courses_imported: candidates.length })
           }
         })
@@ -366,6 +424,8 @@ export default function OnboardingFlow({
         properties: {
           plan_years: planYears,
           tracker_mode: completedProfile.tracker_mode,
+          ai_enabled: completedProfile.ai_enabled,
+          ai_model: completedProfile.ai_model,
           transcript_courses_imported: candidates.length
         }
       });
@@ -382,7 +442,7 @@ export default function OnboardingFlow({
       <header className="onboarding-topbar">
         <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">
-          {isReplay && <span>Changes save only when you finish.</span>}
+          {isReplay && <span>Profile changes save at Finish. Pilot approval saves on its step.</span>}
           <button className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</button>
         </div>
       </header>
@@ -401,6 +461,7 @@ export default function OnboardingFlow({
             <strong>Grade {currentGrade} to {planEndGrade}</strong>
             <span>{planYears} school {planYears === 1 ? "year" : "years"}</span>
             <span>{selectedRequirementCount} requirement areas</span>
+            <span>{aiSetup.enabled ? (aiSetup.testedAt ? "Pilot connected" : "Pilot setup pending") : "Pilot off"}</span>
             <span>{isReplay ? `${completedCourseCount} saved courses kept` : `${selectedTranscriptIds.size} completed courses ready`}</span>
           </div>
         </aside>
@@ -459,6 +520,11 @@ export default function OnboardingFlow({
             {profile.tracker_mode === "selected" && <fieldset className="requirement-picker"><legend>Visible requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id} className={profile.tracked_requirement_areas.includes(requirement.area) ? "selected" : ""}><input type="checkbox" checked={profile.tracked_requirement_areas.includes(requirement.area)} onChange={() => toggleRequirement(requirement.area)} /><span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span></label>)}</fieldset>}
           </>}
 
+          {stage === "assistant" && <>
+            <header><Cpu size={25} weight="duotone" /><h1>Connect Pilot Assistant</h1><p>Choose the model, approve the data boundary, and verify the real server connection. This choice saves when you continue.</p></header>
+            <CodexConnectionSetup session={session} value={aiSetup} onChange={setAiSetup} />
+          </>}
+
           {stage === "transcript" && <>
             <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates your profile and planning preferences without changing saved courses." : "Upload a transcript or paste its text. Nothing counts until you review and import it."}</p></header>
             {isReplay ? <div className="onboarding-replay-summary">
@@ -496,7 +562,7 @@ export default function OnboardingFlow({
           <footer className="onboarding-actions">
             {stageIndex > 0 ? <button className="secondary-button" type="button" onClick={previousStage} disabled={Boolean(busyLabel)}><ArrowLeft size={17} /> Back</button> : <span />}
             {stage !== "transcript"
-              ? <button className="primary-button" type="button" onClick={nextStage}>Continue <ArrowRight size={17} /></button>
+              ? <button className="primary-button" type="button" onClick={() => void nextStage()} disabled={Boolean(busyLabel)}>Continue <ArrowRight size={17} /></button>
               : <button className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel ? (isReplay ? "Saving changes" : "Creating workspace") : isReplay ? "Save changes" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></button>}
           </footer>
         </section>

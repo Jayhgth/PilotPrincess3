@@ -4,6 +4,8 @@ import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import type { AiMessage } from "@/lib/models";
 import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat } from "@/server/codex";
 import { executeAssistantReadTool } from "@/server/ai-tools";
+import { assistantKnowledgePrompt, retrieveAssistantKnowledge } from "@/server/assistant-knowledge";
+import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 
 export const prerender = false;
@@ -22,6 +24,8 @@ export const POST: APIRoute = async ({ request }) => {
   if (!auth) return jsonError("Authentication required.", 401);
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid assistant request.", 400);
+  const preferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
+  if (!preferences.enabled || !preferences.approvedAt) return jsonError("Connect and approve Pilot Assistant before starting a conversation.", 403);
   const conversationResult = await auth.supabase.from("ai_conversations").select("*").eq("id", parsed.data.conversationId).eq("user_id", auth.user.id).single();
   if (conversationResult.error || !conversationResult.data) return jsonError("Conversation not found.", 404);
 
@@ -80,10 +84,17 @@ export const POST: APIRoute = async ({ request }) => {
       const startedAt = Date.now();
       record("turn.started", { turnId, capabilities: CODEX_RUNTIME_CAPABILITIES });
       try {
+        const knowledge = await retrieveAssistantKnowledge(auth.supabase, parsed.data.message, parsed.data.pageContext);
+        record("retrieval.completed", {
+          sources: knowledge.map((chunk) => ({ id: chunk.id, title: chunk.title, sourcePath: chunk.sourcePath })),
+          summary: `Used ${knowledge.length} Pilot Princess guidance ${knowledge.length === 1 ? "source" : "sources"}.`
+        });
         const result = await runAssistantChat({
           history,
           userMessage: parsed.data.message,
           pageContext: parsed.data.pageContext,
+          knowledge: assistantKnowledgePrompt(knowledge),
+          model: preferences.model,
           signal,
           executeReadTool: (name, argumentsValue) => executeAssistantReadTool(auth.supabase, auth.user.id, name, argumentsValue),
           onSdkEvent: (event, iteration) => {

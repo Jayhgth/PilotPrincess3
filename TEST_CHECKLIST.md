@@ -12,7 +12,7 @@ Use the smallest check that can catch a regression in the changed system:
 | --- | --- | --- |
 | Planning, transcript, GPA, prerequisite, or parser logic | Directly affected Vitest file | Full unit suite at a milestone |
 | React or Astro UI | Typecheck plus the affected browser state | Lint, typecheck, unit suite, build, and one representative user flow |
-| Codex prompt, tool, persistence, or stream | `tests/codex-boundaries.test.ts` plus the changed API/tool path | Milestone gate and one live read; add one rejected write proposal when mutation flow changes |
+| Codex consent, prompt, retrieval, tool, persistence, or stream | `tests/codex-boundaries.test.ts` plus the changed API/tool path | Milestone gate; verify the consent/test gate and one live read, then add one rejected write proposal when mutation flow changes |
 | Theme or semantic token | Affected light/dark pages | `pnpm colors:validate` and representative desktop/mobile review |
 | SMCCD source or generated artifact | Focused catalog tests | `pnpm smccd:validate` and regeneration check |
 | Migration, RLS, auth, or storage | Focused local test | Linked schema lint, migration-history check, dry-run push, and affected auth/RLS flow |
@@ -42,6 +42,8 @@ Before a production release, confirm all applicable items once:
 - [ ] Sign-up, sign-in, recovery, transcript import, course planning, graduation interpretation, and SMCCD discovery work on the deployed origin.
 - [ ] Representative authenticated desktop and 390px states pass in both themes with keyboard focus and no horizontal overflow.
 - [ ] A live assistant turn persists across reload, shows readable reasoning/tool activity, and answers from an allowlisted student-data read.
+- [ ] Codex remains unavailable until the student explicitly approves, successfully tests the selected model, and saves; declining AI leaves deterministic planning usable.
+- [ ] Retrieved app-guidance titles are readable, relevant to the active page, and do not replace live student-data reads.
 - [ ] A requested write shows exact arguments, does nothing when rejected, and revalidates normal product rules when confirmed.
 - [ ] Production SMTP, redirect allowlist, HTTPS, monitoring, backups, and retention are configured.
 - [ ] Automated accessibility, screen-reader review, and a task-based student usability study have been completed.

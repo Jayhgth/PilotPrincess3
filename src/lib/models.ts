@@ -41,6 +41,11 @@ export interface StudentProfile {
   weekly_commitment_limit: number | null;
   school_confirmed: boolean;
   onboarding_complete: boolean;
+  ai_enabled: boolean;
+  ai_model: "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4-mini";
+  ai_reasoning_effort: "low";
+  ai_connection_approved_at: string | null;
+  ai_setup_tested_at: string | null;
   plan_start_grade: GradeLevel | null;
   plan_end_grade: GradeLevel | null;
   tracker_mode: "full" | "selected";

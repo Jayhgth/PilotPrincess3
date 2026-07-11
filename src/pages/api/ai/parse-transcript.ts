@@ -16,6 +16,7 @@ import { codexTraceSummary } from "@/server/codex-events";
 import { extractSource } from "@/server/source-extraction";
 import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
 import { transcriptReviewRows } from "@/server/transcript-review";
+import { loadUserAiPreferences } from "@/server/ai-preferences";
 
 export const prerender = false;
 
@@ -38,6 +39,7 @@ export const POST: APIRoute = async ({ request }) => {
     .eq("document_type", "transcript")
     .single();
   if (sourceError || !source) return jsonError("Transcript source not found.", 404);
+  const aiPreferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
 
   const startedAt = Date.now();
   const scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-transcript-"));
@@ -101,6 +103,9 @@ export const POST: APIRoute = async ({ request }) => {
       parserLatencyMs = Date.now() - parserStartedAt;
       parserMethod = "deterministic_text";
     } else {
+      if (!aiPreferences.enabled || !aiPreferences.approvedAt) {
+        throw new Error("This transcript has no readable text layer. Connect Pilot Assistant before using image interpretation, or enter the courses manually.");
+      }
       const prompt = [
         "This transcript has no usable text layer and is provided as images. Extract only courses explicitly shown as completed or carrying a final grade.",
         "For every course, preserve the printed course name, institution, grade level, school year, term, final letter grade, high-school credits, college units, and weighting when present.",
@@ -118,6 +123,7 @@ export const POST: APIRoute = async ({ request }) => {
         schema: parsedTranscriptSchema,
         outputSchema: parsedTranscriptJsonSchema,
         workingDirectory: scratchDirectory,
+        model: aiPreferences.model,
         timeoutMs: 45000,
         signal: request.signal
       }, () => undefined);

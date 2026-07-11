@@ -8,6 +8,7 @@ import { parsedSourceJsonSchema, parsedSourceSchema, type ParsedSourceResult } f
 import { CODEX_RUNTIME_CAPABILITIES, runCodexStructuredStream } from "@/server/codex";
 import { codexTraceSummary } from "@/server/codex-events";
 import { extractSource } from "@/server/source-extraction";
+import { loadUserAiPreferences } from "@/server/ai-preferences";
 
 export const prerender = false;
 
@@ -63,6 +64,8 @@ export const POST: APIRoute = async ({ request }) => {
 
   const bodyResult = requestSchema.safeParse(await request.json().catch(() => null));
   if (!bodyResult.success) return jsonError("A valid sourceId is required.", 400);
+  const aiPreferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
+  if (!aiPreferences.enabled || !aiPreferences.approvedAt) return jsonError("Connect and approve Pilot Assistant before using semantic source review.", 403);
 
   const { data: source, error: sourceError } = await auth.supabase
     .from("official_sources")
@@ -137,6 +140,7 @@ export const POST: APIRoute = async ({ request }) => {
       schema: parsedSourceSchema,
       outputSchema: parsedSourceJsonSchema,
       workingDirectory: scratchDirectory,
+      model: aiPreferences.model,
       timeoutMs: 30000,
       signal: request.signal
     }, () => undefined);

@@ -25,11 +25,10 @@ Set browser-safe Supabase values in `.env`:
 ```env
 PUBLIC_SUPABASE_URL=https://zqkzgmwptdsaqbzrjngt.supabase.co
 PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
-CODEX_MODEL=gpt-5.6-luna
 CODEX_TIMEOUT_MS=9000
 ```
 
-Never expose an AI credential through a `PUBLIC_` variable. A production host needs `OPENAI_API_KEY` or `CODEX_API_KEY`; local development may use an authenticated Codex installation. Local-login fallback is blocked in production unless `CODEX_ALLOW_LOCAL_AUTH=true` is deliberately set. The current runtime requests `low` reasoning, which Codex surfaces describe as Light.
+Never expose an AI credential through a `PUBLIC_` variable. A production host needs `OPENAI_API_KEY` or `CODEX_API_KEY`; local development may use an authenticated Codex installation. Local-login fallback is blocked in production unless `CODEX_ALLOW_LOCAL_AUTH=true` is deliberately set. Students select an allowlisted model during onboarding; GPT-5.6 Luna with Light reasoning is recommended. `CODEX_MODEL` remains an optional server fallback for non-student calls.
 
 ```sh
 supabase login
@@ -72,24 +71,24 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 
 ## Architecture
 
-- `src/components/OnboardingFlow.tsx`: guided student and tracker setup.
+- `src/components/OnboardingFlow.tsx`: guided student, tracker, and optional Codex consent/setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
 - `src/components/student-tools/`: lazy-loaded, single-purpose Experiences, Next steps, Load check, and Planning preferences views.
-- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation drawer with readable reasoning summaries, student-data tool activity, and exact-change approvals.
+- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation rail with readable reasoning summaries, student-data tool activity, and exact-change approvals.
 - `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
 - `src/lib/planning.ts`: deterministic graduation, GPA, workload, next-step, and load-check logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
 - `src/lib/prerequisites/`: exact prerequisite parsing, evaluation, and audits.
-- `src/pages/api/ai/`, `src/server/codex.ts`, and `src/server/ai-tools.ts`: authenticated conversations, isolated Codex turns, student-data tools, streaming, and confirmed mutations.
+- `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/assistant-knowledge.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, retrieved product guidance, isolated Codex turns, student-data tools, streaming, and confirmed mutations.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
 
 ## Decision rules
 
 - Text-layer PDF extraction, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic.
-- Codex runs only after a student sends a message, requests unstructured-source review, or supplies a transcript without a usable text layer. The global assistant can read allowlisted records automatically. A write is stored as a pending tool call and runs only after the student confirms its exact arguments; normal RLS, prerequisite, eligibility, and transcript-lock rules run again at execution. Conversations and readable activity persist in Supabase under per-user RLS. Hidden chain-of-thought, shell, files, network, MCP, plugins, skills, and subagents are not exposed or enabled. The selected context is sent to OpenAI, whose provider-side handling follows the configured account.
+- Codex is opt-in. Onboarding explains the boundary, requires explicit approval, runs a real connection test, and saves the selected model before the assistant can run. The global rail may then read allowlisted records automatically after a student message. A write is stored as a pending tool call and runs only after the student confirms its exact arguments; normal RLS, prerequisite, eligibility, and transcript-lock rules run again at execution. Curated product and academic guidance is retrieved from `ai_knowledge_chunks` for each turn, while conversations and readable activity persist in Supabase under per-user RLS. Hidden chain-of-thought, shell, files, network, MCP, plugins, skills, and subagents are not exposed or enabled. The selected context is sent to OpenAI, whose provider-side handling follows the configured account.
 - `P` earns credit but does not enter GPA. Quarter-coded pass/fail rows are intersession records.
 - `A+`, `A`, and `A-` use the same four-point band while preserving the exact mark.
 - A d.tech `*` means UC A-G approval, not Honors. d.tech weighting requires reviewed Honors evidence; every SMCCD course is weighted.

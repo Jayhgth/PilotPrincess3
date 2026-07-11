@@ -1,0 +1,81 @@
+.setup { display: grid; gap: 22px; }
+.setup fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
+.setup legend { margin-bottom: 10px; color: var(--ink); font-size: 13px; font-weight: 650; }
+
+.connectionChoice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.connectionChoice legend { grid-column: 1 / -1; }
+.connectionChoice > label,
+.modelList > label {
+  display: flex;
+  min-height: 68px;
+  cursor: pointer;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.connectionChoice > label:hover,
+.modelList > label:hover { border-color: var(--line-strong); }
+.connectionChoice > label.selected,
+.modelList > label.selected { border-color: color-mix(in srgb, var(--accent) 64%, var(--line-strong)); background: var(--accent-soft); }
+.connectionChoice input,
+.modelList input { flex: 0 0 auto; width: 16px; min-height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.connectionChoice span,
+.modelList span { display: grid; gap: 3px; }
+.connectionChoice strong,
+.modelList strong { color: var(--ink); font-size: 13px; line-height: 1.35; }
+.connectionChoice small,
+.modelList small { color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+
+.connectionDetails { display: grid; gap: 18px; }
+.managedNote { display: flex; align-items: flex-start; gap: 10px; color: var(--ink-soft); }
+.managedNote > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }
+.managedNote span { display: grid; gap: 2px; }
+.managedNote strong { color: var(--ink); font-size: 13px; }
+.managedNote small { font-size: 12px; line-height: 1.5; }
+
+.modelList { display: grid; gap: 6px; }
+.modelList > label { min-height: 60px; }
+.modelList strong { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.modelList em { border-radius: 5px; background: var(--accent); color: #fff; padding: 2px 5px; font-size: 10px; font-style: normal; font-weight: 700; }
+:global(:root[data-theme="dark"]) .modelList em { color: #17181b; }
+
+.reasoning { display: grid; grid-template-columns: 90px auto minmax(0, 1fr); align-items: baseline; gap: 10px; color: var(--ink-soft); font-size: 12px; }
+.reasoning strong { color: var(--ink); font-size: 13px; }
+.reasoning small { color: var(--ink-faint); font-size: 12px; }
+
+.consent { display: grid; cursor: pointer; grid-template-columns: auto auto minmax(0, 1fr); align-items: flex-start; gap: 9px; border-radius: 8px; background: var(--surface-muted); padding: 12px; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.consent input { width: 16px; min-height: 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.consent svg { margin-top: 1px; color: var(--accent); }
+
+.testRow { display: flex; align-items: center; gap: 12px; }
+.testRow button { min-width: 126px; min-height: 40px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--ink); color: var(--surface); padding: 0 13px; font: inherit; font-size: 12px; font-weight: 650; }
+.testRow button:disabled { cursor: not-allowed; opacity: 0.42; }
+.testRow > span { color: var(--ink-faint); font-size: 12px; line-height: 1.45; }
+.success,
+.error { display: flex; align-items: center; gap: 8px; border-radius: 7px; padding: 9px 10px; font-size: 12px; }
+.success { background: var(--success-soft); color: var(--success); }
+.error { background: var(--danger-soft); color: var(--danger); }
+
+.compact { gap: 16px; }
+.compact .connectionChoice { grid-template-columns: 1fr; }
+.compact .connectionChoice legend { grid-column: auto; }
+.compact .connectionChoice > label { min-height: 58px; }
+.compact .modelList > label { min-height: 56px; padding: 10px; }
+.compact .reasoning { grid-template-columns: auto auto; }
+.compact .reasoning small { grid-column: 1 / -1; }
+.compact .testRow { align-items: flex-start; flex-direction: column; }
+
+@media (max-width: 620px) {
+  .connectionChoice { grid-template-columns: 1fr; }
+  .connectionChoice legend { grid-column: auto; }
+  .testRow { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connectionChoice > label,
+  .modelList > label { transition: none; }
+}

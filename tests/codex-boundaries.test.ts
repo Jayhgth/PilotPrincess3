@@ -3,6 +3,8 @@ import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATUR
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
+import { assistantKnowledgePrompt } from "@/server/assistant-knowledge";
+import { AI_MODEL_OPTIONS, aiModelSchema } from "@/lib/ai-preferences";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -70,7 +72,25 @@ describe("Codex feature boundaries", () => {
   it("validates exact tool arguments and marks writes for confirmation", () => {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("update_student_profile", { stress_level: 4, weekly_commitment_limit: 18 })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("add_experience", { name: "Robotics", kind: "club", weekly_hours: 4 })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("run_load_check", { college_units: 3, activity_hours_change: -2 })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
+    expect(() => parseAssistantToolCall("update_experience", { experience_id: crypto.randomUUID() })).toThrow();
+  });
+
+  it("allowlists the onboarding model choices and recommends Luna", () => {
+    expect(AI_MODEL_OPTIONS[0]).toMatchObject({ value: "gpt-5.6-luna", recommended: true });
+    expect(aiModelSchema.parse("gpt-5.5")).toBe("gpt-5.5");
+    expect(() => aiModelSchema.parse("arbitrary-model")).toThrow();
+  });
+
+  it("formats retrieved product guidance with source ownership", () => {
+    const prompt = assistantKnowledgePrompt([{ id: "role", title: "Pilot role", content: "Use deterministic evidence.", sourcePath: "docs/AI_TRANSPARENCY.md", tags: ["assistant"], score: 1 }]);
+    expect(prompt).toContain("[Pilot role]");
+    expect(prompt).toContain("Use deterministic evidence.");
+    expect(prompt).toContain("docs/AI_TRANSPARENCY.md");
   });
 
   it("tells the assistant to read records and defer writes to confirmation", () => {
@@ -78,6 +98,8 @@ describe("Codex feature boundaries", () => {
       history: [],
       userMessage: "Add a math course",
       pageContext: { view: "courses" },
+      knowledge: "Course changes require confirmation.",
+      model: "gpt-5.6-luna",
       executeReadTool: async () => ({ summary: "ok", data: {} }),
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
@@ -85,5 +107,6 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Use read-only student-data tools");
     expect(prompt).toContain("require the student to confirm");
     expect(prompt).toContain("Do not create a dashboard-style report or use tables");
+    expect(prompt).toContain("Course changes require confirmation.");
   });
 });

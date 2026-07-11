@@ -8,9 +8,10 @@ import { promisify } from "node:util";
 import type { ZodType } from "zod";
 import { assistantTurnJsonSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
+import { DEFAULT_AI_MODEL, type AiModel } from "@/lib/ai-preferences";
 
 const DEFAULT_TIMEOUT_MS = 9000;
-const DEFAULT_MODEL = "gpt-5.6-luna";
+const DEFAULT_MODEL = DEFAULT_AI_MODEL;
 const DEFAULT_REASONING_EFFORT = "low" satisfies ModelReasoningEffort;
 const MAX_CONCURRENT_TURNS = 2;
 const MAX_WAITING_TURNS = 4;
@@ -90,6 +91,7 @@ export interface StructuredRunOptions<T> {
   workingDirectory?: string;
   timeoutMs?: number;
   reasoningEffort?: ModelReasoningEffort;
+  model?: AiModel;
   signal?: AbortSignal;
 }
 
@@ -375,7 +377,7 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
       options.workingDirectory ?? (await mkdtemp(join(tmpdir(), `pilot-princess-${options.feature}-`)));
     isolatedHome = await prepareIsolatedCodexHome(options.feature);
     const codex = createCodex(isolatedHome);
-    const model = process.env.CODEX_MODEL ?? DEFAULT_MODEL;
+    const model = options.model ?? process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
       modelReasoningEffort: options.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
@@ -440,7 +442,7 @@ export async function runCodexStructuredStream<T>(
     scratchDirectory = options.workingDirectory ?? (await mkdtemp(join(tmpdir(), `pilot-princess-${options.feature}-`)));
     isolatedHome = await prepareIsolatedCodexHome(options.feature);
     const codex = createCodex(isolatedHome);
-    const model = process.env.CODEX_MODEL ?? DEFAULT_MODEL;
+    const model = options.model ?? process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
       modelReasoningEffort: options.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
@@ -510,6 +512,8 @@ export interface AssistantChatOptions {
   history: AssistantChatHistoryMessage[];
   userMessage: string;
   pageContext: Record<string, unknown>;
+  knowledge: string;
+  model: AiModel;
   signal?: AbortSignal;
   timeoutMs?: number;
   executeReadTool: (name: AssistantToolName, argumentsValue: Record<string, unknown>) => Promise<AssistantToolResult>;
@@ -538,6 +542,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
     "Do not mention the response schema. Put your student-facing response in assistant_message. Use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Available tools:\n" + assistantToolCatalogPrompt(),
+    `Retrieved Pilot Princess guidance:\n${options.knowledge}`,
     `Current page context: ${JSON.stringify(options.pageContext)}`,
     history ? `Recent conversation:\n${history}` : "This is the first message in the conversation.",
     `USER: ${options.userMessage}`
@@ -559,7 +564,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-assistant-"));
     isolatedHome = await prepareIsolatedCodexHome("assistant_chat");
     const codex = createCodex(isolatedHome);
-    const model = process.env.CODEX_MODEL ?? DEFAULT_MODEL;
+    const model = options.model;
     const thread = codex.startThread({
       model,
       modelReasoningEffort: DEFAULT_REASONING_EFFORT,

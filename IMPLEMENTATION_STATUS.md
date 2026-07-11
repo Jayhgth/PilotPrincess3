@@ -23,7 +23,8 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 ### Identity and setup
 
 - Sign in, create account, recover/reset password, sign out, and per-user RLS.
-- Five-stage onboarding and replayable setup for grade, plan window, tracker scope, direction, interests, career ideas, stress, and workload limits.
+- Six-stage onboarding and replayable setup for grade, plan window, tracker scope, direction, interests, career ideas, stress, workload limits, and optional Codex connection.
+- Codex setup requires an explicit consent checkbox and successful live test before connection can be saved. Students choose from allowlisted models; GPT-5.6 Luna with Light reasoning is the recommended default, and deterministic features remain available when AI is declined.
 - Demo-only sidebar shortcuts for onboarding and login preview carry intended-placement metadata.
 
 ### Course and transcript planning
@@ -52,26 +53,27 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 
 ### AI boundary
 
-- One lazy global drawer replaces repeated metadata-heavy review panels. It uses a t3code-inspired chat timeline: compact user bubbles, unboxed answers, streaming progress, folded reasoning summaries, readable tool calls, and focused approval cards.
+- One lazy global assistant rail replaces repeated metadata-heavy review panels. A top-right control keeps it available throughout the workspace; on wide screens it docks beside the active page so the student can keep working, while narrower screens use a focused overlay. The t3code-inspired timeline uses compact user bubbles, unboxed answers, streaming progress, folded reasoning summaries, readable tool calls, and focused approval cards.
 - Conversations, messages, sanitized events, and tool calls persist in new RLS-protected Supabase tables. A reloaded or newly opened page can continue the same conversation.
-- Six read tools cover overview, course plan, catalog search, graduation, next steps, and experiences. Six write tools cover adding/moving/removing eligible courses and adding/completing next steps.
+- Ten read tools cover overview, course plan, catalog search, graduation, next steps, experiences, profile, transcript-source evidence, college goals, and deterministic load checks. Fifteen write tools cover eligible plan-course changes, planning preferences, experiences, next steps, and associate-degree goals.
 - Read tools run automatically within a turn. Write tools persist as pending proposals and execute only after the student confirms the exact arguments; execution rechecks RLS, eligibility, prerequisites, transcript locks, and record state.
+- Each turn retrieves a small set of tagged, source-controlled role and academic guidance chunks through Postgres full-text search. The retrieved titles are visible as an App guidance activity; student records remain live tool reads rather than duplicated embeddings.
 - Codex SDK runs on authenticated Node routes with structured streaming, cancellation, recursive secret redaction, payload limits, isolated temporary runtime homes, and no browser credential exposure.
 - Student assistant turns disable network, browser/computer tools, shell, files, MCP/plugins, skills, image generation, workspace tools, and subagents. `show_raw_agent_reasoning` remains false; only safe reasoning summaries are displayed.
-- Image-only transcript and unstructured-source interpretation retain the manual-review boundary. Plan calculations and text-layer PDF extraction remain deterministic.
-- AI connection is now a compact status and access-boundary page with a direct route to the global assistant.
-- The app requests `gpt-5.6-luna` with `low` reasoning, displayed to users as Light.
+- Image-only transcript and unstructured-source interpretation retain the manual-review boundary and run only for students who enabled Codex. Plan calculations and text-layer PDF extraction remain deterministic.
+- The old AI connection tab is removed. Connection, testing, model choice, and later settings live in onboarding and the global assistant rail.
+- GPT-5.6 Luna with `low` reasoning, displayed to users as Light, is the recommended default; GPT-5.5 and GPT-5.4 Mini remain selectable fallbacks.
 
 ## Verification evidence
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 118 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex tool validation/status boundaries, unresolved discipline rules, and the selected Path contract.
+- `pnpm test`: 120 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex model/tool/knowledge boundaries, unresolved discipline rules, and the selected Path contract.
 - `pnpm build`: passing with the Astro Node server output.
-- Authenticated browser QA verified a live `gpt-5.6-luna` read of the current course plan, persisted transcript restoration after reload, readable reasoning/tool labels, and a write request that produced an exact pending approval. Choosing **Not now** produced no mutation. The global drawer passed desktop and 390px light/dark review with no console warnings or errors.
-- Linked Supabase migration history matches through `20260711010000`; linked schema lint reports no errors and dry-run push reports the remote database is up to date.
+- Authenticated browser QA verified the new top-right entry and docked setup rail beside the populated Overview. Luna is visibly recommended, Light reasoning is explicit, and test/save remain disabled until the student approves the connection. Jay's profile was intentionally left disconnected. The previously verified live `gpt-5.6-luna` read, persisted conversation, readable activity, and rejected write still cover the underlying conversation boundary.
+- Linked migration history matches through `20260711020000_assistant_onboarding_rag.sql`. Linked schema lint reports no errors and dry-run push reports the remote database is up to date.
 - Performance check: the authenticated `PlanningWorkspace` entry is now 156 kB raw instead of the previous 539 kB monolith; focused tools, onboarding, graduation, SMCCD, and AI status are lazy chunks. Global CSS decreased from 155 kB to 149 kB, and SMCCD duplicate checks use a memoized O(1) plan index.
-- Current milestone gate (`lint`, typecheck, 118 unit tests, production build) passes. Linked schema/migration checks and the affected authenticated assistant flow were rerun. The unrelated full Playwright, palette, and SMCCD catalog gates were not rerun.
+- The milestone gate (`lint`, typecheck, 120 unit tests, production build) passes. Linked schema/migration checks and the affected authenticated consent/setup flow were rerun. The unrelated full Playwright, palette, and SMCCD catalog gates were not required for this change.
 
 ## Known limitations
 
@@ -89,6 +91,7 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 12. Official logo use needs final trademark review before public launch.
 13. Product conversation persistence is implemented in Supabase by replaying bounded history into isolated SDK turns; it is not Codex app-server session persistence. Plugins, skills, workspace tools, files, and subagents remain intentionally unavailable to the student assistant.
 14. The full SMCCD curriculum is still fetched when the college catalog is first opened. Client search and duplicate checks are substantially faster, but server-side pagination remains a production-scale follow-up.
+15. The retrieval corpus is curated application guidance, not a substitute for live institutional publication updates; dated academic sources still require the normal catalog refresh and review process.
 
 ## Next steps
 
