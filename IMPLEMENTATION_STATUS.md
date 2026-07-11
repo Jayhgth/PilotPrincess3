@@ -33,7 +33,9 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 - One Courses destination with a `Done`, `In progress`, `Planned` kanban, full-card dragging, keyboard/mobile status fallback, locked transcript rows, editing, suggestions, and snapshots.
 - d.tech and SMCCD use a researched search-first catalog pattern with visible planning-year context, official institution selectors, decision-sized rows, one detail panel, and reduced-motion-safe React Bits transitions.
 - Catalog eligibility removes already represented courses, d.tech courses outside the selected planning grade, lower sequential math, and prerequisite-blocked options. Standard/Honors aliases and full-year chronology are covered by tests and repeated in add-handler guards. See [docs/catalog-experience.md](./docs/catalog-experience.md).
-- Official SMCCD catalog, prerequisite/corequisite evidence, directional equivalency rules, and AA/AS major-requirement discovery.
+- Official SMCCD catalog, prerequisite/corequisite evidence, directional equivalency rules, and a three-college AA/AS planning audit.
+- SMCCD catalog search now uses a deferred normalized index, exact-code ranking, bounded evaluation, and a cached prerequisite graph instead of rebuilding the 2,461-course graph for every result on every keystroke.
+- Associate-degree planning now has AA/AS and college filters, progress/profile/all discovery, completed-versus-projected degree-applicable and major units, requirement-level course evidence, missing catalog options, conservative next-course links, and catalog-tagged GE evidence. Interdisciplinary, GPA, grade, and residency text conditions remain visibly flagged for review. See [docs/degreedoesntworks-integration.md](./docs/degreedoesntworks-integration.md).
 
 ### Outcomes and decisions
 
@@ -54,9 +56,9 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 105 tests passing across 15 files, including catalog eligibility, math progression, prerequisite aliases/chronology, and the selected Path contract.
+- `pnpm test`: 108 tests passing across 15 files, including catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, unresolved discipline rules, and the selected Path contract.
 - `pnpm test:e2e`: 6 Chromium tests passing.
-- Selected Path QA passes populated light/dark states at 1,280px and 390px with no horizontal overflow. Catalog component QA passes light/dark at 1,440px and mobile at 390px with coherent source identity, readable rows, and no horizontal overflow.
+- Selected Path QA passes populated light/dark states at 1,280px and 390px with no horizontal overflow. Catalog and degree-planner QA passes authenticated desktop light/dark and 390px light/dark states with coherent source identity, readable list/detail composition, and no horizontal overflow. The live catalog search returned a broad 16-course query inside the 250 ms observation window.
 - Production build, color contrast validation, linked schema lint, SMCCD catalog validation, and linked migration dry-run pass. Supabase auth/RLS/storage, actual-PDF parsing, and Codex connectivity passed in the latest infrastructure pass.
 
 ## Known limitations
@@ -67,12 +69,13 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 4. The 2026-27 d.tech catalog has not been published in the reviewed source set.
 5. The equivalency chart is dated 2021 and needs a current counselor-approved replacement.
 6. SMCCD data is curriculum, not live sections, seats, times, or instructors.
-7. AA/AS progress covers parsed major requirements, not GE, residency, catalog rights, waivers, substitutions, or award eligibility.
+7. AA/AS progress covers parsed major requirements and catalog-tagged GE evidence, not a complete college-specific GE audit, residency, catalog rights, waivers, substitutions, or award eligibility.
 8. Workload omits unentered homework, commute, employment, caregiving, sleep, and recovery.
 9. Interest/major/career ranking is transparent keyword discovery, not a developed exploration or counseling workflow.
 10. The UI has no transcript archive picker, generalized substitution/waiver/repeat engine, or one-click kanban undo.
 11. Production accessibility and student usability studies have not been conducted.
 12. Official logo use needs final trademark review before public launch.
+13. The production build passes but still reports a client chunk above 500 kB; route-level code splitting remains a performance follow-up.
 
 ## Next steps
 

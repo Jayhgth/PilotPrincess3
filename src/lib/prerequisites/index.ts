@@ -9,6 +9,7 @@ export {
 export { parsePrerequisites } from "./parser";
 export {
   DTECH_PREREQUISITE_ALIASES,
+  createSmccdPlannerPrerequisiteEvaluator,
   dtechEquivalenciesForPrerequisites,
   dtechPrerequisiteCatalog,
   evaluateDtechPlannerPrerequisites,

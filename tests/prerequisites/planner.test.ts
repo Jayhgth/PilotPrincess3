@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildReviewedDtechToSmccdPrerequisiteEquivalencies,
+  createSmccdPlannerPrerequisiteEvaluator,
   evaluateDtechPlannerPrerequisites,
   evaluateSmccdPlannerPrerequisites,
   plannerCourseInputs,
@@ -178,6 +179,16 @@ describe("planner prerequisite adapters", () => {
 
     expect(evaluation.result.status).toBe("needs_review");
     expect(evaluation.result.evidence[0]).toMatchObject({ kind: "clearance", satisfied: null });
+  });
+
+  it("reuses a browsing evaluator without changing SMCCD prerequisite results", () => {
+    const prerequisite = smccdCourse({ id: "CSM:MATH 120", course_code: "MATH 120", prerequisites: [] });
+    const target = smccdCourse({ id: "CSM:MATH 200", course_code: "MATH 200", prerequisites: ["MATH 120"] });
+    const completed = planCourse({ smccd_course_id: prerequisite.id, course_id: null });
+    const evaluator = createSmccdPlannerPrerequisiteEvaluator([prerequisite, target], [completed], []);
+
+    expect(evaluator(target, { gradeLevel: 11, term: "fall" }).result.status).toBe("satisfied");
+    expect(evaluator(target, { gradeLevel: 11, term: "fall" }).result.status).toBe("satisfied");
   });
 
   it("uses a d.tech course for an SMCCD prerequisite only through a reviewed reverse mapping", () => {

@@ -183,3 +183,42 @@ export function evaluateSmccdPlannerPrerequisites(
     originalTexts: parsed.originalTexts
   };
 }
+
+/**
+ * Builds the catalog and student evidence once for a browsing session. The
+ * returned function only parses each course the first time it is inspected,
+ * which keeps catalog search from rebuilding the full SMCCD graph per row.
+ */
+export function createSmccdPlannerPrerequisiteEvaluator(
+  smccdCourses: readonly SmccdCourse[],
+  planCourses: readonly PlanCourse[],
+  dtechCourses: readonly Course[],
+  equivalencies: readonly PrerequisiteEquivalencyInput[] = []
+) {
+  const prerequisiteCourses = smccdCourses.map(smccdPrerequisiteCourse);
+  const plannedInputs = plannerCourseInputs(planCourses, dtechCourses, smccdCourses);
+  const parsedByCourseId = new Map<string, ReturnType<typeof parseSmccdCoursePrerequisites>>();
+
+  return (course: SmccdCourse, target: PlannerPrerequisiteTarget): PlannerPrerequisiteEvaluation => {
+    let parsed = parsedByCourseId.get(course.id);
+    if (!parsed) {
+      parsed = parseSmccdCoursePrerequisites(smccdPrerequisiteCourse(course), prerequisiteCourses);
+      parsedByCourseId.set(course.id, parsed);
+    }
+    return {
+      result: evaluateParsedPrerequisites(parsed, {
+        target: {
+          ...(target.instanceId ? { instanceId: target.instanceId } : {}),
+          courseId: course.id,
+          code: course.course_code,
+          name: `${course.course_code} ${course.title}`,
+          termIndex: plannerTargetTermIndex(target.gradeLevel, target.term),
+          gradeLevel: target.gradeLevel
+        },
+        courses: plannedInputs,
+        equivalencies
+      }),
+      originalTexts: parsed.originalTexts
+    };
+  };
+}
