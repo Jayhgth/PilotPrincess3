@@ -2,7 +2,6 @@ import {
   ActivityIcon,
   AirplaneTiltIcon as AirplaneTilt,
   ArrowClockwiseIcon as ArrowClockwise,
-  ArrowRightIcon as ArrowRight,
   BookOpenIcon as BookOpen,
   CaretDownIcon as CaretDown,
   ChartLineUpIcon as ChartLineUp,
@@ -72,10 +71,10 @@ import {
 import OnboardingFlow from "@/components/OnboardingFlow";
 import AiStatusPanel from "@/components/AiStatusPanel";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
-import CountUp from "@/components/reactbits/CountUp";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
 import GraduationWorkspace from "@/components/GraduationWorkspace";
+import OverviewConcepts, { type OverviewConceptData } from "@/components/OverviewConcepts";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import SmccdPlanner from "@/components/SmccdPlanner";
 import SummaryGenerateButton from "@/components/SummaryGenerateButton";
@@ -1267,8 +1266,45 @@ export default function PlanningWorkspace() {
     const dashboardCredits = requirementSnapshot.reduce((sum, { applied }) => {
       return { completed: sum.completed + applied.completed, scheduled: sum.scheduled + applied.current + applied.planned, remaining: sum.remaining + applied.remaining };
     }, { completed: 0, scheduled: 0, remaining: 0 });
-    const openRequirements = requirementSnapshot.filter(({ applied }) => applied.remaining > 0);
-    const nextOpenRequirement = [...openRequirements].sort((a, b) => b.applied.remaining - a.applied.remaining)[0];
+    const overviewRequirements = requirementSnapshot
+      .map(({ item, applied }) => ({
+        id: item.requirement.id,
+        name: item.requirement.name,
+        required: Number(item.requirement.credits_required),
+        completed: applied.completed,
+        scheduled: applied.current + applied.planned,
+        remaining: applied.remaining,
+        status: item.status
+      }))
+      .sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
+    const overviewCourse = (row: PlanCourse) => ({
+      id: row.id,
+      name: courseDisplayName(row, courseMap),
+      source: row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id)?.college_code ?? "SMCCD" : "d.tech"
+    });
+    const overviewData: OverviewConceptData = {
+      trackerLabel: profile.tracker_mode === "selected" ? "Tracked credits earned" : "Graduation credits earned",
+      earnedPercent: graduationEarnedPercent,
+      completedCredits: dashboardCredits.completed,
+      scheduledCredits: dashboardCredits.scheduled,
+      requiredCredits,
+      projectedWeightedGpa: formatGpa(gpa.projectedWeighted),
+      gradedCredits: gpa.gradedCredits,
+      workloadLabel: workload ? titleCase(workload.level) : "Not available",
+      knownWeeklyHours: workload?.knownWeeklyHours ?? null,
+      workloadWarning: workload?.warning ?? null,
+      requirements: overviewRequirements,
+      currentCourses: planCourses.filter((row) => row.status === "current").map(overviewCourse),
+      plannedCourses: planCourses.filter((row) => row.status === "planned").map(overviewCourse),
+      courseCounts,
+      smccdCounts: {
+        completed: planCourses.filter((row) => row.smccd_course_id && row.status === "completed").length,
+        current: planCourses.filter((row) => row.smccd_course_id && row.status === "current").length,
+        planned: planCourses.filter((row) => row.smccd_course_id && row.status === "planned").length
+      },
+      tasks: nextTasks.map((task) => ({ id: task.id, title: task.title, detail: task.due_label ?? titleCase(task.category) })),
+      summary: isGeneratingSummary ? null : summaries[0]?.content ?? null
+    };
     return (
       <div className="dashboard-page page-frame">
         <PageHeader
@@ -1276,60 +1312,16 @@ export default function PlanningWorkspace() {
           description="What is done, what needs attention, and how the current plan fits."
           actions={<SummaryGenerateButton loading={isGeneratingSummary} disabled={Boolean(busyLabel)} onClick={() => void generateSummary()} />}
         />
-        <AnimatedContent>
-          <section className="overview-snapshot" aria-label="Plan snapshot">
-            <div className="overview-primary-result">
-              <span>{profile.tracker_mode === "selected" ? "Tracked credits earned" : "Graduation credits earned"}</span>
-              <strong><CountUp from={graduationEarnedPercent} to={graduationEarnedPercent} suffix="%" /></strong>
-              <p>{dashboardCredits.completed} of {requiredCredits} required credits are complete.</p>
-              <button className="overview-text-action" type="button" onClick={() => navigate("graduation")}>View graduation <ArrowRight size={15} /></button>
-            </div>
-            <dl className="overview-signals">
-              <div><dt>Projected weighted GPA</dt><dd>{formatGpa(gpa.projectedWeighted)}</dd><span>{gpa.gradedCredits > 0 ? `${gpa.gradedCredits} graded credits` : "Add grades to calculate"}</span></div>
-              <div><dt>Current workload</dt><dd>{workload ? titleCase(workload.level) : "Not available"}</dd><span>{workload ? `${workload.knownWeeklyHours} known hours each week` : "Complete the student profile"}</span></div>
-              <div><dt>Next open area</dt><dd>{nextOpenRequirement?.item.requirement.name ?? "None"}</dd><span>{nextOpenRequirement ? `${nextOpenRequirement.applied.remaining} credits still needed` : "Every tracked area has coverage"}</span></div>
-            </dl>
-          </section>
-        </AnimatedContent>
-        {workload?.warning && <div className="notice-strip warning"><Warning size={19} weight="fill" /><span>{workload.warning}</span></div>}
-        <div className="overview-decision-grid">
-          <AnimatedContent className="overview-panel overview-requirements" delay={0.04}>
-            <header className="overview-section-heading"><div><h2>Requirements at a glance</h2><p>Applied credit compared with each requirement.</p></div><button className="quiet-button small" onClick={() => navigate("graduation")}>View all</button></header>
-            <div className="overview-requirement-grid">
-              {requirementSnapshot.map(({ item, applied }) => (
-                <article className={item.status} key={item.requirement.id}>
-                  <span>{item.requirement.name}</span>
-                  <strong>{applied.completed}<small> / {item.requirement.credits_required}</small></strong>
-                  <small>{item.status === "complete" ? "Complete" : item.status === "on_track" ? `${applied.current + applied.planned} scheduled` : `${applied.remaining} open`}</small>
-                </article>
-              ))}
-            </div>
-          </AnimatedContent>
-          <div className="overview-side-column">
-            <AnimatedContent delay={0.08}>
-              <button className="overview-course-action" type="button" onClick={() => openCourses("mine")}>
-                <span className="overview-course-icon"><BookOpen size={20} weight="duotone" /></span>
-                <span className="overview-course-copy"><strong>Course plan</strong><small>Review what is done and what comes next.</small></span>
-                <ArrowRight className="overview-course-arrow" size={18} />
-                <dl><div><dt>Done</dt><dd>{courseCounts.completed}</dd></div><div><dt>In progress</dt><dd>{courseCounts.current}</dd></div><div><dt>Planned</dt><dd>{courseCounts.planned}</dd></div></dl>
-              </button>
-            </AnimatedContent>
-            <AnimatedContent className="overview-panel overview-actions" delay={0.12}>
-              <header className="overview-section-heading"><div><h2>Next actions</h2><p>{nextTasks.length ? `${nextTasks.length} open items` : "Nothing is waiting"}</p></div><button className="quiet-button small" onClick={() => navigate("timeline")}>Timeline</button></header>
-              {nextTasks.length ? (
-                <div className="task-list dashboard-tasks">
-                  {nextTasks.map((task) => (
-                    <label className="task-row" key={task.id}>
-                      <input type="checkbox" checked={task.is_completed} onChange={() => void updateTask(task.id, { is_completed: true })} />
-                      <span><strong>{task.title}</strong><small>{task.due_label ?? titleCase(task.category)}</small></span>
-                    </label>
-                  ))}
-                </div>
-              ) : <EmptyState title="No open tasks" body="Generate a timeline from your current grade and plan." action={<button className="secondary-button" onClick={() => void generateTasks()}>Generate timeline</button>} />}
-            </AnimatedContent>
-          </div>
-        </div>
-        {!isGeneratingSummary && summaries[0] && <AnimatedContent key={summaries[0].id} delay={0.08}><section className="overview-plan-note"><Sparkle size={18} /><div><h2>Latest plan note</h2><p>{summaries[0].content}</p></div><span>{openRequirements.length > 0 ? `${openRequirements.length} areas still open` : "All tracked areas covered"}</span></section></AnimatedContent>}
+        <OverviewConcepts
+          data={overviewData}
+          onOpenGraduation={() => navigate("graduation")}
+          onOpenCourses={() => openCourses("mine")}
+          onOpenSmccd={() => openCourses("smccd")}
+          onOpenTimeline={() => navigate("timeline")}
+          onOpenProfile={() => navigate("profile")}
+          onGenerateTimeline={() => void generateTasks()}
+          onCompleteTask={(id) => void updateTask(id, { is_completed: true })}
+        />
       </div>
     );
   }
