@@ -405,7 +405,6 @@
   padding: 8px;
   transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
-.composerSurface:focus-within { border-color: color-mix(in srgb, var(--ink-faint) 58%, var(--line-strong)); box-shadow: 0 5px 16px rgb(20 22 26 / 0.12), 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent); }
 .composerSurface.draggingImage { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 25%, var(--surface)); box-shadow: 0 5px 16px rgb(20 22 26 / 0.12), inset 0 0 0 1px var(--accent); }
 .composerToolbar { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; }
 .composerTools, .composerActions { display: flex; min-width: 0; align-items: center; gap: 3px; }
@@ -445,6 +444,7 @@
   line-height: 1.45;
 }
 .composer textarea::placeholder { color: var(--ink-faint); }
+.composer textarea:focus, .composer textarea:focus-visible { border-color: transparent; outline: none; box-shadow: none; }
 .composerStatus { display: block; margin: 5px 6px 0; color: var(--ink-faint); font-size: 10px; line-height: 1.3; }
 
 .queueTray { display: grid; min-width: 0; gap: 4px; margin: 0 3px 7px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 3px 10px rgb(20 22 26 / 0.07); padding: 7px; }
