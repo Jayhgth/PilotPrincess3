@@ -78,7 +78,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 
 - `src/components/OnboardingFlow.tsx`: guided student and tracker setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
-- `src/components/OverviewConcepts.tsx`: five temporary Overview concepts for product review.
+- `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
 - `src/lib/planning.ts`: deterministic graduation, GPA, workload, timeline, and simulation logic.

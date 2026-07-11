@@ -70,7 +70,7 @@ Locally owned React Bits adaptations may clarify tab selection, loading, drag st
 
 ### Overview
 
-Answer a student's next decision before showing supporting evidence. Do not repeat the same percentage in several cards. Five temporary concepts are available for owner review in [docs/overview-options.md](./docs/overview-options.md); the selector is demo-only and must be removed after one production composition is chosen.
+Use the selected Finished, In progress, and Next reading model documented in [docs/overview-path.md](./docs/overview-path.md). Keep GPA and workload as compact context, then place tasks and the latest plan note below the path. Do not repeat the same percentage or course counts in separate cards.
 
 ### Courses
 

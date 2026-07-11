@@ -6,7 +6,7 @@ Last updated: 2026-07-10
 
 The end-to-end local MVP is implemented in Astro and backed by Supabase project `zqkzgmwptdsaqbzrjngt`. It supports open email registration, onboarding, deterministic transcript import, one course workspace, d.tech graduation/A-G tracking, SMCCD course and AA/AS discovery, workload planning, timeline/activity/simulator tools, and transparent server-only Codex assistance.
 
-This pass replaces the previous Overview with five live, data-equivalent concepts for owner review. Option A is the implementation recommendation. No concept is considered final until Jay chooses the production reading model.
+Jay selected the temporal Path concept as the production Overview. The review switcher and four unused alternatives are removed; the page now follows Finished, In progress, and Next with compact GPA/workload context, tasks, and the latest plan note.
 
 ## Product decisions in force
 
@@ -38,7 +38,7 @@ This pass replaces the previous Overview with five live, data-equivalent concept
 
 - Graduation distinguishes earned, current, planned, unverified, and open credit and exposes applied courses and source limits.
 - Deterministic science lanes, Level 3 language sequence completion, conservative A-G mapping, and exact GPA reproduction for the supplied PDF.
-- Five Overview concepts: Priority, Scorecard, Path, Advisor, and d.tech/SMCCD. See [docs/overview-options.md](./docs/overview-options.md).
+- Selected four-year Path Overview aligned to the Done/In progress/Planned course model. See [docs/overview-path.md](./docs/overview-path.md).
 - Activity, Timeline, Simulator, GPA, Student profile, and AI connection share the current visual and interaction system.
 - Workload uses recorded activities and current-year college-unit study time and never invents d.tech homework.
 
@@ -53,9 +53,9 @@ This pass replaces the previous Overview with five live, data-equivalent concept
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 97 tests passing across 14 files, including the shared Overview concept contract.
+- `pnpm test`: 97 tests passing across 14 files, including the selected Path contract.
 - `pnpm test:e2e`: 6 Chromium tests passing.
-- Overview concept QA: all five synthetic populated concepts at 1,440px with no horizontal overflow; Priority and Two systems also pass at 390px.
+- Selected Path QA passes populated light/dark states at 1,280px and 390px with no horizontal overflow. All three stages render immediately, and d.tech/college source labels inherit their scoped institution colors.
 - Production build, color contrast validation, linked schema lint, SMCCD catalog validation, and linked migration dry-run pass. Supabase auth/RLS/storage, actual-PDF parsing, and Codex connectivity passed in the latest infrastructure pass.
 
 ## Known limitations
@@ -75,10 +75,8 @@ This pass replaces the previous Overview with five live, data-equivalent concept
 
 ## Next steps
 
-1. Jay selects one Overview concept and whether concurrent enrollment should be a first-screen priority.
-2. Remove the temporary concept switcher and unused compositions, then rerun full visual QA.
-3. Choose hosting and configure production Supabase redirects, SMTP, Codex secret, monitoring, backups, and retention.
-4. Obtain a current d.tech catalog/equivalency source and counselor authority for exceptions and SMCCD clearance decisions.
-5. Run accessibility and task-based usability tests with representative d.tech students.
+1. Choose hosting and configure production Supabase redirects, SMTP, Codex secret, monitoring, backups, and retention.
+2. Obtain a current d.tech catalog/equivalency source and counselor authority for exceptions and SMCCD clearance decisions.
+3. Run accessibility and task-based usability tests with representative d.tech students.
 
 Release gates are in [TEST_CHECKLIST.md](./TEST_CHECKLIST.md). Product decisions and risks needing owner input are in [UX_AUDIT.md](./UX_AUDIT.md).

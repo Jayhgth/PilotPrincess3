@@ -6,22 +6,16 @@ Last reviewed: 2026-07-10
 
 The MVP is technically broad and substantially functional, but it is not whole enough for an authoritative public launch. The strongest areas are transcript/GPA handling for the supplied d.tech format, one-place course organization, source provenance, and SMCCD curriculum discovery. The weakest areas are production operations, current policy authority, degree-certification boundaries, workload completeness, and the depth of major/career guidance.
 
-The Overview is now a product decision rather than another incremental styling pass. Five live options expose genuinely different reading models. **Option A: Priority brief** is the current recommendation; **Option E: d.tech and SMCCD** is the strongest strategic alternative. See [docs/overview-options.md](./docs/overview-options.md).
+Jay selected the four-year Path Overview. It now organizes the same deterministic plan data as Finished, In progress, and Next, matching the Courses kanban without retaining a demo concept switcher. See [docs/overview-path.md](./docs/overview-path.md).
 
 Provisional strict grade before owner selection and production validation:
 
-- UI/UX coherence: **84/100**. The system is consistent, responsive, and restrained, but the Overview is intentionally unresolved and several secondary flows still expose more capability than a first-time student can confidently interpret.
+- UI/UX coherence: **86/100**. The primary Overview reading model is resolved and consistent with Courses, while several secondary flows still expose more capability than a first-time student can confidently interpret.
 - Student usefulness: **82/100**. Course/transcript planning is useful now; policy authority, live enrollment data, deeper direction guidance, and production readiness prevent a higher score.
 
 ## Decisions Jay needs to make
 
-### 1. Choose the Overview reading model
-
-Choose A Priority, B Scorecard, C Path, D Advisor, or E Two systems. This determines whether the product's first promise is next-action clarity, exact academic audit, temporal planning, plain-language guidance, or concurrent enrollment.
-
-Recommendation: choose A, then add one compact SMCCD signal from E only when the student has college courses or a saved degree goal.
-
-### 2. Define the launch authority level
+### 1. Define the launch authority level
 
 Decide whether Pilot Princess is:
 
@@ -31,11 +25,11 @@ Decide whether Pilot Princess is:
 
 This changes required disclaimers, trademark approval, data review workflow, support ownership, and whether prerequisite/equivalency decisions may be presented beyond `needs_review`.
 
-### 3. Choose production operations
+### 2. Choose production operations
 
 Select a Node host and owners for SMTP, Supabase redirects, Codex credentials, monitoring, backups, restore drills, privacy/log retention, and incident response. The build works locally, but no deployed production operating model exists.
 
-### 4. Obtain current academic authority
+### 3. Obtain current academic authority
 
 Provide or authorize a reviewer for:
 
@@ -45,7 +39,7 @@ Provide or authorize a reviewer for:
 - SMCCD placement and prerequisite clearances; and
 - the boundary between planning evidence and counselor certification.
 
-### 5. Set the next product-depth priority
+### 4. Set the next product-depth priority
 
 Choose one next investment:
 
@@ -55,7 +49,7 @@ Choose one next investment:
 - generalized graduation exceptions; or
 - workload realism including homework, commute, work, caregiving, sleep, and recovery.
 
-Trying to expand all five at once would recreate the current breadth-without-depth problem.
+Trying to expand all five product-depth areas at once would recreate the current breadth-without-depth problem.
 
 ## Concerning gaps
 
@@ -91,7 +85,7 @@ Every repository Markdown file was reviewed. The set is now organized by audienc
 | `TEST_CHECKLIST.md` | Repeatable release gate | Rewritten; removed hundreds of already-proven micro-assertions and stale 84/4 counts. |
 | `UI_DESIGN_SYSTEM.md` | Permanent visual and interaction rules | Rewritten; merged institution/color guidance and removed page-by-page historical narrative. |
 | `UX_AUDIT.md` | Owner decisions, risks, and strict product assessment | Rewritten as this decision brief; removed the inflated final-state framing. |
-| `docs/overview-options.md` | Temporary five-concept review gallery | Added; replaces the long historical Overview/Graduation research log. |
+| `docs/overview-path.md` | Selected Overview rationale and QA rules | Keeps the production Finished/In progress/Next decision documented. |
 | `docs/prerequisite-engine.md` | Technical prerequisite policy and operating notes | Retained but shortened to the API, conservative rules, data health, and update procedure. |
 | `docs/color-and-institution-system.md` | Duplicate color/brand guidance | Removed and merged into `UI_DESIGN_SYSTEM.md`. |
 | `docs/overview-graduation-design-research.md` | Historical design research and iteration log | Removed and replaced by the actionable concept review. |
@@ -111,9 +105,7 @@ If a fact appears in more than two files, replace duplicates with a link. Do not
 
 ## Recommended sequence
 
-1. Select the Overview concept.
-2. Remove the concept switcher and rerun complete visual/accessibility QA.
-3. Decide launch authority and hosting operations.
-4. Update academic sources and reviewer ownership.
-5. Conduct four task-based student sessions: import a transcript, understand a graduation gap, plan one d.tech course, and evaluate one SMCCD option.
-6. Choose one depth investment based on observed failures rather than adding another broad tool.
+1. Decide launch authority and hosting operations.
+2. Update academic sources and reviewer ownership.
+3. Conduct four task-based student sessions: import a transcript, understand a graduation gap, plan one d.tech course, and evaluate one SMCCD option.
+4. Choose one depth investment based on observed failures rather than adding another broad tool.

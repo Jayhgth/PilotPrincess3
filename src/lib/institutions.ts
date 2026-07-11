@@ -20,8 +20,6 @@ export const INSTITUTIONS: Record<InstitutionKey, InstitutionIdentity> = {
     shortName: "d.tech",
     lightAsset: "/institutions/dtech-wordmark.png",
     darkAsset: "/institutions/dtech-wordmark.png",
-    wideLightAsset: "/institutions/dtech-wordmark.png",
-    wideDarkAsset: "/institutions/dtech-wordmark.png",
     className: "dtech"
   },
   smccd: {

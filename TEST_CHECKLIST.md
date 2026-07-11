@@ -37,17 +37,14 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Workload uses only recorded activities and current-year college study time and explains missing inputs.
 - [x] Timeline, Activities, Simulator, Profile, GPA, and AI connection persist user-owned changes.
 
-## Overview concept review
+## Selected Overview
 
-- [x] Five concepts render from one shared deterministic data model.
-- [x] Priority, Scorecard, Path, Advisor, and Two systems have distinct reading models.
-- [x] All five populated desktop captures have document width equal to a 1,440px viewport.
-- [x] Priority and Two systems have document width equal to a 390px viewport.
-- [x] Official d.tech and SMCCD identity appears only with text provenance.
-- [x] React Bits motion is limited to concept selection, reveal, and numeric state and respects reduced motion.
-- [ ] Jay chooses one production concept.
-- [ ] Temporary selector and four unused concepts are removed after selection.
-- [ ] Selected concept passes populated light/dark desktop/mobile keyboard and screen-reader review.
+- [x] Jay selected the four-year Path concept.
+- [x] The temporary selector and four unused concepts are removed.
+- [x] Finished, In progress, and Next render from one deterministic data model.
+- [x] Course source labels preserve d.tech or college provenance in text and scoped color.
+- [x] React Bits motion is limited to reveal and numeric state and respects reduced motion.
+- [x] Selected Path passes populated light/dark desktop/mobile semantic-DOM and overflow review.
 
 ## Visual and accessibility gate
 
@@ -56,7 +53,7 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Course, transcript, institution, loading, empty, and error states do not rely on color alone.
 - [x] Workspace tabs support Left, Right, Home, and End.
 - [x] Representative local desktop/mobile states show no horizontal overflow or console errors.
-- [ ] Production automated accessibility scan passes.
+- [ ] Production automated accessibility and screen-reader review passes.
 - [ ] Task-based student usability study covers transcript import, course planning, graduation interpretation, and SMCCD discovery.
 
 ## Data and source gate
