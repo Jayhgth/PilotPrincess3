@@ -214,6 +214,8 @@
 .approvalHeading strong { font-size: 13px; }
 .approvalHeading span { color: var(--ink-soft); font-size: 12px; text-transform: capitalize; }
 .approvalCard > p { margin: 9px 0 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.approvalCard .reviewNote { display: flex; align-items: flex-start; gap: 7px; border-radius: 6px; background: color-mix(in srgb, var(--surface) 62%, transparent); padding: 8px; color: var(--ink-soft); font-size: 12px; }
+.reviewNote svg { flex: 0 0 auto; margin-top: 1px; color: var(--accent); }
 .approvalCard dl { border-radius: 6px; background: color-mix(in srgb, var(--surface) 58%, transparent); padding: 8px; font-size: 12px; }
 .approvalActions { display: flex; gap: 7px; margin-top: 11px; }
 .approvalActions button {
@@ -233,11 +235,64 @@
 .error { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; border-radius: 7px; background: var(--danger-soft); color: var(--danger); padding: 10px; font-size: 12px; line-height: 1.5; }
 
 .composer {
+  position: relative;
   border-top: 1px solid var(--line);
   background: var(--surface);
   padding: 11px 13px 13px;
 }
-.composer > span { display: block; margin: 0 2px 7px; color: var(--ink-faint); font-size: 12px; }
+.composerMeta { display: flex; min-height: 30px; align-items: center; justify-content: space-between; gap: 10px; margin: 0 2px 7px; }
+.composerMeta > span { min-width: 0; overflow: hidden; color: var(--ink-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.reviewMode { position: relative; flex: 0 0 auto; }
+.reviewMode > button {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+.reviewMode > button:hover, .reviewMode > button[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
+.reviewMode > button > svg:first-child { color: var(--accent); }
+.reviewMenu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 7px);
+  z-index: 4;
+  display: grid;
+  width: min(310px, calc(100vw - 28px));
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 16px rgb(20 22 26 / 0.12);
+  padding: 5px;
+}
+.reviewMenu > button {
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 9px;
+  font: inherit;
+  text-align: left;
+}
+.reviewMenu > button:hover, .reviewMenu > button[aria-checked="true"] { background: var(--surface-muted); color: var(--ink); }
+.reviewMenu > button > svg:first-child { margin-top: 1px; color: var(--accent); }
+.reviewMenu > button > svg:last-child { margin-top: 2px; color: var(--accent); }
+.reviewMenu span { display: grid; gap: 2px; }
+.reviewMenu strong { font-size: 12px; font-weight: 650; }
+.reviewMenu small { color: var(--ink-faint); font-size: 11px; line-height: 1.4; }
 .composer > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 36px;
@@ -291,6 +346,7 @@
   .conversationPicker > button { max-width: calc(100vw - 112px); }
   .userMessage { max-width: 90%; }
   .approvalCard { margin-left: 0; }
+  .composerMeta > span { max-width: 46vw; }
 }
 
 @media (prefers-reduced-motion: reduce) {

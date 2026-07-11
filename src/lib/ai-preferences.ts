@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna" as const;
 export const AI_REASONING_EFFORT = "low" as const;
+export const aiReviewModeSchema = z.enum(["manual", "auto_review"]);
+export type AiReviewMode = z.infer<typeof aiReviewModeSchema>;
 
 export const AI_MODEL_OPTIONS = [
   {

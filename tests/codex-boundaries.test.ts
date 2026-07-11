@@ -4,7 +4,8 @@ import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantKnowledgePrompt } from "@/server/assistant-knowledge";
-import { AI_MODEL_OPTIONS, aiModelSchema } from "@/lib/ai-preferences";
+import { autoReviewManualReason, autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
+import { AI_MODEL_OPTIONS, aiModelSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -84,6 +85,29 @@ describe("Codex feature boundaries", () => {
     expect(AI_MODEL_OPTIONS[0]).toMatchObject({ value: "gpt-5.6-luna", recommended: true });
     expect(aiModelSchema.parse("gpt-5.5")).toBe("gpt-5.5");
     expect(() => aiModelSchema.parse("arbitrary-model")).toThrow();
+    expect(aiReviewModeSchema.parse("auto_review")).toBe("auto_review");
+    expect(() => aiReviewModeSchema.parse("full_access")).toThrow();
+  });
+
+  it("keeps destructive and academic-evidence changes in manual review", () => {
+    expect(autoReviewManualReason("remove_plan_course", { plan_course_id: crypto.randomUUID() })).toContain("removes saved student data");
+    expect(autoReviewManualReason("move_plan_course", { status: "completed" })).toContain("academic status");
+    expect(autoReviewManualReason("update_plan_course", { letter_grade: "A" })).toContain("recorded grade");
+    expect(autoReviewManualReason("update_student_profile", { preferred_name: "Jay" })).toContain("identity");
+    expect(autoReviewManualReason("add_next_step", { title: "Meet counselor" })).toBeNull();
+  });
+
+  it("builds a separate risk-review prompt and bounds its decision", () => {
+    const prompt = buildAutoReviewPrompt({
+      userMessage: "Add a counseling task",
+      toolName: "add_next_step",
+      arguments: { title: "Meet counselor", category: "admin" },
+      explanation: "Add the requested task."
+    });
+    expect(prompt).toContain("separate approval reviewer");
+    expect(prompt).toContain("Approve only when the student's message explicitly requests this exact change");
+    expect(prompt).toContain('"title":"Meet counselor"');
+    expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
   });
 
   it("formats retrieved product guidance with source ownership", () => {
@@ -93,20 +117,29 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("docs/AI_TRANSPARENCY.md");
   });
 
-  it("tells the assistant to read records and defer writes to confirmation", () => {
+  it("tells the assistant to read records and defer writes to the selected review mode", () => {
     const prompt = assistantConversationPrompt({
       history: [],
       userMessage: "Add a math course",
       pageContext: { view: "courses" },
       knowledge: "Course changes require confirmation.",
       model: "gpt-5.6-luna",
+      reviewMode: "manual",
       executeReadTool: async () => ({ summary: "ok", data: {} }),
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
     });
     expect(prompt).toContain("Use read-only student-data tools");
-    expect(prompt).toContain("require the student to confirm");
+    expect(prompt).toContain("manual or auto-review mode");
     expect(prompt).toContain("Do not create a dashboard-style report or use tables");
     expect(prompt).toContain("Course changes require confirmation.");
+  });
+
+  it("accepts the expanded student-data tools in structured assistant output", () => {
+    expect(assistantTurnSchema.parse({ assistant_message: "I prepared the update.", tool_calls: [{
+      name: "update_student_profile",
+      arguments_json: '{"stress_level":3}',
+      explanation: "Update the requested stress level."
+    }] }).tool_calls[0]?.name).toBe("update_student_profile");
   });
 });

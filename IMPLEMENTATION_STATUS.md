@@ -15,7 +15,7 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 - Any valid email may register. Accounts are temporarily auto-confirmed until custom SMTP exists.
 - Parent accounts are out of MVP scope; summaries are lightweight student-facing notes.
 - Text-layer transcript parsing and every planning calculation are deterministic.
-- Codex is server-only. It may read allowlisted student records after a message, but every write is an exact proposal that requires confirmation and server-side revalidation. It never owns planning calculations or silently mutates a plan.
+- Codex is server-only. It may read allowlisted student records after a message, but every write is an exact proposal routed through the selected Manual or separate Auto-review path and then server-side revalidated. It never owns planning calculations or silently bypasses review.
 - Current official reference data is labeled 2025-26; the d.tech/SMCCD equivalency chart is labeled 2021.
 
 ## Implemented flow
@@ -56,7 +56,8 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 - One lazy global assistant rail replaces repeated metadata-heavy review panels. A top-right control keeps it available throughout the workspace; on wide screens it docks beside the active page so the student can keep working, while narrower screens use a focused overlay. The t3code-inspired timeline uses compact user bubbles, unboxed answers, streaming progress, folded reasoning summaries, readable tool calls, and focused approval cards.
 - Conversations, messages, sanitized events, and tool calls persist in new RLS-protected Supabase tables. A reloaded or newly opened page can continue the same conversation.
 - Ten read tools cover overview, course plan, catalog search, graduation, next steps, experiences, profile, transcript-source evidence, college goals, and deterministic load checks. Fifteen write tools cover eligible plan-course changes, planning preferences, experiences, next steps, and associate-degree goals.
-- Read tools run automatically within a turn. Write tools persist as pending proposals and execute only after the student confirms the exact arguments; execution rechecks RLS, eligibility, prerequisites, transcript locks, and record state.
+- Read tools run automatically within a turn. Write tools persist as exact pending proposals and follow the selected review route; execution always rechecks RLS, eligibility, prerequisites, transcript locks, and record state.
+- A compact review-mode control now sits in the chat composer. Manual remains the default. Auto-review uses a second isolated Codex turn with a conservative approve/manual/deny schema, visible risk summary, and normal mutation revalidation. Product policy forces removals, grade edits, identity edits, and marking a course Done back to manual confirmation.
 - Each turn retrieves a small set of tagged, source-controlled role and academic guidance chunks through Postgres full-text search. The retrieved titles are visible as an App guidance activity; student records remain live tool reads rather than duplicated embeddings.
 - Codex SDK runs on authenticated Node routes with structured streaming, cancellation, recursive secret redaction, payload limits, isolated temporary runtime homes, and no browser credential exposure.
 - Student assistant turns disable network, browser/computer tools, shell, files, MCP/plugins, skills, image generation, workspace tools, and subagents. `show_raw_agent_reasoning` remains false; only safe reasoning summaries are displayed.
@@ -68,12 +69,13 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 120 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex model/tool/knowledge boundaries, unresolved discipline rules, and the selected Path contract.
+- `pnpm test`: 123 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex model/tool/knowledge/review boundaries, unresolved discipline rules, and the selected Path contract.
 - `pnpm build`: passing with the Astro Node server output.
 - Authenticated browser QA verified the new top-right entry and docked setup rail beside the populated Overview. Luna is visibly recommended, Light reasoning is explicit, and test/save remain disabled until the student approves the connection. Jay's profile was intentionally left disconnected. The previously verified live `gpt-5.6-luna` read, persisted conversation, readable activity, and rejected write still cover the underlying conversation boundary.
-- Linked migration history matches through `20260711020000_assistant_onboarding_rag.sql`. Linked schema lint reports no errors and dry-run push reports the remote database is up to date.
+- The Manual/Auto-review selector, expanded tool schema, separate reviewer prompt, risk coercion, and forced-manual categories are covered by boundary tests. A live Auto-review mutation was intentionally not run because Jay has not approved the Codex connection.
+- Linked migration history matches through `20260711021000_assistant_review_mode.sql`. Linked schema lint reports no errors and dry-run push reports the remote database is up to date.
 - Performance check: the authenticated `PlanningWorkspace` entry is now 156 kB raw instead of the previous 539 kB monolith; focused tools, onboarding, graduation, SMCCD, and AI status are lazy chunks. Global CSS decreased from 155 kB to 149 kB, and SMCCD duplicate checks use a memoized O(1) plan index.
-- The milestone gate (`lint`, typecheck, 120 unit tests, production build) passes. Linked schema/migration checks and the affected authenticated consent/setup flow were rerun. The unrelated full Playwright, palette, and SMCCD catalog gates were not required for this change.
+- The milestone gate (`lint`, typecheck, 123 unit tests, production build) passes. Linked schema/migration checks and the affected authenticated consent/setup flow were rerun. The unrelated full Playwright, palette, and SMCCD catalog gates were not required for this change.
 
 ## Known limitations
 

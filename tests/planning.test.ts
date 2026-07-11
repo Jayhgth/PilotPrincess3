@@ -59,6 +59,7 @@ const profile: StudentProfile = {
   ai_enabled: true,
   ai_model: "gpt-5.6-luna",
   ai_reasoning_effort: "low",
+  ai_review_mode: "manual",
   ai_connection_approved_at: "2026-07-11T00:00:00.000Z",
   ai_setup_tested_at: "2026-07-11T00:00:00.000Z",
   plan_start_grade: 10,

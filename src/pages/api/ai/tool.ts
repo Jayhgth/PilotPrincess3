@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
+import { autoReviewResultSchema, reviewAssistantProposal } from "@/server/ai-auto-review";
 import { assistantToolLabel, executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
@@ -9,7 +10,7 @@ export const prerender = false;
 
 const requestSchema = z.object({
   toolCallId: z.uuid(),
-  decision: z.enum(["confirm", "reject"])
+  decision: z.enum(["confirm", "reject", "auto_review"])
 });
 
 export const POST: APIRoute = async ({ request }) => {
@@ -22,8 +23,22 @@ export const POST: APIRoute = async ({ request }) => {
   const toolCall = toolResult.data;
   if (toolCall.status !== "pending_confirmation") return jsonError("This tool request has already been handled.", 409);
 
-  const latestEventResult = await auth.supabase.from("ai_events").select("sequence").eq("turn_id", toolCall.turn_id).order("sequence", { ascending: false }).limit(1).maybeSingle();
-  const nextSequence = Number(latestEventResult.data?.sequence ?? 0) + 1;
+  const nextSequence = async () => {
+    const latest = await auth.supabase.from("ai_events").select("sequence").eq("turn_id", toolCall.turn_id).order("sequence", { ascending: false }).limit(1).maybeSingle();
+    return Number(latest.data?.sequence ?? 0) + 1;
+  };
+  const recordEvent = async (eventType: string, sequence: number, payload: Record<string, unknown>) => {
+    const occurredAt = new Date().toISOString();
+    await auth.supabase.from("ai_events").insert({
+      conversation_id: toolCall.conversation_id,
+      user_id: auth.user.id,
+      turn_id: toolCall.turn_id,
+      sequence,
+      event_type: eventType,
+      payload: { source: "application", type: eventType, sequence, occurredAt, turnId: toolCall.turn_id, ...sanitizeCodexValue(payload) as Record<string, unknown> }
+    });
+  };
+
   if (parsed.data.decision === "reject") {
     const result = { summary: `${assistantToolLabel(toolCall.tool_name)} was not applied.` };
     const { data, error } = await auth.supabase.from("ai_tool_calls")
@@ -34,22 +49,66 @@ export const POST: APIRoute = async ({ request }) => {
       .maybeSingle();
     if (error) return jsonError(error.message, 500);
     if (!data) return jsonError("This tool request has already been handled.", 409);
-    await auth.supabase.from("ai_events").insert({
-      conversation_id: toolCall.conversation_id,
-      user_id: auth.user.id,
-      turn_id: toolCall.turn_id,
-      sequence: nextSequence,
-      event_type: "tool.rejected",
-      payload: { source: "application", type: "tool.rejected", sequence: nextSequence, occurredAt: new Date().toISOString(), turnId: toolCall.turn_id, toolCall: data }
-    });
+    await recordEvent("tool.rejected", await nextSequence(), { toolCall: data });
     return new Response(JSON.stringify({ toolCall: data, result }), { headers: { "content-type": "application/json" } });
   }
 
   const preferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
   if (!preferences.enabled || !preferences.approvedAt) return jsonError("Reconnect Pilot Assistant before applying this change.", 403);
-
   const validated = parseAssistantToolCall(toolCall.tool_name, toolCall.arguments);
-  if (!validated.mutatesData) return jsonError("This tool does not require confirmation.", 400);
+  if (!validated.mutatesData) return jsonError("This tool does not require review.", 400);
+
+  let review = autoReviewResultSchema.safeParse((toolCall.result as Record<string, unknown> | null)?.auto_review).data ?? null;
+  if (parsed.data.decision === "auto_review") {
+    if (preferences.reviewMode !== "auto_review") return jsonError("Auto-review is not enabled.", 409);
+    const startedSequence = await nextSequence();
+    await recordEvent("auto_review.started", startedSequence, {
+      toolCallId: toolCall.id,
+      toolName: validated.name,
+      summary: "A separate reviewer is checking this proposed change."
+    });
+    try {
+      review = await reviewAssistantProposal({
+        userMessage: String((await auth.supabase.from("ai_messages").select("content").eq("turn_id", toolCall.turn_id).eq("role", "user").maybeSingle()).data?.content ?? ""),
+        toolName: validated.name,
+        arguments: validated.arguments,
+        explanation: toolCall.explanation,
+        model: preferences.model,
+        signal: request.signal
+      });
+    } catch {
+      review = { decision: "manual", risk: "medium", summary: "Auto-review could not reach a safe decision, so this change still needs your confirmation." };
+    }
+
+    if (review.decision === "manual") {
+      const { data, error } = await auth.supabase.from("ai_tool_calls")
+        .update({ result: { auto_review: review } })
+        .eq("id", toolCall.id)
+        .eq("status", "pending_confirmation")
+        .select("*")
+        .maybeSingle();
+      if (error) return jsonError(error.message, 500);
+      if (!data) return jsonError("This tool request has already been handled.", 409);
+      await recordEvent("auto_review.completed", await nextSequence(), { review, toolCall: data });
+      return new Response(JSON.stringify({ toolCall: data, review, applied: false }), { headers: { "content-type": "application/json" } });
+    }
+
+    if (review.decision === "deny") {
+      const result = { summary: "Auto-review did not approve this change.", auto_review: review };
+      const { data, error } = await auth.supabase.from("ai_tool_calls")
+        .update({ status: "rejected", result, completed_at: new Date().toISOString() })
+        .eq("id", toolCall.id)
+        .eq("status", "pending_confirmation")
+        .select("*")
+        .maybeSingle();
+      if (error) return jsonError(error.message, 500);
+      if (!data) return jsonError("This tool request has already been handled.", 409);
+      await recordEvent("auto_review.completed", await nextSequence(), { review, toolCall: data });
+      return new Response(JSON.stringify({ toolCall: data, review, applied: false }), { headers: { "content-type": "application/json" } });
+    }
+    await recordEvent("auto_review.completed", await nextSequence(), { review, toolCallId: toolCall.id });
+  }
+
   const confirmedAt = new Date().toISOString();
   const claimResult = await auth.supabase.from("ai_tool_calls")
     .update({ status: "running", confirmed_at: confirmedAt })
@@ -62,9 +121,10 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const result = await executeAssistantMutationTool(auth.supabase, auth.user.id, validated.name, validated.arguments);
     const completedAt = new Date().toISOString();
+    const storedResult = review ? { ...result, auto_review: review } : result;
     const { data, error } = await auth.supabase.from("ai_tool_calls").update({
       status: "completed",
-      result: sanitizeCodexValue(result),
+      result: sanitizeCodexValue(storedResult),
       completed_at: completedAt
     }).eq("id", toolCall.id).select("*").single();
     if (error) throw new Error(error.message);
@@ -75,31 +135,18 @@ export const POST: APIRoute = async ({ request }) => {
         turn_id: toolCall.turn_id,
         role: "tool",
         content: sanitizeCodexText(result.summary, 2000),
-        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null }
+        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, auto_review: review }
       }),
-      auth.supabase.from("ai_events").insert({
-        conversation_id: toolCall.conversation_id,
-        user_id: auth.user.id,
-        turn_id: toolCall.turn_id,
-        sequence: nextSequence,
-        event_type: "tool.completed",
-        payload: { source: "application", type: "tool.completed", sequence: nextSequence, occurredAt: completedAt, turnId: toolCall.turn_id, toolCall: data }
-      }),
+      recordEvent("tool.completed", await nextSequence(), { toolCall: data, review }),
       auth.supabase.from("ai_conversations").update({ updated_at: completedAt }).eq("id", toolCall.conversation_id)
     ]);
-    return new Response(JSON.stringify({ toolCall: data, result }), { headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ toolCall: data, result, review, applied: true }), { headers: { "content-type": "application/json" } });
   } catch (error) {
     const message = sanitizeCodexText(error instanceof Error ? error.message : "The change could not be applied.", 1200);
     const completedAt = new Date().toISOString();
-    const { data } = await auth.supabase.from("ai_tool_calls").update({ status: "failed", result: { error: message }, completed_at: completedAt }).eq("id", toolCall.id).select("*").single();
-    await auth.supabase.from("ai_events").insert({
-      conversation_id: toolCall.conversation_id,
-      user_id: auth.user.id,
-      turn_id: toolCall.turn_id,
-      sequence: nextSequence,
-      event_type: "tool.failed",
-      payload: { source: "application", type: "tool.failed", sequence: nextSequence, occurredAt: completedAt, turnId: toolCall.turn_id, toolCall: data }
-    });
+    const failedResult = { error: message, ...(review ? { auto_review: review } : {}) };
+    const { data } = await auth.supabase.from("ai_tool_calls").update({ status: "failed", result: failedResult, completed_at: completedAt }).eq("id", toolCall.id).select("*").single();
+    await recordEvent("tool.failed", await nextSequence(), { toolCall: data, review });
     return jsonError(message, 400, { toolCall: data });
   }
 };

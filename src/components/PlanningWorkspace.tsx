@@ -410,6 +410,7 @@ export default function PlanningWorkspace() {
         ai_enabled: rawProfile.ai_enabled ?? false,
         ai_model: rawProfile.ai_model ?? "gpt-5.6-luna",
         ai_reasoning_effort: rawProfile.ai_reasoning_effort ?? "low",
+        ai_review_mode: rawProfile.ai_review_mode ?? "manual",
         ai_connection_approved_at: rawProfile.ai_connection_approved_at ?? null,
         ai_setup_tested_at: rawProfile.ai_setup_tested_at ?? null
       };
@@ -1840,17 +1841,18 @@ export default function PlanningWorkspace() {
         session={session}
         open={assistantOpen}
         pageContext={assistantPageContext}
-        preferences={{ enabled: profile.ai_enabled, model: profile.ai_model, approvedAt: profile.ai_connection_approved_at, testedAt: profile.ai_setup_tested_at }}
+        preferences={{ enabled: profile.ai_enabled, model: profile.ai_model, reviewMode: profile.ai_review_mode, approvedAt: profile.ai_connection_approved_at, testedAt: profile.ai_setup_tested_at }}
         onClose={() => setAssistantOpen(false)}
         onDataChanged={loadWorkspace}
         onPreferencesChanged={async () => {
-          const { data, error } = await supabase.from("student_profiles").select("ai_enabled, ai_model, ai_reasoning_effort, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
+          const { data, error } = await supabase.from("student_profiles").select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
           if (error) throw error;
           setProfile((current) => current ? {
             ...current,
             ai_enabled: data.ai_enabled,
             ai_model: data.ai_model as StudentProfile["ai_model"],
             ai_reasoning_effort: data.ai_reasoning_effort as "low",
+            ai_review_mode: data.ai_review_mode as StudentProfile["ai_review_mode"],
             ai_connection_approved_at: data.ai_connection_approved_at,
             ai_setup_tested_at: data.ai_setup_tested_at
           } : current);

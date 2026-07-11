@@ -44,6 +44,7 @@ export interface StudentProfile {
   ai_enabled: boolean;
   ai_model: "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4-mini";
   ai_reasoning_effort: "low";
+  ai_review_mode: "manual" | "auto_review";
   ai_connection_approved_at: string | null;
   ai_setup_tested_at: string | null;
   plan_start_grade: GradeLevel | null;

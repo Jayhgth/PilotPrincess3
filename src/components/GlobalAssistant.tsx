@@ -7,7 +7,9 @@ import {
   GearSixIcon as GearSix,
   PaperPlaneRightIcon as PaperPlaneRight,
   PlusIcon as Plus,
+  ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkle,
+  UserCircleCheckIcon as UserCircleCheck,
   WrenchIcon as Wrench,
   WarningIcon as Warning,
   XIcon as X
@@ -17,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent 
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
-import type { AiModel } from "@/lib/ai-preferences";
+import type { AiModel, AiReviewMode } from "@/lib/ai-preferences";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import styles from "./GlobalAssistant.module.css";
 
@@ -28,6 +30,7 @@ interface GlobalAssistantProps {
   preferences: {
     enabled: boolean;
     model: AiModel;
+    reviewMode: AiReviewMode;
     approvedAt: string | null;
     testedAt: string | null;
   };
@@ -147,10 +150,11 @@ function humanizeActivityText(value: unknown) {
 }
 
 function toolSummary(call: AiToolCall) {
+  const autoReview = (call.result as { auto_review?: { summary?: unknown } } | null)?.auto_review;
   if (call.status === "completed") return String((call.result as { summary?: unknown } | null)?.summary ?? "Completed");
   if (call.status === "failed") return String((call.result as { error?: unknown } | null)?.error ?? "The tool failed.");
-  if (call.status === "rejected") return "Not applied";
-  if (call.status === "pending_confirmation") return "Waiting for your confirmation";
+  if (call.status === "rejected") return String(autoReview?.summary ?? "Not applied");
+  if (call.status === "pending_confirmation") return String(autoReview?.summary ?? "Waiting for your confirmation");
   return "Running";
 }
 
@@ -162,11 +166,14 @@ function readableArguments(call: AiToolCall) {
 function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boolean; onDecision: (call: AiToolCall, decision: "confirm" | "reject") => void }) {
   const pending = call.status === "pending_confirmation";
   const label = friendlyToolLabel(call.tool_name);
+  const autoReview = (call.result as { auto_review?: { summary?: unknown } } | null)?.auto_review;
+  const autoReviewSummary = typeof autoReview?.summary === "string" ? autoReview.summary : null;
   if (pending) {
     return (
       <FadeContent className={styles.approvalCard} duration={0.16}>
         <div className={styles.approvalHeading}><Wrench size={16} /><div><strong>Confirm this change</strong><span>{label}</span></div></div>
         <p>{call.explanation}</p>
+        {autoReviewSummary && <p className={styles.reviewNote}><ShieldCheck size={15} /> Auto-review left this for you: {autoReviewSummary}</p>}
         <dl>{readableArguments(call).map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>)}</dl>
         <div className={styles.approvalActions}>
           <button type="button" onClick={() => onDecision(call, "confirm")} disabled={busy}>Apply change</button>
@@ -184,6 +191,11 @@ function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boole
 }
 
 function activityItem(event: LiveActivity) {
+  if (event.type === "auto_review.started") return { kind: "review", label: "Auto-review", detail: String(event.summary ?? "Checking the proposed change") };
+  if (event.type === "auto_review.completed") {
+    const review = event.review as Record<string, unknown> | undefined;
+    return { kind: "review", label: "Auto-review", detail: String(review?.summary ?? "Review completed") };
+  }
   if (event.type === "retrieval.completed") {
     const sources = Array.isArray(event.sources) ? event.sources as Array<Record<string, unknown>> : [];
     return {
@@ -234,7 +246,7 @@ function TurnActivity({ events, tools, latest, running, busyTool, onDecision }: 
       <summary><span>{running ? <ShinyText text="Pilot is working" speed={1.8} /> : hasFailure ? "Work stopped" : tools.length ? `${tools.length} tool ${tools.length === 1 ? "call" : "calls"}` : "Reasoning"}</span><CaretDown size={13} /></summary>
       <div className={styles.turnWorkBody}>
         {items.map((item, index) => <details className={`${styles.workRow} ${item.kind === "error" ? styles.failed : ""}`} key={`${item.label}-${index}`} open={item.kind === "error"}>
-          <summary><span className={styles.workIcon}>{item.kind === "reasoning" ? <Brain size={15} /> : item.kind === "error" ? <Warning size={15} /> : <Clock size={15} />}</span><span><strong>{item.label}</strong>{item.detail && <small>{item.detail.slice(0, 110)}</small>}</span><CaretDown size={13} /></summary>
+          <summary><span className={styles.workIcon}>{item.kind === "reasoning" ? <Brain size={15} /> : item.kind === "review" ? <ShieldCheck size={15} /> : item.kind === "error" ? <Warning size={15} /> : <Clock size={15} />}</span><span><strong>{item.label}</strong>{item.detail && <small>{item.detail.slice(0, 110)}</small>}</span><CaretDown size={13} /></summary>
           {item.detail && <div className={styles.workDetails}><p>{item.detail}</p></div>}
         </details>)}
         {tools.map((tool) => <ToolCallRow key={tool.id} call={tool} busy={Boolean(busyTool)} onDecision={onDecision} />)}
@@ -252,6 +264,10 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyTool, setBusyTool] = useState<string | null>(null);
+  const [autoReviewing, setAutoReviewing] = useState(false);
+  const [reviewMode, setReviewMode] = useState<AiReviewMode>(preferences.reviewMode);
+  const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
+  const [savingReviewMode, setSavingReviewMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [setup, setSetup] = useState<CodexSetupValue>({
@@ -300,11 +316,13 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !running) onClose();
+      if (event.key !== "Escape" || running) return;
+      if (reviewMenuOpen) setReviewMenuOpen(false);
+      else onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open, running]);
+  }, [onClose, open, reviewMenuOpen, running]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -361,10 +379,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const proposalIds: string[] = [];
       const consume = (line: string) => {
         if (!line.trim()) return;
-        const payload = JSON.parse(line) as { kind: string; event?: LiveActivity; message?: string };
+        const payload = JSON.parse(line) as { kind: string; event?: LiveActivity; message?: string; proposals?: Array<{ id?: string }> };
         if (payload.kind === "activity" && payload.event) setLiveEvents((current) => [...current, payload.event!]);
+        if (payload.kind === "turn.completed" && payload.proposals) proposalIds.push(...payload.proposals.map((proposal) => proposal.id).filter((id): id is string => Boolean(id)));
         if (payload.kind === "turn.failed") throw new Error(payload.message ?? "Pilot could not complete that request.");
       };
       while (true) {
@@ -375,12 +395,54 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         for (const line of lines) consume(line);
         if (done) { consume(buffer); break; }
       }
+      if (reviewMode === "auto_review" && proposalIds.length) {
+        setAutoReviewing(true);
+        let changed = false;
+        for (const toolCallId of proposalIds) {
+          const reviewResponse = await authorizedFetch("/api/ai/tool", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ toolCallId, decision: "auto_review" }),
+            signal: abortController.signal
+          });
+          const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean };
+          if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Auto-review could not complete.");
+          changed ||= reviewPayload.applied === true;
+        }
+        if (changed) await onDataChanged();
+      }
       await loadConversation(conversation.id);
     } catch (caught) {
       if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(caught instanceof Error ? caught.message : "Pilot could not complete that request.");
     } finally {
+      setAutoReviewing(false);
       setRunning(false);
       abortRef.current = null;
+    }
+  }
+
+  async function updateReviewMode(mode: AiReviewMode) {
+    if (mode === reviewMode) {
+      setReviewMenuOpen(false);
+      return;
+    }
+    setSavingReviewMode(true);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/ai/review-mode", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode })
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Review mode could not be changed.");
+      setReviewMode(mode);
+      setReviewMenuOpen(false);
+      await onPreferencesChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Review mode could not be changed.");
+    } finally {
+      setSavingReviewMode(false);
     }
   }
 
@@ -487,17 +549,34 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             if (message.role === "assistant") return <FadeContent className={styles.assistantMessage} duration={0.16} key={message.id}><MessageBody text={message.content} /></FadeContent>;
             return <p className={styles.toolOutcome} key={message.id}><CheckCircle size={14} /> {message.content}</p>;
           })}
-          {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text="Pilot is working" speed={1.8} /></div>}
+          {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={autoReviewing ? "Auto-review is checking" : "Pilot is working"} speed={1.8} /></div>}
           {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
         </div>
 
         <form className={styles.composer} onSubmit={(event: SyntheticEvent<HTMLFormElement>) => { event.preventDefault(); void sendMessage(); }}>
-          <span>Using {String(pageContext.label ?? "this page")} context</span>
+          <div className={styles.composerMeta}>
+            <span>Using {String(pageContext.label ?? "this page")} context</span>
+            <div className={styles.reviewMode} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReviewMenuOpen(false); }}>
+              <button type="button" onClick={() => setReviewMenuOpen((current) => !current)} disabled={running || savingReviewMode} aria-haspopup="menu" aria-expanded={reviewMenuOpen}>
+                {reviewMode === "auto_review" ? <ShieldCheck size={14} /> : <UserCircleCheck size={14} />}
+                {reviewMode === "auto_review" ? "Auto-review" : "Manual"}
+                <CaretDown size={11} />
+              </button>
+              {reviewMenuOpen && <div className={styles.reviewMenu} role="menu" aria-label="Change review mode">
+                <button type="button" role="menuitemradio" aria-checked={reviewMode === "manual"} onClick={() => void updateReviewMode("manual")}>
+                  <UserCircleCheck size={16} /><span><strong>Manual</strong><small>You approve every proposed change.</small></span>{reviewMode === "manual" && <CheckCircle size={14} weight="fill" />}
+                </button>
+                <button type="button" role="menuitemradio" aria-checked={reviewMode === "auto_review"} onClick={() => void updateReviewMode("auto_review")}>
+                  <ShieldCheck size={16} /><span><strong>Auto-review</strong><small>A separate reviewer may apply low-risk changes. Sensitive changes still wait.</small></span>{reviewMode === "auto_review" && <CheckCircle size={14} weight="fill" />}
+                </button>
+              </div>}
+            </div>
+          </div>
           <div>
             <textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder="Ask Pilot" rows={1} maxLength={4000} disabled={running} />
             <button type={running ? "button" : "submit"} onClick={running ? () => abortRef.current?.abort() : undefined} disabled={!running && !draft.trim()} aria-label={running ? "Stop response" : "Send message"}>{running ? <X size={16} /> : <PaperPlaneRight size={17} weight="fill" />}</button>
           </div>
-          <small>{running ? "Stop the current turn at any time." : "Read tools run automatically. Every change needs your confirmation."}</small>
+          <small>{running ? (autoReviewing ? "A separate reviewer is checking the proposed change." : "Stop the current turn at any time.") : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
         </form>
         </>}
       </aside>

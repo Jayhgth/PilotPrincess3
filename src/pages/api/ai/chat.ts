@@ -95,6 +95,7 @@ export const POST: APIRoute = async ({ request }) => {
           pageContext: parsed.data.pageContext,
           knowledge: assistantKnowledgePrompt(knowledge),
           model: preferences.model,
+          reviewMode: preferences.reviewMode,
           signal,
           executeReadTool: (name, argumentsValue) => executeAssistantReadTool(auth.supabase, auth.user.id, name, argumentsValue),
           onSdkEvent: (event, iteration) => {

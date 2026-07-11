@@ -179,12 +179,25 @@ export const assistantToolNames = [
   "get_graduation_progress",
   "get_next_steps",
   "get_experiences",
+  "get_student_profile",
+  "get_transcript_sources",
+  "get_college_goal",
+  "run_load_check",
   "add_dtech_course",
   "add_smccd_course",
   "move_plan_course",
   "remove_plan_course",
+  "update_plan_course",
+  "update_student_profile",
+  "add_experience",
+  "update_experience",
+  "remove_experience",
   "add_next_step",
-  "complete_next_step"
+  "complete_next_step",
+  "update_next_step",
+  "remove_next_step",
+  "set_college_goal",
+  "clear_college_goal"
 ] as const;
 
 export const assistantTurnSchema = z.object({

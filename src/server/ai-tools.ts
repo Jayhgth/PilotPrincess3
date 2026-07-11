@@ -158,8 +158,8 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Transcript evidence remains read-only in chat.", arguments: "{}" },
   { name: "get_college_goal", mutatesData: false, description: "Read the selected SMCCD associate-degree goal.", arguments: "{}" },
   { name: "run_load_check", mutatesData: false, description: "Run the deterministic current-versus-proposed workload check without saving a scenario.", arguments: '{"college_units":number,"activity_hours_change":number}' },
-  { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The student must confirm.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
-  { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The student must confirm.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
+  { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
+  { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
   { name: "update_plan_course", mutatesData: true, description: "Propose editing the placement, grade, or notes of an unlocked plan course.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","notes":"string|null"}' },
@@ -167,8 +167,8 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "add_experience", mutatesData: true, description: "Propose adding a factual experience and its workload evidence.", arguments: '{"name":"string","kind":"club|athletics|service|work|family|internship|other","weekly_hours":number,...}' },
   { name: "update_experience", mutatesData: true, description: "Propose editing one saved experience by experience_id.", arguments: '{"experience_id":"uuid",...changed fields}' },
   { name: "remove_experience", mutatesData: true, description: "Propose removing one saved experience.", arguments: '{"experience_id":"uuid"}' },
-  { name: "add_next_step", mutatesData: true, description: "Propose adding one student-owned next step. The student must confirm.", arguments: '{"title":"string","category":"academics|activities|college|summer|admin","due_label":"string|null"}' },
-  { name: "complete_next_step", mutatesData: true, description: "Propose completing one saved next step. The student must confirm.", arguments: '{"task_id":"uuid"}' },
+  { name: "add_next_step", mutatesData: true, description: "Propose adding one student-owned next step. The selected review route must approve it.", arguments: '{"title":"string","category":"academics|activities|college|summer|admin","due_label":"string|null"}' },
+  { name: "complete_next_step", mutatesData: true, description: "Propose completing one saved next step. The selected review route must approve it.", arguments: '{"task_id":"uuid"}' },
   { name: "update_next_step", mutatesData: true, description: "Propose editing a saved next step.", arguments: '{"task_id":"uuid",...changed fields}' },
   { name: "remove_next_step", mutatesData: true, description: "Propose removing a student-created next step. Generated requirement gaps cannot be deleted here.", arguments: '{"task_id":"uuid"}' },
   { name: "set_college_goal", mutatesData: true, description: "Propose selecting one SMCCD AA or AS program as the primary college goal.", arguments: '{"program_id":"string","notes":"string"}' },
@@ -177,7 +177,7 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
 
 export function assistantToolCatalogPrompt() {
   return ASSISTANT_TOOL_CATALOG.map((tool) => [
-    `- ${tool.name}${tool.mutatesData ? " (requires student confirmation)" : " (read-only)"}`,
+    `- ${tool.name}${tool.mutatesData ? " (exact proposal; selected review mode required)" : " (read-only)"}`,
     `  ${tool.description}`,
     `  Arguments: ${tool.arguments}`
   ].join("\n")).join("\n");
