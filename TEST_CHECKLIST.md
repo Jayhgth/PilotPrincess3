@@ -32,6 +32,9 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Imported records preserve exact grade, credits, weighting, institution, school year, match evidence, and transcript lock.
 - [x] Courses uses one Done/In progress/Planned board; editable cards move by drag or status control and transcript rows do not move.
 - [x] Suggestions exclude completed aliases and do not overwrite manual courses.
+- [x] Catalog discovery excludes exact/normalized plan duplicates, courses outside the selected d.tech grade, lower sequential math, and prerequisite-blocked results.
+- [x] Full-year courses preserve grade chronology; standard/Honors aliases satisfy reviewed course-family prerequisites without inventing lateral math ordering.
+- [x] Catalog add handlers repeat the eligibility checks so stale selections cannot bypass the visible result rules.
 - [x] Graduation and GPA reproduce the supplied d.tech PDF rules, including pass/fail, A-minus bands, Honors evidence, science lanes, and Level 3 language completion.
 - [x] SMCCD course and AA/AS discovery preserve college, units, transfer status, prerequisites, source year, and directional equivalency evidence.
 - [x] Workload uses only recorded activities and current-year college study time and explains missing inputs.
@@ -53,6 +56,7 @@ This file is a release gate, not a historical log. Detailed implementation evide
 - [x] Course, transcript, institution, loading, empty, and error states do not rely on color alone.
 - [x] Workspace tabs support Left, Right, Home, and End.
 - [x] Representative local desktop/mobile states show no horizontal overflow or console errors.
+- [x] d.tech and SMCCD catalog components pass light/dark 1,440px and 390px composition checks, including official marks, selected rows, details, and compact college filters.
 - [ ] Production automated accessibility and screen-reader review passes.
 - [ ] Task-based student usability study covers transcript import, course planning, graduation interpretation, and SMCCD discovery.
 

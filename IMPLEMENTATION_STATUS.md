@@ -31,7 +31,8 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 - Minimal transcript upload/paste, deterministic text-layer PDF extraction, structured review, correction, bulk import, and private storage.
 - d.tech transcript semantics for pass/fail intersession, exact grades, Honors evidence, SMCCD weighting, aliases, reconciliation, and source provenance.
 - One Courses destination with a `Done`, `In progress`, `Planned` kanban, full-card dragging, keyboard/mobile status fallback, locked transcript rows, editing, suggestions, and snapshots.
-- d.tech and SMCCD catalog browsers share one list/detail/prerequisite pattern.
+- d.tech and SMCCD use a researched search-first catalog pattern with visible planning-year context, official institution selectors, decision-sized rows, one detail panel, and reduced-motion-safe React Bits transitions.
+- Catalog eligibility removes already represented courses, d.tech courses outside the selected planning grade, lower sequential math, and prerequisite-blocked options. Standard/Honors aliases and full-year chronology are covered by tests and repeated in add-handler guards. See [docs/catalog-experience.md](./docs/catalog-experience.md).
 - Official SMCCD catalog, prerequisite/corequisite evidence, directional equivalency rules, and AA/AS major-requirement discovery.
 
 ### Outcomes and decisions
@@ -53,9 +54,9 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 97 tests passing across 14 files, including the selected Path contract.
+- `pnpm test`: 105 tests passing across 15 files, including catalog eligibility, math progression, prerequisite aliases/chronology, and the selected Path contract.
 - `pnpm test:e2e`: 6 Chromium tests passing.
-- Selected Path QA passes populated light/dark states at 1,280px and 390px with no horizontal overflow. All three stages render immediately, and d.tech/college source labels inherit their scoped institution colors.
+- Selected Path QA passes populated light/dark states at 1,280px and 390px with no horizontal overflow. Catalog component QA passes light/dark at 1,440px and mobile at 390px with coherent source identity, readable rows, and no horizontal overflow.
 - Production build, color contrast validation, linked schema lint, SMCCD catalog validation, and linked migration dry-run pass. Supabase auth/RLS/storage, actual-PDF parsing, and Codex connectivity passed in the latest infrastructure pass.
 
 ## Known limitations

@@ -52,6 +52,7 @@ import {
   overallCompletedPercent,
   overallGraduationPercent,
   planCourseMovePatch,
+  selectedPlanGrades,
   schoolYearForGrade,
   simulatePlan
 } from "@/lib/planning";
@@ -102,6 +103,7 @@ import type {
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
+import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 type ViewId =
@@ -578,9 +580,9 @@ export default function PlanningWorkspace() {
     );
   }
 
-  function defaultDtechPlacement(course: Course) {
+  function defaultDtechPlacement(course: Course, preferredGrade?: GradeLevel) {
     const allowedGrades = course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12);
-    const currentGrade = (profile?.grade_level ?? 9) as GradeLevel;
+    const currentGrade = preferredGrade ?? (catalogGrade === "all" ? undefined : catalogGrade) ?? (profile?.grade_level ?? 9) as GradeLevel;
     const gradeLevel = allowedGrades.find((grade) => grade >= currentGrade) ?? allowedGrades.at(-1) ?? currentGrade;
     return { gradeLevel, term: (course.term_type === "semester" ? "fall" : "full_year") as PlanCourse["term"] };
   }
@@ -601,6 +603,20 @@ export default function PlanningWorkspace() {
       return;
     }
     const grade = placement.gradeLevel;
+    const eligibility = dtechCatalogEligibility(course, grade, planCourses, courses);
+    if (!eligibility.eligible) {
+      setToast(eligibility.reason === "outside_grade"
+        ? `${course.name} is not offered for grade ${grade}.`
+        : eligibility.reason === "below_math_level"
+          ? `${course.name} is below the math level already demonstrated in this plan.`
+          : "That course is already represented in the current plan.");
+      return;
+    }
+    const evaluation = evaluateDtechPlannerPrerequisites(course, placement, courses, planCourses, plannedSmccdCourses, equivalencies);
+    if (evaluation.result.status === "blocked") {
+      setToast("Complete the listed prerequisite before adding this course in that year.");
+      return;
+    }
     const mappingVerified = mappings.some(
       (mapping) => mapping.course_id === course.id && mapping.confidence === "verified"
     );
@@ -628,6 +644,7 @@ export default function PlanningWorkspace() {
           .single();
         if (error) throw error;
         setPlanCourses((current) => [...current, data as unknown as PlanCourse]);
+        setSelectedDtechCourseId(null);
         await logEvent("course_selected", { course_id: course.id, status });
       },
       `${course.name} added to ${status === "completed" ? "Done" : status === "current" ? "In progress" : "Planned"}.`
@@ -1179,14 +1196,39 @@ export default function PlanningWorkspace() {
   }
 
   const courseFits = new Map(courses.map((course) => [course.id, courseProfileFit(course, profile)]));
-  const filteredCourses = courses.filter((course) => {
+  const availableCatalogGrades = selectedPlanGrades(profile);
+  const activeCatalogGrade = (catalogGrade !== "all" && availableCatalogGrades.includes(catalogGrade)
+    ? catalogGrade
+    : availableCatalogGrades[0] ?? profile.grade_level ?? 9) as GradeLevel;
+  const catalogEligibilityById = new Map(courses.map((course) => [
+    course.id,
+    dtechCatalogEligibility(course, activeCatalogGrade, planCourses, courses)
+  ]));
+  const structurallyEligibleCourses = courses.filter((course) => catalogEligibilityById.get(course.id)?.eligible);
+  const prerequisiteBlockedIds = new Set(structurallyEligibleCourses.filter((course) =>
+    evaluateDtechPlannerPrerequisites(
+      course,
+      defaultDtechPlacement(course, activeCatalogGrade),
+      courses,
+      planCourses,
+      plannedSmccdCourses,
+      equivalencies
+    ).result.status === "blocked"
+  ).map((course) => course.id));
+  const eligibleCatalogCourses = structurallyEligibleCourses.filter((course) => !prerequisiteBlockedIds.has(course.id));
+  const filteredCourses = eligibleCatalogCourses.filter((course) => {
     const query = catalogSearch.trim().toLowerCase();
     return (
       (!query || [course.name, course.subject, course.description ?? "", course.prerequisites.join(" ")].join(" ").toLowerCase().includes(query)) &&
-      (catalogSubject === "all" || course.subject === catalogSubject) &&
-      (catalogGrade === "all" || course.grade_levels.includes(catalogGrade))
+      (catalogSubject === "all" || course.subject === catalogSubject)
     );
   }).sort((a, b) => (courseFits.get(b.id)?.score ?? 0) - (courseFits.get(a.id)?.score ?? 0) || a.name.localeCompare(b.name));
+  const hiddenCatalogCounts = [...catalogEligibilityById.values()].reduce((counts, eligibility) => {
+    if (eligibility.reason) counts[eligibility.reason] += 1;
+    return counts;
+  }, { already_in_plan: 0, outside_grade: 0, below_math_level: 0 });
+  const hiddenCatalogTotal = hiddenCatalogCounts.already_in_plan + hiddenCatalogCounts.outside_grade
+    + hiddenCatalogCounts.below_math_level + prerequisiteBlockedIds.size;
   const subjects = [...new Set(courses.map((course) => course.subject))];
   const latestTranscriptSource = sources.find(
     (source) => !source.is_official && source.document_type === "transcript"
@@ -1500,7 +1542,7 @@ export default function PlanningWorkspace() {
 
   function renderDtechCatalog() {
     const results = visibleCatalogCourses.map((course) => {
-      const placement = course.id === selectedDtechCourse?.id ? dtechDraft : defaultDtechPlacement(course);
+      const placement = course.id === selectedDtechCourse?.id ? dtechDraft : defaultDtechPlacement(course, activeCatalogGrade);
       const evaluation = evaluateDtechPlannerPrerequisites(
         course,
         placement,
@@ -1510,24 +1552,18 @@ export default function PlanningWorkspace() {
         equivalencies
       );
       const readiness = prerequisiteDisplay(evaluation);
-      const existing = planCourses.find((row) => row.course_id === course.id);
-      const planStatus = existing?.status === "completed" ? "Done" : existing?.status === "current" ? "In progress" : existing ? "Planned" : undefined;
       return {
         id: course.id,
         title: course.name,
         metadata: [
           course.subject,
-          `Grades ${course.grade_levels.join(", ") || "to verify"}`,
+          `Grade ${activeCatalogGrade}`,
           course.credits ? formatCredits(course.credits) : "Credits to verify"
         ],
         readinessLabel: readiness.label,
-        readinessTone: readiness.tone,
-        ...(planStatus ? { planStatus } : {})
+        readinessTone: readiness.tone
       };
     });
-    const selectedExisting = selectedDtechCourse
-      ? planCourses.find((row) => row.course_id === selectedDtechCourse.id)
-      : null;
     const selectedReasons = selectedDtechCourse
       ? (courseFits.get(selectedDtechCourse.id)?.reasons ?? []).filter((reason) => !reason.toLowerCase().includes("subject match"))
       : [];
@@ -1536,19 +1572,21 @@ export default function PlanningWorkspace() {
       <CourseCatalogBrowser
         source="dtech"
         title="Course catalog"
-        description="Official 2025-26 courses with plan-aware prerequisite checks."
+        description="Courses you can still add in the selected school year."
         countLabel={filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length}` : "No courses"}
+        planningContext={`Planning Grade ${activeCatalogGrade}`}
+        hiddenSummary={`${hiddenCatalogTotal} unavailable courses hidden from this view`}
         filters={<>
-          <label><span>Search</span><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Course, subject, or prerequisite" /></label>
+          <label className="catalog-search-field"><span>Search courses</span><div className="catalog-search-input"><BookOpen size={16} aria-hidden /><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Name, subject, or prerequisite" /></div></label>
           <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
-          <label><span>Grade</span><select value={catalogGrade} onChange={(event) => { setCatalogGrade(event.target.value === "all" ? "all" : Number(event.target.value) as GradeLevel); setCatalogPage(0); }}><option value="all">All grades</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+          <label><span>Planning year</span><select value={activeCatalogGrade} onChange={(event) => { setCatalogGrade(Number(event.target.value) as GradeLevel); setSelectedDtechCourseId(null); setCatalogPage(0); }}>{availableCatalogGrades.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
         </>}
         results={results}
         selectedId={selectedDtechCourseId}
         onSelect={(id) => { const course = courseMap.get(id); if (course) chooseDtechCourse(course); }}
         emptyTitle="No matching courses"
-        emptyBody="Adjust the search, subject, or grade filter."
-        sourceAction={<strong className="catalog-source-count">{courses.length} courses</strong>}
+        emptyBody="Try another search or subject. Courses already taken, below your demonstrated math level, outside this grade, or blocked by prerequisites stay hidden."
+        sourceAction={<strong className="catalog-source-count">Official 2025-26</strong>}
         footer={<PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />}
         detail={selectedDtechCourse && selectedDtechEvaluation ? <div className="catalog-course-detail">
           <header className="catalog-detail-heading"><span>d.tech</span><h3>{selectedDtechCourse.name}</h3></header>
@@ -1561,11 +1599,11 @@ export default function PlanningWorkspace() {
           {selectedReasons.length > 0 && <p className="catalog-fit-note"><strong>Profile fit</strong>{selectedReasons.join("; ")}</p>}
           {selectedDtechCourse.description && <p className="catalog-course-description">{selectedDtechCourse.description}</p>}
           <PrerequisiteReadout evaluation={selectedDtechEvaluation} />
-          {selectedExisting ? <div className={`catalog-existing-state ${selectedExisting.status}`}><strong>{selectedExisting.status === "completed" ? "Done" : selectedExisting.status === "current" ? "In progress" : "Planned"}</strong><span>This course is already in your plan.</span></div> : <form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
-            <label><span>Grade</span><select value={dtechDraft.gradeLevel} onChange={(event) => setDtechDraft({ ...dtechDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{selectedDtechCourse.grade_levels.filter((grade) => grade >= 9 && grade <= 12).map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+          <form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
+            <label><span>School year</span><select value={dtechDraft.gradeLevel} disabled><option value={dtechDraft.gradeLevel}>Grade {dtechDraft.gradeLevel}</option></select></label>
             <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })} disabled={selectedDtechCourse.term_type !== "semester"}>{selectedDtechCourse.term_type === "semester" ? <><option value="fall">Fall</option><option value="spring">Spring</option></> : <option value="full_year">Full year</option>}</select></label>
             <button className="primary-button" type="submit"><Plus size={16} /> Add to plan</button>
-          </form>}
+          </form>
         </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a d.tech course</strong><p>Review description, fit, prerequisite evidence, and placement before adding it.</p></div>}
       />
     );
@@ -1680,7 +1718,7 @@ export default function PlanningWorkspace() {
     if (!supabase || !session || !profile || !activeVersion) return null;
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My courses" }, { id: "dtech", label: "d.tech catalog" }, { id: "smccd", label: "SMCCD catalog" }]} value={courseArea} onChange={(area) => { setCourseArea(area); if (area === "smccd") setSmccdInitialSection("courses"); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => { setCourseArea(area); if (area === "smccd") setSmccdInitialSection("courses"); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         supabase={supabase}

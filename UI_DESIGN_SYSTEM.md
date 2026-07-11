@@ -76,6 +76,10 @@ Use the selected Finished, In progress, and Next reading model documented in [do
 
 Use one `Done`, `In progress`, `Planned` board in that order. The collapsed editable card is the drag target; transcript-backed Done records are locked. Show course identity, grade, credit, source/subject, and result only. Edit owns secondary controls. Preserve the three-stage relationship on narrow screens.
 
+Catalog discovery uses `My plan`, `d.tech courses`, and `College courses` as short peer tabs. Each catalog is search-first with one visible planning year, only high-value filters, compact result rows, and one stable detail panel. Taken courses, courses outside the selected d.tech grade, lower sequential math, and prerequisite-blocked courses do not appear as selectable results. Report the hidden count in plain language. Keep `needs_review` visible when placement or human approval could make the course possible.
+
+Result rows show only identity, source, subject/college, credit or units, and icon-plus-text readiness. Description, prerequisite evidence, equivalency, transfer status, and add controls belong in the detail panel. On narrow screens, selecting a row moves and scrolls the detail panel before the list. Use official institution marks and semantic source tokens; never create college monograms or rely on color alone. The research and eligibility contract are in [docs/catalog-experience.md](./docs/catalog-experience.md).
+
 ### Graduation
 
 Keep earned, current, planned, unverified, and open credit distinct. Exact values and rule warnings beat progress bars. Requirement rows form one quiet evidence register; source age and counselor boundaries sit next to affected results.

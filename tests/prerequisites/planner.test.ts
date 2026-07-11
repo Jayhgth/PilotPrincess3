@@ -105,10 +105,56 @@ describe("planner prerequisite adapters", () => {
     expect(evaluation.result.evidence[0]).toMatchObject({ matchedBy: "id", satisfied: true });
   });
 
-  it("does not claim chronology for current or planned full-year courses", () => {
+  it("accepts a completed honors variant when the catalog prerequisite names the standard course", () => {
+    const standardPrecalculus = dtechCourse({
+      id: "precalculus",
+      name: "Precalculus",
+      grade_levels: [10, 11, 12]
+    });
+    const honorsPrecalculus = dtechCourse({
+      id: "precalculus-honors",
+      name: "Precalculus Honors",
+      grade_levels: [10, 11, 12]
+    });
+    const calculus = dtechCourse({
+      id: "calculus",
+      name: "Calculus / Calculus Honors",
+      grade_levels: [11, 12],
+      prerequisites: ["Precalculus"]
+    });
+    const completedHonors = planCourse({ course_id: honorsPrecalculus.id, grade_level: 10 });
+    const evaluation = evaluateDtechPlannerPrerequisites(
+      calculus,
+      { gradeLevel: 11, term: "full_year" },
+      [standardPrecalculus, honorsPrecalculus, calculus],
+      [completedHonors],
+      []
+    );
+
+    expect(evaluation.result.status).toBe("satisfied");
+    expect(evaluation.result.evidence[0]).toMatchObject({ matchedBy: "alias", satisfied: true });
+  });
+
+  it("uses grade chronology for current or planned full-year courses", () => {
     const geometry = dtechCourse();
     const precalculus = dtechCourse({ id: "precalculus", name: "Precalculus", prerequisites: ["Geometry"] });
     const currentGeometry = planCourse({ status: "current", source_review_item_id: null, letter_grade: null });
+    const evaluation = evaluateDtechPlannerPrerequisites(
+      precalculus,
+      { gradeLevel: 11, term: "full_year" },
+      [geometry, precalculus],
+      [currentGeometry],
+      []
+    );
+
+    expect(plannerCourseInputs([currentGeometry], [geometry], [])[0].termIndex).toBe(plannerTargetTermIndex(9, "fall"));
+    expect(evaluation.result.status).toBe("satisfied");
+  });
+
+  it("does not accept a full-year prerequisite in the same grade unless concurrent enrollment is allowed", () => {
+    const geometry = dtechCourse();
+    const precalculus = dtechCourse({ id: "precalculus", name: "Precalculus", prerequisites: ["Geometry"] });
+    const currentGeometry = planCourse({ status: "current", source_review_item_id: null, letter_grade: null, grade_level: 10 });
     const evaluation = evaluateDtechPlannerPrerequisites(
       precalculus,
       { gradeLevel: 10, term: "full_year" },
@@ -117,8 +163,7 @@ describe("planner prerequisite adapters", () => {
       []
     );
 
-    expect(plannerCourseInputs([currentGeometry], [geometry], [])[0].termIndex).toBeUndefined();
-    expect(evaluation.result.status).toBe("needs_review");
+    expect(evaluation.result.status).toBe("blocked");
   });
 
   it("keeps SMCCD multiple-measures placement in counselor review", () => {

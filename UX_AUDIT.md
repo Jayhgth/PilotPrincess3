@@ -87,6 +87,7 @@ Every repository Markdown file was reviewed. The set is now organized by audienc
 | `UX_AUDIT.md` | Owner decisions, risks, and strict product assessment | Rewritten as this decision brief; removed the inflated final-state framing. |
 | `docs/overview-path.md` | Selected Overview rationale and QA rules | Keeps the production Finished/In progress/Next decision documented. |
 | `docs/prerequisite-engine.md` | Technical prerequisite policy and operating notes | Retained but shortened to the API, conservative rules, data health, and update procedure. |
+| `docs/catalog-experience.md` | Catalog benchmark research, information architecture, eligibility rules, and five-pass review protocol | Added as the single deep reference for d.tech and SMCCD discovery behavior. |
 | `docs/color-and-institution-system.md` | Duplicate color/brand guidance | Removed and merged into `UI_DESIGN_SYSTEM.md`. |
 | `docs/overview-graduation-design-research.md` | Historical design research and iteration log | Removed and replaced by the actionable concept review. |
 

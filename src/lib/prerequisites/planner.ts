@@ -12,11 +12,15 @@ import type { Course, GradeLevel, PlanCourse, SmccdCourse, SmccdHighSchoolEquiva
 import type { SmccdPrerequisiteCourseInput } from "./smccd";
 
 export const DTECH_PREREQUISITE_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  "Algebra 1": ["Algebra I"],
   "English 2 / English 2 Honors": ["English 2"],
   "English 3 / English 3 Honors": ["English 3"],
   "English 4 / English 4 Honors": ["English 4"],
   "Geometry / Geometry Honors": ["Geometry"],
-  "Algebra 2 / Algebra 2-Trigonometry Honors": ["Algebra 2", "Algebra 2 / Trigonometry Honors"]
+  "Algebra 2 / Algebra 2-Trigonometry Honors": ["Algebra 2", "Algebra II", "Algebra 2 / Trigonometry Honors"],
+  "Precalculus": ["Pre-Calculus"],
+  "Precalculus Honors": ["Precalculus", "Pre-Calculus", "Pre-Calculus Honors"],
+  "Calculus / Calculus Honors": ["Calculus"]
 };
 
 export type PlannerTerm = PlanCourse["term"];
@@ -38,7 +42,11 @@ export function plannerTargetTermIndex(gradeLevel: GradeLevel, term: PlannerTerm
 }
 
 function plannedTermIndex(course: PlanCourse): number | undefined {
-  if (course.term === "full_year") return undefined;
+  if (course.term === "full_year") {
+    return course.status === "completed"
+      ? undefined
+      : plannerTargetTermIndex(course.grade_level, "fall");
+  }
   return plannerTargetTermIndex(course.grade_level, course.term);
 }
 
