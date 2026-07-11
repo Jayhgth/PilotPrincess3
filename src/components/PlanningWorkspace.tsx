@@ -65,7 +65,6 @@ import {
   visibleTranscriptUncertaintyNotes,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
-import CodexReviewPanel, { type ReviewDestination } from "@/components/CodexReviewPanel";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
@@ -102,6 +101,7 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 
 const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
 const AiStatusPanel = lazy(() => import("@/components/AiStatusPanel"));
+const GlobalAssistant = lazy(() => import("@/components/GlobalAssistant"));
 const GraduationWorkspace = lazy(() => import("@/components/GraduationWorkspace"));
 const SmccdPlanner = lazy(() => import("@/components/SmccdPlanner"));
 const ExperienceLog = lazy(() => import("@/components/student-tools/ExperienceLog"));
@@ -253,6 +253,7 @@ export default function PlanningWorkspace() {
   const [view, setView] = useState<ViewId>("dashboard");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [moreNavOpen, setMoreNavOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
@@ -530,11 +531,6 @@ export default function PlanningWorkspace() {
     if (SECONDARY_NAV_ITEMS.some((item) => item.id === nextView)) setMoreNavOpen(true);
     setMobileNavOpen(false);
     void logEvent("view_opened", { view: nextView });
-  }
-
-  function navigateFromReview(destination: ReviewDestination) {
-    if (destination === "simulator") navigate("simulator");
-    else navigate(destination);
   }
 
   function openCourses(area: CourseArea = "mine", smccdSection: "courses" | "degree" = "courses") {
@@ -1329,7 +1325,6 @@ export default function PlanningWorkspace() {
           onGenerateTimeline={() => void generateTasks()}
           onCompleteTask={(id) => void updateTask(id, { is_completed: true })}
         />
-        {session && <CodexReviewPanel session={session} focus="plan" title="Review the whole path" description="Codex can connect the deterministic trackers into a readable review. Every input and event remains inspectable below." question="Review my current academic and workload path. Identify the most important gap, one sequencing risk, one capacity concern, and the next actions I should review." context={{ overview: overviewData, profile: { grade: profile.grade_level, graduation_year: profile.graduation_year, direction: profile.major_direction, interests: profile.academic_interests, work_values: profile.work_values }, prerequisite_checks: prerequisitePlanChecks.map((check) => ({ course: check.name, status: check.status, message: check.message })) }} onNavigate={navigateFromReview} />}
       </div>
     );
   }
@@ -1349,21 +1344,6 @@ export default function PlanningWorkspace() {
         equivalencies
       ).result.status !== "blocked";
     }).length;
-    const profileContext = {
-      broad_direction: profile.major_direction,
-      academic_interests: profile.academic_interests,
-      career_interest_areas: profile.career_interest_areas,
-      work_values: profile.work_values,
-      career_ideas: profile.career_direction,
-      exploration_questions: profile.exploration_questions,
-      planning_limits: {
-        priority: profile.goal_intensity,
-        demanding_course_limit: workload?.demandingCourseLimit ?? null,
-        weekly_commitment_limit: profile.weekly_commitment_limit,
-        current_stress: profile.stress_level,
-        known_weekly_hours: workload?.knownWeeklyHours ?? null
-      }
-    };
     return (
       <div className="profile-page page-frame">
         <PlanningPreferences
@@ -1378,19 +1358,6 @@ export default function PlanningWorkspace() {
           onReviewSetup={() => setReplayingOnboarding(true)}
           onNavigate={(destination) => navigate(destination)}
         />
-        <details className="focused-ai-review">
-          <summary><Sparkle size={15} /> Optional Codex review</summary>
-          <CodexReviewPanel
-            session={session}
-            focus="profile"
-            title="Check the planning brief"
-            description="Codex can surface one useful experiment or one missing constraint. It does not diagnose interests or choose a major."
-            question="Review this planning brief. Give one direct interpretation, up to three evidence-backed observations, and one low-risk next experiment."
-            context={profileContext}
-            onNavigate={navigateFromReview}
-            compact
-          />
-        </details>
       </div>
     );
   }
@@ -1584,12 +1551,6 @@ export default function PlanningWorkspace() {
 
   function renderGpa() {
     const gradedRows = planCourses.filter((row) => row.letter_grade && !["IP", "P"].includes(row.letter_grade.toUpperCase()));
-    const gpaContext = {
-      lens: gpaLens,
-      dtech_transcript_method: { current_unweighted: gpa.currentUnweighted, current_weighted: gpa.currentWeighted, projected_unweighted: gpa.projectedUnweighted, projected_weighted: gpa.projectedWeighted, graded_credits: gpa.gradedCredits, weighted_credits: gpa.weightedCredits, pass_credits_excluded: gpa.passCredits },
-      uc_planning_method: ucGpa,
-      graded_courses: gradedRows.map((row) => ({ name: courseDisplayName(row, courseMap), grade_level: row.grade_level, status: row.status, grade: row.letter_grade, credits: row.credits, weighted: row.is_weighted || Boolean(row.smccd_course_id), verified: row.mapping_verified }))
-    };
     return (
       <div className="gpa-page page-frame">
         <PageHeader title="GPA lenses" description="See the same coursework through the transcript method and a conservative UC planning method." />
@@ -1614,7 +1575,6 @@ export default function PlanningWorkspace() {
             {gradedRows.length ? <div className="grade-table"><div className="grade-table-head"><span>Course</span><span>Status</span><span>Grade points</span><span>Credits</span><span>Weight</span></div>{gradedRows.map((row) => { const points = dtechGradePoint(row.letter_grade); return <div className="grade-table-row" key={row.id}><strong>{courseDisplayName(row, courseMap)}</strong><span>{titleCase(row.status)}</span><span>{row.letter_grade} = {points?.toFixed(1)}</span><span>{row.credits ?? "Verify"}</span><span>{row.is_weighted || row.smccd_course_id || Number(row.college_units ?? 0) > 0 ? "Weighted" : "Standard"}</span></div>; })}</div> : <EmptyState title="No graded courses" body="Add completed or current courses and enter grades in the planner." />}
           </div>
         </details>
-        {session && <CodexReviewPanel session={session} focus="gpa" title="Audit this GPA lens" description="Ask Codex to look for missing evidence or confusing assumptions. The calculation itself remains deterministic." question={`Audit the ${gpaLens === "transcript" ? "d.tech transcript" : "UC planning"} GPA lens. Explain what is supported, what is excluded, and what I should verify.`} context={gpaContext} onNavigate={navigateFromReview} compact />}
       </div>
     );
   }
@@ -1704,30 +1664,11 @@ export default function PlanningWorkspace() {
   }
 
   function renderAiStatus() {
-    return session ? <AiStatusPanel session={session} /> : null;
+    return session ? <AiStatusPanel session={session} onOpenAssistant={() => setAssistantOpen(true)} /> : null;
   }
 
   function renderActivities() {
     if (!session || !profile) return null;
-    const activitiesContext = {
-      capacity: {
-        weekly_limit: profile.weekly_commitment_limit,
-        known_weekly_hours: workload?.knownWeeklyHours ?? null,
-        activity_hours: workload?.weeklyActivityHours ?? null
-      },
-      experiences: activities.map((activity) => ({
-        name: activity.name,
-        type: activity.kind,
-        role: activity.role,
-        organization: activity.organization,
-        hours_per_week: activity.weekly_hours,
-        weeks_per_year: activity.weeks_per_year,
-        grades: [activity.start_grade, activity.end_grade],
-        active: activity.is_active,
-        description: activity.description,
-        contribution_or_growth: activity.impact
-      }))
-    };
     return (
       <div className="activities-page page-frame">
         <ExperienceLog
@@ -1740,19 +1681,6 @@ export default function PlanningWorkspace() {
           onRemove={removeActivity}
           onNavigate={() => navigate("profile")}
         />
-        <details className="focused-ai-review">
-          <summary><Sparkle size={15} /> Optional Codex review</summary>
-          <CodexReviewPanel
-            session={session}
-            focus="activities"
-            title="Check the experience record"
-            description="Codex can identify one missing fact or one workload concern. It never ranks the student or inflates an experience."
-            question="Review this experience record. Give one direct answer, up to three evidence-backed observations, and one useful next edit."
-            context={activitiesContext}
-            onNavigate={navigateFromReview}
-            compact
-          />
-        </details>
       </div>
     );
   }
@@ -1774,19 +1702,6 @@ export default function PlanningWorkspace() {
         remainingCredits: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)
       }));
     const visibleTasks = timelineTaskSync.visibleTasks;
-    const openTasks = visibleTasks.filter((task) => !task.is_completed);
-    const timelineContext = {
-      current_grade: profile.grade_level,
-      graduation_year: profile.graduation_year,
-      open_requirement_areas: openRequirements,
-      prerequisite_checks: courseChecks.map(({ name, status, message }) => ({ name, status, message })),
-      open_steps: openTasks.map((task) => ({
-        title: task.title,
-        timing: task.due_label,
-        source: task.is_generated ? "current plan" : "student",
-        rationale: task.explanation
-      }))
-    };
     const openCourseCheck = (check: CourseCheck) => {
       if (check.source === "dtech") {
         const course = courseMap.get(check.courseId);
@@ -1814,36 +1729,12 @@ export default function PlanningWorkspace() {
           onOpenCourseCheck={openCourseCheck}
           onNavigate={(destination) => navigate(destination)}
         />
-        <details className="focused-ai-review">
-          <summary><Sparkle size={15} /> Optional Codex review</summary>
-          <CodexReviewPanel
-            session={session}
-            focus="timeline"
-            title="Check the order"
-            description="Codex can point out one dependency or one vague step. The saved queue stays under your control."
-            question="Review this next-step queue. Give one direct priority judgment, up to three evidence-backed observations, and one next action."
-            context={timelineContext}
-            onNavigate={navigateFromReview}
-            compact
-          />
-        </details>
       </div>
     );
   }
   function renderSimulator() {
     if (!profile || !session) return null;
     const freshSimulationResult = simulationBasis === currentSimulationBasis ? simulationResult : null;
-    const scenarioContext = freshSimulationResult ? {
-      proposed_change: {
-        additional_smccd_units: simulationConfig.collegeUnits,
-        activity_hours_change: simulationConfig.activityHoursChange
-      },
-      current_week: freshSimulationResult.current,
-      proposed_week: freshSimulationResult.simulated,
-      deterministic_changes: freshSimulationResult.changes,
-      deterministic_limits: freshSimulationResult.risks,
-      saved_weekly_limit: profile.weekly_commitment_limit
-    } : null;
     return (
       <div className="simulator-page page-frame">
         <LoadCheck
@@ -1861,19 +1752,6 @@ export default function PlanningWorkspace() {
           onCompare={runSimulation}
           onNavigate={(destination) => navigate(destination)}
         />
-        {scenarioContext && <details className="focused-ai-review">
-          <summary><Sparkle size={15} /> Optional Codex review</summary>
-          <CodexReviewPanel
-            session={session}
-            focus="scenario"
-            title="Check the tradeoff"
-            description="The comparison above remains deterministic. Codex can challenge one assumption or identify one question to verify."
-            question="Review this weekly load comparison. Give one direct interpretation, up to three evidence-backed observations, and one verification step."
-            context={scenarioContext}
-            onNavigate={navigateFromReview}
-            compact
-          />
-        </details>}
       </div>
     );
   }
@@ -1892,6 +1770,15 @@ export default function PlanningWorkspace() {
     }
   }
 
+  const activeView = NAV_ITEMS.find((item) => item.id === view);
+  const assistantPageContext = {
+    view,
+    label: activeView?.label ?? "workspace",
+    ...(view === "courses" ? { course_area: courseArea } : {}),
+    ...(view === "gpa" ? { gpa_lens: gpaLens } : {}),
+    ...(view === "graduation" ? { graduation_earned_percent: graduationEarnedPercent } : {})
+  };
+
   return (
     <div className="app-shell">
       <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
@@ -1905,6 +1792,7 @@ export default function PlanningWorkspace() {
             const badge = item.id === "sources" && pendingReviewCount > 0 ? pendingReviewCount : null;
             return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span>{badge && <b>{badge}</b>}</button>;
           })}
+          <button className={`sidebar-assistant ${assistantOpen ? "active" : ""}`} onClick={() => { setAssistantOpen(true); setMobileNavOpen(false); }} type="button"><Sparkle size={18} weight={assistantOpen ? "fill" : "duotone"} aria-hidden /><span>Ask Pilot</span></button>
           <button className={`sidebar-more-toggle ${moreNavOpen ? "open" : ""}`} onClick={() => setMoreNavOpen((current) => !current)} type="button" aria-expanded={moreNavOpen}><CaretDown size={17} /><span>More tools</span></button>
           {moreNavOpen && <div className="sidebar-secondary">{SECONDARY_NAV_ITEMS.map((item) => {
             const NavIcon = item.icon;
@@ -1948,9 +1836,10 @@ export default function PlanningWorkspace() {
       </aside>
       {mobileNavOpen && <button className="nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation overlay" />}
       <main className="app-main">
-        <div className="mobile-bar"><button className="icon-button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><AirplaneTilt size={20} /></button><span>{NAV_ITEMS.find((item) => item.id === view)?.label}</span><button className="icon-button" onClick={toggleTheme} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button></div>
+        <div className="mobile-bar"><button className="icon-button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><AirplaneTilt size={20} /></button><span>{activeView?.label}</span><div className="mobile-bar-actions"><button className="icon-button" onClick={() => setAssistantOpen(true)} aria-label="Open Pilot Assistant"><Sparkle size={18} weight="duotone" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button></div></div>
         <div className="app-content"><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></div>
       </main>
+      <Suspense fallback={null}><GlobalAssistant session={session} open={assistantOpen} pageContext={assistantPageContext} onClose={() => setAssistantOpen(false)} onDataChanged={loadWorkspace} /></Suspense>
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}{toast}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
     </div>

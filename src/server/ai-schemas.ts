@@ -172,57 +172,51 @@ export const parsedTranscriptJsonSchema = {
   }
 } as const;
 
-export const planningReviewSchema = z.object({
-  answer: z.string().min(1).max(420),
-  observations: z.array(z.object({
-    label: z.string().min(1).max(90),
-    detail: z.string().min(1).max(260),
-    kind: z.enum(["attention", "consider", "clear"]),
-    evidence: z.string().min(1).max(220)
-  })).max(3),
-  next_action: z.object({
-    label: z.string().min(1).max(120),
-    destination: z.enum(["courses", "graduation", "gpa", "activities", "timeline", "simulator", "profile"]),
-    why: z.string().min(1).max(240)
-  }).nullable(),
-  verification_note: z.string().min(1).max(300)
+export const assistantToolNames = [
+  "get_student_overview",
+  "list_plan_courses",
+  "search_course_catalog",
+  "get_graduation_progress",
+  "get_next_steps",
+  "get_experiences",
+  "add_dtech_course",
+  "add_smccd_course",
+  "move_plan_course",
+  "remove_plan_course",
+  "add_next_step",
+  "complete_next_step"
+] as const;
+
+export const assistantTurnSchema = z.object({
+  assistant_message: z.string().min(1).nullable(),
+  tool_calls: z.array(z.object({
+    name: z.enum(assistantToolNames),
+    arguments_json: z.string().min(2),
+    explanation: z.string().min(1)
+  })).max(3)
 });
 
-export type PlanningReviewResult = z.infer<typeof planningReviewSchema>;
+export type AssistantTurnResult = z.infer<typeof assistantTurnSchema>;
 
-export const planningReviewJsonSchema = {
+export const assistantTurnJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["answer", "observations", "next_action", "verification_note"],
+  required: ["assistant_message", "tool_calls"],
   properties: {
-    answer: { type: "string" },
-    observations: {
+    assistant_message: { type: ["string", "null"] },
+    tool_calls: {
       type: "array",
       maxItems: 3,
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["label", "detail", "kind", "evidence"],
+        required: ["name", "arguments_json", "explanation"],
         properties: {
-          label: { type: "string" },
-          detail: { type: "string" },
-          kind: { type: "string", enum: ["attention", "consider", "clear"] },
-          evidence: { type: "string" }
+          name: { type: "string", enum: assistantToolNames },
+          arguments_json: { type: "string" },
+          explanation: { type: "string" }
         }
       }
-    },
-    next_action: {
-      anyOf: [{ type: "null" }, {
-        type: "object",
-        additionalProperties: false,
-        required: ["label", "destination", "why"],
-        properties: {
-          label: { type: "string" },
-          destination: { type: "string", enum: ["courses", "graduation", "gpa", "activities", "timeline", "simulator", "profile"] },
-          why: { type: "string" }
-        }
-      }]
-    },
-    verification_note: { type: "string" }
+    }
   }
 } as const;

@@ -4,7 +4,7 @@ Last updated: 2026-07-11
 
 ## Current state
 
-The end-to-end local MVP is implemented in Astro and backed by Supabase project `zqkzgmwptdsaqbzrjngt`. It supports open email registration, onboarding, deterministic transcript import, one course workspace, d.tech graduation/A-G tracking, SMCCD course and AA/AS discovery, student decision tools, and transparent server-only Codex reviews.
+The end-to-end local MVP is implemented in Astro and backed by Supabase project `zqkzgmwptdsaqbzrjngt`. It supports open email registration, onboarding, deterministic transcript import, one course workspace, d.tech graduation/A-G tracking, SMCCD course and AA/AS discovery, student decision tools, and a persistent server-only Pilot Assistant.
 
 Jay selected the temporal Path concept as the production Overview. The review switcher and four unused alternatives are removed; the page now follows Finished, In progress, and Next with compact GPA/workload context, tasks, and the latest plan note.
 
@@ -15,7 +15,7 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 - Any valid email may register. Accounts are temporarily auto-confirmed until custom SMTP exists.
 - Parent accounts are out of MVP scope; summaries are lightweight student-facing notes.
 - Text-layer transcript parsing and every planning calculation are deterministic.
-- Codex is server-only and limited to explicit transparent reviews, unstructured policy review, and scan/image interpretation. It never owns planning calculations or silently mutates a plan.
+- Codex is server-only. It may read allowlisted student records after a message, but every write is an exact proposal that requires confirmation and server-side revalidation. It never owns planning calculations or silently mutates a plan.
 - Current official reference data is labeled 2025-26; the d.tech/SMCCD equivalency chart is labeled 2021.
 
 ## Implemented flow
@@ -52,25 +52,26 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 
 ### AI boundary
 
-- Codex SDK runs on authenticated Node routes with structured streaming, cancellation, a bounded two-active/four-waiting queue, recursive secret redaction, payload limits, isolated runtime homes, and no browser credential exposure.
-- Reviews return one direct answer, at most three evidence-backed observations, one proposed action, and one verification note. Focused decision tools keep this optional review collapsed so AI does not become a second page feature.
-- Every review exposes the exact instruction/snapshot, a monotonic sanitized SDK lifecycle, reasoning summaries when emitted, full observed command/MCP/file payloads, structured result, total/queue/execution timing, usage, model, thread, capability limits, and an explicit JSON export. Disabled capabilities are labeled Disabled rather than reported as zero activity.
-- Student review threads explicitly disable network, browser/computer tools, shell, MCP/plugins, skills, file mutation, image generation, workspace tools, and subagents. `show_raw_agent_reasoning` remains false.
-- Image-only transcript and unstructured-source parsing now buffer and return the same sanitized SDK lifecycle, usage, thread, capabilities, and observed tool/file activity. Onboarding and the later transcript workspace share the same progressively disclosed run inspector. They still write only to the manual review boundary.
-- Plan generation and scenario calculation no longer trigger AI automatically.
-- AI connection reports provider, credential mode, model, reasoning, runtime, diagnostics input, provider/local-retention boundary, trace coverage, and the exact used/not-used feature matrix.
+- One lazy global drawer replaces repeated metadata-heavy review panels. It uses a t3code-inspired chat timeline: compact user bubbles, unboxed answers, streaming progress, folded reasoning summaries, readable tool calls, and focused approval cards.
+- Conversations, messages, sanitized events, and tool calls persist in new RLS-protected Supabase tables. A reloaded or newly opened page can continue the same conversation.
+- Six read tools cover overview, course plan, catalog search, graduation, next steps, and experiences. Six write tools cover adding/moving/removing eligible courses and adding/completing next steps.
+- Read tools run automatically within a turn. Write tools persist as pending proposals and execute only after the student confirms the exact arguments; execution rechecks RLS, eligibility, prerequisites, transcript locks, and record state.
+- Codex SDK runs on authenticated Node routes with structured streaming, cancellation, recursive secret redaction, payload limits, isolated temporary runtime homes, and no browser credential exposure.
+- Student assistant turns disable network, browser/computer tools, shell, files, MCP/plugins, skills, image generation, workspace tools, and subagents. `show_raw_agent_reasoning` remains false; only safe reasoning summaries are displayed.
+- Image-only transcript and unstructured-source interpretation retain the manual-review boundary. Plan calculations and text-layer PDF extraction remain deterministic.
+- AI connection is now a compact status and access-boundary page with a direct route to the global assistant.
 - The app requests `gpt-5.6-luna` with `low` reasoning, displayed to users as Light.
 
 ## Verification evidence
 
 - `pnpm lint`: passing.
 - `pnpm typecheck`: passing with zero errors.
-- `pnpm test`: 116 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex redaction/status boundaries, unresolved discipline rules, and the selected Path contract.
-- `pnpm verify:fast`: passing. The broad working-tree dependency graph currently selects all 116 tests; the command remains the documented iterative entry point.
-- Authenticated browser QA passes Experiences, Next steps, Load check, Planning preferences, and AI connection at 1800px and 390px in light/dark modes with no horizontal overflow or console errors. Focused editors, validation retention, deterministic load output, preference saving, and collapsed optional AI were checked.
-- A final live `gpt-5.6-luna` diagnostic completed with Light reasoning in 8.1 seconds. It returned a moderated answer, seven monotonically sequenced lifecycle events, usage, a thread identifier, exact input, explicit disabled tool/file/skill/plugin/subagent states, a downloadable sanitized record, and no runtime error.
+- `pnpm test`: 118 tests passing across 15 files, including generated next-step reconciliation, inactive-experience workload exclusion, bounded activity reduction, catalog eligibility, math progression, cached SMCCD prerequisite evaluation, associate-degree evidence, transcript GPA, the conservative UC GPA lens, Codex tool validation/status boundaries, unresolved discipline rules, and the selected Path contract.
+- `pnpm build`: passing with the Astro Node server output.
+- Authenticated browser QA verified a live `gpt-5.6-luna` read of the current course plan, persisted transcript restoration after reload, readable reasoning/tool labels, and a write request that produced an exact pending approval. Choosing **Not now** produced no mutation. The global drawer passed desktop and 390px light/dark review with no console warnings or errors.
+- Linked Supabase migration history matches through `20260711010000`; linked schema lint reports no errors and dry-run push reports the remote database is up to date.
 - Performance check: the authenticated `PlanningWorkspace` entry is now 156 kB raw instead of the previous 539 kB monolith; focused tools, onboarding, graduation, SMCCD, and AI status are lazy chunks. Global CSS decreased from 155 kB to 149 kB, and SMCCD duplicate checks use a memoized O(1) plan index.
-- Current milestone gate (`lint`, typecheck, 116 unit tests, production build) passes. The previously recorded 6-test Chromium suite, palette validation, linked schema lint, SMCCD validation, and migration dry-run were not rerun because this milestone did not change catalog artifacts, semantic palette tokens, auth/RLS/storage, or schema; current user flows were checked directly in the authenticated browser instead.
+- Current milestone gate (`lint`, typecheck, 118 unit tests, production build) passes. Linked schema/migration checks and the affected authenticated assistant flow were rerun. The unrelated full Playwright, palette, and SMCCD catalog gates were not rerun.
 
 ## Known limitations
 
@@ -86,7 +87,7 @@ Jay selected the temporal Path concept as the production Overview. The review sw
 10. The UI has no transcript archive picker, generalized substitution/waiver/repeat engine, or one-click kanban undo.
 11. Production accessibility and student usability studies have not been conducted.
 12. Official logo use needs final trademark review before public launch.
-13. The TypeScript Codex SDK does not expose the richer app-server deltas, approval flow, plugin attribution, or subagent events used by t3code. Those capabilities are disabled for student reviews; true protocol parity would require a separate app-server transport project.
+13. Product conversation persistence is implemented in Supabase by replaying bounded history into isolated SDK turns; it is not Codex app-server session persistence. Plugins, skills, workspace tools, files, and subagents remain intentionally unavailable to the student assistant.
 14. The full SMCCD curriculum is still fetched when the college catalog is first opened. Client search and duplicate checks are substantially faster, but server-side pagination remains a production-scale follow-up.
 
 ## Next steps

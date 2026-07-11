@@ -1,0 +1,283 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 79;
+  border: 0;
+  background: rgb(12 13 15 / 0.34);
+  animation: assistant-backdrop-in 160ms ease both;
+}
+
+.drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 80;
+  display: grid;
+  width: min(480px, calc(100vw - 32px));
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-left: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: -12px 0 36px rgb(20 22 26 / 0.13);
+  animation: assistant-drawer-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.header {
+  position: relative;
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 12px 0 16px;
+}
+
+.conversationPicker { position: relative; min-width: 0; }
+.conversationPicker > button {
+  display: flex;
+  min-width: 0;
+  max-width: 320px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  padding: 7px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  text-align: left;
+}
+.conversationPicker > button:hover { background: var(--surface-muted); }
+.conversationPicker > button > svg:first-child { color: var(--accent); }
+.conversationPicker > button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.historyMenu {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 7px);
+  left: 0;
+  display: grid;
+  width: min(320px, calc(100vw - 48px));
+  max-height: 320px;
+  gap: 2px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 8px 22px rgb(20 22 26 / 0.12);
+  padding: 6px;
+}
+.historyMenu button {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+.historyMenu button:hover, .historyMenu .activeConversation { background: var(--surface-muted); color: var(--ink); }
+
+.headerActions { display: flex; gap: 3px; }
+.headerActions button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+}
+.headerActions button:hover { background: var(--surface-muted); color: var(--ink); }
+
+.timeline {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 22px 18px 28px;
+  scroll-behavior: smooth;
+}
+
+.empty {
+  display: grid;
+  min-height: 100%;
+  align-content: center;
+  justify-items: start;
+  padding: 28px 12px 68px;
+}
+.empty > svg { margin-bottom: 14px; color: var(--accent); }
+.empty h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.025em; }
+.empty > p { max-width: 38ch; margin: 8px 0 22px; color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+.empty > div { display: grid; width: 100%; gap: 5px; }
+.empty button {
+  width: 100%;
+  min-height: 42px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--ink);
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.empty button:hover { background: var(--surface-strong); }
+
+.loadingHistory, .liveWorking { padding: 10px 3px; color: var(--ink-faint); font-size: 12px; }
+.userTurn { display: grid; margin: 0 0 15px; }
+.userMessage {
+  justify-self: end;
+  max-width: 84%;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-muted);
+  padding: 10px 12px;
+}
+.assistantMessage { margin: 0 0 20px; padding: 2px 3px; }
+.messageBody { display: grid; gap: 9px; color: var(--ink); font-size: 14px; line-height: 1.58; }
+.messageBody p, .messageBody ul, .messageBody ol { margin: 0; }
+.messageBody ul, .messageBody ol { display: grid; gap: 5px; padding-left: 20px; }
+.messageBody code { border-radius: 4px; background: var(--surface-muted); padding: 1px 4px; font-size: 12px; }
+
+.turnWork { margin: 7px 2px 2px; }
+.turnWork > summary {
+  display: flex;
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-faint);
+  padding: 3px 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.turnWork > summary::-webkit-details-marker, .workRow > summary::-webkit-details-marker { display: none; }
+.turnWork[open] > summary > svg, .workRow[open] > summary > svg { transform: rotate(180deg); }
+.turnWorkBody { display: grid; gap: 3px; margin-top: 4px; }
+
+.workRow { border-radius: 6px; }
+.workRow > summary {
+  display: grid;
+  cursor: pointer;
+  list-style: none;
+  grid-template-columns: 21px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 6px;
+  padding: 5px 4px;
+}
+.workRow > summary:hover { background: var(--surface-muted); }
+.workIcon { display: grid; place-items: center; color: var(--ink-faint); }
+.workRow > summary > span:nth-child(2) { display: flex; min-width: 0; align-items: baseline; gap: 7px; }
+.workRow strong { flex: 0 0 auto; font-size: 12px; font-weight: 650; text-transform: capitalize; }
+.workRow small { min-width: 0; overflow: hidden; color: var(--ink-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.workRow > summary > svg { color: var(--ink-faint); transition: transform 140ms ease; }
+.workDetails { margin: 2px 0 6px 25px; border-left: 1px solid var(--line); padding: 5px 9px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.workDetails p { margin: 0; white-space: pre-wrap; }
+.workDetails dl, .approvalCard dl { display: grid; gap: 4px; margin: 7px 0 0; }
+.workDetails dl > div, .approvalCard dl > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; }
+.workDetails dt, .approvalCard dt { color: var(--ink-faint); text-transform: capitalize; }
+.workDetails dd, .approvalCard dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.failed > summary, .failed .workIcon { color: var(--danger); }
+
+.approvalCard {
+  margin: 7px 0 8px 25px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 9px;
+  background: var(--accent-soft);
+  padding: 13px;
+}
+.approvalHeading { display: flex; align-items: flex-start; gap: 8px; }
+.approvalHeading > svg { flex: 0 0 auto; margin-top: 2px; color: var(--accent); }
+.approvalHeading > div { display: grid; gap: 1px; }
+.approvalHeading strong { font-size: 13px; }
+.approvalHeading span { color: var(--ink-soft); font-size: 12px; text-transform: capitalize; }
+.approvalCard > p { margin: 9px 0 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.approvalCard dl { border-radius: 6px; background: color-mix(in srgb, var(--surface) 58%, transparent); padding: 8px; font-size: 12px; }
+.approvalActions { display: flex; gap: 7px; margin-top: 11px; }
+.approvalActions button {
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+.approvalActions button:first-child { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+.toolOutcome { display: flex; align-items: center; gap: 6px; margin: -8px 0 18px 3px; color: var(--success); font-size: 12px; }
+.error { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; border-radius: 7px; background: var(--danger-soft); color: var(--danger); padding: 10px; font-size: 12px; line-height: 1.5; }
+
+.composer {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: 11px 13px 13px;
+}
+.composer > span { display: block; margin: 0 2px 7px; color: var(--ink-faint); font-size: 12px; }
+.composer > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  align-items: end;
+  gap: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-muted);
+  padding: 6px;
+}
+.composer > div:focus-within { border-color: color-mix(in srgb, var(--accent) 68%, var(--line-strong)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
+.composer textarea {
+  min-height: 34px;
+  max-height: 150px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 7px 6px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.composer textarea::placeholder { color: var(--ink-faint); }
+.composer > div > button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--surface);
+}
+.composer > div > button:disabled { opacity: 0.35; }
+.composer > small { display: block; margin: 7px 2px 0; color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
+
+@keyframes assistant-drawer-in { from { opacity: 0; transform: translateX(18px); } }
+@keyframes assistant-backdrop-in { from { opacity: 0; } }
+
+@media (max-width: 620px) {
+  .drawer { width: 100%; border-left: 0; box-shadow: none; }
+  .backdrop { display: none; }
+  .timeline { padding-inline: 13px; }
+  .conversationPicker > button { max-width: calc(100vw - 112px); }
+  .userMessage { max-width: 90%; }
+  .approvalCard { margin-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .backdrop { animation: none; }
+  .timeline { scroll-behavior: auto; }
+}

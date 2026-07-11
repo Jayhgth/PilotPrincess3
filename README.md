@@ -8,7 +8,7 @@ Current reference data is labeled 2025-26. Registration accepts any valid email 
 
 - Astro 7 SSR and React 19
 - Supabase Auth, Postgres, Row Level Security, and Storage
-- Official Codex SDK for optional transparent reviews and image-understanding tasks only
+- Official Codex SDK for the persistent Pilot Assistant and image-understanding fallback
 - TypeScript, Zod, Vitest, and Playwright
 
 ## Local setup
@@ -75,21 +75,21 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/OnboardingFlow.tsx`: guided student and tracker setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
 - `src/components/student-tools/`: lazy-loaded, single-purpose Experiences, Next steps, Load check, and Planning preferences views.
-- `src/components/CodexReviewPanel.tsx`: concise review result plus the complete sanitized SDK lifecycle, input, usage, and capability record.
+- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation drawer with readable reasoning summaries, student-data tool activity, and exact-change approvals.
 - `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
 - `src/components/GraduationWorkspace.tsx`: diploma, A-G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
 - `src/lib/planning.ts`: deterministic graduation, GPA, workload, next-step, and load-check logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
 - `src/lib/prerequisites/`: exact prerequisite parsing, evaluation, and audits.
-- `src/pages/api/ai/`, `src/server/codex.ts`, and `src/server/codex-events.ts`: authenticated runtime, isolation, streaming, and reusable event sanitization.
+- `src/pages/api/ai/`, `src/server/codex.ts`, and `src/server/ai-tools.ts`: authenticated conversations, isolated Codex turns, student-data tools, streaming, and confirmed mutations.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
 
 ## Decision rules
 
 - Text-layer PDF extraction, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic.
-- Codex is used only after an explicit transparent-review action, for unstructured policy review, or for scanned transcripts without a usable text layer. Every Codex path returns an inspectable sanitized SDK lifecycle, safe reasoning summaries when emitted, tool/file payloads if emitted, disabled capabilities, output, usage, and limits. Student-review runtimes are isolated, retain no local Codex CLI session history, and never mutate the plan. The selected snapshot is sent to OpenAI, whose provider-side handling follows the configured account.
+- Codex runs only after a student sends a message, requests unstructured-source review, or supplies a transcript without a usable text layer. The global assistant can read allowlisted records automatically. A write is stored as a pending tool call and runs only after the student confirms its exact arguments; normal RLS, prerequisite, eligibility, and transcript-lock rules run again at execution. Conversations and readable activity persist in Supabase under per-user RLS. Hidden chain-of-thought, shell, files, network, MCP, plugins, skills, and subagents are not exposed or enabled. The selected context is sent to OpenAI, whose provider-side handling follows the configured account.
 - `P` earns credit but does not enter GPA. Quarter-coded pass/fail rows are intersession records.
 - `A+`, `A`, and `A-` use the same four-point band while preserving the exact mark.
 - A d.tech `*` means UC A-G approval, not Honors. d.tech weighting requires reviewed Honors evidence; every SMCCD course is weighted.

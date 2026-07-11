@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus } from "@/server/codex";
+import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
-import { activityProjection } from "@/components/CodexReviewPanel";
+import { assistantTurnSchema } from "@/server/ai-schemas";
+import { parseAssistantToolCall } from "@/server/ai-tools";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -15,8 +16,8 @@ describe("Codex feature boundaries", () => {
     expect(featureMap.structured_transcripts).toBe(false);
     expect(featureMap.planning_math).toBe(false);
     expect(featureMap.image_transcript_ocr).toBe(true);
-    expect(featureMap.connection_diagnostic).toBe(true);
-    expect(featureMap.transparent_plan_reviews).toBe(true);
+    expect(featureMap.global_assistant).toBe(true);
+    expect(featureMap.assistant_plan_changes).toBe(true);
     expect(status.features).toEqual(CODEX_FEATURES);
     expect(status.maxConcurrentTurns).toBe(2);
     expect(status.maxWaitingTurns).toBe(4);
@@ -61,22 +62,28 @@ describe("Codex feature boundaries", () => {
     });
   });
 
-  it("shows failed tool items as failed even after item completion", () => {
-    const projected = activityProjection({
-      source: "sdk",
-      type: "item.completed",
-      sequence: 4,
-      occurredAt: "2026-07-11T00:00:00.000Z",
-      item: {
-        id: "tool-1",
-        type: "command_execution",
-        command: "false",
-        status: "failed",
-        exitCode: 1
-      }
-    });
+  it("accepts a conversational answer without the former review-card length ceiling", () => {
+    const answer = "This response is intentionally longer than the old 240 character next-action field. ".repeat(5);
+    expect(assistantTurnSchema.parse({ assistant_message: answer, tool_calls: [] }).assistant_message).toBe(answer);
+  });
 
-    expect(projected.kind).toBe("tool");
-    expect(projected.state).toBe("failed");
+  it("validates exact tool arguments and marks writes for confirmation", () => {
+    expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
+    expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
+  });
+
+  it("tells the assistant to read records and defer writes to confirmation", () => {
+    const prompt = assistantConversationPrompt({
+      history: [],
+      userMessage: "Add a math course",
+      pageContext: { view: "courses" },
+      executeReadTool: async () => ({ summary: "ok", data: {} }),
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(prompt).toContain("Use read-only student-data tools");
+    expect(prompt).toContain("require the student to confirm");
+    expect(prompt).toContain("Do not create a dashboard-style report or use tables");
   });
 });

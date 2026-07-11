@@ -277,6 +277,54 @@ export interface TimelineTask {
   explanation: string | null;
 }
 
+export interface AiConversation {
+  id: string;
+  user_id: string;
+  title: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiMessage {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  turn_id: string | null;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  page_context: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AiEvent {
+  id: number;
+  conversation_id: string;
+  user_id: string;
+  turn_id: string;
+  sequence: number;
+  event_type: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AiToolCall {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  turn_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  explanation: string;
+  mutates_data: boolean;
+  status: "running" | "pending_confirmation" | "completed" | "failed" | "rejected";
+  result: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+  confirmed_at: string | null;
+  completed_at: string | null;
+}
+
 export interface CatalogReviewItem {
   id: string;
   user_id: string;
