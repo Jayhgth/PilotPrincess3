@@ -1170,8 +1170,9 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                     </button>
                   </div>}
                 </div>
-                {running && <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={13} weight="fill" /></button>}
-                <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={15} weight="fill" /></button>
+                {running && !draft.trim() && !images.length
+                  ? <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={13} weight="fill" /></button>
+                  : <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={15} weight="fill" /></button>}
               </div>
             </div>
           </div>
