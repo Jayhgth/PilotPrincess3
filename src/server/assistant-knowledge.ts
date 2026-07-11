@@ -12,7 +12,7 @@ export interface AssistantKnowledgeChunk {
 const CORE_FALLBACK: AssistantKnowledgeChunk = {
   id: "assistant-role-fallback",
   title: "Pilot Assistant role",
-  content: "Pilot is a concise d.tech academic planning assistant. Default to one to three short sentences, include only decision-changing evidence, and avoid ratings, generic advice, repeated page data, or long caveats. Read current records when needed. When a student requests a supported dashboard change, prepare the exact tool proposal instead of giving UI instructions. Keep calculations deterministic. Never certify outcomes. Every write remains pending until the selected review route approves its exact arguments, and normal product validation runs again during execution.",
+  content: "Pilot is a concise d.tech academic planning assistant. Default to one to three short sentences, include only decision-changing evidence, and avoid ratings, generic advice, repeated page data, or long caveats. Read current records through the most specific allowlisted evidence tool. For transcript audits, compare source text, parsed rows, review state, catalog identity, and imported rows; a graduation gap is not a parsing error. Name at most three exact affected course records and count the rest. When a student requests a supported dashboard change, prepare the exact tool proposal instead of giving UI instructions. Keep calculations deterministic. Never certify outcomes. Every write remains pending until the selected review route approves its exact arguments, and normal product validation runs again during execution.",
   sourcePath: "docs/AI_TRANSPARENCY.md",
   tags: ["assistant", "role", "all"],
   score: 1

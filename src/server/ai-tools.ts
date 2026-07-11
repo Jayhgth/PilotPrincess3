@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createSmccdPlanCourseIndex, dtechCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import type {
   Activity,
+  CatalogReviewItem,
   Course,
   CourseRequirementMapping,
   FourYearPlan,
@@ -13,6 +14,9 @@ import type {
   PlanVersion,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
+  SmccdProgram,
+  SmccdProgramRequirement,
+  SmccdRequirementCourse,
   StudentSmccdGoal,
   StudentProfile,
   TimelineTask
@@ -22,6 +26,7 @@ import {
   calculateRequirementProgress,
   calculateWorkload,
   courseDisplayName,
+  dtechGradePoint,
   overallCompletedPercent,
   overallGraduationPercent,
   planCourseMovePatch,
@@ -29,8 +34,10 @@ import {
   schoolYearForGrade,
   simulatePlan
 } from "@/lib/planning";
+import { calculateSmccdProgramProgress } from "@/lib/smccd";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
+import { buildTranscriptAudit } from "@/server/assistant-audits";
 
 const courseStatusSchema = z.enum(["current", "planned"]);
 const termSchema = z.enum(["fall", "spring", "summer", "full_year"]);
@@ -52,6 +59,11 @@ const toolArgumentSchemas = {
   get_experiences: z.object({ active_only: z.boolean().default(false) }),
   get_student_profile: z.object({}),
   get_transcript_sources: z.object({}),
+  get_student_data_inventory: z.object({}),
+  audit_transcript_data: z.object({ include_source_text: z.boolean().default(false) }),
+  get_gpa_evidence: z.object({ scope: z.enum(["current", "projected"]).default("projected") }),
+  get_plan_versions: z.object({}),
+  get_degree_progress: z.object({}),
   get_college_goal: z.object({}),
   run_load_check: z.object({
     college_units: z.number().min(0).max(18),
@@ -157,8 +169,13 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_graduation_progress", mutatesData: false, description: "Read requirement-by-requirement completed, scheduled, and remaining credit evidence.", arguments: "{}" },
   { name: "get_next_steps", mutatesData: false, description: "Read open graduation gaps and saved next-step tasks.", arguments: "{}" },
   { name: "get_experiences", mutatesData: false, description: "Read the student's factual experience register and recorded weekly hours.", arguments: '{"active_only":boolean}' },
-  { name: "get_student_profile", mutatesData: false, description: "Read planning preferences, interests, direction, stress, and capacity inputs.", arguments: "{}" },
+  { name: "get_student_profile", mutatesData: false, description: "Read the student's setup, tracker scope, planning preferences, interests, direction, stress, capacity, and AI connection state.", arguments: "{}" },
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Transcript evidence remains read-only in chat.", arguments: "{}" },
+  { name: "get_student_data_inventory", mutatesData: false, description: "Read a compact inventory of the current student's available records so the assistant can choose the correct evidence tool.", arguments: "{}" },
+  { name: "audit_transcript_data", mutatesData: false, description: "Compare transcript source text, parsed rows, review decisions, catalog identities, and imported plan rows. Use source text for an actual extraction audit; never treat a graduation gap as a parsing error.", arguments: '{"include_source_text":boolean}' },
+  { name: "get_gpa_evidence", mutatesData: false, description: "Read course-level GPA inclusion, weighting, points, and exclusion evidence for the current or projected calculation.", arguments: '{"scope":"current|projected"}' },
+  { name: "get_plan_versions", mutatesData: false, description: "Read active and saved plan versions with labels, creation dates, and course counts.", arguments: "{}" },
+  { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for the selected SMCCD associate-degree goal.", arguments: "{}" },
   { name: "get_college_goal", mutatesData: false, description: "Read the selected SMCCD associate-degree goal.", arguments: "{}" },
   { name: "run_load_check", mutatesData: false, description: "Run the deterministic current-versus-proposed workload check without saving a scenario.", arguments: '{"college_units":number,"activity_hours_change":number}' },
   { name: "save_plan_snapshot", mutatesData: true, description: "Propose saving a read-only copy of the active course plan before a larger change.", arguments: '{"label":"optional short label"}' },
@@ -197,6 +214,11 @@ export function assistantToolLabel(name: string) {
     get_experiences: "Read experiences",
     get_student_profile: "Read planning preferences",
     get_transcript_sources: "Read transcript sources",
+    get_student_data_inventory: "Inventory student records",
+    audit_transcript_data: "Audit transcript evidence",
+    get_gpa_evidence: "Read GPA evidence",
+    get_plan_versions: "Read plan versions",
+    get_degree_progress: "Read degree progress",
     get_college_goal: "Read college goal",
     run_load_check: "Run load check",
     save_plan_snapshot: "Save plan snapshot",
@@ -242,6 +264,7 @@ interface AssistantWorkspace {
   tasks: TimelineTask[];
   plannedSmccdCourses: SmccdCourse[];
   sources: OfficialSource[];
+  transcriptReviewItems: CatalogReviewItem[];
   collegeGoals: StudentSmccdGoal[];
 }
 
@@ -250,7 +273,7 @@ function firstError(results: ReadonlyArray<{ error: { message: string } | null }
 }
 
 async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string): Promise<AssistantWorkspace> {
-  const [profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, goalResult] = await Promise.all([
+  const [profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult] = await Promise.all([
     supabase.from("student_profiles").select("*").eq("id", userId).single(),
     supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
     supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
@@ -260,9 +283,10 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     supabase.from("activities").select("*").eq("user_id", userId).order("created_at"),
     supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
     supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
+    supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
     supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("is_primary", { ascending: false })
   ]);
-  const error = firstError([profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, goalResult]);
+  const error = firstError([profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult]);
   if (error) throw new Error(error.message);
 
   const plan = planResult.data as unknown as FourYearPlan;
@@ -297,6 +321,7 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     tasks: (taskResult.data ?? []) as unknown as TimelineTask[],
     plannedSmccdCourses: (smccdResult.data ?? []) as unknown as SmccdCourse[],
     sources: (sourceResult.data ?? []) as unknown as OfficialSource[],
+    transcriptReviewItems: (reviewResult.data ?? []) as unknown as CatalogReviewItem[],
     collegeGoals: (goalResult.data ?? []) as unknown as StudentSmccdGoal[]
   };
 }
@@ -481,8 +506,15 @@ export async function executeAssistantReadTool(
       summary: "Read the current planning preferences.",
       data: {
         preferred_name: workspace.profile.preferred_name,
+        age: workspace.profile.age,
         grade_level: workspace.profile.grade_level,
         graduation_year: workspace.profile.graduation_year,
+        school_confirmed: workspace.profile.school_confirmed,
+        onboarding_complete: workspace.profile.onboarding_complete,
+        plan_start_grade: workspace.profile.plan_start_grade,
+        plan_end_grade: workspace.profile.plan_end_grade,
+        tracker_mode: workspace.profile.tracker_mode,
+        tracked_requirement_areas: workspace.profile.tracked_requirement_areas,
         academic_interests: workspace.profile.academic_interests,
         career_interest_areas: workspace.profile.career_interest_areas,
         work_values: workspace.profile.work_values,
@@ -492,7 +524,15 @@ export async function executeAssistantReadTool(
         planning_priority: workspace.profile.goal_intensity,
         workload_tolerance: workspace.profile.workload_tolerance,
         stress_level: workspace.profile.stress_level,
-        weekly_commitment_limit: workspace.profile.weekly_commitment_limit
+        weekly_commitment_limit: workspace.profile.weekly_commitment_limit,
+        ai_connection: {
+          enabled: workspace.profile.ai_enabled,
+          model: workspace.profile.ai_model,
+          reasoning: workspace.profile.ai_reasoning_effort,
+          review_mode: workspace.profile.ai_review_mode,
+          approved_at: workspace.profile.ai_connection_approved_at,
+          last_tested_at: workspace.profile.ai_setup_tested_at
+        }
       }
     };
   }
@@ -508,6 +548,175 @@ export async function executeAssistantReadTool(
       imported_at: source.created_at
     }));
     return { summary: `Read ${data.length} transcript ${data.length === 1 ? "source" : "sources"}.`, data };
+  }
+
+  if (name === "get_student_data_inventory") {
+    const completed = workspace.planCourses.filter((row) => row.status === "completed").length;
+    const imported = workspace.planCourses.filter((row) => row.source_review_item_id).length;
+    return {
+      summary: "Read the available student-record inventory.",
+      data: {
+        scope: "Current user's RLS-protected academic planning records; no auth secrets, admin data, arbitrary SQL, or other users' records.",
+        profile: { available: true, onboarding_complete: workspace.profile.onboarding_complete },
+        active_plan: { course_count: workspace.planCourses.length, completed_count: completed, transcript_imported_count: imported },
+        graduation: { requirement_count: calculated.progress.length },
+        gpa: { graded_credits: calculated.gpa.gradedCredits, pass_credits: calculated.gpa.passCredits },
+        transcript: {
+          source_count: workspace.sources.length,
+          parsed_course_row_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course").length,
+          pending_review_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course" && item.status === "pending").length
+        },
+        experiences: { count: workspace.activities.length },
+        next_steps: { count: workspace.tasks.length, open_count: workspace.tasks.filter((task) => !task.is_completed).length },
+        college_goal: { selected: workspace.collegeGoals.length > 0 },
+        available_detail_tools: [
+          "list_plan_courses",
+          "get_graduation_progress",
+          "get_gpa_evidence",
+          "audit_transcript_data",
+          "get_plan_versions",
+          "get_experiences",
+          "get_next_steps",
+          "get_student_profile",
+          "get_degree_progress"
+        ]
+      }
+    };
+  }
+
+  if (name === "audit_transcript_data") {
+    const args = toolArgumentSchemas.audit_transcript_data.parse(argumentsValue);
+    const data = buildTranscriptAudit({
+      sources: workspace.sources,
+      reviewItems: workspace.transcriptReviewItems,
+      planCourses: workspace.planCourses,
+      courses: workspace.courses,
+      smccdCourses: workspace.plannedSmccdCourses,
+      includeSourceText: args.include_source_text
+    });
+    return {
+      summary: `Audited ${data.summary.parsed_course_count} parsed transcript rows against review and import evidence.`,
+      data
+    };
+  }
+
+  if (name === "get_gpa_evidence") {
+    const args = toolArgumentSchemas.get_gpa_evidence.parse(argumentsValue);
+    const rows = workspace.planCourses
+      .filter((row) => args.scope === "projected" || row.status !== "planned")
+      .map((row) => {
+        const grade = row.letter_grade?.trim().toUpperCase() ?? "";
+        const credits = Number(row.credits ?? 0);
+        const points = dtechGradePoint(grade);
+        const weighted = row.is_weighted || Boolean(row.smccd_course_id) || Number(row.college_units ?? 0) > 0;
+        const included = points !== null && credits > 0;
+        const passOnly = grade === "P" && credits > 0;
+        return {
+          plan_course_id: row.id,
+          course_name: courseDisplayName(row, courseMap),
+          status: row.status,
+          final_grade: row.letter_grade,
+          credits,
+          weighted,
+          included_in_gpa: included,
+          unweighted_points: included ? points : null,
+          weighted_points: included ? Math.min(5, points + (weighted ? 1 : 0)) : null,
+          exclusion_reason: passOnly ? "Pass credit does not affect GPA" : included ? null : grade ? "Grade is not GPA-bearing" : "No final grade is recorded",
+          transcript_backed: Boolean(row.source_review_item_id)
+        };
+      });
+    return {
+      summary: `Read ${args.scope} GPA evidence for ${rows.length} course rows.`,
+      data: {
+        scope: args.scope,
+        calculation: calculated.gpa,
+        policy: "A- and other plus/minus variants use the base letter value. SMCCD and other college rows are weighted. Pass grades earn credit but no GPA points.",
+        rows
+      }
+    };
+  }
+
+  if (name === "get_plan_versions") {
+    const { data: versions, error: versionError } = await supabase
+      .from("plan_versions")
+      .select("*")
+      .eq("plan_id", workspace.plan.id)
+      .order("created_at", { ascending: false });
+    if (versionError) throw new Error(versionError.message);
+    const versionRows = (versions ?? []) as unknown as PlanVersion[];
+    const versionIds = versionRows.map((version) => version.id);
+    const courseResult = versionIds.length
+      ? await supabase.from("plan_courses").select("plan_version_id").eq("user_id", userId).in("plan_version_id", versionIds)
+      : { data: [], error: null };
+    if (courseResult.error) throw new Error(courseResult.error.message);
+    const counts = new Map<string, number>();
+    for (const row of courseResult.data ?? []) counts.set(row.plan_version_id, (counts.get(row.plan_version_id) ?? 0) + 1);
+    const data = versionRows.map((version) => ({
+      version_id: version.id,
+      label: version.label,
+      kind: version.kind,
+      course_count: counts.get(version.id) ?? 0,
+      created_at: version.created_at,
+      has_ai_summary: Boolean(version.ai_summary)
+    }));
+    return { summary: `Read ${data.length} plan ${data.length === 1 ? "version" : "versions"}.`, data };
+  }
+
+  if (name === "get_degree_progress") {
+    const primaryGoal = workspace.collegeGoals.find((goal) => goal.is_primary) ?? workspace.collegeGoals[0];
+    if (!primaryGoal) return { summary: "No SMCCD degree goal is selected.", data: null };
+    const [programResult, requirementResult] = await Promise.all([
+      supabase.from("smccd_programs").select("*").eq("id", primaryGoal.program_id).single(),
+      supabase.from("smccd_program_requirements").select("*").eq("program_id", primaryGoal.program_id).order("sort_order")
+    ]);
+    if (programResult.error) throw new Error(programResult.error.message);
+    if (requirementResult.error) throw new Error(requirementResult.error.message);
+    const program = programResult.data as unknown as SmccdProgram;
+    const requirements = (requirementResult.data ?? []) as unknown as SmccdProgramRequirement[];
+    const requirementIds = requirements.map((requirement) => requirement.id);
+    const optionResult = requirementIds.length
+      ? await supabase.from("smccd_requirement_courses").select("*").in("requirement_id", requirementIds)
+      : { data: [], error: null };
+    if (optionResult.error) throw new Error(optionResult.error.message);
+    const options = (optionResult.data ?? []) as unknown as SmccdRequirementCourse[];
+    const optionCodes = [...new Set(options.map((option) => option.course_code))];
+    const catalogResults = await Promise.all(
+      Array.from({ length: Math.ceil(optionCodes.length / 100) }, (_, index) => optionCodes.slice(index * 100, index * 100 + 100))
+        .map((codes) => supabase.from("smccd_courses").select("*").in("course_code", codes))
+    );
+    const catalogError = catalogResults.find((result) => result.error)?.error;
+    if (catalogError) throw new Error(catalogError.message);
+    const catalogCourses = catalogResults.flatMap((result) => result.data ?? []) as unknown as SmccdCourse[];
+    const courseMapById = new Map<string, SmccdCourse>();
+    for (const course of [...workspace.plannedSmccdCourses, ...catalogCourses]) courseMapById.set(course.id, course);
+    const progress = calculateSmccdProgramProgress(program, requirements, options, workspace.planCourses, [...courseMapById.values()]);
+    return {
+      summary: `Read requirement evidence for ${program.title}.`,
+      data: {
+        goal: { program_id: program.id, college_code: program.college_code, title: program.title, award_type: program.award_type, source_year: program.source_year, catalog_url: program.catalog_url },
+        totals: {
+          completed_college_units: progress.completedCollegeUnits,
+          projected_college_units: progress.projectedCollegeUnits,
+          completed_major_units: progress.completedMajorUnits,
+          projected_major_units: progress.projectedMajorUnits,
+          required_major_units: progress.requiredMajorUnits,
+          manual_review_requirements: progress.manualReviewRequirements
+        },
+        requirements: progress.requirements.map((item) => ({
+          requirement_id: item.requirement.id,
+          label: item.requirement.label,
+          status: item.status,
+          completed_status: item.completedStatus,
+          completed_course_codes: item.completedCourseCodes,
+          selected_course_codes: item.selectedCourseCodes,
+          remaining_units: item.remainingUnits,
+          remaining_count: item.remainingCount,
+          missing_summary: item.missingSummary,
+          manual_review_reason: item.manualReviewReason
+        })),
+        boundary: "This is parsed major-requirement evidence, not final degree eligibility. General education, residency, substitutions, and counselor approval remain separate."
+      }
+    };
   }
 
   if (name === "get_college_goal") {

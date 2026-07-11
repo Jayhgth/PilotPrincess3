@@ -91,6 +91,9 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("update_student_profile", { stress_level: 4, weekly_commitment_limit: 18 })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_experience", { name: "Robotics", kind: "club", weekly_hours: 4 })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("run_load_check", { college_units: 3, activity_hours_change: -2 })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
@@ -148,6 +151,9 @@ describe("Codex feature boundaries", () => {
       onToolActivity: () => undefined
     });
     expect(prompt).toContain("Use read-only student-data tools");
+    expect(prompt).toContain("audit_transcript_data with include_source_text true");
+    expect(prompt).toContain("graduation requirement gap is a downstream plan result");
+    expect(prompt).toContain("name at most three exact course records");
     expect(prompt).toContain("manual or auto-review mode");
     expect(prompt).toContain("create a dashboard-style report or table");
     expect(prompt).toContain("Default to one to three short sentences");

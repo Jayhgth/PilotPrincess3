@@ -30,15 +30,20 @@ Raw JSON, validation internals, event names, model protocol fields, and hidden c
 
 Read tools may run automatically after a student sends a message:
 
+- a compact inventory of available student-owned records;
 - student overview;
 - Done, In progress, and Planned courses;
+- active and saved plan versions;
 - eligible d.tech and SMCCD catalog search;
 - graduation evidence;
+- course-level GPA inclusion and weighting evidence;
 - next steps;
 - experiences;
 - planning preferences and capacity inputs;
 - transcript-source labels and review state;
+- a transcript evidence audit that can compare bounded source text, parsed rows, review decisions, catalog matches, and imported plan rows;
 - the selected associate-degree goal; and
+- deterministic selected-degree requirement progress; and
 - a deterministic workload scenario.
 
 Write tools may prepare these changes:
@@ -59,7 +64,9 @@ Every write is an exact proposal first. The chat composer exposes two persisted 
 
 Product policy overrides the reviewer and forces removals, preferred-name changes, grade edits, and marking a course Done to Manual. Medium-risk, high-risk, ambiguous, failed, or uncertain reviews also become manual approval cards. A denied proposal is recorded as not applied. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
 
-The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
+The read surface covers student-facing planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
+
+Evidence audits use a stricter rule than ordinary Q&A. Pilot must compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. In particular, a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows remain read-only in chat even when Pilot can inspect their evidence.
 
 ## Conversation and event model
 

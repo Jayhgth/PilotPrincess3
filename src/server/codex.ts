@@ -157,7 +157,7 @@ export const CODEX_RUNTIME_CAPABILITIES = [
   { id: "agent_output", label: "Agent output", state: "available", detail: "Every assistant item and the final structured result are included in the run record." },
   { id: "reasoning", label: "Reasoning summaries", state: "available_if_emitted", detail: "Codex-provided summaries are shown when emitted. Hidden chain-of-thought is never requested." },
   { id: "todo", label: "Task plan", state: "available_if_emitted", detail: "Todo lifecycle items appear when the SDK emits them." },
-  { id: "student_data_tools", label: "Student data tools", state: "available", detail: "Read-only plan, catalog, graduation, next-step, experience, and workload tools run on the server under the student's RLS identity." },
+  { id: "student_data_tools", label: "Student data tools", state: "available", detail: "Structured read-only tools cover the student's profile, plan, versions, catalogs, graduation, GPA evidence, transcript evidence, degree progress, next steps, experiences, and workload under the student's RLS identity." },
   { id: "shell_tools", label: "Shell, MCP, and web tools", state: "disabled", detail: "The student assistant cannot run shell commands, use arbitrary MCP servers, browse, or inspect the host filesystem." },
   { id: "files", label: "File changes", state: "disabled", detail: "The thread runs in an empty read-only directory and cannot change student files." },
   { id: "skills", label: "Skills", state: "disabled", detail: "No Codex skill is loaded into student review threads." },
@@ -544,7 +544,8 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     options.images?.length
       ? `The student explicitly attached ${options.images.length} ${options.images.length === 1 ? "image" : "images"}: ${(options.imageNames ?? []).join(", ") || "unnamed image"}. Use visible image content only as context for this turn. Describe uncertainty when text or details are unclear, and do not infer unsupported student records.`
       : "No image was attached to this turn.",
-    "Use read-only student-data tools whenever a factual answer depends on the current plan, transcript-backed courses, requirements, workload, next steps, experiences, or catalogs. Do not guess current records.",
+    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing data domain; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read.",
+    "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Compare original text, parsed rows, review decisions, catalog identities, and imported plan rows. Report only specific supported mismatches. A graduation requirement gap is a downstream plan result, never evidence of a parsing error by itself. Separate confirmed parser/reconciliation errors from items that merely need review; if no error is supported, say so plainly. When review items remain, name at most three exact course records and count the rest instead of giving a vague category.",
     "When the student explicitly asks to change supported dashboard data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to three exact related changes in one turn.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will assess eligible proposals; sensitive changes may still wait for the student." : "Manual. The student must approve every proposed change."}`,
@@ -648,7 +649,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         }
         prompt = [
           "Continue the same student conversation using these actual tool results.",
-          "Answer with only the result that matters. Keep it to one to three short sentences or at most three compact bullets. Do not dump or restate the tool data.",
+          "Answer with only the result that matters. Keep it to one to three short sentences or at most three compact bullets. Do not dump or restate the tool data. For an audit, distinguish confirmed mismatches from unresolved verification, name at most three exact affected records, count any remainder, and never convert a downstream planning gap into a source-data error.",
           "If the student requested a write, propose the exact mutating tool now and do not repeat the read tool or tell them to make the change manually.",
           `TOOL RESULTS: ${JSON.stringify(results)}`,
           mutationCalls.length ? "The earlier mixed write proposal was not retained. Re-propose it only if the read results still support it." : ""
