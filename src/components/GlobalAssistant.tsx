@@ -1,5 +1,6 @@
 import {
   ArchiveIcon as Archive,
+  ArrowUpIcon as ArrowUp,
   ArrowSquareOutIcon as ArrowSquareOut,
   BrainIcon as Brain,
   CaretDownIcon as CaretDown,
@@ -17,6 +18,7 @@ import {
   PushPinIcon as PushPin,
   ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkle,
+  StopIcon as Stop,
   UserCircleCheckIcon as UserCircleCheck,
   ArrowCounterClockwiseIcon as ArrowCounterClockwise,
   WrenchIcon as Wrench,
@@ -32,7 +34,7 @@ import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexCo
 import type { AiModel, AiReviewMode } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
-import { assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
+import { assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import styles from "./GlobalAssistant.module.css";
 
@@ -73,6 +75,21 @@ interface ComposerImage {
   previewUrl: string;
 }
 
+interface QueuedMessage {
+  id: string;
+  content: string;
+  images: ComposerImage[];
+  context: Record<string, unknown>;
+}
+
+interface SendMessageOptions {
+  context?: Record<string, unknown>;
+  images?: ComposerImage[];
+  conversation?: AiConversation;
+  queueItem?: QueuedMessage;
+  clearComposerDraft?: boolean;
+}
+
 type AssistantPanelMode = "docked" | "floating";
 type AssistantSettingsSection = "connection" | "archive" | "interface";
 
@@ -87,8 +104,10 @@ const PANEL_WIDTH_KEY = "pilot-princess:assistant-width";
 const PANEL_MODE_KEY = "pilot-princess:assistant-mode";
 const PANEL_FLOATING_LAYOUT_KEY = "pilot-princess:assistant-floating-layout";
 const DEFAULT_PANEL_WIDTH = 420;
-const MIN_PANEL_WIDTH = 340;
+const MIN_PANEL_WIDTH = 360;
 const MAX_PANEL_WIDTH = 680;
+const MIN_WORKSPACE_WITH_SIDEBAR = 1080;
+const MAX_QUEUED_MESSAGES = 5;
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -173,22 +192,28 @@ function MessageActions({ message, align = "left", canRetry = false, onRetry }: 
   </div>;
 }
 
-function StructuredQuestions({ questions, answered, busy, onSubmit }: { questions: AssistantQuestion[]; answered: boolean; busy: boolean; onSubmit: (answers: Record<string, string>) => Promise<void> }) {
+function StructuredQuestions({ questions, answered, willQueue, onSubmit }: { questions: AssistantQuestion[]; answered: boolean; willQueue: boolean; onSubmit: (answers: Record<string, string>) => Promise<boolean> }) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [queued, setQueued] = useState(false);
   const complete = questions.every((question) => Boolean(answers[question.id]?.trim()));
   async function submit() {
-    if (!complete || answered || busy) return;
+    if (!complete || answered || submitting || queued) return;
     setSubmitting(true);
-    try { await onSubmit(answers); } finally { setSubmitting(false); }
+    try {
+      const accepted = await onSubmit(answers);
+      if (accepted && willQueue) setQueued(true);
+    } finally {
+      setSubmitting(false);
+    }
   }
   return <section className={styles.questionSet} aria-label="Pilot questions">
-    {questions.map((question) => <fieldset key={question.id} disabled={answered || busy || submitting}>
+    {questions.map((question) => <fieldset key={question.id} disabled={answered || submitting || queued}>
       <legend>{question.prompt}</legend>
       <div className={styles.questionOptions}>{question.options.map((option) => <button type="button" key={option.id} className={answers[question.id] === option.label ? styles.selectedQuestionOption : ""} onClick={() => setAnswers((current) => ({ ...current, [question.id]: option.label }))}>{option.label}</button>)}</div>
       {question.allow_custom && <input value={question.options.some((option) => option.label === answers[question.id]) ? "" : answers[question.id] ?? ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} placeholder="Or write your answer" aria-label={`Custom answer: ${question.prompt}`} />}
     </fieldset>)}
-    <button className={styles.submitAnswers} type="button" onClick={() => void submit()} disabled={!complete || answered || busy || submitting}>{answered ? "Answered" : submitting ? "Sending" : questions.length > 1 ? "Send answers" : "Send answer"}</button>
+    <button className={styles.submitAnswers} type="button" onClick={() => void submit()} disabled={!complete || answered || submitting || queued}>{answered ? "Answered" : queued ? "Queued" : submitting ? (willQueue ? "Queuing" : "Sending") : questions.length > 1 ? "Send answers" : "Send answer"}</button>
   </section>;
 }
 
@@ -324,6 +349,7 @@ function activityItem(event: LiveActivity) {
   if (itemType === "mcp_tool_call") return { kind: "tool", label: `${String(item?.server ?? "Tool")} ${String(item?.tool ?? "call")}`, detail: "" };
   if (itemType === "web_search") return { kind: "tool", label: "Web search", detail: String(item?.query ?? "") };
   if (itemType === "file_change") return { kind: "tool", label: "File changes", detail: JSON.stringify(item?.changes ?? []) };
+  if (event.type === "turn.cancelled") return { kind: "stopped", label: "Response stopped", detail: String(event.message ?? "Stopped by the student") };
   if (event.type === "turn.failed" || itemType === "error") return { kind: "error", label: "Assistant stopped", detail: String(event.message ?? item?.message ?? "") };
   return null;
 }
@@ -352,6 +378,7 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   const [showAllTools, setShowAllTools] = useState(false);
   const items = events.map(activityItem).filter((item): item is NonNullable<ReturnType<typeof activityItem>> => Boolean(item));
   const hasFailure = items.some((item) => item.kind === "error") || tools.some((tool) => tool.status === "failed");
+  const wasCancelled = items.some((item) => item.kind === "stopped");
   const hasPendingChange = tools.some((tool) => tool.status === "pending_confirmation");
   const forceOpen = running || hasFailure || hasPendingChange;
   const startedAt = assistantTurnStartedAt(events);
@@ -361,7 +388,7 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   const groupedTools = visibleToolCalls(tools, showAllTools);
   return (
     <details className={styles.turnWork} key={forceOpen ? "active" : "settled"} open={forceOpen || undefined}>
-      <summary><span className={styles.turnWorkLabel}>{running ? <><ShinyText text="Working" speed={1.8} />{startedAt && <> for <LiveElapsed startedAt={startedAt} /></>}</> : hasFailure ? duration ? `Stopped after ${duration}` : "Work stopped" : duration ? `Worked for ${duration}` : toolCount ? `${toolCount} tool ${toolCount === 1 ? "call" : "calls"}` : "Reasoning"}{!running && duration && toolCount > 0 && <small> · {toolCount} tool {toolCount === 1 ? "call" : "calls"}</small>}</span><CaretDown size={13} /></summary>
+      <summary><span className={styles.turnWorkLabel}>{running ? <><ShinyText text="Working" speed={1.8} />{startedAt && <> for <LiveElapsed startedAt={startedAt} /></>}</> : hasFailure || wasCancelled ? duration ? `Stopped after ${duration}` : "Work stopped" : duration ? `Worked for ${duration}` : toolCount ? `${toolCount} tool ${toolCount === 1 ? "call" : "calls"}` : "Reasoning"}{!running && duration && toolCount > 0 && <small> · {toolCount} tool {toolCount === 1 ? "call" : "calls"}</small>}</span><CaretDown size={13} /></summary>
       <div className={styles.turnWorkBody}>
         {items.map((item, index) => <details className={`${styles.workRow} ${item.kind === "error" ? styles.failed : ""}`} key={`${item.label}-${index}`} open={item.kind === "error"}>
           <summary><span className={styles.workIcon}>{item.kind === "reasoning" ? <Brain size={15} /> : item.kind === "review" ? <ShieldCheck size={15} /> : item.kind === "error" ? <Warning size={15} /> : <Clock size={15} />}</span><span><strong>{item.label}</strong>{item.detail && <small>{item.detail.slice(0, 110)}</small>}</span><CaretDown size={13} /></summary>
@@ -389,6 +416,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
   const [savingReviewMode, setSavingReviewMode] = useState(false);
   const [images, setImages] = useState<ComposerImage[]>([]);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [draggingImage, setDraggingImage] = useState(false);
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
@@ -400,7 +428,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
   const [panelMode, setPanelModeState] = useState<AssistantPanelMode>(loadPanelMode);
-  const [panelWidth, setPanelWidth] = useState(() => clamp(loadStoredNumber(PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH), MIN_PANEL_WIDTH, MAX_PANEL_WIDTH));
+  const [panelWidth, setPanelWidth] = useState(() => clamp(loadStoredNumber(PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH), MIN_PANEL_WIDTH, typeof window === "undefined" ? MAX_PANEL_WIDTH : assistantDockedMaxWidth(window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_WORKSPACE_WITH_SIDEBAR)));
   const [floatingLayout, setFloatingLayout] = useState<FloatingLayout>(loadFloatingLayout);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [setup, setSetup] = useState<CodexSetupValue>({
@@ -410,11 +438,13 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     testedAt: preferences.testedAt
   });
   const abortRef = useRef<AbortController | null>(null);
+  const runningRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
   const imagesRef = useRef<ComposerImage[]>([]);
+  const queueRef = useRef<QueuedMessage[]>([]);
   const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const panelDragRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
@@ -490,6 +520,15 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }, [panelMode, panelWidth]);
 
   useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1440) return;
+      setPanelWidth((current) => clamp(current, MIN_PANEL_WIDTH, assistantDockedMaxWidth(window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_WORKSPACE_WITH_SIDEBAR)));
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || running) return;
@@ -503,10 +542,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }, [onClose, open, previewImage, reviewMenuOpen, running, settingsOpen]);
 
   useEffect(() => { imagesRef.current = images; }, [images]);
+  useEffect(() => { queueRef.current = queuedMessages; }, [queuedMessages]);
 
   useEffect(() => () => {
     abortRef.current?.abort();
     for (const image of imagesRef.current) URL.revokeObjectURL(image.previewUrl);
+    for (const queued of queueRef.current) for (const image of queued.images) URL.revokeObjectURL(image.previewUrl);
   }, []);
 
   useEffect(() => {
@@ -567,7 +608,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   function handleDockResizeMove(event: ReactPointerEvent<HTMLDivElement>) {
     const resize = dockResizeRef.current;
     if (!resize || resize.pointerId !== event.pointerId || !drawerRef.current) return;
-    const maxWidth = Math.min(MAX_PANEL_WIDTH, window.innerWidth - 360);
+    const maxWidth = assistantDockedMaxWidth(window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_WORKSPACE_WITH_SIDEBAR);
     const width = clamp(resize.startWidth - (event.clientX - resize.startX), MIN_PANEL_WIDTH, maxWidth);
     drawerRef.current.style.width = `${width}px`;
     document.documentElement.style.setProperty("--assistant-panel-width", `${width}px`);
@@ -576,7 +617,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   function handleDockResizeEnd(event: ReactPointerEvent<HTMLDivElement>) {
     const resize = dockResizeRef.current;
     if (!resize || resize.pointerId !== event.pointerId) return;
-    const width = drawerRef.current?.getBoundingClientRect().width ?? panelWidth;
+    const width = clamp(drawerRef.current?.getBoundingClientRect().width ?? panelWidth, MIN_PANEL_WIDTH, assistantDockedMaxWidth(window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_WORKSPACE_WITH_SIDEBAR));
     setPanelWidth(width);
     window.localStorage.setItem(PANEL_WIDTH_KEY, String(width));
     dockResizeRef.current = null;
@@ -677,6 +718,68 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     else window.localStorage.removeItem(key);
   }
 
+  function commitQueue(next: QueuedMessage[]) {
+    queueRef.current = next;
+    setQueuedMessages(next);
+  }
+
+  function queueMessage(value?: string, context: Record<string, unknown> = {}) {
+    const content = (value ?? draft).trim();
+    const queuedImages = value === undefined ? images : [];
+    if (!content && !queuedImages.length) return false;
+    if (queueRef.current.length >= MAX_QUEUED_MESSAGES) {
+      setError(`Pilot can hold up to ${MAX_QUEUED_MESSAGES} messages. Remove one before adding another.`);
+      return false;
+    }
+    const queued: QueuedMessage = {
+      id: crypto.randomUUID(),
+      content,
+      images: queuedImages,
+      context: { ...pageContext, ...context }
+    };
+    commitQueue([...queueRef.current, queued]);
+    setError(null);
+    if (value === undefined) {
+      window.localStorage.removeItem(assistantDraftKey(session.user.id, activeId));
+      setDraft("");
+      setImages([]);
+    }
+    return true;
+  }
+
+  function removeQueuedMessage(id: string) {
+    const queued = queueRef.current.find((message) => message.id === id);
+    if (queued) for (const image of queued.images) URL.revokeObjectURL(image.previewUrl);
+    commitQueue(queueRef.current.filter((message) => message.id !== id));
+  }
+
+  function runQueuedMessage(id: string) {
+    const queued = queueRef.current.find((message) => message.id === id);
+    if (!queued) return;
+    const next = prioritizeAssistantQueue(queueRef.current, id);
+    commitQueue(next);
+    if (runningRef.current) {
+      abortRef.current?.abort();
+      return;
+    }
+    commitQueue(next.slice(1));
+    void sendMessage(queued.content, {
+      context: queued.context,
+      images: queued.images,
+      conversation: data.activeConversation ?? undefined,
+      queueItem: queued,
+      clearComposerDraft: false
+    });
+  }
+
+  async function submitMessage(value?: string, context: Record<string, unknown> = {}) {
+    if (runningRef.current) {
+      return queueMessage(value, context);
+    }
+    await sendMessage(value, { context });
+    return true;
+  }
+
   function resetPanelLayout() {
     const next = { left: Math.max(12, window.innerWidth - DEFAULT_PANEL_WIDTH - 16), top: 16, width: DEFAULT_PANEL_WIDTH, height: Math.max(460, window.innerHeight - 32) };
     setPanelWidth(DEFAULT_PANEL_WIDTH);
@@ -726,17 +829,23 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     if (droppedImages.length) addImages(droppedImages);
   }
 
-  async function sendMessage(value?: string, extraContext: Record<string, unknown> = {}) {
+  async function sendMessage(value?: string, options: SendMessageOptions = {}) {
     const message = (value ?? draft).trim();
-    if ((!message && !images.length) || running) return;
-    const clearComposerDraft = value === undefined;
-    const messageContext = { ...pageContext, ...extraContext };
+    const messageImages = options.images ?? (value === undefined ? images : []);
+    if ((!message && !messageImages.length) || runningRef.current) return;
+    const clearComposerDraft = options.clearComposerDraft ?? value === undefined;
+    const messageContext = { ...pageContext, ...(options.context ?? {}) };
     setError(null);
-    let conversation = data.activeConversation;
+    runningRef.current = true;
+    setRunning(true);
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    let conversation = options.conversation ?? data.activeConversation;
     let optimisticId: string | null = null;
     let messagePersisted = false;
     try {
       if (!conversation) conversation = await createConversation();
+      abortController.signal.throwIfAborted();
       const activeConversation = conversation;
       const turnId = crypto.randomUUID();
       optimisticId = `local-${turnId}`;
@@ -749,7 +858,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         content: message,
         page_context: messageContext,
         created_at: new Date().toISOString(),
-        attachments: images.map((image) => ({
+        attachments: messageImages.map((image) => ({
           id: image.id,
           conversation_id: activeConversation.id,
           message_id: optimisticId!,
@@ -763,15 +872,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       };
       setData((current) => ({ ...current, messages: [...current.messages, optimistic] }));
       setLiveEvents([]);
-      setRunning(true);
-      const abortController = new AbortController();
-      abortRef.current = abortController;
       const form = new FormData();
       form.set("conversationId", activeConversation.id);
       form.set("turnId", turnId);
       form.set("message", message);
       form.set("pageContext", JSON.stringify(messageContext));
-      for (const image of images) form.append("images", image.file, image.file.name);
+      for (const image of messageImages) form.append("images", image.file, image.file.name);
       const response = await authorizedFetch("/api/ai/chat", {
         method: "POST",
         body: form,
@@ -823,8 +929,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         window.localStorage.removeItem(assistantDraftKey(session.user.id, activeConversation.id));
         setDraft("");
       }
-      for (const image of images) URL.revokeObjectURL(image.previewUrl);
-      setImages([]);
+      for (const image of messageImages) URL.revokeObjectURL(image.previewUrl);
+      if (options.images === undefined) setImages([]);
     } catch (caught) {
       if (optimisticId) setData((current) => ({ ...current, messages: current.messages.filter((item) => item.id !== optimisticId) }));
       if (messagePersisted && conversation) {
@@ -834,14 +940,29 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           window.localStorage.removeItem(assistantDraftKey(session.user.id, conversation.id));
           setDraft("");
         }
-        for (const image of images) URL.revokeObjectURL(image.previewUrl);
-        setImages([]);
+        for (const image of messageImages) URL.revokeObjectURL(image.previewUrl);
+        if (options.images === undefined) setImages([]);
+      }
+      if (options.queueItem && !messagePersisted && !abortController.signal.aborted && !queueRef.current.some((queued) => queued.id === options.queueItem!.id)) {
+        commitQueue([options.queueItem, ...queueRef.current]);
       }
       if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(caught instanceof Error ? caught.message : "Pilot could not complete that request.");
     } finally {
       setAutoReviewing(false);
+      runningRef.current = false;
       setRunning(false);
       abortRef.current = null;
+      if ((messagePersisted || abortController.signal.aborted) && conversation && queueRef.current.length) {
+        const [next, ...remaining] = queueRef.current;
+        commitQueue(remaining);
+        void sendMessage(next.content, {
+          context: next.context,
+          images: next.images,
+          conversation: conversation ?? undefined,
+          queueItem: next,
+          clearComposerDraft: false
+        });
+      }
     }
   }
 
@@ -974,7 +1095,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             <Sparkle size={24} weight="duotone" />
             <h2>Ask about your plan</h2>
             <p>Pilot can read your current records, search eligible courses, and prepare changes for your approval.</p>
-            <div>{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void sendMessage(suggestion)}>{suggestion}</button>)}</div>
+            <div>{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void submitMessage(suggestion)}>{suggestion}</button>)}</div>
           </div> : null}
 
           {data.messages.map((message) => {
@@ -990,8 +1111,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
               const canRetry = Boolean(sourceMessage && !sourceMessage.attachments?.length && !running && !turn.tools.some((tool) => tool.status === "pending_confirmation"));
               return <div className={styles.assistantTurn} key={message.id}>
                 <FadeContent className={styles.assistantMessage} duration={0.16}><AssistantMarkdown text={message.content} /></FadeContent>
-                {questions.length > 0 && <StructuredQuestions questions={questions} answered={answeredQuestionMessages.has(message.id)} busy={running} onSubmit={(answers) => sendMessage(formatStructuredAnswers(questions, answers), { structured_answer_to: message.id })} />}
-                <MessageActions message={message} canRetry={canRetry} onRetry={sourceMessage ? () => void sendMessage(sourceMessage.content, { retry_of_turn_id: sourceMessage.turn_id }) : undefined} />
+                {questions.length > 0 && <StructuredQuestions questions={questions} answered={answeredQuestionMessages.has(message.id)} willQueue={running} onSubmit={(answers) => submitMessage(formatStructuredAnswers(questions, answers), { structured_answer_to: message.id })} />}
+                <MessageActions message={message} canRetry={canRetry} onRetry={sourceMessage ? () => void sendMessage(sourceMessage.content, { context: { retry_of_turn_id: sourceMessage.turn_id } }) : undefined} />
               </div>;
             }
             return <ChangeReceipt message={message} key={message.id} />;
@@ -1000,7 +1121,17 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
         </div>
 
-        <form className={styles.composer} onSubmit={(event: SyntheticEvent<HTMLFormElement>) => { event.preventDefault(); void sendMessage(); }}>
+        <form className={styles.composer} onSubmit={(event: SyntheticEvent<HTMLFormElement>) => { event.preventDefault(); void submitMessage(); }}>
+          {queuedMessages.length > 0 && <div className={styles.queueTray} aria-label="Queued messages">
+            <div className={styles.queueHeading}><strong>{queuedMessages.length === 1 ? "Next message" : `${queuedMessages.length} messages queued`}</strong><span>{running ? "Runs when Pilot finishes" : "Waiting to send"}</span></div>
+            <div className={styles.queueList}>{queuedMessages.map((queued, index) => <div className={styles.queueRow} key={queued.id}>
+              <span className={styles.queuePosition}>{index === 0 ? "Next" : index + 1}</span>
+              <span className={styles.queueText}>{queued.content || `${queued.images.length} attached ${queued.images.length === 1 ? "image" : "images"}`}</span>
+              {queued.images.length > 0 && queued.content && <span className={styles.queueAttachments}>{queued.images.length} {queued.images.length === 1 ? "image" : "images"}</span>}
+              <button className={styles.runQueued} type="button" onClick={() => runQueuedMessage(queued.id)} aria-label={`${running ? "Steer now with" : "Send"} ${queued.content || "queued image message"}`} title={running ? "Stop the current response and run this next" : "Send this message now"}><ArrowUp size={13} />{index === 0 ? (running ? "Steer" : "Send") : "Next"}</button>
+              <button className={styles.removeQueued} type="button" onClick={() => removeQueuedMessage(queued.id)} aria-label={`Remove queued message ${queued.content || "with images"}`} title="Remove from queue"><X size={13} /></button>
+            </div>)}</div>
+          </div>}
           <div className={styles.composerMeta}>
             <span>Using {String(pageContext.label ?? "this page")} context</span>
             <div className={styles.reviewMode} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReviewMenuOpen(false); }}>
@@ -1023,17 +1154,18 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             {images.length > 0 && <FadeContent className={styles.attachmentStrip} duration={0.14}>
               {images.map((image) => <div className={styles.attachmentThumb} key={image.id}>
                 <button type="button" className={styles.previewAttachment} onClick={() => setPreviewImage({ url: image.previewUrl, name: image.file.name })} aria-label={`Preview ${image.file.name}`}><img src={image.previewUrl} alt="" /></button>
-                <button type="button" className={styles.removeAttachment} onClick={() => removeImage(image.id)} disabled={running} aria-label={`Remove ${image.file.name}`}><X size={11} weight="bold" /></button>
+                <button type="button" className={styles.removeAttachment} onClick={() => removeImage(image.id)} aria-label={`Remove ${image.file.name}`}><X size={11} weight="bold" /></button>
               </div>)}
             </FadeContent>}
-            <div className={styles.composerInput}>
+            <div className={`${styles.composerInput} ${running ? styles.composerInputRunning : ""}`}>
               <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-              <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={running || images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images"><Paperclip size={17} /></button>
-              <textarea ref={inputRef} value={draft} onChange={(event) => updateDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={images.length ? "Ask about these images" : "Ask Pilot"} rows={1} maxLength={4000} disabled={running} />
-              <button className={styles.sendButton} type={running ? "button" : "submit"} onClick={running ? () => abortRef.current?.abort() : undefined} disabled={!running && !draft.trim() && !images.length} aria-label={running ? "Stop response" : "Send message"}>{running ? <X size={16} /> : <PaperPlaneRight size={17} weight="fill" />}</button>
+              <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images"><Paperclip size={17} /></button>
+              <textarea ref={inputRef} value={draft} onChange={(event) => updateDraft(event.target.value)} onPaste={handlePaste} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void submitMessage(); } }} placeholder={images.length ? "Ask about these images" : running ? "Message Pilot next" : "Ask Pilot"} rows={1} maxLength={4000} />
+              {running && <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={15} weight="fill" /></button>}
+              <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={17} weight="fill" /></button>
             </div>
           </div>
-          <small>{running ? (autoReviewing ? "A separate reviewer is checking the proposed change." : "Stop the current turn at any time.") : images.length ? `${images.length} of ${MAX_ASSISTANT_ATTACHMENTS} images ready. Images are sent only with this message.` : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
+          <small>{running ? queuedMessages.length ? `${queuedMessages.length} ${queuedMessages.length === 1 ? "message" : "messages"} queued. Keep typing or steer one to run next.` : autoReviewing ? "Auto-review is running. You can queue the next message now." : "Pilot is working. Send another message to queue it, or stop the current response." : queuedMessages.length ? "A queued message is waiting. Send it now or keep it for the next successful turn." : images.length ? `${images.length} of ${MAX_ASSISTANT_ATTACHMENTS} images ready. Images are sent only with this message.` : reviewMode === "auto_review" ? "Low-risk changes may apply after a separate review. Sensitive changes still wait for you." : "Read tools run automatically. You approve every change."}</small>
         </form>
         </> : <div className={styles.disconnected}>
           <Cpu size={22} />

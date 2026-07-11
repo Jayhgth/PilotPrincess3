@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatStructuredAnswers, visibleToolCalls } from "@/lib/assistant-chat";
+import { assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls } from "@/lib/assistant-chat";
 import type { AiToolCall } from "@/lib/models";
 
 const tool = (id: string, status: AiToolCall["status"]): AiToolCall => ({
@@ -13,6 +13,13 @@ describe("assistant chat helpers", () => {
   it("scopes drafts to a user and conversation", () => {
     expect(assistantDraftKey("u1", null)).toBe("pilot-princess:assistant-draft:u1:new");
     expect(assistantDraftKey("u1", "c1")).toBe("pilot-princess:assistant-draft:u1:c1");
+  });
+
+  it("reserves usable workspace width and prioritizes a steered message", () => {
+    expect(assistantDockedMaxWidth(1440)).toBe(360);
+    expect(assistantDockedMaxWidth(1600)).toBe(520);
+    expect(assistantDockedMaxWidth(1760)).toBe(680);
+    expect(prioritizeAssistantQueue([{ id: "a" }, { id: "b" }, { id: "c" }], "c").map((item) => item.id)).toEqual(["c", "a", "b"]);
   });
 
   it("keeps pending changes visible while folding older tool calls", () => {

@@ -34,7 +34,7 @@ export function assistantTurnDuration(events: readonly AssistantTimingEvent[]) {
   }
 
   const startedAt = timestamp(events.find((event) => event.type === "turn.started")?.occurredAt);
-  const endedAt = timestamp([...events].reverse().find((event) => event.type === "turn.completed" || event.type === "turn.failed")?.occurredAt);
+  const endedAt = timestamp([...events].reverse().find((event) => event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.cancelled")?.occurredAt);
   if (startedAt === null || endedAt === null) return null;
   return formatAssistantDuration(Math.max(0, endedAt - startedAt));
 }

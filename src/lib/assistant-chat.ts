@@ -13,6 +13,15 @@ export function assistantDraftKey(userId: string, conversationId: string | null)
   return `${DRAFT_PREFIX}:${userId}:${conversationId ?? "new"}`;
 }
 
+export function assistantDockedMaxWidth(viewportWidth: number, minimum = 360, maximum = 680, workspaceReserve = 1080) {
+  return Math.min(maximum, Math.max(minimum, viewportWidth - workspaceReserve));
+}
+
+export function prioritizeAssistantQueue<T extends { id: string }>(queue: T[], id: string) {
+  const selected = queue.find((item) => item.id === id);
+  return selected ? [selected, ...queue.filter((item) => item.id !== id)] : queue;
+}
+
 export function assistantQuestionsFromContext(context: Record<string, unknown>): AssistantQuestion[] {
   if (!Array.isArray(context.questions)) return [];
   return context.questions.slice(0, 3).filter((question): question is AssistantQuestion => {

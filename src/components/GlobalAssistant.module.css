@@ -12,13 +12,17 @@
   position: fixed;
   z-index: 80;
   display: grid;
+  min-width: 0;
+  max-width: 100vw;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   background: var(--surface);
   animation: assistant-drawer-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.dockedDrawer { inset: 0 0 0 auto; border-left: 1px solid var(--line-strong); box-shadow: -5px 0 16px rgb(20 22 26 / 0.07); }
+.dockedDrawer { inset: 0 0 0 auto; min-width: 360px; border-left: 1px solid var(--line-strong); box-shadow: -5px 0 16px rgb(20 22 26 / 0.07); }
 .floatingDrawer {
-  min-width: 340px;
+  min-width: 360px;
   min-height: 460px;
   max-width: calc(100vw - 24px);
   max-height: calc(100dvh - 24px);
@@ -43,6 +47,7 @@
 .header {
   position: relative;
   display: flex;
+  min-width: 0;
   min-height: 50px;
   align-items: center;
   justify-content: space-between;
@@ -117,7 +122,7 @@
 .renameConversation button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-soft); padding: 0; }
 .renameConversation button:hover { background: var(--surface-strong); color: var(--ink); }
 
-.headerActions { display: flex; gap: 3px; }
+.headerActions { display: flex; flex: 0 0 auto; gap: 3px; }
 .headerActions button {
   display: grid;
   width: 30px;
@@ -132,7 +137,9 @@
 
 .timeline {
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
   padding: 18px 14px 24px;
   scroll-behavior: smooth;
@@ -167,22 +174,25 @@
 .loadingHistory, .liveWorking { padding: 10px 3px; color: var(--ink-faint); font-size: 12px; }
 .userTurn { display: grid; margin: 0 0 15px; }
 .userMessage {
+  min-width: 0;
   justify-self: end;
   max-width: 84%;
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--surface-muted);
   padding: 10px 12px;
+  overflow-wrap: anywhere;
 }
-.assistantTurn { display: grid; margin: 0 0 20px; }
-.assistantMessage { padding: 2px 3px; }
+.assistantTurn { display: grid; min-width: 0; margin: 0 0 20px; }
+.assistantMessage { min-width: 0; padding: 2px 3px; }
 .messageActions { display: flex; min-height: 23px; align-items: center; gap: 2px; margin: 2px 1px 0; color: var(--ink-faint); }
 .messageActionsRight { justify-self: end; }
 .messageActions time { padding: 0 4px; font-size: 10px; font-variant-numeric: tabular-nums; }
 .messageActions button { display: grid; width: 23px; height: 23px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-faint); padding: 0; opacity: 0; }
 .userTurn:hover > .messageActions button, .userTurn:focus-within > .messageActions button, .assistantTurn:hover > .messageActions button, .assistantTurn:focus-within > .messageActions button, .changeReceipt:hover .messageActions button, .changeReceipt:focus-within .messageActions button { opacity: 1; }
 .messageActions button:hover { background: var(--surface-muted); color: var(--ink); }
-.messageBody { display: grid; gap: 8px; color: var(--ink); font-size: 13px; line-height: 1.55; }
+.messageBody { display: grid; min-width: 0; gap: 8px; color: var(--ink); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.messageBody > * { min-width: 0; max-width: 100%; }
 .messageBody h1, .messageBody h2, .messageBody h3, .messageBody h4 { margin: 5px 0 0; color: var(--ink); font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
 .messageBody h1 { font-size: 17px; }
 .messageBody h2 { font-size: 15px; }
@@ -329,6 +339,8 @@
 
 .composer {
   position: relative;
+  min-width: 0;
+  overflow: hidden;
   border-top: 1px solid var(--line);
   background: var(--surface);
   padding: 9px 10px 10px;
@@ -403,8 +415,9 @@
   align-items: end;
   gap: 4px;
 }
+.composerInputRunning { grid-template-columns: 34px minmax(0, 1fr) 34px 36px; }
 .fileInput { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.attachButton, .sendButton {
+.attachButton, .sendButton, .stopButton {
   display: grid;
   width: 36px;
   height: 36px;
@@ -416,6 +429,8 @@
 .attachButton { background: transparent; color: var(--ink-soft); }
 .attachButton:hover:not(:disabled) { background: var(--surface-strong); color: var(--ink); }
 .sendButton { background: var(--ink); color: var(--surface); }
+.stopButton { width: 34px; background: transparent; color: var(--ink-soft); }
+.stopButton:hover { background: var(--surface-strong); color: var(--ink); }
 .attachButton:disabled, .sendButton:disabled { opacity: 0.35; }
 .composer textarea {
   min-height: 34px;
@@ -432,6 +447,21 @@
 }
 .composer textarea::placeholder { color: var(--ink-faint); }
 .composer > small { display: block; margin: 7px 2px 0; color: var(--ink-faint); font-size: 12px; line-height: 1.4; }
+
+.queueTray { display: grid; min-width: 0; gap: 4px; margin: -1px 0 8px; border-bottom: 1px solid var(--line); padding: 0 2px 8px; }
+.queueHeading { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 3px 3px; }
+.queueHeading strong { font-size: 11px; font-weight: 700; }
+.queueHeading span { min-width: 0; overflow: hidden; color: var(--ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.queueList { display: grid; min-width: 0; gap: 2px; }
+.queueRow { display: grid; min-width: 0; grid-template-columns: 34px minmax(0, 1fr) auto auto auto; align-items: center; gap: 5px; border-radius: 6px; padding: 4px 3px 4px 5px; }
+.queueRow:hover { background: var(--surface-muted); }
+.queuePosition { color: var(--accent); font-size: 10px; font-weight: 700; }
+.queueText { min-width: 0; overflow: hidden; color: var(--ink); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.queueAttachments { color: var(--ink-faint); font-size: 10px; white-space: nowrap; }
+.runQueued, .removeQueued { display: grid; min-height: 26px; align-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-soft); padding: 0; font: inherit; font-size: 10px; font-weight: 650; }
+.runQueued { grid-template-columns: 13px auto; gap: 3px; padding: 0 5px; }
+.removeQueued { width: 26px; place-items: center; }
+.runQueued:hover, .removeQueued:hover { background: var(--surface-strong); color: var(--ink); }
 
 .attachmentStrip {
   display: flex;
@@ -603,9 +633,9 @@
 @keyframes assistant-drawer-in { from { opacity: 0; transform: translateX(18px); } }
 @keyframes assistant-backdrop-in { from { opacity: 0; } }
 
-@media (max-width: 1199px) {
+@media (max-width: 1439px) {
   .backdrop { display: block; }
-  .drawer { inset: 0 0 0 auto !important; width: min(420px, 100vw) !important; height: 100dvh !important; resize: none; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: -10px 0 28px rgb(20 22 26 / 0.14); }
+  .drawer { inset: 0 0 0 auto !important; width: min(420px, 100vw) !important; min-width: 0; height: 100dvh !important; resize: none; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: -10px 0 28px rgb(20 22 26 / 0.14); }
   .resizeRail, .panelModeButton { display: none !important; }
 }
 
@@ -616,6 +646,8 @@
   .userMessage { max-width: 90%; }
   .approvalCard { margin-left: 0; }
   .composerMeta > span { max-width: 46vw; }
+  .queueRow { grid-template-columns: 31px minmax(0, 1fr) auto auto; }
+  .queueAttachments { display: none; }
   .settingsBackdrop { align-items: end; padding: 0; }
   .settingsDialog { width: 100%; max-height: 94dvh; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 10px 10px 0 0; }
   .settingsLayout { grid-template-columns: 1fr; }

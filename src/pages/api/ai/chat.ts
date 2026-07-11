@@ -254,7 +254,9 @@ export const POST: APIRoute = async ({ request }) => {
         });
       } catch (error) {
         const message = sanitizeCodexText(codexErrorMessage(error, "Pilot Assistant could not complete that request."), 1200);
-        if (!signal.aborted) {
+        if (signal.aborted) {
+          record("turn.cancelled", { turnId, message: "Stopped by the student." });
+        } else {
           record("turn.failed", { turnId, message });
           send({ kind: "turn.failed", turnId, message });
         }

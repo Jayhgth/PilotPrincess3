@@ -850,7 +850,7 @@ input:focus, select:focus, textarea:focus {
 .app-toolbar button svg { color: var(--accent); }
 .app-content { width: min(100%, 1200px); margin: 0 auto; padding: 4px clamp(24px, 3vw, 40px) 64px; }
 
-@media (min-width: 1200px) {
+@media (min-width: 1440px) {
   :root:not([data-assistant-mode="floating"]) .app-shell.assistant-docked .app-main { margin-right: var(--assistant-panel-width, 420px); }
   :root[data-assistant-mode="floating"] .app-shell.assistant-docked .app-main { margin-right: 0; }
 }

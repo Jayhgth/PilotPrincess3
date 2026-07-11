@@ -25,6 +25,13 @@ describe("assistant turn display", () => {
     expect(assistantTurnDuration(events)).toBe("1m 5s");
   });
 
+  it("keeps timing for a student-cancelled turn", () => {
+    expect(assistantTurnDuration([
+      { type: "turn.started", occurredAt: "2026-07-11T12:00:00.000Z" },
+      { type: "turn.cancelled", occurredAt: "2026-07-11T12:00:08.500Z" }
+    ])).toBe("8s");
+  });
+
   it("uses lifecycle timestamps when a completed event has no measured latency", () => {
     expect(assistantTurnDuration([
       { type: "turn.started", occurredAt: "2026-07-11T12:00:00.000Z" },
