@@ -1,10 +1,12 @@
 import {
   ArrowRightIcon as ArrowRight,
-  ListChecksIcon as ListChecks,
-  PlusIcon as Plus,
-  TrashIcon as Trash
+  BookOpenIcon as BookOpen,
+  ChartLineUpIcon as ChartLineUp,
+  CheckCircleIcon as CheckCircle,
+  FileTextIcon as FileText,
+  GraduationCapIcon as GraduationCap
 } from "@phosphor-icons/react";
-import { useState, type SyntheticEvent } from "react";
+import type { CSSProperties } from "react";
 
 export interface OverviewRequirementItem {
   id: string;
@@ -19,85 +21,143 @@ export interface OverviewCourseItem {
   institution: string;
 }
 
-export interface OverviewTaskItem {
-  id: string;
-  title: string;
-  detail: string;
-  generated: boolean;
-}
-
-export interface OverviewTaskDraft {
-  title: string;
-  category: "academics" | "activities" | "college" | "summer" | "admin";
-  dueLabel: string;
-}
-
 export interface OverviewPathData {
   earnedPercent: number;
   completedCredits: number;
   scheduledCredits: number;
+  remainingCredits: number;
   projectedWeightedGpa: string;
+  currentUnweightedGpa: string;
+  gradedCredits: number;
+  weightedCredits: number;
+  transcriptBackedCourseCount: number;
+  completedCollegeUnits: number;
   requirements: OverviewRequirementItem[];
   currentCourses: OverviewCourseItem[];
   plannedCourses: OverviewCourseItem[];
   courseCounts: { completed: number; current: number; planned: number };
-  tasks: OverviewTaskItem[];
 }
 
 interface Props {
   data: OverviewPathData;
   onOpenGraduation: () => void;
   onOpenCourses: () => void;
-  onGenerateTimeline: () => void;
-  onCompleteTask: (id: string) => void;
-  onAddTask: (draft: OverviewTaskDraft) => boolean | Promise<boolean>;
-  onDeleteTask: (id: string) => void | Promise<void>;
+  onOpenGpa: () => void;
 }
 
-export default function OverviewPath(props: Props) {
-  const { data, onOpenCourses, onOpenGraduation } = props;
+export default function OverviewPath({ data, onOpenCourses, onOpenGraduation, onOpenGpa }: Props) {
   const completedAreas = data.requirements.filter((item) => item.remaining === 0);
   const openAreas = data.requirements.filter((item) => item.remaining > 0);
+  const nextRequirement = openAreas[0] ?? null;
+  const totalCredits = data.completedCredits + data.scheduledCredits + data.remainingCredits;
+  const completedAngle = totalCredits > 0 ? (data.completedCredits / totalCredits) * 360 : 0;
+  const scheduledAngle = totalCredits > 0 ? ((data.completedCredits + data.scheduledCredits) / totalCredits) * 360 : 0;
+  const chartStyle = {
+    "--completed-angle": `${completedAngle}deg`,
+    "--scheduled-angle": `${scheduledAngle}deg`
+  } as CSSProperties;
 
   return <div className="overview-t3-workbench">
-    <dl className="t3-status-strip">
-      <div><dt>Diploma</dt><dd>{data.earnedPercent}%</dd></div>
-      <div><dt>Earned</dt><dd>{data.completedCredits} cr</dd></div>
-      <div><dt>Scheduled</dt><dd>{data.scheduledCredits} cr</dd></div>
-      <div><dt>Weighted GPA</dt><dd>{data.projectedWeightedGpa}</dd></div>
-    </dl>
-    <div className="t3-workbench-grid">
-      <section className="t3-plan-log">
-        <header><h2>Plan state</h2><span>{completedAreas.length}/{data.requirements.length} requirement areas complete</span></header>
-        <article><span className="t3-log-code complete">Done</span><div><strong>{data.courseCounts.completed} saved course records</strong><p>Transcript-backed history and completed work.</p></div><button type="button" onClick={onOpenCourses}>Review</button></article>
-        <article><span className="t3-log-code current">Now</span><div><strong>{data.currentCourses.length} active courses</strong><CourseNameList rows={data.currentCourses} empty="No courses are marked In progress." /></div><button type="button" onClick={onOpenCourses}>Open</button></article>
-        <article><span className="t3-log-code next">Next</span><div><strong>{openAreas.length} requirement {openAreas.length === 1 ? "area" : "areas"} open</strong>{data.plannedCourses.length ? <CourseNameList rows={data.plannedCourses} empty="" /> : <NextRequirementList openAreas={openAreas} onOpenGraduation={onOpenGraduation} />}</div><button type="button" onClick={onOpenGraduation}>Plan</button></article>
+    <div className="t3-overview-primary">
+      <section className="t3-credit-composition">
+        <header className="t3-panel-heading">
+          <div>
+            <span className="t3-eyebrow"><GraduationCap size={14} weight="duotone" /> Diploma progress</span>
+            <h2>Credit composition</h2>
+          </div>
+          <span className="t3-coverage-count">{completedAreas.length} of {data.requirements.length} areas covered</span>
+        </header>
+
+        <div className="t3-credit-body">
+          <div
+            className="t3-credit-donut"
+            style={chartStyle}
+            role="img"
+            aria-label={`${data.completedCredits} credits earned, ${data.scheduledCredits} scheduled, and ${data.remainingCredits} remaining`}
+          >
+            <div><strong>{data.earnedPercent}%</strong><span>earned</span></div>
+          </div>
+          <dl className="t3-credit-legend">
+            <div className="earned"><dt>Earned</dt><dd>{data.completedCredits}<span> cr</span></dd></div>
+            <div className="scheduled"><dt>Scheduled</dt><dd>{data.scheduledCredits}<span> cr</span></dd></div>
+            <div className="remaining"><dt>Remaining</dt><dd>{data.remainingCredits}<span> cr</span></dd></div>
+          </dl>
+        </div>
+
+        <button className="t3-next-requirement" type="button" onClick={onOpenGraduation}>
+          <span>
+            <small>{nextRequirement ? "Next requirement to solve" : "Requirements covered"}</small>
+            <strong>{nextRequirement?.name ?? "Review graduation evidence"}</strong>
+          </span>
+          <span className="t3-next-requirement-meta">{nextRequirement ? `${nextRequirement.remaining} credits` : "Open review"}<ArrowRight size={15} /></span>
+        </button>
       </section>
-      <aside className="t3-workbench-rail">
-        <section><header><h2>Action queue</h2></header><TaskList {...props} /></section>
-        <section className="t3-next-gap"><span>First open requirement</span><strong>{openAreas[0]?.name ?? "Plan covered"}</strong><p>{openAreas[0] ? `${openAreas[0].remaining} credits remain.` : "Review the saved schedule before registration."}</p><button className="primary-button" type="button" onClick={onOpenGraduation}>Open evidence <ArrowRight size={14} /></button></section>
-      </aside>
+
+      <section className="t3-gpa-focus">
+        <header className="t3-panel-heading">
+          <div>
+            <span className="t3-eyebrow"><ChartLineUp size={14} weight="duotone" /> GPA outlook</span>
+            <h2>Saved schedule projection</h2>
+          </div>
+          <button className="t3-text-action" type="button" onClick={onOpenGpa}>Open planner <ArrowRight size={14} /></button>
+        </header>
+        <div className="t3-gpa-primary">
+          <span>Projected weighted GPA</span>
+          <strong>{data.projectedWeightedGpa}</strong>
+          <p>Includes saved courses with grades. Use the planner to test a different schedule.</p>
+        </div>
+        <dl className="t3-gpa-details">
+          <div><dt>Current unweighted</dt><dd>{data.currentUnweightedGpa}</dd></div>
+          <div><dt>Graded credits</dt><dd>{data.gradedCredits}</dd></div>
+          <div><dt>Weighted credits</dt><dd>{data.weightedCredits}</dd></div>
+        </dl>
+      </section>
+    </div>
+
+    <div className="t3-overview-secondary">
+      <section className="t3-course-horizon">
+        <header className="t3-panel-heading">
+          <div>
+            <span className="t3-eyebrow"><BookOpen size={14} weight="duotone" /> Course horizon</span>
+            <h2>What you are taking and what comes next</h2>
+          </div>
+          <button className="t3-text-action" type="button" onClick={onOpenCourses}>Open courses <ArrowRight size={14} /></button>
+        </header>
+        <div className="t3-course-columns">
+          <div className="t3-course-column current">
+            <div className="t3-course-column-heading"><span>Now</span><strong>{data.courseCounts.current}</strong></div>
+            <CourseNameList rows={data.currentCourses} empty="No courses are marked In progress." />
+          </div>
+          <div className="t3-course-column planned">
+            <div className="t3-course-column-heading"><span>Planned</span><strong>{data.courseCounts.planned}</strong></div>
+            {data.plannedCourses.length
+              ? <CourseNameList rows={data.plannedCourses} empty="" />
+              : <NextRequirementList openAreas={openAreas} onOpenGraduation={onOpenGraduation} />}
+          </div>
+        </div>
+      </section>
+
+      <section className="t3-plan-evidence">
+        <header className="t3-panel-heading">
+          <div>
+            <span className="t3-eyebrow"><FileText size={14} weight="duotone" /> Plan evidence</span>
+            <h2>What supports this view</h2>
+          </div>
+        </header>
+        <dl>
+          <div><dt><CheckCircle size={16} weight="fill" /> Transcript-backed records</dt><dd>{data.transcriptBackedCourseCount}</dd></div>
+          <div><dt><GraduationCap size={16} weight="duotone" /> Completed college units</dt><dd>{data.completedCollegeUnits}</dd></div>
+          <div><dt><BookOpen size={16} weight="duotone" /> Completed course records</dt><dd>{data.courseCounts.completed}</dd></div>
+        </dl>
+        <p>d.tech credits and SMCCD units stay separate so each number matches its official source.</p>
+      </section>
     </div>
   </div>;
 }
 
 function NextRequirementList({ openAreas, onOpenGraduation }: { openAreas: OverviewRequirementItem[]; onOpenGraduation: () => void }) {
+  if (!openAreas.length) return <p className="overview-course-empty">Your saved plan covers every tracked requirement.</p>;
   return <div className="overview-path-gaps">{openAreas.slice(0, 3).map((item) => <button type="button" onClick={onOpenGraduation} key={item.id}><span>{item.name}</span><b>{item.remaining} cr</b></button>)}</div>;
-}
-
-function TaskList({ data, onCompleteTask, onGenerateTimeline, onAddTask, onDeleteTask }: Pick<Props, "data" | "onCompleteTask" | "onGenerateTimeline" | "onAddTask" | "onDeleteTask">) {
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<OverviewTaskDraft>({ title: "", category: "academics", dueLabel: "" });
-  async function submit(event: SyntheticEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!await onAddTask(draft)) return;
-    setDraft({ title: "", category: "academics", dueLabel: "" });
-    setAdding(false);
-  }
-  return <div className="overview-task-workspace">
-    {!data.tasks.length ? <div className="overview-task-empty"><ListChecks size={20} /><span><strong>No open tasks</strong><small>Sync plan-based steps or add your own.</small></span><button className="secondary-button small" type="button" onClick={onGenerateTimeline}>Sync plan steps</button></div> : <div className="overview-concept-tasks">{data.tasks.map((task) => <div className="overview-task-row" key={task.id}><label><input type="checkbox" onChange={() => onCompleteTask(task.id)} /><span><strong>{task.title}</strong><small>{task.detail}</small></span></label>{!task.generated && <button className="icon-button" type="button" onClick={() => void onDeleteTask(task.id)} aria-label={`Delete ${task.title}`}><Trash size={15} /></button>}</div>)}</div>}
-    {adding ? <form className="overview-task-form" onSubmit={submit}><input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} placeholder="Add a clear next action" required autoFocus /><div><select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value as OverviewTaskDraft["category"] })}><option value="academics">Academics</option><option value="activities">Activities</option><option value="college">College</option><option value="summer">Summer</option><option value="admin">Admin</option></select><input value={draft.dueLabel} onChange={(event) => setDraft({ ...draft, dueLabel: event.target.value })} placeholder="Timing, optional" /><button className="primary-button small" type="submit">Add</button><button className="quiet-button small" type="button" onClick={() => setAdding(false)}>Cancel</button></div></form> : <button className="quiet-button small" type="button" onClick={() => setAdding(true)}><Plus size={15} /> Add action</button>}
-  </div>;
 }
 
 function CourseNameList({ rows, empty }: { rows: OverviewCourseItem[]; empty: string }) {

@@ -32,11 +32,9 @@ import {
   calculateRequirementProgress,
   courseDisplayName,
   generateSuggestedPlan,
-  generateTimeline,
   overallCompletedPercent,
   overallGraduationPercent,
   planCourseMovePatch,
-  reconcileGeneratedTimelineTasks,
   selectedPlanGrades,
   schoolYearForGrade
 } from "@/lib/planning";
@@ -50,7 +48,7 @@ import {
 import AdminSettingsDialog from "@/components/AdminSettingsDialog";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
-import OverviewPath, { type OverviewPathData, type OverviewTaskDraft } from "@/components/OverviewPath";
+import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
@@ -69,8 +67,7 @@ import type {
   SmccdCourse,
   SmccdHighSchoolEquivalency,
   StudentEnrollmentPreference,
-  StudentSettings,
-  TimelineTask
+  StudentSettings
 } from "@/lib/workspace-types";
 import { defaultEnrollmentPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
@@ -209,7 +206,6 @@ export default function PlanningWorkspace() {
   const [plan, setPlan] = useState<FourYearPlan | null>(null);
   const [versions, setVersions] = useState<PlanVersion[]>([]);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
-  const [tasks, setTasks] = useState<TimelineTask[]>([]);
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
   const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
   const [enrollmentPreference, setEnrollmentPreference] = useState<StudentEnrollmentPreference | null>(null);
@@ -244,17 +240,6 @@ export default function PlanningWorkspace() {
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
   const graduationPercent = useMemo(() => overallGraduationPercent(progress), [progress]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(progress), [progress]);
-  const desiredGeneratedTimelineTasks = useMemo(
-    () => settings
-      ? generateTimeline(settings, progress).filter((task) => !task.title.startsWith("Choose a course for "))
-      : [],
-    [settings, progress]
-  );
-  const timelineTaskSync = useMemo(
-    () => reconcileGeneratedTimelineTasks(tasks, desiredGeneratedTimelineTasks),
-    [tasks, desiredGeneratedTimelineTasks]
-  );
-
   const loadWorkspace = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
@@ -276,7 +261,6 @@ export default function PlanningWorkspace() {
         mappingResult,
         equivalencyResult,
         planResult,
-        taskResult,
         reviewResult,
         enrollmentPolicyResult,
         enrollmentPreferenceResult,
@@ -290,7 +274,6 @@ export default function PlanningWorkspace() {
         supabase.from("course_requirement_mappings").select("*"),
         supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code"),
         supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
-        supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
         supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
         supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
         supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
@@ -356,7 +339,6 @@ export default function PlanningWorkspace() {
       const loadedReviewItems = (reviewResult.data ?? []) as unknown as CatalogReviewItem[];
       setPlanCourses(loadedPlanCourses);
       setPlannedSmccdCourses((plannedSmccdResult.data ?? []) as unknown as SmccdCourse[]);
-      setTasks((taskResult.data ?? []) as unknown as TimelineTask[]);
       setReviewItems(loadedReviewItems);
       setEnrollmentPolicies((enrollmentPolicyResult.data ?? []) as unknown as EnrollmentPolicy[]);
       setEnrollmentPreference(
@@ -883,108 +865,6 @@ export default function PlanningWorkspace() {
     );
   }
 
-  async function generateTasks() {
-    if (!supabase || !session || !settings) return;
-    const { obsoleteIds, updateTasks, insertTasks } = timelineTaskSync;
-    const changeCount = obsoleteIds.length + updateTasks.length + insertTasks.length;
-    if (changeCount === 0) {
-      notify("The next-step queue is already up to date.");
-      return;
-    }
-    await runAction(
-      "Syncing next steps",
-      async () => {
-        if (obsoleteIds.length > 0) {
-          const { error } = await supabase.from("timeline_tasks").delete().in("id", obsoleteIds);
-          if (error) throw error;
-        }
-        for (const update of updateTasks) {
-          const { error } = await supabase.from("timeline_tasks").update(update.patch).eq("id", update.id);
-          if (error) throw error;
-        }
-        let insertedTasks: TimelineTask[] = [];
-        if (insertTasks.length > 0) {
-          const { data, error } = await supabase
-            .from("timeline_tasks")
-            .insert(insertTasks.map((task) => ({
-              ...task,
-              user_id: session.user.id,
-              plan_version_id: activeVersion?.id ?? null,
-              is_generated: true
-            })))
-            .select("*");
-          if (error) throw error;
-          insertedTasks = (data ?? []) as unknown as TimelineTask[];
-        }
-        const obsolete = new Set(obsoleteIds);
-        const updates = new Map(updateTasks.map((update) => [update.id, update.patch]));
-        setTasks((current) => [
-          ...current
-            .filter((task) => !obsolete.has(task.id))
-            .map((task) => updates.has(task.id) ? { ...task, ...updates.get(task.id) } : task),
-          ...insertedTasks
-        ]);
-        await logEvent("timeline_synced", {
-          inserted_count: insertTasks.length,
-          updated_count: updateTasks.length,
-          removed_count: obsoleteIds.length
-        });
-      },
-      `${changeCount} next-step ${changeCount === 1 ? "change" : "changes"} synced.`
-    );
-  }
-
-  async function addCustomTask(draft: OverviewTaskDraft) {
-    if (!supabase || !session) return false;
-    if (!draft.title.trim()) {
-      notify("Add a clear next step before saving.", "error");
-      return false;
-    }
-    const added = await runAction(
-      "Adding task",
-      async () => {
-        const { data, error } = await supabase
-          .from("timeline_tasks")
-          .insert({
-            user_id: session.user.id,
-            plan_version_id: activeVersion?.id ?? null,
-            title: draft.title.trim(),
-            category: draft.category,
-            due_label: draft.dueLabel.trim() || null,
-            is_generated: false
-          })
-          .select("*")
-          .single();
-        if (error) throw error;
-        setTasks((current) => [...current, data as unknown as TimelineTask]);
-        return true;
-      },
-      "Task added."
-    );
-    return added === true;
-  }
-
-  async function deleteTask(id: string) {
-    if (!supabase) return;
-    const { error } = await supabase.from("timeline_tasks").delete().eq("id", id);
-    if (error) {
-      notify(error.message, "error");
-      return;
-    }
-    setTasks((current) => current.filter((task) => task.id !== id));
-  }
-
-  async function updateTask(id: string, patch: Partial<TimelineTask>) {
-    if (!supabase) return;
-    const { error } = await supabase.from("timeline_tasks").update(patch).eq("id", id);
-    if (error) {
-      notify(error.message, "error");
-      return;
-    }
-    setTasks((current) => current.map((task) => (task.id === id ? { ...task, ...patch } : task)));
-    if (patch.is_completed) await logEvent("timeline_task_completed", { task_id: id });
-  }
-
   if (!configured) {
     return (
       <main className="fatal-state">
@@ -1097,7 +977,6 @@ export default function PlanningWorkspace() {
   const plannedSmccdMap = new Map(plannedSmccdCourses.map((course) => [course.id, course]));
   function renderDashboard() {
     if (!settings) return null;
-    const nextTasks = timelineTaskSync.visibleTasks.filter((task) => !task.is_completed).slice(0, 4);
     const requirementSnapshot = progress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
@@ -1125,12 +1004,20 @@ export default function PlanningWorkspace() {
       earnedPercent: graduationEarnedPercent,
       completedCredits: dashboardCredits.completed,
       scheduledCredits: dashboardCredits.scheduled,
+      remainingCredits: dashboardCredits.remaining,
       projectedWeightedGpa: formatGpa(gpa.projectedWeighted),
+      currentUnweightedGpa: formatGpa(gpa.currentUnweighted),
+      gradedCredits: gpa.gradedCredits,
+      weightedCredits: gpa.weightedCredits,
+      transcriptBackedCourseCount: planCourses.filter((row) => row.status === "completed" && row.source_review_item_id).length,
+      completedCollegeUnits: Number(planCourses
+        .filter((row) => row.status === "completed")
+        .reduce((sum, row) => sum + Number(row.college_units ?? 0), 0)
+        .toFixed(1)),
       requirements: overviewRequirements,
       currentCourses: planCourses.filter((row) => row.status === "current").map(overviewCourse),
       plannedCourses: planCourses.filter((row) => row.status === "planned").map(overviewCourse),
-      courseCounts,
-      tasks: nextTasks.map((task) => ({ id: task.id, title: task.title, detail: task.due_label ?? titleCase(task.category), generated: task.is_generated }))
+      courseCounts
     };
     return (
       <div className="dashboard-page page-frame">
@@ -1139,10 +1026,7 @@ export default function PlanningWorkspace() {
           data={overviewData}
           onOpenGraduation={() => navigate("graduation")}
           onOpenCourses={() => openCourses("mine")}
-          onGenerateTimeline={() => void generateTasks()}
-          onCompleteTask={(id) => void updateTask(id, { is_completed: true })}
-          onAddTask={addCustomTask}
-          onDeleteTask={deleteTask}
+          onOpenGpa={() => navigate("gpa")}
         />
       </div>
     );
