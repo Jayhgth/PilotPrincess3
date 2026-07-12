@@ -448,7 +448,7 @@ export default function OnboardingFlow({
   return (
     <UiLabProvider variant={uiVariant} theme={theme}>
       <UiLabSwitcher value={uiVariant} onChange={onUiVariantChange} />
-      <main className={`onboarding-shell ${uiVariantClass(uiVariant)}`}>
+      <main className={`onboarding-shell ${uiVariantClass(uiVariant)}`} data-stage={stage} data-stage-index={stageIndex}>
       <header className="onboarding-topbar">
         <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">

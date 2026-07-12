@@ -141,8 +141,14 @@ export function LabButton({ variant, children, ...props }: LabButtonProps) {
       return <ChakraButton {...props}>{children}</ChakraButton>;
     case "ant":
       return <AntButton {...commonProps} type="text" htmlType={commonProps.type}>{children}</AntButton>;
-    case "radix":
-      return <RadixButton {...commonProps} variant="ghost">{children}</RadixButton>;
+    case "radix": {
+      const visual = props.className?.includes("primary-button")
+        ? "solid"
+        : props.className?.includes("secondary-button")
+          ? "surface"
+          : "ghost";
+      return <RadixButton {...commonProps} variant={visual}>{children}</RadixButton>;
+    }
     case "aria":
       return <AriaButton {...(commonProps as ComponentProps<typeof AriaButton>)}>{children}</AriaButton>;
     default:

@@ -896,13 +896,23 @@
 }
 
 .saveBar {
+  position: sticky;
+  bottom: -28px;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 18px;
-  margin-top: 24px;
+  margin: 24px -24px -28px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  padding: 16px 24px;
   color: var(--ink-soft);
   font-size: var(--type-supporting);
+}
+
+.embeddedPage .choiceGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .srOnly {
@@ -1015,6 +1025,8 @@
 
   .saveBar {
     gap: 10px;
+    margin-inline: -16px;
+    padding-inline: 16px;
   }
 }
 

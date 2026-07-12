@@ -1,20 +1,13 @@
 import {
-  AirplaneTiltIcon as AirplaneTilt,
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
   ChartLineUpIcon as ChartLineUp,
   CheckIcon as Check,
   FileArrowUpIcon as FileArrowUp,
   FloppyDiskIcon as FloppyDisk,
-  GearSixIcon as GearSix,
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
-  MoonIcon as Moon,
   PlusIcon as Plus,
-  SignOutIcon as SignOut,
-  SparkleIcon as Sparkle,
-  SunIcon as Sun,
-  UserCircleIcon as UserCircle,
   WarningIcon as Warning,
   XIcon as X
 } from "@phosphor-icons/react";
@@ -89,8 +82,9 @@ import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateDtechPlannerPrerequisites } from "@/lib/prerequisites";
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
-import { LabButton, UiLabProvider, UiLabSwitcher, useUiVariant } from "@/ui-lab/UiLab";
+import { UiLabProvider, UiLabSwitcher, useUiVariant } from "@/ui-lab/UiLab";
 import { uiVariantClass } from "@/ui-lab/variants";
+import WorkspaceChrome from "@/ui-lab/WorkspaceChrome";
 
 const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
 const GlobalAssistant = lazy(() => import("@/components/GlobalAssistant"));
@@ -114,22 +108,6 @@ const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
 ];
 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
-
-// Demo-only placement metadata. The durable product entry point is the
-// Planning preferences "Review setup" action; remove this sidebar shortcut after demos.
-const DEMO_ONBOARDING_SHORTCUT = {
-  label: "Replay onboarding",
-  currentPlacement: "sidebar-footer",
-  intendedPlacement: "student-profile-review-setup"
-} as const;
-
-// Demo-only placement metadata. This shortcut previews the public entry screen
-// without ending the current session; remove it with the other demo controls.
-const DEMO_LOGIN_SHORTCUT = {
-  label: "View login page",
-  currentPlacement: "sidebar-footer",
-  intendedPlacement: "demo-controls"
-} as const;
 
 type CourseArea = "mine" | "dtech" | "smccd";
 type SourceAiTransparency = TranscriptAiTransparency;
@@ -1261,6 +1239,7 @@ export default function PlanningWorkspace() {
       <div className="dashboard-page page-frame">
         <PageHeader title={profile.preferred_name ? `Good to see you, ${profile.preferred_name}` : "Planning overview"} description="What is done, what needs attention, and how the current plan fits." />
         <OverviewPath
+          variant={uiVariant}
           data={overviewData}
           onOpenGraduation={() => navigate("graduation")}
           onOpenCourses={() => openCourses("mine")}
@@ -1596,63 +1575,29 @@ export default function PlanningWorkspace() {
     <UiLabProvider variant={uiVariant} theme={theme}>
       <UiLabSwitcher value={uiVariant} onChange={setUiVariant} />
       <div className={`app-shell ${uiVariantClass(uiVariant)} ${assistantOpen ? "assistant-docked" : ""}`}>
-      <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
-        <div className="sidebar-top">
-          <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
-          <button className="mobile-close icon-button" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation"><X size={18} /></button>
-        </div>
-        <nav className="sidebar-nav" aria-label="Planning workspace">
-          {PRIMARY_NAV_ITEMS.map((item) => {
-            const NavIcon = item.icon;
-            return <LabButton variant={uiVariant} key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span></LabButton>;
-          })}
-        </nav>
-        <div className="sidebar-footer">
-          <div className="school-chip"><GraduationCap size={18} weight="duotone" /><span><strong>{school.short_name}</strong><small>{school.source_year} sources</small></span></div>
-          <button className="sidebar-utility" onClick={() => { setMobileNavOpen(false); setStudentProfileOpen(true); }} type="button"><UserCircle size={17} /><span>Student profile</span></button>
-          {isAdmin && <>
-            <button className="sidebar-utility" onClick={() => { setMobileNavOpen(false); setAdminSettingsOpen(true); }} type="button"><GearSix size={17} /><span>Admin settings</span></button>
-            <button
-              className="sidebar-utility"
-              data-demo-only="true"
-              data-admin-only="true"
-              data-current-placement={DEMO_ONBOARDING_SHORTCUT.currentPlacement}
-              data-intended-placement={DEMO_ONBOARDING_SHORTCUT.intendedPlacement}
-              onClick={() => {
-                setMobileNavOpen(false);
-                setReplayingOnboarding(true);
-              }}
-              type="button"
-            >
-              <ArrowClockwise size={17} />
-              <span>{DEMO_ONBOARDING_SHORTCUT.label}</span>
-            </button>
-            <button
-              className="sidebar-utility"
-              data-demo-only="true"
-              data-admin-only="true"
-              data-current-placement={DEMO_LOGIN_SHORTCUT.currentPlacement}
-              data-intended-placement={DEMO_LOGIN_SHORTCUT.intendedPlacement}
-              onClick={() => {
-                setMobileNavOpen(false);
-                window.location.assign("/?demo=login");
-              }}
-              type="button"
-            >
-              <House size={17} />
-              <span>{DEMO_LOGIN_SHORTCUT.label}</span>
-            </button>
-          </>}
-          <button className="sidebar-utility" onClick={toggleTheme} type="button">{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
-          <button className="sidebar-utility" onClick={() => void signOut()} type="button"><SignOut size={17} /><span>Sign out</span></button>
-        </div>
-      </aside>
-      {mobileNavOpen && <button className="nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation overlay" />}
-      <main className="app-main">
-        <div className="mobile-bar"><button className="icon-button" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><AirplaneTilt size={20} /></button><span>{activeView?.label}</span><div className="mobile-bar-actions"><button className="icon-button" onClick={() => setAssistantOpen(true)} aria-label="Open Pilot Assistant"><Sparkle size={18} weight="duotone" /></button><button className="icon-button" onClick={toggleTheme} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button></div></div>
-        <div className="app-toolbar"><button className={assistantOpen ? "active" : ""} type="button" onClick={() => setAssistantOpen((current) => !current)}><Sparkle size={17} weight={assistantOpen ? "fill" : "duotone"} /><span>{assistantOpen ? "Collapse Pilot" : profile.ai_enabled ? "Ask Pilot" : "Set up Pilot"}</span></button></div>
-        <div className="app-content"><Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense></div>
-      </main>
+      <WorkspaceChrome
+        variant={uiVariant}
+        view={view}
+        activeLabel={activeView?.label ?? "Workspace"}
+        navItems={PRIMARY_NAV_ITEMS}
+        school={school}
+        theme={theme}
+        aiEnabled={profile.ai_enabled}
+        assistantOpen={assistantOpen}
+        mobileNavOpen={mobileNavOpen}
+        isAdmin={isAdmin}
+        onNavigate={navigate}
+        onMobileNavChange={setMobileNavOpen}
+        onAssistantToggle={() => setAssistantOpen((current) => !current)}
+        onProfile={() => { setMobileNavOpen(false); setStudentProfileOpen(true); }}
+        onAdmin={() => { setMobileNavOpen(false); setAdminSettingsOpen(true); }}
+        onReplayOnboarding={() => { setMobileNavOpen(false); setReplayingOnboarding(true); }}
+        onViewLogin={() => { setMobileNavOpen(false); window.location.assign("/?demo=login"); }}
+        onThemeToggle={toggleTheme}
+        onSignOut={() => void signOut()}
+      >
+        <Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense>
+      </WorkspaceChrome>
       <Suspense fallback={null}><GlobalAssistant
         key={`${profile.ai_enabled}:${profile.ai_model}:${profile.ai_connection_approved_at ?? "off"}`}
         session={session}

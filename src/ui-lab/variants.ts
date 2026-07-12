@@ -7,45 +7,45 @@ export const UI_VARIANTS = [
   },
   {
     id: "material",
-    name: "Material",
-    library: "Material UI",
-    description: "Expressive navigation rail, tonal surfaces, strong state hierarchy."
+    name: "Journey",
+    library: "Material UI + custom timeline",
+    description: "A visual route for students who understand progress as a sequence."
   },
   {
     id: "mantine",
-    name: "Mantine",
-    library: "Mantine",
-    description: "Crisp teal workspace with calm density and modular controls."
+    name: "Semester Studio",
+    library: "Mantine + modular boards",
+    description: "Starts with the current semester, then expands into planning and history."
   },
   {
     id: "chakra",
-    name: "Chakra",
-    library: "Chakra UI",
-    description: "Friendly student-first layout with generous targets and warm contrast."
+    name: "Focus",
+    library: "Chakra UI + focus canvas",
+    description: "One next decision at a time for students who want less competing information."
   },
   {
     id: "ant",
     name: "Campus",
-    library: "Ant Design",
-    description: "Compact academic portal with precise tables and information density."
+    library: "Ant Design + portal ledger",
+    description: "A scan-first academic portal for students who prefer dense, comparable data."
   },
   {
     id: "radix",
-    name: "Radix",
-    library: "Radix Themes",
-    description: "Editorial plum and graphite system with quiet, deliberate hierarchy."
+    name: "Academic Brief",
+    library: "Radix Themes + editorial layout",
+    description: "A reading-first brief with evidence and decisions arranged like a report."
   },
   {
     id: "aria",
-    name: "High Contrast",
-    library: "React Aria",
-    description: "Accessibility-led structure with large controls and unmistakable states."
+    name: "Checklist",
+    library: "React Aria + high-contrast system",
+    description: "A sequential, keyboard-first checklist with explicit state and large targets."
   },
   {
     id: "reactbits",
-    name: "Kinetic",
-    library: "React Bits",
-    description: "Burgundy motion language with bounded focus and asymmetric rhythm."
+    name: "Route Map",
+    library: "React Bits + spatial composition",
+    description: "An asymmetric map for spatial thinkers who want to see movement through the plan."
   },
   {
     id: "current",

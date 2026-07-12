@@ -55,13 +55,13 @@ Use focused tests while debugging. Run browser, SMCCD, migration, RLS, storage, 
 The authenticated dashboard and onboarding expose a test-only UI switcher. Open `/app?ui=t3code` or choose **UI Lab** in the workspace; the selection persists locally. Every version keeps the same student data, actions, institution marks, navigation destinations, onboarding flow, and Pilot Assistant.
 
 - `t3code`: Base UI with a close adaptation of the MIT-licensed [t3code](https://github.com/pingdotgg/t3code) shell and visual language
-- `material`: Material UI tonal rail
-- `mantine`: Mantine modular workspace
-- `chakra`: Chakra UI student-friendly planner
-- `ant`: Ant Design campus portal
-- `radix`: Radix Themes editorial workspace
-- `aria`: React Aria high-contrast workspace
-- `reactbits`: React Bits kinetic, asymmetric workspace
+- `material`: Material UI journey timeline for visual planners
+- `mantine`: Mantine semester-first modular studio
+- `chakra`: Chakra UI single-decision focus workspace
+- `ant`: Ant Design scan-first campus ledger
+- `radix`: Radix Themes reading-first academic brief
+- `aria`: React Aria high-contrast sequential checklist
+- `reactbits`: React Bits asymmetric spatial route map
 - `current`: the original Pilot Graphite interface, retained as the backup
 
 This is a presentation comparison, not nine forks of product logic. Keep shared behavior in the existing feature components and scope experiments through `src/ui-lab/` and `src/styles/ui-lab.css`.

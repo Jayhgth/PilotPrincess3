@@ -58,7 +58,7 @@ External references inform the local rules; they are not product requirements.
 
 The retained production interface uses Manrope and the semantic tokens in `src/styles/global.css`. Its palette is Pilot Graphite. Dark mode uses deep neutral graphite, never a gray veil. d.tech uses official orange `#EF5024` and charcoal `#20242C` only in institution-scoped identity. SMCCD colleges use their official marks and scoped colors.
 
-The test-only UI lab deliberately explores eight alternative systems plus the original backup: t3code/Base UI, Material UI, Mantine, Chakra UI, Ant Design, Radix Themes, React Aria, and React Bits. Variants may change typography, color, density, navigation shape, surface treatment, and onboarding presentation, but not student capabilities, source language, institutional identity, or the Pilot Assistant interaction model. They share one product implementation and are selected with `/app?ui=<variant>` or the in-app UI Lab switcher.
+The test-only UI lab deliberately explores eight alternative systems plus the original backup: t3code workbench, Material journey, Mantine semester studio, Chakra focus mode, Ant campus ledger, Radix academic brief, React Aria checklist, and React Bits route map. Each direction serves a different student working style and changes navigation, information order, density, component composition, and onboarding presentation. Student capabilities, source language, institutional identity, and the Pilot Assistant interaction model remain shared. Select a direction with `/app?ui=<variant>` or the in-app UI Lab switcher.
 
 Type roles: 28px page title, 16px section title, 14px body/control, 12px label/supporting, 20px numeric, and at most one 40px primary answer in a view. Use weights 450-650.
 
