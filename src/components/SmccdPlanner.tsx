@@ -56,7 +56,6 @@ interface Props {
   onFindCourse?: (course: SmccdCourse) => void;
 }
 
-type CourseStatus = "completed" | "current" | "planned";
 type CollegeFilter = "all" | SmccdCollege["code"];
 type SmccdSection = "courses" | "degree";
 
@@ -170,11 +169,7 @@ export default function SmccdPlanner({
   const availablePlanGrades = selectedPlanGrades(settings);
   const [targetGrade, setTargetGrade] = useState<GradeLevel>(availablePlanGrades[0] ?? (settings.grade_level ?? 11) as GradeLevel);
   const [courseDraft, setCourseDraft] = useState({
-    gradeLevel: targetGrade,
-    status: "planned" as CourseStatus,
-    term: "fall" as PlanCourse["term"],
-    collegeUnits: 3,
-    dtechCredits: 0
+    term: "fall" as PlanCourse["term"]
   });
   const [manualDraft, setManualDraft] = useState({
     name: "",
@@ -293,19 +288,14 @@ export default function SmccdPlanner({
     const course = courses.find((candidate) => candidate.id === focusCourseId);
     if (!course) return;
     const timeout = window.setTimeout(() => {
-      const equivalency = equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") ?? null;
       setSearch(course.course_code);
       setSelectedCourse(course);
       setCourseDraft({
-        gradeLevel: targetGrade,
-        status: "planned",
-        term: "fall",
-        collegeUnits: Number(course.units_max ?? course.units_min),
-        dtechCredits: equivalency?.high_school_credits ?? 0
+        term: "fall"
       });
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [courses, equivalencyMap, focusCourseId, targetGrade]);
+  }, [courses, focusCourseId]);
 
   const visibleCourseResults = useMemo(() => visibleCourses.map(({ course, evaluation }) => {
     const readiness = prerequisiteDisplay(evaluation);
@@ -371,14 +361,9 @@ export default function SmccdPlanner({
   const districtRows = planCourses.filter((row) => Number(row.college_units ?? 0) > 0 || row.smccd_course_id);
   const smccdCourseMap = new Map(courses.map((course) => [course.id, course]));
   function chooseCourse(course: SmccdCourse) {
-    const equivalency = equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") ?? null;
     setSelectedCourse(course);
     setCourseDraft({
-      gradeLevel: targetGrade,
-      status: "planned",
-      term: "fall",
-      collegeUnits: Number(course.units_max ?? course.units_min),
-      dtechCredits: equivalency?.high_school_credits ?? 0
+      term: "fall"
     });
     setError(null);
     setNotice(null);
@@ -453,12 +438,12 @@ export default function SmccdPlanner({
         smccd_course_id: selectedCourse.id,
         college_provider_code: "SMCCD",
         custom_course_name: `${selectedCourse.course_code} ${selectedCourse.title}`,
-        grade_level: courseDraft.gradeLevel,
-        school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, courseDraft.gradeLevel),
+        grade_level: targetGrade,
+        school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, targetGrade),
         term: courseDraft.term,
-        status: courseDraft.status,
-        credits: courseDraft.dtechCredits,
-        college_units: courseDraft.collegeUnits,
+        status: "planned",
+        credits: selectedEquivalency?.high_school_credits ?? 0,
+        college_units: Number(selectedCourse.units_max ?? selectedCourse.units_min),
         is_weighted: true,
         mapping_verified: Boolean(selectedEquivalency),
         user_edited: true,
@@ -551,7 +536,7 @@ export default function SmccdPlanner({
         hiddenSummary={search.trim() ? `${smccdUnavailable.already + smccdUnavailable.prerequisite} unavailable matches hidden` : "Taken and prerequisite-blocked courses stay out of results"}
         filters={<>
           <label className="catalog-search-field"><span>Search district courses</span><div className="catalog-search-input"><MagnifyingGlass size={17} aria-hidden /><input aria-label="Search SMCCD courses" value={search} onChange={(event) => { setSearch(event.target.value); setSelectedCourse(null); }} placeholder="Try ENGL C1000, statistics, or biology" /></div></label>
-          <label><span>Planning year</span><select value={targetGrade} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; setTargetGrade(grade); setCourseDraft((current) => ({ ...current, gradeLevel: grade })); setSelectedCourse(null); }}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+          <label><span>Planning year</span><select value={targetGrade} onChange={(event) => { setTargetGrade(Number(event.target.value) as GradeLevel); setSelectedCourse(null); }}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
           <label><span>Transfer credit</span><select value={transferFilter} onChange={(event) => { setTransferFilter(event.target.value); setSelectedCourse(null); }}><option value="all">Any status</option><option value="transferable">CSU or UC</option><option value="uc">UC transferable</option></select></label>
           <fieldset className="catalog-college-filter"><legend>College</legend><div><button className={collegeFilter === "all" ? "active" : ""} type="button" onClick={() => { setCollegeFilter("all"); setSelectedCourse(null); }}><InstitutionMark institution="smccd" decorative /><span>All three</span></button>{colleges.map((college) => <button className={`${collegeFilter === college.code ? "active" : ""} institution-${college.code.toLowerCase()}`} type="button" onClick={() => { setCollegeFilter(college.code); setSelectedCourse(null); }} key={college.code}><InstitutionMark institution={college.code} decorative /><span>{college.name.replace("College of ", "")}</span></button>)}</div></fieldset>
         </>}
@@ -578,11 +563,8 @@ export default function SmccdPlanner({
           {selectedEquivalency && <dl className="catalog-equivalency-summary"><div><dt>d.tech credit</dt><dd>{selectedEquivalency.high_school_credits} credits</dd></div><div><dt>Counts as</dt><dd>{selectedEquivalency.high_school_equivalent}</dd></div></dl>}
           <PrerequisiteReadout evaluation={selectedPrerequisiteEvaluation} recommendedPreparation={selectedCourse.recommended_preparation ?? []} />
           <form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
-            <label><span>Status</span><select value="planned" disabled><option value="planned">Planned</option></select></label>
-            <label><span>School year</span><select value={targetGrade} disabled><option value={targetGrade}>Grade {targetGrade}</option></select></label>
+            <label><span>School year</span><select value={targetGrade} onChange={(event) => setTargetGrade(Number(event.target.value) as GradeLevel)}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
             <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option><option value="summer">Summer</option></select></label>
-            <label><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={courseDraft.collegeUnits} onChange={(event) => setCourseDraft({ ...courseDraft, collegeUnits: Number(event.target.value) })} /></label>
-            <label><span>{selectedEquivalency ? "d.tech credits" : "Proposed d.tech credits"}</span><input type="number" min={0} max={30} step={0.5} value={courseDraft.dtechCredits} readOnly={Boolean(selectedEquivalency)} onChange={(event) => setCourseDraft({ ...courseDraft, dtechCredits: Number(event.target.value) })} /></label>
             <button className="primary-button" type="submit" disabled={busy}><Plus size={16} /> Add to plan</button>
           </form>
         </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select an SMCCD course</strong><p>Review transfer status, general education, d.tech credit, and prerequisite evidence.</p></div>}
