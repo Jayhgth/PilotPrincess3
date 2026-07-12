@@ -113,7 +113,11 @@ export const GET: APIRoute = async ({ request }) => {
       attachments: attachmentsByMessage.get(message.id) ?? []
     })),
     events: [...(eventResult.data ?? [])].reverse(),
-    toolCalls: [...(toolResult.data ?? [])].reverse()
+    toolCalls: [...(toolResult.data ?? [])].reverse().map((toolCall) => {
+      if (!toolCall.result || typeof toolCall.result !== "object" || Array.isArray(toolCall.result)) return toolCall;
+      const { undo: _undo, ...publicResult } = toolCall.result as Record<string, unknown>;
+      return { ...toolCall, result: publicResult };
+    })
   }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
 };
 

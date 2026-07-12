@@ -112,14 +112,14 @@ const VIEW_IDS = new Set<ViewId>(["dashboard", "courses", "sources", "graduation
 const COURSE_AREAS = new Set<CourseArea>(["mine", "dtech", "smccd"]);
 
 function locationState() {
-  if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea, smccdSection: "courses" as const };
+  if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea };
   const params = new URLSearchParams(window.location.search);
   const requestedView = params.get("view") as ViewId | null;
   const requestedArea = params.get("course") as CourseArea | null;
+  const legacyDegreeLink = params.get("college") === "degree";
   return {
-    view: requestedView && VIEW_IDS.has(requestedView) ? requestedView : "dashboard",
-    courseArea: requestedArea && COURSE_AREAS.has(requestedArea) ? requestedArea : "mine",
-    smccdSection: params.get("college") === "degree" ? "degree" as const : "courses" as const
+    view: legacyDegreeLink ? "graduation" : requestedView && VIEW_IDS.has(requestedView) ? requestedView : "dashboard",
+    courseArea: requestedArea && COURSE_AREAS.has(requestedArea) ? requestedArea : "mine"
   };
 }
 
@@ -210,11 +210,10 @@ export default function PlanningWorkspace() {
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
-  const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">(() => locationState().smccdSection);
   const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
-  const [focusedSmccdCourseId] = useState<string | null>(null);
+  const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
 
   const [school, setSchool] = useState<School | null>(null);
@@ -445,11 +444,21 @@ export default function PlanningWorkspace() {
   }, [loadWorkspace]);
 
   useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("college") === "degree") {
+      url.searchParams.set("view", "graduation");
+      url.searchParams.set("graduation", "degree");
+      url.searchParams.delete("course");
+      url.searchParams.delete("college");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, []);
+
+  useEffect(() => {
     const handlePopState = () => {
       const next = locationState();
       setView(next.view);
       setCourseArea(next.courseArea);
-      setSmccdInitialSection(next.smccdSection);
       setEditingCourseId(null);
     };
     window.addEventListener("popstate", handlePopState);
@@ -540,15 +549,14 @@ export default function PlanningWorkspace() {
     return payload;
   }
 
-  function syncLocation(nextView: ViewId, nextCourseArea = courseArea, nextSmccdSection = smccdInitialSection) {
+  function syncLocation(nextView: ViewId, nextCourseArea = courseArea) {
     const url = new URL(window.location.href);
     if (nextView === "dashboard") url.searchParams.delete("view");
     else url.searchParams.set("view", nextView);
     if (nextView === "courses") {
       if (nextCourseArea === "mine") url.searchParams.delete("course");
       else url.searchParams.set("course", nextCourseArea);
-      if (nextCourseArea === "smccd" && nextSmccdSection === "degree") url.searchParams.set("college", "degree");
-      else url.searchParams.delete("college");
+      url.searchParams.delete("college");
     } else {
       url.searchParams.delete("course");
       url.searchParams.delete("college");
@@ -564,14 +572,13 @@ export default function PlanningWorkspace() {
     void logEvent("view_opened", { view: nextView });
   }
 
-  function openCourses(area: CourseArea = "mine", smccdSection: "courses" | "degree" = "courses") {
+  function openCourses(area: CourseArea = "mine") {
     setCourseArea(area);
-    if (area === "smccd") setSmccdInitialSection(smccdSection);
     setEditingCourseId(null);
     setView("courses");
     setMobileNavOpen(false);
-    syncLocation("courses", area, smccdSection);
-    void logEvent("view_opened", { view: "courses", course_area: area, college_section: smccdSection });
+    syncLocation("courses", area);
+    void logEvent("view_opened", { view: "courses", course_area: area });
   }
 
   function openRequirementCourses(area: GraduationRequirement["area"]) {
@@ -1470,18 +1477,27 @@ export default function PlanningWorkspace() {
   }
 
   function renderGraduation() {
-    if (!settings || !supabase || !session) return null;
+    if (!settings || !supabase || !session || !activeVersion) return null;
     return (
       <div className="graduation-page page-frame">
         <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and your primary associate-degree plan." />
         <GraduationWorkspace
-          supabase={supabase}
-          session={session}
           progress={fullProgress}
-          planCourses={planCourses}
-          smccdCourses={plannedSmccdCourses}
           onFindDtechCourses={openRequirementCourses}
-          onOpenSmccdDegree={() => openCourses("smccd", "degree")}
+          degreePlanner={<SmccdPlanner
+            embedded
+            surface="degree"
+            supabase={supabase}
+            session={session}
+            settings={settings}
+            activeVersion={activeVersion}
+            planCourses={planCourses}
+            equivalencies={equivalencies}
+            onFindCourse={(course) => {
+              setFocusedSmccdCourseId(course.id);
+              openCourses("smccd");
+            }}
+          />}
         />
       </div>
     );
@@ -1591,7 +1607,7 @@ export default function PlanningWorkspace() {
       : [];
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area, area === "smccd" ? "courses" : smccdInitialSection)} label="Courses workspace" layoutId="course-area-indicator" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" layoutId="course-area-indicator" />
       {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && <aside className="enrollment-policy-callout" role="status">
         <Warning size={18} weight="fill" aria-hidden />
         <div>
@@ -1602,13 +1618,13 @@ export default function PlanningWorkspace() {
       </aside>}
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
+        surface="courses"
         supabase={supabase}
         session={session}
         settings={settings}
         activeVersion={activeVersion}
         planCourses={planCourses}
         equivalencies={equivalencies}
-        initialSection={smccdInitialSection}
         focusCourseId={focusedSmccdCourseId}
         onCourseAdded={(course, catalogCourse) => {
           setPlanCourses((current) => [...current, course]);

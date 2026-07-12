@@ -35,10 +35,10 @@ describe("assistant chat helpers", () => {
   });
 
   it("turns changed data into readable receipt details", () => {
-    expect(changeDetailsFromContext({ data: { course_code: "MATH 200", grade_level: 12, equivalency_verified: true } })).toEqual([
-      { label: "Course code", value: "MATH 200" },
-      { label: "Grade level", value: "12" },
-      { label: "Equivalency verified", value: "Yes" }
+    expect(changeDetailsFromContext({ data: { course_code: "MATH 200", grade_level: 12, equivalency_verified: true, plan_course_id: "private-id", removed_count: 1 } })).toEqual([
+      { label: "Course", value: "MATH 200" },
+      { label: "Grade", value: "12" },
+      { label: "d.tech equivalency reviewed", value: "Yes" }
     ]);
   });
 });

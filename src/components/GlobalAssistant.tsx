@@ -169,14 +169,17 @@ function StructuredQuestions({ questions, answered, willQueue, onSubmit }: { que
   </section>;
 }
 
-function ChangeReceipt({ message }: { message: AiMessage }) {
+function ChangeReceipt({ message, busy, onUndo }: { message: AiMessage; busy: boolean; onUndo: (message: AiMessage) => void }) {
   const details = changeDetailsFromContext(message.page_context);
   const toolName = String(message.page_context.tool_name ?? "student data");
-  return <FadeContent className={styles.changeReceipt} duration={0.16}>
-    <div><CheckCircle size={16} weight="fill" /><span><strong>Change applied</strong><small>{friendlyToolLabel(toolName)}</small></span></div>
+  const undone = typeof message.page_context.undone_at === "string";
+  const undoExpiresAt = typeof message.page_context.undo_expires_at === "string" ? Date.parse(message.page_context.undo_expires_at) : 0;
+  const canUndo = message.page_context.undo_available === true && typeof message.page_context.tool_call_id === "string" && undoExpiresAt > Date.now() && !undone;
+  return <FadeContent className={`${styles.changeReceipt} ${undone ? styles.changeUndone : ""}`} duration={0.16}>
+    <div><CheckCircle size={16} weight="fill" /><span><strong>{undone ? "Change undone" : "Change applied"}</strong><small>{friendlyToolLabel(toolName)}</small></span></div>
     <p>{message.content}</p>
-    {details.length > 0 && <dl>{details.map((detail) => <div key={detail.label}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>}
-    <MessageActions message={message} />
+    {!undone && details.length > 0 && <dl>{details.map((detail, index) => <div key={`${detail.label}-${index}`}><dt>{detail.label}</dt><dd>{detail.value}</dd></div>)}</dl>}
+    {canUndo && <div className={styles.changeReceiptActions}><button type="button" onClick={() => onUndo(message)} disabled={busy}><ArrowCounterClockwise size={13} />{busy ? "Undoing" : "Undo change"}</button></div>}
   </FadeContent>;
 }
 
@@ -232,6 +235,8 @@ function humanizeActivityText(value: unknown) {
 
 function toolSummary(call: AiToolCall) {
   const autoReview = (call.result as { auto_review?: { summary?: unknown } } | null)?.auto_review;
+  const undone = call.result as { undone_at?: unknown; undo_summary?: unknown } | null;
+  if (call.status === "completed" && undone?.undone_at) return String(undone.undo_summary ?? "Change undone");
   if (call.status === "completed") return String((call.result as { summary?: unknown } | null)?.summary ?? "Completed");
   if (call.status === "failed") return String((call.result as { error?: unknown } | null)?.error ?? "The tool failed.");
   if (call.status === "rejected") return String(autoReview?.summary ?? "Not applied");
@@ -360,6 +365,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyTool, setBusyTool] = useState<string | null>(null);
+  const [busyUndo, setBusyUndo] = useState<string | null>(null);
   const [autoReviewing, setAutoReviewing] = useState(false);
   const reviewMode = preferences.reviewMode;
   const [images, setImages] = useState<ComposerImage[]>([]);
@@ -877,6 +883,25 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }
 
+  async function undoChange(message: AiMessage) {
+    const toolCallId = String(message.page_context.tool_call_id ?? "");
+    if (!toolCallId) return;
+    setBusyUndo(toolCallId);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/ai/undo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ toolCallId }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The change could not be undone.");
+      await loadConversation(message.conversation_id);
+      await onDataChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The change could not be undone.");
+      await loadConversation(message.conversation_id);
+    } finally {
+      setBusyUndo(null);
+    }
+  }
+
   const events = useMemo(() => [
     ...data.events.map((event) => event.payload as LiveActivity),
     ...liveEvents
@@ -958,7 +983,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 <MessageActions message={message} canRetry={canRetry} onRetry={sourceMessage ? () => void sendMessage(sourceMessage.content, { context: { retry_of_turn_id: sourceMessage.turn_id } }) : undefined} />
               </div>;
             }
-            return <ChangeReceipt message={message} key={message.id} />;
+            return <ChangeReceipt message={message} busy={busyUndo === message.page_context.tool_call_id} onUndo={(receipt) => void undoChange(receipt)} key={message.id} />;
           })}
           {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={autoReviewing ? "Auto-review is checking" : "Pilot is working"} speed={1.8} /></div>}
           {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}

@@ -13,7 +13,6 @@ import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import InstitutionMark from "@/components/InstitutionMark";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import FadeContent from "@/components/reactbits/FadeContent";
-import WorkspaceTabs from "@/components/WorkspaceTabs";
 import {
   calculateSmccdProgramProgressWithContext,
   createSmccdProgramProgressContext,
@@ -40,7 +39,7 @@ import type {
 
 interface Props {
   embedded?: boolean;
-  initialSection?: SmccdSection;
+  surface?: SmccdSection;
   supabase: SupabaseClient;
   session: Session;
   settings: StudentSettings;
@@ -48,9 +47,10 @@ interface Props {
   planCourses: PlanCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
   focusCourseId?: string | null;
-  onCourseAdded: (course: PlanCourse, catalogCourse?: SmccdCourse) => void;
-  onCourseRemoved: (id: string) => void;
+  onCourseAdded?: (course: PlanCourse, catalogCourse?: SmccdCourse) => void;
+  onCourseRemoved?: (id: string) => void;
   onOpenMyCourses?: () => void;
+  onFindCourse?: (course: SmccdCourse) => void;
 }
 
 type CourseStatus = "completed" | "current" | "planned";
@@ -135,7 +135,7 @@ function loadDegreeCatalog(supabase: SupabaseClient) {
 
 export default function SmccdPlanner({
   embedded = false,
-  initialSection = "courses",
+  surface = "courses",
   supabase,
   session,
   settings,
@@ -145,15 +145,15 @@ export default function SmccdPlanner({
   focusCourseId,
   onCourseAdded,
   onCourseRemoved,
-  onOpenMyCourses
+  onOpenMyCourses,
+  onFindCourse
 }: Props) {
   const [courseCatalogReady, setCourseCatalogReady] = useState(false);
   const [degreeCatalogReady, setDegreeCatalogReady] = useState(false);
-  const [goalsReady, setGoalsReady] = useState(false);
+  const [goalsReady, setGoalsReady] = useState(surface === "courses");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [section, setSection] = useState<SmccdSection>(initialSection);
   const [colleges, setColleges] = useState<SmccdCollege[]>([]);
   const [courses, setCourses] = useState<SmccdCourse[]>([]);
   const [programs, setPrograms] = useState<SmccdProgram[]>([]);
@@ -185,23 +185,6 @@ export default function SmccdPlanner({
     gradeLevel: (settings.grade_level ?? 11) as GradeLevel
   });
 
-  function changeSection(next: SmccdSection) {
-    setSection(next);
-    if (embedded) {
-      const url = new URL(window.location.href);
-      if (next === "degree") url.searchParams.set("college", "degree");
-      else url.searchParams.delete("college");
-      window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
-    }
-  }
-
-  useEffect(() => {
-    if (!embedded) return;
-    const handlePopState = () => setSection(new URLSearchParams(window.location.search).get("college") === "degree" ? "degree" : "courses");
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, [embedded]);
-
   useEffect(() => {
     let active = true;
     void loadCourseCatalog(supabase).then((catalog) => {
@@ -217,6 +200,7 @@ export default function SmccdPlanner({
   }, [supabase]);
 
   useEffect(() => {
+    if (surface !== "degree") return;
     let active = true;
     void (async () => {
       try {
@@ -233,10 +217,10 @@ export default function SmccdPlanner({
       }
     })();
     return () => { active = false; };
-  }, [session.user.id, supabase]);
+  }, [session.user.id, supabase, surface]);
 
   useEffect(() => {
-    if (section !== "degree" || degreeCatalogReady) return;
+    if (surface !== "degree" || degreeCatalogReady) return;
     let active = true;
     void loadDegreeCatalog(supabase).then((catalog) => {
       if (!active) return;
@@ -249,13 +233,7 @@ export default function SmccdPlanner({
       if (active) setDegreeCatalogReady(true);
     });
     return () => { active = false; };
-  }, [degreeCatalogReady, section, supabase]);
-
-  useEffect(() => {
-    if (!courseCatalogReady || degreeCatalogReady || section === "degree") return;
-    const prefetch = window.setTimeout(() => { void loadDegreeCatalog(supabase).catch(() => undefined); }, 800);
-    return () => window.clearTimeout(prefetch);
-  }, [courseCatalogReady, degreeCatalogReady, section, supabase]);
+  }, [degreeCatalogReady, surface, supabase]);
 
   const deferredSearch = useDeferredValue(search);
   const courseSearchIndex = useMemo(() => courses.map((course) => ({
@@ -318,7 +296,6 @@ export default function SmccdPlanner({
     if (!course) return;
     const timeout = window.setTimeout(() => {
       const equivalency = equivalencyMap.get(normalizeCollegeCourseCode(course.course_code) ?? "") ?? null;
-      setSection("courses");
       setSearch(course.course_code);
       setSelectedCourse(course);
       setCourseDraft({
@@ -404,12 +381,9 @@ export default function SmccdPlanner({
   }
 
   function findDegreeCourse(courseCode: string, collegeCode: SmccdCourse["college_code"]) {
-    changeSection("courses");
-    setCollegeFilter(collegeCode);
-    setSearch(courseCode);
     const exactCourse = courses.find((course) => course.college_code === collegeCode && normalizeSmccdCourseCode(course.course_code) === normalizeSmccdCourseCode(courseCode));
-    if (exactCourse) chooseCourse(exactCourse);
-    else setSelectedCourse(null);
+    if (exactCourse) onFindCourse?.(exactCourse);
+    else setError(`${courseCode} could not be opened in the current district catalog.`);
   }
 
   async function saveGoal() {
@@ -516,7 +490,7 @@ export default function SmccdPlanner({
         sort_order: planCourses.length
       }).select("*").single();
       if (insertError) throw insertError;
-      onCourseAdded(data as unknown as PlanCourse, selectedCourse);
+      onCourseAdded?.(data as unknown as PlanCourse, selectedCourse);
       setSelectedCourse(null);
       setNotice(selectedEquivalency
         ? `${selectedCourse.course_code} added with the source-backed d.tech equivalency. Confirm that the 2021 chart is still current.`
@@ -551,7 +525,7 @@ export default function SmccdPlanner({
         sort_order: planCourses.length
       }).select("*").single();
       if (insertError) throw insertError;
-      onCourseAdded(data as unknown as PlanCourse);
+      onCourseAdded?.(data as unknown as PlanCourse);
       setManualDraft((current) => ({ ...current, name: "", dtechCredits: 0 }));
       setNotice("Manual college course added as unverified.");
     } catch (caught) {
@@ -567,13 +541,13 @@ export default function SmccdPlanner({
     const { error: removeError } = await supabase.from("plan_courses").delete().eq("id", row.id);
     if (removeError) setError(removeError.message);
     else {
-      onCourseRemoved(row.id);
+      onCourseRemoved?.(row.id);
       setNotice("College course removed from the active plan.");
     }
     setBusy(false);
   }
 
-  if (!courseCatalogReady || !goalsReady) return <div className="smccd-loading" role="status">Loading SMCCD courses...</div>;
+  if (!courseCatalogReady || (surface === "degree" && !goalsReady)) return <div className="smccd-loading" role="status">Loading SMCCD courses...</div>;
 
   return (
     <div className="smccd-workspace">
@@ -585,20 +559,11 @@ export default function SmccdPlanner({
         <a className="secondary-button" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">Official K-12 steps <ArrowSquareOut size={16} /></a>
       </header>}
 
-      <div className="smccd-catalog-notice"><Warning size={17} /><span>Catalog entry does not confirm enrollment, schedule, or d.tech credit.</span></div>
+      {surface === "courses" && <div className="smccd-catalog-notice"><Warning size={17} /><span>Catalog entry does not confirm enrollment, schedule, or d.tech credit.</span></div>}
       {error && <div className="inline-alert error" role="alert">{error}</div>}
       {notice && <div className="inline-alert success smccd-notice" role="status"><span>{notice}</span>{embedded && onOpenMyCourses && <button className="quiet-button" type="button" onClick={onOpenMyCourses}>View My courses</button>}</div>}
 
-      <WorkspaceTabs
-        className="dual-enrollment-tabs"
-        items={[{ id: "courses", label: "Find courses" }, { id: "degree", label: "Associate degree" }]}
-        value={section}
-        onChange={changeSection}
-        label="SMCCD tools"
-        layoutId="smccd-section-indicator"
-      />
-
-      {section === "courses" && <CourseCatalogBrowser
+      {surface === "courses" && <CourseCatalogBrowser
         source="smccd"
         title="SMCCD course catalog"
         description="College courses you can still add to this planning year."
@@ -649,9 +614,9 @@ export default function SmccdPlanner({
         {districtRows.length ? <div className="source-list">{districtRows.map((row) => { const catalogCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null; return <article className="source-row dual-enrollment-row" key={row.id}>{catalogCourse ? <InstitutionMark institution={catalogCourse.college_code} decorative /> : <InstitutionMark institution="smccd" decorative />}<div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>; })}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
       </section>}
 
-      {section === "degree" && !degreeCatalogReady && <div className="smccd-loading smccd-degree-loading" role="status">Loading degree requirements...</div>}
+      {surface === "degree" && !degreeCatalogReady && <div className="smccd-loading smccd-degree-loading" role="status">Loading degree requirements...</div>}
 
-      {section === "degree" && degreeCatalogReady && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
+      {surface === "degree" && degreeCatalogReady && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
         <header className="section-heading"><div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div></header>
         {goals.length > 0 && <div className="smccd-tracked-degrees" aria-label="Tracked degrees"><strong>Tracked degrees</strong><div>{goals.map((goal) => {
           const trackedProgram = programs.find((program) => program.id === goal.program_id);
@@ -722,7 +687,7 @@ export default function SmccdPlanner({
         </div>
       </section></FadeContent>}
 
-      {section === "courses" && <details className="smccd-manual-entry">
+      {surface === "courses" && <details className="smccd-manual-entry">
         <summary>Course missing from the catalog?</summary>
         <form className="form-section compact-form" onSubmit={addManualCourse}>
           <h2>Add a manual course</h2>

@@ -108,7 +108,9 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const result = await executeAssistantMutationTool(auth.supabase, auth.user.id, validated.name, validated.arguments);
     const completedAt = new Date().toISOString();
-    const storedResult = review ? { ...result, auto_review: review } : result;
+    const undoExpiresAt = result.undo ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
+    const storedResult = { ...result, ...(undoExpiresAt ? { undo_expires_at: undoExpiresAt } : {}), ...(review ? { auto_review: review } : {}) };
+    const publicResult = { summary: result.summary, data: result.data, changed: result.changed ?? null, ...(review ? { auto_review: review } : {}) };
     const { data, error } = await auth.supabase.from("ai_tool_calls").update({
       status: "completed",
       result: sanitizeCodexValue(storedResult),
@@ -122,12 +124,12 @@ export const POST: APIRoute = async ({ request }) => {
         turn_id: toolCall.turn_id,
         role: "tool",
         content: sanitizeCodexText(result.summary, 2000),
-        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, auto_review: review }
+        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, auto_review: review, undo_available: Boolean(result.undo), undo_expires_at: undoExpiresAt }
       }),
-      recordEvent("tool.completed", await nextSequence(), { toolCall: data, review }),
+      recordEvent("tool.completed", await nextSequence(), { toolCall: { ...data, result: publicResult }, review }),
       auth.supabase.from("ai_conversations").update({ updated_at: completedAt }).eq("id", toolCall.conversation_id)
     ]);
-    return new Response(JSON.stringify({ toolCall: data, result, review, applied: true }), { headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ toolCall: { ...data, result: publicResult }, result: publicResult, review, applied: true }), { headers: { "content-type": "application/json" } });
   } catch (error) {
     const message = sanitizeCodexText(error instanceof Error ? error.message : "The change could not be applied.", 1200);
     const completedAt = new Date().toISOString();

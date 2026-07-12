@@ -1,11 +1,9 @@
 import {
   ArrowSquareOutIcon as ArrowSquareOut,
   BookOpenIcon as BookOpen,
-  GraduationCapIcon as GraduationCap,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import FadeContent from "@/components/reactbits/FadeContent";
@@ -13,105 +11,38 @@ import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   PlanCourse,
   RequirementCourseEvidence,
-  RequirementProgress,
-  SmccdCourse,
-  SmccdProgram,
-  SmccdProgramRequirement,
-  SmccdRequirementCourse,
-  StudentSmccdGoal
+  RequirementProgress
 } from "@/lib/models";
-import { calculateSmccdProgramProgress, normalizeSmccdCourseCode, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
 
 type GraduationView = "diploma" | "degree";
 
+function graduationViewFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("graduation") === "degree" || params.get("college") === "degree" ? "degree" : "diploma";
+}
+
 interface Props {
-  supabase: SupabaseClient;
-  session: Session;
   progress: RequirementProgress[];
-  planCourses: PlanCourse[];
-  smccdCourses: SmccdCourse[];
   onFindDtechCourses: (area: RequirementProgress["requirement"]["area"]) => void;
-  onOpenSmccdDegree: () => void;
+  degreePlanner: ReactNode;
 }
 
 const DTECH_REQUIREMENTS_URL = "https://docs.google.com/document/d/1N351ZQzwGakGiFf5ax7i7NE1BEA2k_civOL9atMWXJo/edit?usp=sharing";
 
 export default function GraduationWorkspace({
-  supabase,
-  session,
   progress,
-  planCourses,
-  smccdCourses,
   onFindDtechCourses,
-  onOpenSmccdDegree
+  degreePlanner
 }: Props) {
-  const [view, setView] = useState<GraduationView>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("graduation") === "degree" ? "degree" : "diploma");
+  const [view, setView] = useState<GraduationView>(() => typeof window !== "undefined" ? graduationViewFromLocation() : "diploma");
   const firstDiplomaGap = progress.find((item) => item.status === "missing") ?? progress[0] ?? null;
   const [selectedDiplomaId, setSelectedDiplomaId] = useState(firstDiplomaGap?.requirement.id ?? "");
-  const [degreeLoading, setDegreeLoading] = useState(true);
-  const [degreeError, setDegreeError] = useState<string | null>(null);
-  const [goal, setGoal] = useState<StudentSmccdGoal | null>(null);
-  const [program, setProgram] = useState<SmccdProgram | null>(null);
-  const [programRequirements, setProgramRequirements] = useState<SmccdProgramRequirement[]>([]);
-  const [programOptions, setProgramOptions] = useState<SmccdRequirementCourse[]>([]);
-  const [selectedProgramRequirementId, setSelectedProgramRequirementId] = useState("");
 
   useEffect(() => {
-    const handlePopState = () => setView(new URLSearchParams(window.location.search).get("graduation") === "degree" ? "degree" : "diploma");
+    const handlePopState = () => setView(graduationViewFromLocation());
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      setDegreeLoading(true);
-      setDegreeError(null);
-      try {
-        const goalResult = await supabase
-          .from("student_smccd_goals")
-          .select("*")
-          .eq("user_id", session.user.id)
-          .eq("is_primary", true)
-          .maybeSingle();
-        if (goalResult.error) throw goalResult.error;
-        if (!goalResult.data) {
-          if (active) setGoal(null);
-          return;
-        }
-        const loadedGoal = goalResult.data as unknown as StudentSmccdGoal;
-        const [programResult, requirementResult] = await Promise.all([
-          supabase.from("smccd_programs").select("*").eq("id", loadedGoal.program_id).single(),
-          supabase.from("smccd_program_requirements").select("*").eq("program_id", loadedGoal.program_id).order("sort_order")
-        ]);
-        if (programResult.error) throw programResult.error;
-        if (requirementResult.error) throw requirementResult.error;
-        const loadedRequirements = (requirementResult.data ?? []) as unknown as SmccdProgramRequirement[];
-        const requirementIds = loadedRequirements.map((requirement) => requirement.id);
-        const optionResult = requirementIds.length
-          ? await supabase.from("smccd_requirement_courses").select("*").in("requirement_id", requirementIds)
-          : { data: [], error: null };
-        if (optionResult.error) throw optionResult.error;
-        if (!active) return;
-        setGoal(loadedGoal);
-        setProgram(programResult.data as unknown as SmccdProgram);
-        setProgramRequirements(loadedRequirements);
-        setProgramOptions((optionResult.data ?? []) as unknown as SmccdRequirementCourse[]);
-        const firstActionable = loadedRequirements.find((requirement) => requirement.kind !== "text_rule") ?? loadedRequirements[0];
-        setSelectedProgramRequirementId(firstActionable?.id ?? "");
-      } catch (error) {
-        if (active) setDegreeError(error instanceof Error ? error.message : "The degree goal could not be loaded.");
-      } finally {
-        if (active) setDegreeLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [session.user.id, supabase]);
-
-  const degreeProgress = useMemo(
-    () => program ? calculateSmccdProgramProgress(program, programRequirements, programOptions, planCourses, smccdCourses) : null,
-    [planCourses, program, programOptions, programRequirements, smccdCourses]
-  );
 
   const diplomaMissing = progress.filter((item) => item.status === "missing").length;
 
@@ -129,7 +60,7 @@ export default function GraduationWorkspace({
         className="graduation-workspace-tabs"
         items={[
           { id: "diploma", label: "d.tech diploma", count: diplomaMissing },
-          { id: "degree", label: "Associate degree", count: degreeProgress?.requirements.filter((item) => item.status === "missing").length }
+          { id: "degree", label: "Associate degree" }
         ]}
         value={view}
         onChange={changeView}
@@ -144,18 +75,7 @@ export default function GraduationWorkspace({
           onSelect={setSelectedDiplomaId}
           onFindCourses={onFindDtechCourses}
         />}
-        {view === "degree" && <DegreeView
-          loading={degreeLoading}
-          error={degreeError}
-          goal={goal}
-          program={program}
-          progress={degreeProgress}
-          planCourses={planCourses}
-          smccdCourses={smccdCourses}
-          selectedRequirementId={selectedProgramRequirementId}
-          onSelectRequirement={setSelectedProgramRequirementId}
-          onOpenPlanner={onOpenSmccdDegree}
-        />}
+        {view === "degree" && degreePlanner}
       </FadeContent>
     </div>
   );
@@ -225,90 +145,6 @@ function DiplomaView({
         warnings={selected.ruleWarnings}
         action={<button className="primary-button small dtech-action" type="button" onClick={() => onFindCourses(selected.requirement.area)}><BookOpen size={15} /> Find courses</button>}
       />}
-    </div>
-  </>;
-}
-
-function DegreeView({
-  loading,
-  error,
-  goal,
-  program,
-  progress,
-  planCourses,
-  smccdCourses,
-  selectedRequirementId,
-  onSelectRequirement,
-  onOpenPlanner
-}: {
-  loading: boolean;
-  error: string | null;
-  goal: StudentSmccdGoal | null;
-  program: SmccdProgram | null;
-  progress: ReturnType<typeof calculateSmccdProgramProgress> | null;
-  planCourses: PlanCourse[];
-  smccdCourses: SmccdCourse[];
-  selectedRequirementId: string;
-  onSelectRequirement: (id: string) => void;
-  onOpenPlanner: () => void;
-}) {
-  if (loading) return <div className="graduation-loading" role="status"><span /><span /><span /></div>;
-  if (error) return <div className="inline-alert error" role="alert">{error}</div>;
-  if (!goal || !program || !progress) return <section className="graduation-degree-empty">
-    <InstitutionMark institution="smccd" size="header" decorative />
-    <div><h2>No associate-degree goal selected</h2><p>Choose an AA or AS program to compare its major requirements with exact SMCCD courses in your plan.</p></div>
-    <button className="primary-button college-action" type="button" onClick={onOpenPlanner}><GraduationCap size={17} /> Choose a degree</button>
-  </section>;
-
-  const selected = progress.requirements.find((item) => item.requirement.id === selectedRequirementId) ?? progress.requirements[0];
-  const scheduledMajorUnits = Math.max(0, progress.projectedMajorUnits - progress.completedMajorUnits);
-  const openMajorUnits = Math.max(0, progress.requiredMajorUnits - progress.projectedMajorUnits);
-  const courseById = new Map(smccdCourses.map((course) => [course.id, course]));
-  const requirementRows = progress.requirements.map((item) => degreeRequirementRow(item, planCourses, courseById));
-  const selectedCourseRows = selected ? planCourses.filter((row) => {
-    const code = row.smccd_course_id ? courseById.get(row.smccd_course_id)?.course_code : null;
-    return code ? selected.selectedCourseCodes.includes(normalizeSmccdCourseCode(code)) : false;
-  }) : [];
-
-  return <>
-    <EligibilitySummary
-      identity={<InstitutionMark institution={program.college_code} size="rail" decorative />}
-      label={`${SMCCD_COLLEGE_NAMES[program.college_code]} ${program.award_type}`}
-      answer={openMajorUnits === 0 ? "The saved plan covers the parsed major-unit target." : `${formatValue(openMajorUnits)} major units remain open.`}
-      body={`${program.title}. General education, residency, substitutions, and final award eligibility are not included in this estimate.`}
-      tone="degree"
-      metrics={[
-        ["Major units done", formatValue(progress.completedMajorUnits)],
-        ["Scheduled", formatValue(scheduledMajorUnits)],
-        ["Parsed major target", formatValue(progress.requiredMajorUnits)],
-        ["Award total", `${formatValue(program.total_degree_units)} units`]
-      ]}
-      action={<button className="secondary-button small" type="button" onClick={onOpenPlanner}>Change degree</button>}
-    />
-    <p className="graduation-source-note">Official 2025-26 program requirements. <a href={program.catalog_url} target="_blank" rel="noreferrer">Open program source <ArrowSquareOut size={13} /></a></p>
-    <div className="graduation-evidence-layout">
-      <RequirementIndex
-        title="Major requirements"
-        description="Parsed catalog groups only. Manual catalog rules stay visibly unresolved."
-        rows={requirementRows}
-        selectedId={selected?.requirement.id ?? ""}
-        onSelect={onSelectRequirement}
-      />
-      {selected && <section className="graduation-evidence-panel degree-evidence-panel" aria-live="polite">
-        <header><div><span>Major requirement</span><h2>{degreeRequirementTitle(selected.requirement.label)}</h2><p>{selected.requirement.raw_text ?? degreeRequirementLabel(selected)}</p></div><strong className={`eligibility-status ${selected.status}`}>{degreeStatusLabel(selected.status)}</strong></header>
-        <div className="evidence-section">
-          <h3>Courses in your plan</h3>
-          {selectedCourseRows.length ? <div className="evidence-course-list">{selectedCourseRows.map((row) => {
-            const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
-            return <div className="evidence-course-row" key={row.id}>{course ? <InstitutionMark institution={course.college_code} decorative /> : <InstitutionMark institution="smccd" decorative />}<span><strong>{course ? `${course.course_code} ${course.title}` : row.custom_course_name}</strong><small>{statusLabel(row.status)} · {formatValue(Number(row.college_units ?? 0))} units</small></span><b>{statusLabel(row.status)}</b></div>;
-          })}</div> : <p className="evidence-empty">No exact course from this group is in the saved plan.</p>}
-        </div>
-        <div className="evidence-section">
-          <h3>Eligible catalog options</h3>
-          {selected.optionCourseCodes.length ? <div className="degree-option-list">{selected.optionCourseCodes.slice(0, 16).map((code) => <span key={code}>{code}</span>)}{selected.optionCourseCodes.length > 16 && <span>+{selected.optionCourseCodes.length - 16} more</span>}</div> : <p className="evidence-empty">This rule cannot be reduced to an exact course list. Use the official program page.</p>}
-        </div>
-        <button className="primary-button college-action" type="button" onClick={onOpenPlanner}><BookOpen size={15} /> Open degree planner</button>
-      </section>}
     </div>
   </>;
 }
@@ -403,72 +239,6 @@ function EvidenceCourseSection({ title, rows, mode }: { title: string; rows: Req
   </div>)}</div> : <p className="evidence-empty">No course currently contributes to this requirement.</p>}</div>;
 }
 
-function degreeRequirementLabel(item: ReturnType<typeof calculateSmccdProgramProgress>["requirements"][number]) {
-  if (item.requiredUnits !== null) return `${formatValue(item.requiredUnits)} units`;
-  if (item.requirement.min_count) return `${item.requirement.min_count} courses`;
-  if (item.requirement.kind === "all") return `${item.optionCourseCodes.length} required courses`;
-  return "Catalog rule";
-}
-
-function degreeRequirementRow(
-  item: ReturnType<typeof calculateSmccdProgramProgress>["requirements"][number],
-  planCourses: PlanCourse[],
-  courseById: Map<string, SmccdCourse>
-) {
-  const selectedCodes = new Set(item.selectedCourseCodes);
-  const rowsByCode = new Map<string, PlanCourse[]>();
-  for (const row of planCourses) {
-    const code = row.smccd_course_id ? courseById.get(row.smccd_course_id)?.course_code : null;
-    const normalized = code ? normalizeSmccdCourseCode(code) : null;
-    if (!normalized || !selectedCodes.has(normalized)) continue;
-    rowsByCode.set(normalized, [...(rowsByCode.get(normalized) ?? []), row]);
-  }
-  const bestRows = [...rowsByCode.values()].map((rows) => [...rows].sort((a, b) => statusRank(b.status) - statusRank(a.status))[0]);
-  const usesUnits = item.requiredUnits !== null || item.requirement.kind === "choose_units";
-  const completed = usesUnits
-    ? sumDegreeUnits(bestRows.filter((row) => row.status === "completed"))
-    : bestRows.filter((row) => row.status === "completed").length;
-  const scheduled = usesUnits
-    ? sumDegreeUnits(bestRows.filter((row) => row.status !== "completed"))
-    : bestRows.filter((row) => row.status !== "completed").length;
-  const target = usesUnits
-    ? Number(item.requiredUnits ?? 0)
-    : item.requirement.kind === "all"
-      ? item.optionCourseCodes.length
-      : Number(item.requirement.min_count ?? 1);
-  const suffix = usesUnits ? "u" : "course";
-  return {
-    id: item.requirement.id,
-    title: degreeRequirementTitle(item.requirement.label),
-    requirement: degreeRequirementLabel(item),
-    completed: degreeValue(completed, suffix),
-    scheduled: degreeValue(scheduled, suffix),
-    remaining: item.status === "manual_review" ? "Review" : degreeValue(Math.max(0, target - completed - scheduled), suffix),
-    status: item.status === "satisfied" ? "Covered" : item.status === "partial" ? "Partial" : item.status === "manual_review" ? "Manual rule" : "Gap"
-  };
-}
-
-function degreeRequirementTitle(label: string) {
-  return label.replace(/:\s*\d+(?:\.\d+)?\s+units?\s*$/i, "").trim();
-}
-
-function degreeStatusLabel(status: ReturnType<typeof calculateSmccdProgramProgress>["requirements"][number]["status"]) {
-  return status === "satisfied" ? "Covered" : status === "partial" ? "Partial" : status === "manual_review" ? "Manual rule" : "Gap";
-}
-
-function sumDegreeUnits(rows: PlanCourse[]) {
-  return Math.round(rows.reduce((sum, row) => sum + Number(row.college_units ?? 0), 0) * 10) / 10;
-}
-
-function degreeValue(value: number, suffix: string) {
-  const amount = formatValue(value);
-  if (suffix === "course") return `${amount} ${value === 1 ? "course" : "courses"}`;
-  return `${amount} ${suffix}`;
-}
-
-function statusRank(status: PlanCourse["status"]) {
-  return status === "completed" ? 3 : status === "current" ? 2 : 1;
-}
 
 function statusLabel(status: PlanCourse["status"]) {
   return status === "completed" ? "Done" : status === "current" ? "In progress" : "Planned";

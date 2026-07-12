@@ -321,7 +321,12 @@
 .changeReceipt dl > div { display: grid; grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.3fr); gap: 8px; font-size: 11px; }
 .changeReceipt dt { color: var(--ink-faint); }
 .changeReceipt dd { margin: 0; color: var(--ink-soft); overflow-wrap: anywhere; }
-.changeReceipt .messageActions { margin-top: -2px; }
+.changeReceiptActions { display: flex; justify-content: flex-start; padding-top: 2px; }
+.changeReceiptActions button { display: inline-flex; min-height: 28px; align-items: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--success) 28%, var(--line)); border-radius: 6px; background: color-mix(in srgb, var(--surface) 72%, transparent); color: var(--ink-soft); padding: 0 8px; font: inherit; font-size: 11px; font-weight: 650; }
+.changeReceiptActions button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--success) 55%, var(--line)); color: var(--ink); }
+.changeReceiptActions button:disabled { cursor: wait; opacity: 0.55; }
+.changeUndone { background: var(--surface-muted); }
+.changeUndone > div:first-child > svg { color: var(--ink-faint); }
 .error { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; border-radius: 7px; background: var(--danger-soft); color: var(--danger); padding: 10px; font-size: 12px; line-height: 1.5; }
 
 .composer {

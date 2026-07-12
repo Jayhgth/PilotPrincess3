@@ -329,7 +329,13 @@ export interface AssistantToolResult {
   summary: string;
   data: unknown;
   changed?: { entity: string; id: string };
+  undo?: AssistantUndo;
 }
+
+export type AssistantUndo =
+  | { kind: "delete_rows"; table: "plan_versions" | "plan_courses" | "timeline_tasks"; ids: string[]; summary: string }
+  | { kind: "restore_rows"; table: "plan_courses" | "timeline_tasks" | "student_smccd_goals"; rows: Array<Record<string, unknown>>; summary: string }
+  | { kind: "restore_enrollment_preference"; row: Record<string, unknown> | null; summary: string };
 
 export async function executeAssistantReadTool(
   supabase: SupabaseClient,
@@ -778,7 +784,8 @@ export async function executeAssistantMutationTool(
     return {
       summary: `${label} was saved.`,
       data: { label, course_count: workspace.planCourses.length },
-      changed: { entity: "plan_version", id: snapshot.id }
+      changed: { entity: "plan_version", id: snapshot.id },
+      undo: { kind: "delete_rows", table: "plan_versions", ids: [snapshot.id], summary: `${label} was removed.` }
     };
   }
 
@@ -807,7 +814,12 @@ export async function executeAssistantMutationTool(
       sort_order: workspace.planCourses.filter((row) => row.grade_level === args.grade_level).length
     }).select("id").single();
     if (error) throw new Error(error.message);
-    return { summary: `${course.name} was added to ${args.status === "current" ? "In progress" : "Planned"}.`, data: { course: course.name, status: args.status, grade_level: args.grade_level }, changed: { entity: "plan_course", id: data.id } };
+    return {
+      summary: `${course.name} was added to ${args.status === "current" ? "In progress" : "Planned"}.`,
+      data: { course: course.name, status: args.status, grade_level: args.grade_level },
+      changed: { entity: "plan_course", id: data.id },
+      undo: { kind: "delete_rows", table: "plan_courses", ids: [data.id], summary: `${course.name} was removed from the plan.` }
+    };
   }
 
   if (name === "add_smccd_course") {
@@ -848,7 +860,12 @@ export async function executeAssistantMutationTool(
       sort_order: workspace.planCourses.length
     }).select("id").single();
     if (error) throw new Error(error.message);
-    return { summary: `${course.course_code} ${course.title} was added to ${args.status === "current" ? "In progress" : "Planned"}.`, data: { course_code: course.course_code, status: args.status, grade_level: args.grade_level, equivalency_verified: Boolean(equivalency) }, changed: { entity: "plan_course", id: data.id } };
+    return {
+      summary: `${course.course_code} ${course.title} was added to ${args.status === "current" ? "In progress" : "Planned"}.`,
+      data: { course_code: course.course_code, status: args.status, grade_level: args.grade_level, equivalency_verified: Boolean(equivalency) },
+      changed: { entity: "plan_course", id: data.id },
+      undo: { kind: "delete_rows", table: "plan_courses", ids: [data.id], summary: `${course.course_code} ${course.title} was removed from the plan.` }
+    };
   }
 
   if (name === "move_plan_course") {
@@ -860,7 +877,12 @@ export async function executeAssistantMutationTool(
     if (!patch) throw new Error("That course cannot be moved.");
     const { error } = await supabase.from("plan_courses").update({ ...patch, user_edited: true }).eq("id", row.id);
     if (error) throw new Error(error.message);
-    return { summary: `The course was moved to ${args.status === "completed" ? "Done" : args.status === "current" ? "In progress" : "Planned"}.`, data: { plan_course_id: row.id, status: args.status }, changed: { entity: "plan_course", id: row.id } };
+    return {
+      summary: `The course was moved to ${args.status === "completed" ? "Done" : args.status === "current" ? "In progress" : "Planned"}.`,
+      data: { plan_course_id: row.id, status: args.status },
+      changed: { entity: "plan_course", id: row.id },
+      undo: { kind: "restore_rows", table: "plan_courses", rows: [row as unknown as Record<string, unknown>], summary: "The course was moved back." }
+    };
   }
 
   if (name === "move_plan_courses") {
@@ -886,7 +908,8 @@ export async function executeAssistantMutationTool(
     return {
       summary: `${matchedRows.length} ${matchedRows.length === 1 ? "course was" : "courses were"} moved to ${statusLabel}.`,
       data: { plan_course_ids: args.plan_course_ids, courses: matchedRows.map((row) => courseDisplayName(row, courseMap)), status: args.status, moved_count: matchedRows.length },
-      changed: { entity: "plan_courses", id: args.plan_course_ids.join(",") }
+      changed: { entity: "plan_courses", id: args.plan_course_ids.join(",") },
+      undo: { kind: "restore_rows", table: "plan_courses", rows: matchedRows as unknown as Array<Record<string, unknown>>, summary: `${matchedRows.length} ${matchedRows.length === 1 ? "course was" : "courses were"} moved back.` }
     };
   }
 
@@ -897,7 +920,12 @@ export async function executeAssistantMutationTool(
     if (row.source_review_item_id) throw new Error("Transcript-backed courses must be corrected through transcript review and cannot be removed here.");
     const { error } = await supabase.from("plan_courses").delete().eq("id", row.id);
     if (error) throw new Error(error.message);
-    return { summary: "The course was removed from the active plan.", data: { plan_course_id: row.id }, changed: { entity: "plan_course", id: row.id } };
+    return {
+      summary: "The course was removed from the active plan.",
+      data: { plan_course_id: row.id },
+      changed: { entity: "plan_course", id: row.id },
+      undo: { kind: "restore_rows", table: "plan_courses", rows: [row as unknown as Record<string, unknown>], summary: "The course was restored to the active plan." }
+    };
   }
 
   if (name === "remove_plan_courses") {
@@ -918,7 +946,8 @@ export async function executeAssistantMutationTool(
         courses: matchedRows.map((row) => courseDisplayName(row, courseMap)),
         removed_count: matchedRows.length
       },
-      changed: { entity: "plan_courses", id: args.plan_course_ids.join(",") }
+      changed: { entity: "plan_courses", id: args.plan_course_ids.join(",") },
+      undo: { kind: "restore_rows", table: "plan_courses", rows: matchedRows as unknown as Array<Record<string, unknown>>, summary: `${matchedRows.length} ${matchedRows.length === 1 ? "course was" : "courses were"} restored to the active plan.` }
     };
   }
 
@@ -954,13 +983,20 @@ export async function executeAssistantMutationTool(
     if (args.notes !== undefined) patch.notes = args.notes;
     const { error } = await supabase.from("plan_courses").update(patch).eq("id", row.id);
     if (error) throw new Error(error.message);
-    return { summary: "The course details were updated.", data: { plan_course_id: row.id, ...patch }, changed: { entity: "plan_course", id: row.id } };
+    return {
+      summary: "The course details were updated.",
+      data: { plan_course_id: row.id, ...patch },
+      changed: { entity: "plan_course", id: row.id },
+      undo: { kind: "restore_rows", table: "plan_courses", rows: [row as unknown as Record<string, unknown>], summary: "The previous course details were restored." }
+    };
   }
 
   if (name === "update_enrollment_preference") {
     const args = toolArgumentSchemas.update_enrollment_preference.parse(argumentsValue);
     const policy = workspace.enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === args.program_type);
     if (!policy) throw new Error("No source-backed SMCCD policy matches that enrollment type.");
+    const previousResult = await supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle();
+    if (previousResult.error) throw new Error(previousResult.error.message);
     const { data, error } = await supabase.from("student_enrollment_preferences").upsert({
       user_id: userId,
       provider_code: "SMCCD",
@@ -972,7 +1008,8 @@ export async function executeAssistantMutationTool(
     return {
       summary: `The SMCCD ${args.program_type === "dual" ? "dual-enrollment" : "concurrent-enrollment"} preference was updated.`,
       data: { provider_code: "SMCCD", ...args, planning_threshold_units: policy.recommended_max_units, published_absolute_max_units: policy.absolute_max_units },
-      changed: { entity: "student_enrollment_preference", id: `${data.user_id}:${data.provider_code}` }
+      changed: { entity: "student_enrollment_preference", id: `${data.user_id}:${data.provider_code}` },
+      undo: { kind: "restore_enrollment_preference", row: previousResult.data as Record<string, unknown> | null, summary: "The previous college enrollment type was restored." }
     };
   }
 
@@ -987,7 +1024,12 @@ export async function executeAssistantMutationTool(
       is_generated: false
     }).select("id").single();
     if (error) throw new Error(error.message);
-    return { summary: `${args.title} was added to Next steps.`, data: { title: args.title, category: args.category, due_label: args.due_label }, changed: { entity: "timeline_task", id: data.id } };
+    return {
+      summary: `${args.title} was added to Next steps.`,
+      data: { title: args.title, category: args.category, due_label: args.due_label },
+      changed: { entity: "timeline_task", id: data.id },
+      undo: { kind: "delete_rows", table: "timeline_tasks", ids: [data.id], summary: `${args.title} was removed from Next steps.` }
+    };
   }
 
   if (name === "complete_next_step") {
@@ -996,7 +1038,12 @@ export async function executeAssistantMutationTool(
     if (!task) throw new Error("That next step no longer exists.");
     const { error } = await supabase.from("timeline_tasks").update({ is_completed: true }).eq("id", task.id);
     if (error) throw new Error(error.message);
-    return { summary: `${task.title} was marked complete.`, data: { task_id: task.id, title: task.title }, changed: { entity: "timeline_task", id: task.id } };
+    return {
+      summary: `${task.title} was marked complete.`,
+      data: { task_id: task.id, title: task.title },
+      changed: { entity: "timeline_task", id: task.id },
+      undo: { kind: "restore_rows", table: "timeline_tasks", rows: [task as unknown as Record<string, unknown>], summary: `${task.title} was marked open again.` }
+    };
   }
 
   if (name === "complete_next_steps") {
@@ -1010,7 +1057,8 @@ export async function executeAssistantMutationTool(
     return {
       summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step was" : "steps were"} marked complete.`,
       data: { task_ids: args.task_ids, titles: matchedTasks.map((task) => task.title), completed_count: matchedTasks.length },
-      changed: { entity: "timeline_tasks", id: args.task_ids.join(",") }
+      changed: { entity: "timeline_tasks", id: args.task_ids.join(",") },
+      undo: { kind: "restore_rows", table: "timeline_tasks", rows: matchedTasks as unknown as Array<Record<string, unknown>>, summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step is" : "steps are"} open again.` }
     };
   }
 
@@ -1022,7 +1070,12 @@ export async function executeAssistantMutationTool(
     const { task_id: _id, ...patch } = args;
     const { error } = await supabase.from("timeline_tasks").update(patch).eq("id", task.id);
     if (error) throw new Error(error.message);
-    return { summary: `${args.title ?? task.title} was updated.`, data: { task_id: task.id, ...patch }, changed: { entity: "timeline_task", id: task.id } };
+    return {
+      summary: `${args.title ?? task.title} was updated.`,
+      data: { task_id: task.id, ...patch },
+      changed: { entity: "timeline_task", id: task.id },
+      undo: { kind: "restore_rows", table: "timeline_tasks", rows: [task as unknown as Record<string, unknown>], summary: "The previous next-step details were restored." }
+    };
   }
 
   if (name === "remove_next_step") {
@@ -1032,7 +1085,12 @@ export async function executeAssistantMutationTool(
     if (task.is_generated) throw new Error("Generated requirement steps update from the plan and cannot be deleted directly.");
     const { error } = await supabase.from("timeline_tasks").delete().eq("id", task.id);
     if (error) throw new Error(error.message);
-    return { summary: `${task.title} was removed from Next steps.`, data: { task_id: task.id }, changed: { entity: "timeline_task", id: task.id } };
+    return {
+      summary: `${task.title} was removed from Next steps.`,
+      data: { task_id: task.id },
+      changed: { entity: "timeline_task", id: task.id },
+      undo: { kind: "restore_rows", table: "timeline_tasks", rows: [task as unknown as Record<string, unknown>], summary: `${task.title} was restored to Next steps.` }
+    };
   }
 
   if (name === "remove_next_steps") {
@@ -1048,7 +1106,8 @@ export async function executeAssistantMutationTool(
     return {
       summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step was" : "steps were"} removed.`,
       data: { task_ids: args.task_ids, titles: matchedTasks.map((task) => task.title), removed_count: matchedTasks.length },
-      changed: { entity: "timeline_tasks", id: args.task_ids.join(",") }
+      changed: { entity: "timeline_tasks", id: args.task_ids.join(",") },
+      undo: { kind: "restore_rows", table: "timeline_tasks", rows: matchedTasks as unknown as Array<Record<string, unknown>>, summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step was" : "steps were"} restored.` }
     };
   }
 
@@ -1060,7 +1119,11 @@ export async function executeAssistantMutationTool(
     if (clearResult.error) throw new Error(clearResult.error.message);
     const { data, error } = await supabase.from("student_smccd_goals").upsert({ user_id: userId, program_id: args.program_id, is_primary: true, notes: args.notes }, { onConflict: "user_id,program_id" }).select("id").single();
     if (error) throw new Error(error.message);
-    return { summary: `${programResult.data.title} was selected as the primary college goal.`, data: { ...programResult.data, notes: args.notes }, changed: { entity: "student_smccd_goal", id: data.id } };
+    return {
+      summary: `${programResult.data.title} was selected as the primary college goal.`,
+      data: { ...programResult.data, notes: args.notes },
+      changed: { entity: "student_smccd_goal", id: data.id }
+    };
   }
 
   if (name === "clear_college_goal") {
@@ -1069,7 +1132,12 @@ export async function executeAssistantMutationTool(
     if (!goal) throw new Error("That college goal is not currently selected.");
     const { error } = await supabase.from("student_smccd_goals").delete().eq("id", goal.id);
     if (error) throw new Error(error.message);
-    return { summary: "The selected college goal was removed.", data: { program_id: args.program_id }, changed: { entity: "student_smccd_goal", id: goal.id } };
+    return {
+      summary: "The selected college goal was removed.",
+      data: { program_id: args.program_id },
+      changed: { entity: "student_smccd_goal", id: goal.id },
+      undo: { kind: "restore_rows", table: "student_smccd_goals", rows: [goal as unknown as Record<string, unknown>], summary: "The college goal was restored." }
+    };
   }
 
   throw new Error(`${assistantToolLabel(name)} is not a mutating tool.`);

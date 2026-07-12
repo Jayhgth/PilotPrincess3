@@ -60,15 +60,31 @@ export interface ChangeDetail {
   value: string;
 }
 
-function humanizeKey(key: string) {
-  return key.replaceAll("_", " ").replace(/^./, (character) => character.toUpperCase());
-}
+const CHANGE_DETAIL_LABELS: Record<string, string> = {
+  course: "Course",
+  courses: "Courses",
+  course_code: "Course",
+  status: "Status",
+  grade_level: "Grade",
+  term: "Term",
+  letter_grade: "Grade received",
+  title: "Next step",
+  titles: "Next steps",
+  category: "Category",
+  due_label: "Due",
+  program_type: "Enrollment type",
+  college_code: "College",
+  award_type: "Award",
+  label: "Snapshot",
+  equivalency_verified: "d.tech equivalency reviewed"
+};
 
 function readableValue(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.map(readableValue).filter(Boolean).join(", ");
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value).replaceAll("_", " ");
+  if (typeof value === "object") return null;
+  const text = String(value).replaceAll("_", " ");
   return text.length > 180 ? `${text.slice(0, 177)}…` : text;
 }
 
@@ -76,7 +92,8 @@ export function changeDetailsFromContext(context: Record<string, unknown>): Chan
   const data = context.data;
   if (!data || typeof data !== "object" || Array.isArray(data)) return [];
   return Object.entries(data as Record<string, unknown>)
-    .map(([key, value]) => ({ label: humanizeKey(key), value: readableValue(value) }))
+    .filter(([key]) => key in CHANGE_DETAIL_LABELS)
+    .map(([key, value]) => ({ label: CHANGE_DETAIL_LABELS[key], value: readableValue(value) }))
     .filter((entry): entry is ChangeDetail => Boolean(entry.value))
     .slice(0, 8);
 }

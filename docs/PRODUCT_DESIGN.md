@@ -7,8 +7,8 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 ## Product hierarchy
 
 1. **Overview** answers: what is true now, what needs attention, and where should I go next?
-2. **Courses** is the only place where Done, In progress, and Planned courses are organized or changed.
-3. **Graduation** explains d.tech diploma and selected associate-degree evidence.
+2. **Courses** owns Done, In progress, and Planned course organization plus exact d.tech and college course selection. It does not own degree selection or degree progress.
+3. **Graduation** owns d.tech diploma evidence and the complete associate-degree workspace: finding, comparing, tracking, prioritizing, and auditing AA or AS programs. Missing degree courses link into the College Courses selector without moving degree controls there.
 4. **GPA planner** compares grade assumptions for the saved schedule. College-unit policy warnings belong with Courses, where the schedule changes.
 5. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
 
