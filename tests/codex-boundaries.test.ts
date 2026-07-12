@@ -182,7 +182,36 @@ describe("Codex feature boundaries", () => {
       name: "list_plan_courses",
       arguments: { status: "planned" }
     });
+    expect(requiredAssistantEvidenceRead("Mark all my in progress classes complete")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "current" }
+    });
+    expect(requiredAssistantEvidenceRead("Move every planned course to in progress")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "planned" }
+    });
+    expect(requiredAssistantEvidenceRead("Move all courses to planned")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "all" }
+    });
+    expect(requiredAssistantEvidenceRead("Remove all classes except Economics")).toBeNull();
+    expect(requiredAssistantEvidenceRead("Move all classes but keep Government current")).toBeNull();
     expect(requiredAssistantEvidenceRead("What are all my current classes?")).toBeNull();
     expect(parseAssistantToolCall("remove_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("move_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()], status: "completed" })).toMatchObject({ mutatesData: true });
+    expect(requiredAssistantEvidenceRead("Mark all my next steps complete")).toEqual({
+      name: "get_next_steps",
+      arguments: {}
+    });
+    expect(requiredAssistantEvidenceRead("Delete every custom task")).toEqual({
+      name: "get_next_steps",
+      arguments: {}
+    });
+    expect(requiredAssistantEvidenceRead("Show all my next steps")).toBeNull();
+    expect(requiredAssistantEvidenceRead("Check all my next steps for issues")).toBeNull();
+    expect(requiredAssistantEvidenceRead("Complete every task except meeting my counselor")).toBeNull();
+    expect(parseAssistantToolCall("complete_next_steps", { task_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("remove_next_steps", { task_ids: [crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("search_smccd_programs", { query: "computer science", college: "CSM", award_type: "AS" })).toMatchObject({ mutatesData: false });
   });
 });

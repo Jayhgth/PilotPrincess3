@@ -42,18 +42,19 @@ Read tools may run automatically after a student sends a message:
 - next steps;
 - transcript-source labels and review state;
 - a transcript evidence audit that compares printed GPA/credit totals, bounded source text, parsed rows, review decisions, catalog matches, and imported plan rows;
-- the selected associate-degree goal; and
+- the selected associate-degree goal;
+- official SMCCD associate-program search by name, code, college, and award type; and
 - deterministic selected-degree requirement progress.
 
 Write tools may prepare these changes:
 
 - save a read-only snapshot of the active course plan;
 - add a d.tech or SMCCD course;
-- move an unlocked plan course or remove an exact set of unlocked plan courses;
-- add or complete a next step;
+- move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
+- add a next step or complete an exact set of open next steps;
 - edit an unlocked plan course;
 - update the student's source-bounded concurrent/dual enrollment guardrail;
-- edit or remove a student-owned next step; and
+- edit or remove an exact set of student-owned next steps; and
 - select or clear an associate-degree goal.
 
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
@@ -86,7 +87,7 @@ After an approved mutation runs, the tool outcome stores a concise summary plus 
 
 Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from Pilot settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
 
-Bulk plan-change language such as “remove all my in progress classes” triggers a deterministic `list_plan_courses` read for the requested status before Codex responds. Pilot then uses the returned stable IDs in one bounded `remove_plan_courses` proposal instead of relying on conversational memory or generic retrieval.
+Bulk plan-change language such as “remove all my in progress classes” or “mark all my planned classes in progress” triggers a deterministic `list_plan_courses` read for the requested source state before Codex responds. Bulk next-step completion or removal similarly triggers `get_next_steps`. Pilot uses the returned stable IDs in one bounded batch proposal instead of relying on conversational memory or generic retrieval; transcript-backed courses and generated requirement steps retain their normal protections.
 
 ## t3code and SDK boundary
 

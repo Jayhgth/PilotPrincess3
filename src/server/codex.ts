@@ -524,6 +524,30 @@ export interface AssistantChatOptions {
   onToolActivity: (activity: AssistantChatToolActivity) => void | Promise<void>;
 }
 
+type PlanCourseStatus = "completed" | "current" | "planned";
+
+function requestedBulkCourseMove(normalized: string): { source: PlanCourseStatus | "all"; target: PlanCourseStatus } | null {
+  if (!/\b(move|mark|set)\b/.test(normalized)) return null;
+  const target: PlanCourseStatus | null = /\b(?:to|into|as)\s+(?:done|complete(?:d)?|finished)\b/.test(normalized)
+    || /\b(?:mark|set)\b.*\b(?:done|complete(?:d)?|finished)\b/.test(normalized)
+    ? "completed"
+    : /\b(?:to|into|as)\s+(?:in[ -]?progress|current)\b/.test(normalized)
+      ? "current"
+      : /\b(?:to|into|as)\s+(?:planned|future)\b/.test(normalized)
+        ? "planned"
+        : null;
+  if (!target) return null;
+  const mentions: Array<{ status: PlanCourseStatus; index: number }> = [
+    { status: "current", index: normalized.search(/\b(?:in[ -]?progress|current)\b/) },
+    { status: "planned", index: normalized.search(/\b(?:planned|future)\b/) },
+    { status: "completed", index: normalized.search(/\b(?:done|complete(?:d)?|finished)\b/) }
+  ];
+  const source = mentions
+    .filter((mention) => mention.index >= 0 && mention.status !== target)
+    .sort((left, right) => left.index - right.index)[0]?.status ?? "all";
+  return { source, target };
+}
+
 export function requiredAssistantEvidenceRead(userMessage: string): { name: AssistantToolName; arguments: Record<string, unknown> } | null {
   const normalized = userMessage.toLowerCase();
   const transcript = /trans(?:cript|cipt)/.test(normalized);
@@ -532,7 +556,8 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
 
   const bulkCourseTarget = /\b(all|every|each)\b/.test(normalized) && /\b(course|courses|class|classes)\b/.test(normalized);
   const courseChangeIntent = /\b(remove|delete|drop)\b/.test(normalized);
-  if (bulkCourseTarget && courseChangeIntent) {
+  const hasBulkException = /\b(except|excluding|other than|but\s+keep|not)\b/.test(normalized);
+  if (bulkCourseTarget && courseChangeIntent && !hasBulkException) {
     const status = /\b(in[ -]?progress|current)\b/.test(normalized)
       ? "current"
       : /\b(planned|future)\b/.test(normalized)
@@ -542,6 +567,14 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
           : "all";
     return { name: "list_plan_courses", arguments: { status } };
   }
+  const courseMove = bulkCourseTarget && !hasBulkException ? requestedBulkCourseMove(normalized) : null;
+  if (courseMove) return { name: "list_plan_courses", arguments: { status: courseMove.source } };
+
+  const bulkNextStepTarget = /\b(all|every|each)\b/.test(normalized)
+    && /\b(next[ -]?steps?|tasks?|to[ -]?dos?|action items?)\b/.test(normalized);
+  const nextStepChangeIntent = /\b(complete|finish|remove|delete|clear)\b/.test(normalized)
+    || /\b(?:mark|check)\b.*\b(?:done|complete(?:d)?|finished|off)\b/.test(normalized);
+  if (bulkNextStepTarget && nextStepChangeIntent && !hasBulkException) return { name: "get_next_steps", arguments: {} };
   return null;
 }
 
@@ -624,7 +657,10 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         const result = await options.executeReadTool(requiredRead.name, requiredRead.arguments);
         await options.onToolActivity({ ...activity, status: "completed", result });
         if (requiredRead.name === "list_plan_courses" && Array.isArray(result.data)) {
-          const rows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const normalized = options.userMessage.toLowerCase();
+          const courseMove = requestedBulkCourseMove(normalized);
+          const allRows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const rows = courseMove ? allRows.filter((row) => row.status !== courseMove.target) : allRows;
           const locked = rows.filter((row) => row.transcript_locked === true);
           const ids = rows.map((row) => row.plan_course_id).filter((id): id is string => typeof id === "string");
           const statusLabel = requiredRead.arguments.status === "current"
@@ -636,7 +672,9 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
                 : "saved";
           if (!rows.length) {
             return {
-              message: `You do not have any ${statusLabel} courses to remove.`,
+              message: courseMove
+                ? `You do not have any ${statusLabel} courses that need to move to ${courseMove.target === "completed" ? "Done" : courseMove.target === "current" ? "In progress" : "Planned"}.`
+                : `You do not have any ${statusLabel} courses to remove.`,
               questions: [],
               threadId: thread.id,
               usage,
@@ -645,15 +683,42 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          if (locked.length || ids.length !== rows.length) {
+          if (locked.length || ids.length !== rows.length || ids.length > 40) {
+            const reason = ids.length > 40
+              ? "the request contains more than the 40-course batch limit"
+              : `${locked.length || rows.length - ids.length} ${locked.length === 1 ? "record is" : "records are"} transcript-backed or missing a stable plan ID`;
             return {
-              message: `I could not remove all ${statusLabel} courses because ${locked.length || rows.length - ids.length} ${locked.length === 1 ? "record is" : "records are"} transcript-backed or missing a stable plan ID.`,
+              message: `I could not ${courseMove ? "move" : "remove"} all ${statusLabel} courses because ${reason}.`,
               questions: [],
               threadId: thread.id,
               usage,
               latencyMs: Date.now() - startedAt,
               model,
               proposals: []
+            };
+          }
+          if (courseMove) {
+            const targetLabel = courseMove.target === "completed" ? "Done" : courseMove.target === "current" ? "In progress" : "Planned";
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(),
+              name: "move_plan_courses",
+              label: assistantToolLabel("move_plan_courses"),
+              arguments: { plan_course_ids: ids, status: courseMove.target },
+              explanation: `Move all ${rows.length} requested ${statusLabel} courses to ${targetLabel}.`,
+              mutatesData: true,
+              status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return {
+              message: options.reviewMode === "auto_review"
+                ? `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact move to ${targetLabel} automatically.`
+                : `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"} and prepared one exact move to ${targetLabel} for your approval.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: [proposal]
             };
           }
           const proposal: AssistantChatToolActivity = {
@@ -678,6 +743,69 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             proposals: [proposal]
           };
         }
+        if (requiredRead.name === "get_next_steps" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+          const normalized = options.userMessage.toLowerCase();
+          const removeIntent = /\b(remove|delete|clear)\b/.test(normalized);
+          const customOnly = /\b(custom|manual|student[ -]?created)\b/.test(normalized);
+          const data = result.data as Record<string, unknown>;
+          const rows = Array.isArray(data.tasks)
+            ? data.tasks.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+            : [];
+          const targets = customOnly ? rows.filter((row) => row.generated !== true) : rows;
+          const generated = targets.filter((row) => row.generated === true);
+          const ids = targets.map((row) => row.task_id).filter((id): id is string => typeof id === "string");
+          if (!targets.length) {
+            return {
+              message: customOnly
+                ? `You do not have any open student-created next steps to ${removeIntent ? "remove" : "complete"}.`
+                : "You do not have any open next steps to change.",
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          if ((removeIntent && generated.length) || ids.length !== targets.length || ids.length > 40) {
+            const reason = removeIntent && generated.length
+              ? `${generated.length} ${generated.length === 1 ? "is a generated requirement step" : "are generated requirement steps"} that update from the plan`
+              : ids.length > 40
+                ? "the request contains more than the 40-step batch limit"
+                : "one or more records are missing a stable task ID";
+            return {
+              message: `I could not change every requested next step because ${reason}.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          const toolName: AssistantToolName = removeIntent ? "remove_next_steps" : "complete_next_steps";
+          const proposal: AssistantChatToolActivity = {
+            id: crypto.randomUUID(),
+            name: toolName,
+            label: assistantToolLabel(toolName),
+            arguments: { task_ids: ids },
+            explanation: `${removeIntent ? "Remove" : "Complete"} all ${targets.length} requested next steps in one exact batch.`,
+            mutatesData: true,
+            status: "pending_confirmation"
+          };
+          await options.onToolActivity(proposal);
+          return {
+            message: options.reviewMode === "auto_review"
+              ? `I found ${targets.length} open next ${targets.length === 1 ? "step" : "steps"}. Auto-review will apply or decline the exact batch ${removeIntent ? "removal" : "completion"} automatically.`
+              : `I found ${targets.length} open next ${targets.length === 1 ? "step" : "steps"} and prepared one exact batch ${removeIntent ? "removal" : "completion"} for your approval.`,
+            questions: [],
+            threadId: thread.id,
+            usage,
+            latencyMs: Date.now() - startedAt,
+            model,
+            proposals: [proposal]
+          };
+        }
         prompt += "\n\n" + [
           "A required read-only evidence check already ran for this request. Do not say that you are about to check, and do not call the same tool again.",
           "Answer directly from this result. For a transcript audit, state the deterministic verdict first, distinguish confirmed mismatches from unresolved verification, and never treat needs_review status or a graduation gap as proof of a parsing error. For a bulk course removal, use one remove_plan_courses call containing every matching unlocked plan_course_id from this result; do not guess IDs or omit a matching course.",
@@ -686,7 +814,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       } catch (error) {
         const message = error instanceof Error ? error.message : "The required evidence check failed.";
         await options.onToolActivity({ ...activity, status: "failed", error: message });
-        prompt += `\n\nThe required ${requiredRead.name} evidence check failed: ${message}. State that the audit could not be completed; do not infer a result.`;
+        prompt += `\n\nThe required ${requiredRead.name} evidence check failed: ${message}. State that the required records could not be checked; do not infer a result or propose a change.`;
       }
     }
 
