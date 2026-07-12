@@ -8,7 +8,7 @@
 .primaryResult span, .primaryResult small, .comparison dt { color: var(--ink-soft); font-size: var(--type-supporting); }
 .primaryResult strong { margin: 2px 0; font-size: 3rem; line-height: 1; letter-spacing: -.055em; }
 .primaryResult[data-incomplete="true"] strong { font-size: 1.8rem; letter-spacing: -.035em; }
-.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; margin: 0; }
+.comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 28px; margin: 0; }
 .comparison div { min-width: 0; }
 .comparison dt { margin-bottom: 4px; }
 .comparison dd { margin: 0; font-size: var(--type-number); font-weight: 750; letter-spacing: -.025em; }
@@ -57,6 +57,7 @@
   .header, .sectionHeading { align-items: stretch; flex-direction: column; }
   .header button { align-self: flex-start; }
   .resultPanel { grid-template-columns: 1fr; padding: 18px; }
+  .comparison { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .primaryResult strong { font-size: 2.5rem; }
   .courseRow { grid-template-columns: 28px minmax(0, 1fr); }
   .includeControl, .gradeControl { grid-column: 2; }

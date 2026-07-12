@@ -1908,7 +1908,6 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .eligibility-summary.degree { background: color-mix(in srgb, var(--dual-soft) 32%, var(--surface)); }
 .eligibility-answer { display: grid; align-content: center; justify-items: start; }
 .eligibility-identity { display: flex; min-height: 36px; align-items: center; gap: 12px; color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 700; }
-.eligibility-identity .ag-identity { display: grid; width: 46px; height: 32px; place-items: center; border-radius: 5px; background: var(--accent); color: var(--surface); font-size: var(--type-body); font-weight: 750; }
 .eligibility-answer h2 { max-width: 34ch; margin: 13px 0 0; font-size: var(--type-number); font-weight: 650; letter-spacing: -0.035em; line-height: 1.25; }
 .eligibility-answer p { max-width: 62ch; margin: 7px 0 0; color: var(--ink-soft); font-size: var(--type-body); line-height: 1.5; }
 .eligibility-answer > .secondary-button { margin-top: 15px; }

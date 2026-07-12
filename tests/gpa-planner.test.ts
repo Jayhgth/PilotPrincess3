@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Course, PlanCourse } from "@/lib/models";
+import type { PlanCourse } from "@/lib/models";
 import { evaluateGpaScenario, initialGpaScenarioChoices, scenarioRows } from "@/lib/gpa-planner";
 
 function row(id: string, status: PlanCourse["status"], grade: string | null, weighted = false): PlanCourse {
@@ -41,7 +41,7 @@ describe("GPA scenario planning", () => {
 
   it("calculates the selected schedule and its A-grade ceiling", () => {
     const rows = [row("done", "completed", "B"), row("honors", "planned", null, true)];
-    const result = evaluateGpaScenario(rows, [{ planCourseId: "honors", included: true, expectedGrade: "B" }], [] as Course[], 4);
+    const result = evaluateGpaScenario(rows, [{ planCourseId: "honors", included: true, expectedGrade: "B" }], 4);
     expect(result.baseline.projectedWeighted).toBe(3);
     expect(result.scenario.projectedWeighted).toBe(3.5);
     expect(result.bestCase.projectedWeighted).toBe(4);
@@ -53,7 +53,7 @@ describe("GPA scenario planning", () => {
   it("reports missing grade assumptions and unreachable targets", () => {
     const rows = [row("done", "completed", "C"), row("plan", "planned", null)];
     const choices = initialGpaScenarioChoices(rows);
-    const result = evaluateGpaScenario(rows, choices, [], 4.5);
+    const result = evaluateGpaScenario(rows, choices, 4.5);
     expect(result.missingExpectedGrades).toBe(1);
     expect(result.targetReachable).toBe(false);
   });

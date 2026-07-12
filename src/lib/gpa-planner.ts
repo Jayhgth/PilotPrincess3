@@ -1,5 +1,5 @@
-import type { Course, PlanCourse } from "@/lib/models";
-import { calculateGpa, calculateUcGpaEstimate } from "@/lib/planning";
+import type { PlanCourse } from "@/lib/models";
+import { calculateGpa } from "@/lib/planning";
 
 export interface GpaScenarioChoice {
   planCourseId: string;
@@ -11,7 +11,6 @@ export interface GpaScenarioResult {
   baseline: ReturnType<typeof calculateGpa>;
   scenario: ReturnType<typeof calculateGpa>;
   bestCase: ReturnType<typeof calculateGpa>;
-  ucScenario: ReturnType<typeof calculateUcGpaEstimate>;
   missingExpectedGrades: number;
   targetGrade: string | null;
   targetReachable: boolean;
@@ -37,7 +36,6 @@ function withUniformOpenGrade(rows: readonly PlanCourse[], choices: readonly Gpa
 export function evaluateGpaScenario(
   rows: readonly PlanCourse[],
   choices: readonly GpaScenarioChoice[],
-  courses: readonly Course[],
   targetWeighted: number
 ): GpaScenarioResult {
   const baselineRows = rows.filter((row) => row.status === "completed");
@@ -55,7 +53,6 @@ export function evaluateGpaScenario(
     baseline,
     scenario: calculateGpa(projectedRows),
     bestCase: calculateGpa(bestCaseRows),
-    ucScenario: calculateUcGpaEstimate(projectedRows, [...courses]),
     missingExpectedGrades: openRows.filter((row) => !row.letter_grade || ["IP", "P"].includes(row.letter_grade.toUpperCase())).length,
     targetGrade,
     targetReachable: targetAlreadyReached || targetGrade !== null,

@@ -73,7 +73,7 @@ export default function GpaPlanningLab({
     const currentMap = new Map(choices.map((choice) => [choice.planCourseId, choice]));
     return initialGpaScenarioChoices(rows).map((choice) => currentMap.get(choice.planCourseId) ?? choice);
   }, [rows, choices]);
-  const result = useMemo(() => evaluateGpaScenario(rows, effectiveChoices, courses, target), [rows, effectiveChoices, courses, target]);
+  const result = useMemo(() => evaluateGpaScenario(rows, effectiveChoices, target), [rows, effectiveChoices, target]);
   const appliedRows = useMemo(() => {
     const choiceMap = new Map(effectiveChoices.map((choice) => [choice.planCourseId, choice]));
     return rows.flatMap((row) => {
@@ -136,7 +136,6 @@ export default function GpaPlanningLab({
           <div><dt>Transcript now</dt><dd>{displayGpa(result.baseline.projectedWeighted)}</dd></div>
           <div><dt>Unweighted scenario</dt><dd>{result.missingExpectedGrades > 0 ? "—" : displayGpa(result.scenario.projectedUnweighted)}</dd></div>
           <div><dt>Saved schedule ceiling</dt><dd>{displayGpa(result.bestCase.projectedWeighted)}</dd></div>
-          <div><dt>UC completed estimate</dt><dd>{displayGpa(result.ucScenario.cappedWeighted)}</dd></div>
         </dl>
       </AnimatedContent>
 

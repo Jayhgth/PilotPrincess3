@@ -419,57 +419,6 @@ export function calculateGpa(rows: PlanCourse[]): GpaSummary {
   };
 }
 
-export interface UcGpaEstimate {
-  unweighted: number | null;
-  cappedWeighted: number | null;
-  courseSemesters: number;
-  honorsSemestersUsed: number;
-  unresolvedCourses: number;
-}
-
-/**
- * Conservative UC planning lens. It uses only completed grade 10-11 rows that
- * are linked to an official d.tech A-G course. SMCCD and custom rows stay
- * unresolved until an exact reviewed A-G equivalency is available.
- */
-export function calculateUcGpaEstimate(rows: PlanCourse[], courses: Course[]): UcGpaEstimate {
-  const courseMap = new Map(courses.map((course) => [course.id, course]));
-  const eligible = rows.filter((row) => row.status === "completed" && (row.grade_level === 10 || row.grade_level === 11) && row.letter_grade);
-  let points = 0;
-  let semesters = 0;
-  let gradeTenHonorsUsed = 0;
-  let honorsUsed = 0;
-  let unresolvedCourses = 0;
-
-  for (const row of eligible) {
-    const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
-    if (!catalogCourse?.uc_ag_area || !row.mapping_verified) {
-      if (row.letter_grade?.toUpperCase() !== "P") unresolvedCourses += 1;
-      continue;
-    }
-    const gradePoints = dtechGradePoint(row.letter_grade);
-    if (gradePoints === null) continue;
-    const courseSemesters = Math.max(1, Math.round(Number(row.credits ?? catalogCourse.credits ?? 0) / 5));
-    semesters += courseSemesters;
-    points += gradePoints * courseSemesters;
-    const honorsEligible = catalogCourse.is_honors && gradePoints >= 2;
-    if (!honorsEligible) continue;
-    const totalRoom = Math.max(0, 8 - honorsUsed);
-    const gradeRoom = row.grade_level === 10 ? Math.max(0, 4 - gradeTenHonorsUsed) : totalRoom;
-    const added = Math.min(courseSemesters, totalRoom, gradeRoom);
-    honorsUsed += added;
-    if (row.grade_level === 10) gradeTenHonorsUsed += added;
-  }
-
-  return {
-    unweighted: semesters ? round(points / semesters) : null,
-    cappedWeighted: semesters ? round((points + honorsUsed) / semesters) : null,
-    courseSemesters: semesters,
-    honorsSemestersUsed: honorsUsed,
-    unresolvedCourses
-  };
-}
-
 export function calculateWorkload(
   profile: StudentProfile,
   planCourses: PlanCourse[],

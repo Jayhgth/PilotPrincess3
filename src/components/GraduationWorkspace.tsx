@@ -10,14 +10,11 @@ import type { ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import FadeContent from "@/components/reactbits/FadeContent";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
-import { calculateAgProgress, type AgArea, type AgCourseEvidence } from "@/lib/college-readiness";
 import type {
-  Course,
   PlanCourse,
   RequirementCourseEvidence,
   RequirementProgress,
   SmccdCourse,
-  SmccdHighSchoolEquivalency,
   SmccdProgram,
   SmccdProgramRequirement,
   SmccdRequirementCourse,
@@ -25,46 +22,32 @@ import type {
 } from "@/lib/models";
 import { calculateSmccdProgramProgress, normalizeSmccdCourseCode, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
 
-type GraduationView = "diploma" | "ag" | "degree";
+type GraduationView = "diploma" | "degree";
 
 interface Props {
   supabase: SupabaseClient;
   session: Session;
   progress: RequirementProgress[];
   planCourses: PlanCourse[];
-  courses: Course[];
   smccdCourses: SmccdCourse[];
-  equivalencies: SmccdHighSchoolEquivalency[];
   onFindDtechCourses: (area: RequirementProgress["requirement"]["area"]) => void;
-  onOpenDtechCatalog: () => void;
   onOpenSmccdDegree: () => void;
 }
 
 const DTECH_REQUIREMENTS_URL = "https://docs.google.com/document/d/1N351ZQzwGakGiFf5ax7i7NE1BEA2k_civOL9atMWXJo/edit?usp=sharing";
-const DTECH_AG_URL = "https://hs-articulation.ucop.edu/agcourselist/institution/574";
-const UC_AG_RULES_URL = "https://admission.universityofcalifornia.edu/admission-requirements/first-year-requirements/subject-requirement-a-g.html";
 
 export default function GraduationWorkspace({
   supabase,
   session,
   progress,
   planCourses,
-  courses,
   smccdCourses,
-  equivalencies,
   onFindDtechCourses,
-  onOpenDtechCatalog,
   onOpenSmccdDegree
 }: Props) {
   const [view, setView] = useState<GraduationView>("diploma");
   const firstDiplomaGap = progress.find((item) => item.status === "missing") ?? progress[0] ?? null;
   const [selectedDiplomaId, setSelectedDiplomaId] = useState(firstDiplomaGap?.requirement.id ?? "");
-  const agProgress = useMemo(
-    () => calculateAgProgress(planCourses, courses, smccdCourses, equivalencies),
-    [courses, equivalencies, planCourses, smccdCourses]
-  );
-  const firstAgGap = agProgress.areas.find((item) => item.status === "missing") ?? agProgress.areas[0];
-  const [selectedAgArea, setSelectedAgArea] = useState<AgArea>(firstAgGap.area);
   const [degreeLoading, setDegreeLoading] = useState(true);
   const [degreeError, setDegreeError] = useState<string | null>(null);
   const [goal, setGoal] = useState<StudentSmccdGoal | null>(null);
@@ -125,7 +108,6 @@ export default function GraduationWorkspace({
   );
 
   const diplomaMissing = progress.filter((item) => item.status === "missing").length;
-  const agMissing = agProgress.areas.filter((item) => item.status === "missing").length;
 
   return (
     <div className="graduation-workspace">
@@ -133,7 +115,6 @@ export default function GraduationWorkspace({
         className="graduation-workspace-tabs"
         items={[
           { id: "diploma", label: "d.tech diploma", count: diplomaMissing },
-          { id: "ag", label: "UC/CSU A-G", count: agMissing },
           { id: "degree", label: "Associate degree", count: degreeProgress?.requirements.filter((item) => item.status === "missing").length }
         ]}
         value={view}
@@ -148,12 +129,6 @@ export default function GraduationWorkspace({
           selectedId={selectedDiplomaId || firstDiplomaGap?.requirement.id || ""}
           onSelect={setSelectedDiplomaId}
           onFindCourses={onFindDtechCourses}
-        />}
-        {view === "ag" && <AgView
-          progress={agProgress}
-          selectedArea={selectedAgArea}
-          onSelect={setSelectedAgArea}
-          onFindCourses={(area) => area === "g" ? onOpenDtechCatalog() : onFindDtechCourses(agToRequirementArea(area))}
         />}
         {view === "degree" && <DegreeView
           loading={degreeLoading}
@@ -237,66 +212,6 @@ function DiplomaView({
         action={<button className="primary-button small dtech-action" type="button" onClick={() => onFindCourses(selected.requirement.area)}><BookOpen size={15} /> Find courses</button>}
       />}
     </div>
-  </>;
-}
-
-function AgView({
-  progress,
-  selectedArea,
-  onSelect,
-  onFindCourses
-}: {
-  progress: ReturnType<typeof calculateAgProgress>;
-  selectedArea: AgArea;
-  onSelect: (area: AgArea) => void;
-  onFindCourses: (area: AgArea) => void;
-}) {
-  const selected = progress.areas.find((item) => item.area === selectedArea) ?? progress.areas[0];
-  const open = Math.max(0, progress.requiredYears - progress.projectedYears);
-  const firstGap = progress.areas.find((item) => item.status === "missing");
-  return <>
-    <EligibilitySummary
-      identity={<span className="ag-identity" aria-hidden>A-G</span>}
-      label="UC and CSU minimum subject preparation"
-      answer={open === 0 ? "The saved plan covers the A-G course-year minimums." : `${formatValue(open)} ${open === 1 ? "course-year remains" : "course-years remain"} open.`}
-      body={`${formatValue(progress.completedYears)} of 15 course-years are complete with eligible grades. Sequence details and admission eligibility still require official review.`}
-      tone="ag"
-      metrics={[
-        ["Earned", `${formatValue(progress.completedYears)} yrs`],
-        ["Plan coverage", `${progress.projectedPercent}%`],
-        ["Before grade 12", `${formatValue(progress.projectedBeforeSeniorYears)} / 11`],
-        ["Needs evidence", String(progress.unresolved.length)]
-      ]}
-      action={firstGap ? <button className="secondary-button small" type="button" onClick={() => onSelect(firstGap.area)}>Review first gap</button> : null}
-    />
-    <p className="graduation-source-note">Uses d.tech's official UC-approved course list and current UC rules. <a href={DTECH_AG_URL} target="_blank" rel="noreferrer">d.tech A-G list <ArrowSquareOut size={13} /></a><a href={UC_AG_RULES_URL} target="_blank" rel="noreferrer">UC rules <ArrowSquareOut size={13} /></a></p>
-    <div className="graduation-evidence-layout">
-      <RequirementIndex
-        title="A-G subject areas"
-        description="Current and planned courses are projections until completed with C or better."
-        rows={progress.areas.map((item) => ({
-          id: item.area,
-          title: `${item.area.toUpperCase()}. ${item.name}`,
-          requirement: formatYears(item.requiredYears),
-          completed: item.completedYears,
-          scheduled: item.currentYears + item.plannedYears,
-          remaining: item.remainingYears,
-          status: item.status === "complete" ? "Complete" : item.status === "covered" ? "Covered" : "Gap"
-        }))}
-        selectedId={selected.area}
-        onSelect={(id) => onSelect(id as AgArea)}
-        unit="yr"
-      />
-      <AgEvidencePanel
-        area={selected}
-        duplicateCount={progress.duplicates.length}
-        onFindCourses={() => onFindCourses(selected.area)}
-      />
-    </div>
-    {(progress.unresolved.length > 0 || progress.duplicates.length > 0) && <details className="graduation-global-evidence">
-      <summary>Review {progress.unresolved.length + progress.duplicates.length} excluded or duplicate course records</summary>
-      <div>{[...progress.unresolved, ...progress.duplicates].map((issue) => <div className="graduation-issue-row" key={`${issue.planCourseId}-${issue.reason}`}><InstitutionMark institution={issue.institution} decorative /><span><strong>{issue.courseName}</strong><small>{issue.reason}</small></span></div>)}</div>
-    </details>}
   </>;
 }
 
@@ -397,7 +312,7 @@ function EligibilitySummary({
   label: string;
   answer: string;
   body: string;
-  tone: "dtech" | "ag" | "degree";
+  tone: "dtech" | "degree";
   metrics: Array<[string, string]>;
   action: ReactNode;
 }) {
@@ -474,24 +389,6 @@ function EvidenceCourseSection({ title, rows, mode }: { title: string; rows: Req
   </div>)}</div> : <p className="evidence-empty">No course currently contributes to this requirement.</p>}</div>;
 }
 
-function AgEvidencePanel({ area, duplicateCount, onFindCourses }: {
-  area: ReturnType<typeof calculateAgProgress>["areas"][number];
-  duplicateCount: number;
-  onFindCourses: () => void;
-}) {
-  return <section className="graduation-evidence-panel" aria-live="polite">
-    <header><div><span>A-G area {area.area.toUpperCase()}</span><h2>{area.name}</h2><p>{area.rule}</p></div><strong className={`eligibility-status ${area.status}`}>{area.status === "complete" ? "Complete" : area.status === "covered" ? "Covered by plan" : `${formatYears(area.remainingYears)} open`}</strong></header>
-    <div className="evidence-section"><h3>Approved coursework applied</h3>{area.contributions.length ? <div className="evidence-course-list">{area.contributions.map((course) => <AgCourseRow course={course} key={`${course.planCourseId}-${course.area}`} />)}</div> : <p className="evidence-empty">No approved course currently contributes to this area.</p>}</div>
-    {area.unusedCourses.length > 0 && <div className="evidence-section"><h3>Approved coursework beyond the minimum</h3><div className="evidence-course-list">{area.unusedCourses.map((course) => <AgCourseRow course={course} unused key={`unused-${course.planCourseId}-${course.area}`} />)}</div></div>}
-    {duplicateCount > 0 && <p className="evidence-context-note">Duplicate attempts are excluded globally and listed below the requirement workspace.</p>}
-    <button className="primary-button small dtech-action" type="button" onClick={onFindCourses}><BookOpen size={15} /> Find approved courses</button>
-  </section>;
-}
-
-function AgCourseRow({ course, unused = false }: { course: AgCourseEvidence; unused?: boolean }) {
-  return <div className="evidence-course-row"><InstitutionMark institution={course.institution} decorative /><span><strong>{course.courseName}</strong><small>Grade {course.gradeLevel} · {statusLabel(course.status)}{course.note ? ` · ${course.note}` : ""}</small></span><b>{unused ? "Extra" : `${formatValue(course.yearsApplied)} yr`}</b></div>;
-}
-
 function degreeRequirementLabel(item: ReturnType<typeof calculateSmccdProgramProgress>["requirements"][number]) {
   if (item.requiredUnits !== null) return `${formatValue(item.requiredUnits)} units`;
   if (item.requirement.min_count) return `${item.requirement.min_count} courses`;
@@ -559,16 +456,6 @@ function statusRank(status: PlanCourse["status"]) {
   return status === "completed" ? 3 : status === "current" ? 2 : 1;
 }
 
-function agToRequirementArea(area: AgArea): RequirementProgress["requirement"]["area"] {
-  return area === "a" ? "social_science"
-    : area === "b" ? "english"
-      : area === "c" ? "math"
-        : area === "d" ? "lab_science"
-          : area === "e" ? "world_language"
-            : area === "f" ? "visual_performing_arts"
-              : "design_lab";
-}
-
 function statusLabel(status: PlanCourse["status"]) {
   return status === "completed" ? "Done" : status === "current" ? "In progress" : "Planned";
 }
@@ -579,10 +466,6 @@ function statusClass(status: string) {
 
 function formatValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function formatYears(value: number) {
-  return `${formatValue(value)} ${value === 1 ? "year" : "years"}`;
 }
 
 function formatRequirementValue(value: number | string, unit: string) {

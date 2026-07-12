@@ -679,7 +679,6 @@ export async function executeAssistantReadTool(
     const result = evaluateGpaScenario(
       workspace.planCourses,
       args.choices.map((choice) => ({ planCourseId: choice.plan_course_id, included: choice.included, expectedGrade: choice.expected_grade })),
-      workspace.courses,
       args.target_weighted_gpa
     );
     return {
@@ -695,7 +694,6 @@ export async function executeAssistantReadTool(
         target_reachable_in_saved_schedule: result.targetReachable,
         target_already_reached: result.targetAlreadyReached,
         missing_expected_grades: result.missingExpectedGrades,
-        uc_capped_estimate: result.ucScenario.cappedWeighted,
         boundary: "This is deterministic arithmetic over user-supplied grade assumptions. It does not predict grades, admissions, course availability, or the best real-world schedule."
       }
     };

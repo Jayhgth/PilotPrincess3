@@ -8,7 +8,7 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 
 1. **Overview** answers: what is true now, what needs attention, and where should I go next?
 2. **Courses** is the only place where Done, In progress, and Planned courses are organized or changed.
-3. **Graduation** explains diploma, A-G, and selected associate-degree evidence.
+3. **Graduation** explains d.tech diploma and selected associate-degree evidence.
 4. **GPA planner** compares grade assumptions, workload, and college-unit guardrails for the saved schedule.
 5. **Student profile** is a settings dialog for interests, capacity, and experiences.
 6. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
@@ -19,7 +19,7 @@ Do not duplicate course management, graduation totals, or action lists across de
 
 | Tool | Student job | Standout capability |
 | --- | --- | --- |
-| GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, UC completed-work estimate, workload context, and source-backed college-unit checks |
+| GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, workload context, and source-backed college-unit checks |
 | Overview actions | Know the next action and why it comes next | Plan-derived and student-owned actions live beside the current path, with add, complete, delete, and reconciliation controls |
 | Student profile | Preserve the context that planning needs without adding a destination | Planning priorities and a factual active/past experience register share one centered, tabbed dialog |
 | Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a compact rail that can be resized, detached and moved, archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
@@ -38,7 +38,6 @@ The current interaction model was checked against more than ten contemporary ref
 - Common App places activities, responsibilities, and work inside the student application profile, while transcript and current-course evidence live under Education and Courses & Grades.
 - Scoir keeps activities in My Profile and puts assignments on the dashboard, supporting the decision to remove separate Experiences and Next steps destinations.
 - BigFuture uses a personalized dashboard checklist rather than a standalone task product.
-- UC admissions guidance: UC GPA is a separate methodology using grade 10-11 A-G work, no plus/minus distinction, and capped honors semesters.
 - CaliforniaColleges.edu: academic plan, career plan, goals, experiences, documents, and tasks should connect without becoming one undifferentiated dashboard.
 - Xello: grade-aware tasks, course planning, career exploration, experience hours, and resume evidence benefit from separate focused workflows.
 - SMCCD K-12 guidance: prerequisites, approval, calendars, college record, and registration remain explicit concurrent-enrollment boundaries.

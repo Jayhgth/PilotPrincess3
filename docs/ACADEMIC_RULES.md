@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-07-10
 
-This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, A-G, and SMCCD degree evidence.
+This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, and SMCCD degree evidence.
 
 ## Authority and confidence
 
@@ -18,22 +18,19 @@ The checked-in d.tech and SMCCD curriculum is labeled 2025-26. The d.tech-to-SMC
 - Quarter-coded P/F courses are d.tech intersession records, are not expected to match the annual catalog, and map passed credit to Personal Development.
 - `P` earns credit but does not enter GPA. `F` earns neither credit nor GPA points under the supplied d.tech transcript behavior.
 - `A+`, `A`, and `A-` share four grade points; B, C, and D variants share their integer band.
-- A d.tech `*` indicates UC A-G approval, not Honors.
+- A d.tech `*` is a UC course-list marker, not Honors.
 - d.tech weighting requires reviewed Honors evidence. SMCCD rows use the transcript's college-course weighting behavior.
 - Transcript audits compare any printed cumulative GPA and earned-credit totals with the fully reviewed/imported rows. A `needs_review` source status is workflow state, not evidence of an error; catalog-link, parsed-row, import, and downstream graduation issues remain separate.
 
-The UC planning GPA lens is deliberately narrower: only completed grade 10-11 rows linked to an official d.tech A-G course are included. Plus/minus marks are ignored and eligible honors points are capped at eight semesters, with at most four from grade 10. Custom and college rows remain unresolved until an exact reviewed A-G link exists.
-
 The GPA planner may apply user-supplied expected grades to current and planned courses without changing saved course or transcript records. Its all-A result is the ceiling of the currently included saved schedule, not a prediction or proof that the schedule is advisable. A schedule comparison must keep transcript grades locked and show missing grade assumptions. Pilot may explain the deterministic result, but any saved-plan change remains a normal reviewed proposal.
 
-## Graduation and A-G
+## Graduation
 
 Diploma progress keeps completed, current, planned, unverified, unused, and remaining credits separate.
 
 - Laboratory Science requires Biology, Chemistry, and a third lab science at 10 credits each.
 - A verified Level 3/III world-language course satisfies the full 20-credit sequence, even without lower levels in the record.
 - SMCCD high-school credit requires a reviewed directional equivalency; college units alone do not invent a d.tech requirement mapping.
-- A-G uses the official d.tech A-G course list and reviewed exact equivalencies. A grade below C does not satisfy subject preparation.
 
 ## Catalog eligibility
 

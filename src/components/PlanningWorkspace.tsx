@@ -1439,17 +1439,14 @@ export default function PlanningWorkspace() {
     if (!profile || !supabase || !session) return null;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="One source-backed view of diploma progress, A-G readiness, and the selected associate degree." />
+        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and the selected associate degree." />
         <GraduationWorkspace
           supabase={supabase}
           session={session}
           progress={progress}
           planCourses={planCourses}
-          courses={courses}
           smccdCourses={plannedSmccdCourses}
-          equivalencies={equivalencies}
           onFindDtechCourses={openRequirementCourses}
-          onOpenDtechCatalog={() => openCourses("dtech")}
           onOpenSmccdDegree={() => openCourses("smccd", "degree")}
         />
       </div>
