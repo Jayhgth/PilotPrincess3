@@ -1547,58 +1547,62 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .compact-form { display: grid; gap: 15px; }
 
 /* SMCCD curriculum */
-.smccd-loading { display: flex; align-items: center; gap: 8px; color: var(--ink-soft); font-size: 14px; }
+.smccd-loading { display: flex; min-height: 120px; align-items: center; gap: 8px; color: var(--ink-soft); font-size: var(--type-body); }
+.smccd-degree-loading { min-height: 240px; justify-content: center; border: 1px solid var(--line); background: var(--surface); }
 .smccd-workspace { --accent: var(--dual-ui); --accent-hover: color-mix(in srgb, var(--dual-ui) 84%, var(--ink)); --accent-soft: var(--dual-soft); }
 .dual-enrollment-tabs { margin-bottom: 16px; }
 .dual-enrollment-tabs button i { background: var(--dual-ui); }
 .smccd-degree-transition { min-width: 0; }
 .smccd-goal-section, .smccd-catalog-section, .smccd-plan-section { margin-bottom: 16px; }
+.smccd-goal-section { border: 0; background: transparent; padding: 0; }
 .smccd-program-filters { display: grid; grid-template-columns: minmax(260px, 1fr) 240px 180px; align-items: end; gap: 10px; }
 .smccd-program-filters .search-box { display: flex; min-height: 42px; align-items: center; gap: 8px; border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-raised); padding: 0 11px; }
 .smccd-program-filters .search-box svg { flex: 0 0 auto; color: var(--ink-faint); }
 .smccd-program-filters .search-box input { min-height: 38px; border: 0; background: transparent; padding-inline: 0; box-shadow: none; }
 .smccd-program-colleges { margin-top: 10px; }
-.smccd-degree-browser { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); align-items: start; gap: 18px; margin-top: 14px; }
-.smccd-program-list { display: grid; max-height: min(760px, calc(100vh - 190px)); gap: 3px; overflow-y: auto; border-radius: var(--radius-lg); background: var(--surface-muted); padding: 6px; }
-.smccd-program-list-heading { display: grid; gap: 2px; padding: 9px 10px 10px; }
-.smccd-program-list-heading strong { font-size: 12px; }
-.smccd-program-list-heading span { color: var(--ink-faint); font-size: 11px; line-height: 1.4; }
-.smccd-program-list > button { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto 15px; align-items: center; gap: 10px; border: 0; border-radius: var(--radius); background: transparent; color: var(--ink); padding: 11px 10px; text-align: left; }
-.smccd-program-list > button:hover { background: var(--surface-raised); }
-.smccd-program-list > button.selected { background: var(--surface-raised); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent), inset 3px 0 var(--institution-color, var(--dual-ui)); }
+.smccd-degree-browser { display: grid; grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); align-items: start; gap: 16px; margin-top: 14px; }
+.smccd-program-list { display: grid; max-height: min(760px, calc(100vh - 190px)); overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.smccd-program-list-heading { display: grid; gap: 2px; border-bottom: 1px solid var(--line); padding: 12px; }
+.smccd-program-list-heading strong { font-size: var(--type-body); }
+.smccd-program-list-heading span { color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.smccd-program-list > button { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto 15px; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 12px; text-align: left; }
+.smccd-program-list > button:last-child { border-bottom: 0; }
+.smccd-program-list > button:hover { background: var(--surface-muted); }
+.smccd-program-list > button.selected { background: var(--dual-soft); box-shadow: inset 3px 0 var(--institution-color, var(--dual-ui)); }
 .smccd-program-list > button > svg { color: var(--ink-faint); }
 .smccd-program-list .smccd-program-identity { display: flex; min-width: 0; align-items: center; gap: 10px; }
 .smccd-program-identity > span { display: grid; min-width: 0; gap: 3px; }
-.smccd-program-list strong { font-size: 12px; line-height: 1.35; }
-.smccd-program-list small { overflow: hidden; color: var(--ink-faint); font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.smccd-program-list strong { font-size: var(--type-body); line-height: var(--leading-body); }
+.smccd-program-list small { overflow: hidden; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); text-overflow: ellipsis; white-space: nowrap; }
 .smccd-program-row-progress { display: grid; gap: 2px; min-width: 88px; text-align: right; }
-.smccd-program-row-progress strong { color: var(--ink-soft); font-size: 11px; }
+.smccd-program-row-progress strong { color: var(--ink-soft); font-size: var(--type-supporting); }
 .smccd-program-empty { display: grid; min-height: 130px; align-content: center; gap: 5px; padding: 16px 8px; }
 .smccd-program-empty strong { font-size: 12px; }
 .smccd-program-empty p { max-width: 55ch; margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
-.smccd-degree-detail { min-width: 0; border-radius: var(--radius-lg); background: var(--surface-raised); box-shadow: inset 0 0 0 1px var(--line); }
-.smccd-degree-detail-inner { display: grid; gap: 22px; padding: 18px; }
+.smccd-degree-detail { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.smccd-degree-detail-inner { display: grid; gap: 22px; padding: 20px; }
 .smccd-degree-heading { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .smccd-degree-heading > div { display: grid; gap: 3px; }
-.smccd-degree-heading span, .smccd-degree-heading small { color: var(--ink-faint); font-size: 11px; font-weight: 650; }
-.smccd-degree-heading h3 { margin: 0; font-size: clamp(18px, 2vw, 24px); line-height: 1.15; letter-spacing: -.025em; }
-.smccd-degree-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 0; }
-.smccd-degree-facts > div { display: grid; align-content: start; gap: 4px; min-height: 86px; border-radius: var(--radius); background: var(--surface-muted); padding: 11px; }
-.smccd-degree-facts dt { color: var(--ink-faint); font-size: 11px; font-weight: 650; }
-.smccd-degree-facts dd { margin: 0; font-size: 14px; font-weight: 720; line-height: 1.3; }
-.smccd-degree-facts small { color: var(--ink-soft); font-size: 11px; line-height: 1.4; }
+.smccd-degree-heading span, .smccd-degree-heading small { color: var(--ink-faint); font-size: var(--type-supporting); font-weight: 650; }
+.smccd-degree-heading h3 { margin: 0; font-size: var(--type-number); font-weight: 650; line-height: 1.25; letter-spacing: -.02em; }
+.smccd-degree-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; border-block: 1px solid var(--line); }
+.smccd-degree-facts > div { display: grid; align-content: start; gap: 4px; min-height: 82px; padding: 12px; }
+.smccd-degree-facts > div + div { border-left: 1px solid var(--line); }
+.smccd-degree-facts dt { color: var(--ink-faint); font-size: var(--type-supporting); font-weight: 650; }
+.smccd-degree-facts dd { margin: 0; font-size: var(--type-body); font-weight: 650; line-height: var(--leading-body); }
+.smccd-degree-facts small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .smccd-degree-section { display: grid; gap: 9px; }
 .smccd-degree-section > header { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
 .smccd-degree-section > header > div { display: grid; gap: 3px; }
-.smccd-degree-section h4 { margin: 0; font-size: 14px; }
-.smccd-degree-section header p, .smccd-degree-section header > span { margin: 0; color: var(--ink-faint); font-size: 11px; line-height: 1.45; }
+.smccd-degree-section h4 { margin: 0; font-size: var(--type-section); font-weight: 650; }
+.smccd-degree-section header p, .smccd-degree-section header > span { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .smccd-requirement-audit { display: grid; gap: 5px; }
-.smccd-requirement-audit details { border-radius: var(--radius); background: var(--surface-muted); }
+.smccd-requirement-audit details { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .smccd-requirement-audit summary { display: grid; min-height: 56px; cursor: pointer; list-style: none; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 15px; padding: 10px 12px; }
 .smccd-requirement-audit summary::-webkit-details-marker { display: none; }
 .smccd-requirement-audit summary > span { display: grid; gap: 2px; }
-.smccd-requirement-audit summary strong { font-size: 12px; line-height: 1.4; }
-.smccd-requirement-audit summary small { color: var(--ink-faint); font-size: 11px; }
+.smccd-requirement-audit summary strong { font-size: var(--type-body); line-height: var(--leading-body); }
+.smccd-requirement-audit summary small { color: var(--ink-faint); font-size: var(--type-supporting); }
 .smccd-requirement-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 0 12px 12px; }
 .smccd-requirement-body > div { display: grid; align-content: start; gap: 6px; }
 .smccd-requirement-body h5 { margin: 0; color: var(--ink-soft); font-size: 11px; }
@@ -1668,7 +1672,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-manual-entry .form-section { max-width: 760px; }
 
 /* Coherent academic workspace */
-.page-frame { width: min(100%, 1080px); margin: 0 auto; }
+.page-frame { width: min(100%, 980px); margin: 0 auto; }
 .page-frame.wide { width: min(100%, 1160px); }
 .page-header { margin-bottom: 20px; padding-bottom: 16px; }
 .page-header h1 { font-size: clamp(24px, 2.2vw, 28px); font-weight: 650; letter-spacing: -0.04em; }
@@ -2245,6 +2249,9 @@ textarea,
   .snapshot-differences { grid-template-columns: 1fr; }
   .smccd-program-filters { grid-template-columns: 1fr; }
   .smccd-degree-facts { grid-template-columns: 1fr 1fr; }
+  .smccd-degree-facts > div + div { border-left: 0; }
+  .smccd-degree-facts > div:nth-child(even) { border-left: 1px solid var(--line); }
+  .smccd-degree-facts > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
   .smccd-requirement-body { grid-template-columns: 1fr; }
   .smccd-degree-heading { align-items: start; }
   .smccd-degree-heading .primary-button { grid-column: 2; justify-self: start; }
@@ -2277,6 +2284,8 @@ textarea,
   .smccd-degree-detail-inner { padding: 14px; }
   .smccd-degree-heading { grid-template-columns: auto minmax(0, 1fr); }
   .smccd-degree-facts, .smccd-next-options > div, .smccd-ge-evidence dl { grid-template-columns: 1fr; }
+  .smccd-degree-facts > div:nth-child(even) { border-left: 0; }
+  .smccd-degree-facts > div:nth-child(n + 2) { border-top: 1px solid var(--line); }
   .smccd-degree-section > header { align-items: flex-start; flex-direction: column; gap: 4px; }
   .smccd-requirement-audit summary { align-items: start; grid-template-columns: 1fr; gap: 5px; }
   .smccd-ge-evidence dl > div { grid-template-columns: auto 1fr; }
@@ -2426,8 +2435,8 @@ textarea,
 .smccd-tracked-degrees { display: grid; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
 .smccd-tracked-degrees > strong { color: var(--ink-soft); font-size: var(--type-supporting); }
 .smccd-tracked-degrees > div { display: flex; flex-wrap: wrap; gap: 7px; }
-.smccd-tracked-degrees button { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); padding: 7px 9px; text-align: left; }
-.smccd-tracked-degrees button.active { border-color: var(--accent); background: var(--accent-soft); }
+.smccd-tracked-degrees button { display: flex; align-items: center; gap: 8px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-soft); padding: 6px 2px; text-align: left; }
+.smccd-tracked-degrees button.active { border-bottom-color: var(--dual-ui); color: var(--ink); }
 .smccd-tracked-degrees button span { display: grid; gap: 1px; }
 .smccd-tracked-degrees button small { color: var(--ink-faint); }
 .smccd-degree-goal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }

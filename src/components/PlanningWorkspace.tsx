@@ -1479,7 +1479,7 @@ export default function PlanningWorkspace() {
 
   function renderGpa() {
     if (!enrollmentPreference) return null;
-    return <div className="gpa-page page-frame wide"><GpaPlanningLab
+    return <div className="gpa-page page-frame"><GpaPlanningLab
       rows={planCourses}
       courses={courses}
       smccdCourses={plannedSmccdCourses}

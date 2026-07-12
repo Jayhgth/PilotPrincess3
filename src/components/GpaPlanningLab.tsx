@@ -128,7 +128,7 @@ export default function GpaPlanningLab({
         </div>
         <dl className={styles.comparison}>
           <div><dt>Transcript now</dt><dd>{displayGpa(result.baseline.projectedWeighted)}</dd></div>
-          <div><dt>Unweighted scenario</dt><dd>{result.missingExpectedGrades > 0 ? "—" : displayGpa(result.scenario.projectedUnweighted)}</dd></div>
+          <div><dt>Unweighted scenario</dt><dd>{result.missingExpectedGrades > 0 ? "Not set" : displayGpa(result.scenario.projectedUnweighted)}</dd></div>
           <div><dt>All-A schedule ceiling</dt><dd>{displayGpa(result.bestCase.projectedWeighted)}</dd></div>
         </dl>
       </AnimatedContent>

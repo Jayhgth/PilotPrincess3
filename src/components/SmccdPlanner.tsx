@@ -59,6 +59,80 @@ type ProgramMode = "coursework" | "all";
 type ProgramAwardFilter = "all" | SmccdProgram["award_type"];
 type SmccdSection = "courses" | "degree";
 
+interface SmccdCourseCatalog {
+  colleges: SmccdCollege[];
+  courses: SmccdCourse[];
+}
+
+interface SmccdDegreeCatalog {
+  programs: SmccdProgram[];
+  requirements: SmccdProgramRequirement[];
+  requirementCourses: SmccdRequirementCourse[];
+}
+
+let courseCatalogRequest: Promise<SmccdCourseCatalog> | null = null;
+let degreeCatalogRequest: Promise<SmccdDegreeCatalog> | null = null;
+
+function loadCourseCatalog(supabase: SupabaseClient) {
+  if (!courseCatalogRequest) {
+    courseCatalogRequest = (async () => {
+      const [collegeResult, csmCourses, skylineCourses, canadaCourses] = await Promise.all([
+        supabase.from("smccd_colleges").select("*").order("code"),
+        supabase.from("smccd_courses").select("*").eq("college_code", "CSM").order("course_code").limit(1500),
+        supabase.from("smccd_courses").select("*").eq("college_code", "SKY").order("course_code").limit(1500),
+        supabase.from("smccd_courses").select("*").eq("college_code", "CAN").order("course_code").limit(1500)
+      ]);
+      const firstError = [collegeResult, csmCourses, skylineCourses, canadaCourses]
+        .map((result) => result.error)
+        .find(Boolean);
+      if (firstError) throw firstError;
+      return {
+        colleges: (collegeResult.data ?? []) as unknown as SmccdCollege[],
+        courses: [...(csmCourses.data ?? []), ...(skylineCourses.data ?? []), ...(canadaCourses.data ?? [])] as unknown as SmccdCourse[]
+      };
+    })().catch((caught) => {
+      courseCatalogRequest = null;
+      throw caught;
+    });
+  }
+  return courseCatalogRequest;
+}
+
+function loadDegreeCatalog(supabase: SupabaseClient) {
+  if (!degreeCatalogRequest) {
+    degreeCatalogRequest = (async () => {
+      const [programResult, requirementResult, optionCountResult] = await Promise.all([
+        supabase.from("smccd_programs").select("*").order("college_code").order("title").limit(500),
+        supabase.from("smccd_program_requirements").select("*").order("program_id").order("sort_order").limit(1000),
+        supabase.from("smccd_requirement_courses").select("id", { count: "exact", head: true })
+      ]);
+      const firstError = [programResult, requirementResult, optionCountResult]
+        .map((result) => result.error)
+        .find(Boolean);
+      if (firstError) throw firstError;
+
+      const optionCount = optionCountResult.count ?? 0;
+      const optionPages = await Promise.all(Array.from({ length: Math.ceil(optionCount / 1000) }, (_, page) => supabase
+        .from("smccd_requirement_courses")
+        .select("*")
+        .order("requirement_id")
+        .range(page * 1000, (page + 1) * 1000 - 1)));
+      const optionError = optionPages.map((result) => result.error).find(Boolean);
+      if (optionError) throw optionError;
+
+      return {
+        programs: (programResult.data ?? []) as unknown as SmccdProgram[],
+        requirements: (requirementResult.data ?? []) as unknown as SmccdProgramRequirement[],
+        requirementCourses: optionPages.flatMap((result) => result.data ?? []) as unknown as SmccdRequirementCourse[]
+      };
+    })().catch((caught) => {
+      degreeCatalogRequest = null;
+      throw caught;
+    });
+  }
+  return degreeCatalogRequest;
+}
+
 export default function SmccdPlanner({
   embedded = false,
   initialSection = "courses",
@@ -73,7 +147,9 @@ export default function SmccdPlanner({
   onCourseRemoved,
   onOpenMyCourses
 }: Props) {
-  const [loading, setLoading] = useState(true);
+  const [courseCatalogReady, setCourseCatalogReady] = useState(false);
+  const [degreeCatalogReady, setDegreeCatalogReady] = useState(false);
+  const [goalsReady, setGoalsReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -128,51 +204,58 @@ export default function SmccdPlanner({
 
   useEffect(() => {
     let active = true;
+    void loadCourseCatalog(supabase).then((catalog) => {
+      if (!active) return;
+      setColleges(catalog.colleges);
+      setCourses(catalog.courses);
+    }).catch((caught) => {
+      if (active) setError(caught instanceof Error ? caught.message : "SMCCD courses could not be loaded.");
+    }).finally(() => {
+      if (active) setCourseCatalogReady(true);
+    });
+    return () => { active = false; };
+  }, [supabase]);
+
+  useEffect(() => {
+    let active = true;
     void (async () => {
       try {
-        const [collegeResult, csmCourses, skylineCourses, canadaCourses, programResult, requirementResult, goalResult] = await Promise.all([
-          supabase.from("smccd_colleges").select("*").order("code"),
-          supabase.from("smccd_courses").select("*").eq("college_code", "CSM").order("course_code").limit(1500),
-          supabase.from("smccd_courses").select("*").eq("college_code", "SKY").order("course_code").limit(1500),
-          supabase.from("smccd_courses").select("*").eq("college_code", "CAN").order("course_code").limit(1500),
-          supabase.from("smccd_programs").select("*").order("college_code").order("title").limit(500),
-          supabase.from("smccd_program_requirements").select("*").order("program_id").order("sort_order").limit(1000),
-          supabase.from("student_smccd_goals").select("*").eq("user_id", session.user.id)
-        ]);
-        const firstError = [collegeResult, csmCourses, skylineCourses, canadaCourses, programResult, requirementResult, goalResult]
-          .map((result) => result.error)
-          .find(Boolean);
-        if (firstError) throw firstError;
-
-        const allOptions: SmccdRequirementCourse[] = [];
-        for (let offset = 0; ; offset += 1000) {
-          const optionResult = await supabase
-            .from("smccd_requirement_courses")
-            .select("*")
-            .order("requirement_id")
-            .range(offset, offset + 999);
-          if (optionResult.error) throw optionResult.error;
-          allOptions.push(...((optionResult.data ?? []) as unknown as SmccdRequirementCourse[]));
-          if ((optionResult.data ?? []).length < 1000) break;
-        }
-
+        const goalResult = await supabase.from("student_smccd_goals").select("*").eq("user_id", session.user.id);
+        if (goalResult.error) throw goalResult.error;
         if (!active) return;
         const loadedGoals = (goalResult.data ?? []) as unknown as StudentSmccdGoal[];
-        setColleges((collegeResult.data ?? []) as unknown as SmccdCollege[]);
-        setCourses([...(csmCourses.data ?? []), ...(skylineCourses.data ?? []), ...(canadaCourses.data ?? [])] as unknown as SmccdCourse[]);
-        setPrograms((programResult.data ?? []) as unknown as SmccdProgram[]);
-        setRequirements((requirementResult.data ?? []) as unknown as SmccdProgramRequirement[]);
-        setRequirementCourses(allOptions);
         setGoals(loadedGoals);
         setGoalProgramId(loadedGoals.find((goal) => goal.is_primary)?.program_id ?? "");
       } catch (caught) {
-        if (active) setError(caught instanceof Error ? caught.message : "SMCCD curriculum could not be loaded.");
+        if (active) setError(caught instanceof Error ? caught.message : "Saved degree goals could not be loaded.");
       } finally {
-        if (active) setLoading(false);
+        if (active) setGoalsReady(true);
       }
     })();
     return () => { active = false; };
   }, [session.user.id, supabase]);
+
+  useEffect(() => {
+    if (section !== "degree" || degreeCatalogReady) return;
+    let active = true;
+    void loadDegreeCatalog(supabase).then((catalog) => {
+      if (!active) return;
+      setPrograms(catalog.programs);
+      setRequirements(catalog.requirements);
+      setRequirementCourses(catalog.requirementCourses);
+    }).catch((caught) => {
+      if (active) setError(caught instanceof Error ? caught.message : "SMCCD degree requirements could not be loaded.");
+    }).finally(() => {
+      if (active) setDegreeCatalogReady(true);
+    });
+    return () => { active = false; };
+  }, [degreeCatalogReady, section, supabase]);
+
+  useEffect(() => {
+    if (!courseCatalogReady || degreeCatalogReady || section === "degree") return;
+    const prefetch = window.setTimeout(() => { void loadDegreeCatalog(supabase).catch(() => undefined); }, 800);
+    return () => window.clearTimeout(prefetch);
+  }, [courseCatalogReady, degreeCatalogReady, section, supabase]);
 
   const deferredSearch = useDeferredValue(search);
   const courseSearchIndex = useMemo(() => courses.map((course) => ({
@@ -286,11 +369,10 @@ export default function SmccdPlanner({
       .filter((row) => programCollegeFilter === "all" || row.program.college_code === programCollegeFilter)
       .filter((row) => programAwardFilter === "all" || row.program.award_type === programAwardFilter)
       .filter((row) => programMode === "all" || row.progress.projectedMajorUnits > 0)
-      .sort((a, b) => Number(b.program.id === goalProgramId) - Number(a.program.id === goalProgramId)
-        || b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
+      .sort((a, b) => b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
         || a.program.title.localeCompare(b.program.title))
       .slice(0, 60);
-  }, [deferredProgramSearch, goalProgramId, programAwardFilter, programCollegeFilter, programMode, programProgress, programs]);
+  }, [deferredProgramSearch, programAwardFilter, programCollegeFilter, programMode, programProgress, programs]);
   const nextDegreeOptions = useMemo(() => {
     if (!selectedProgramProgress) return [];
     const seen = new Set<string>();
@@ -491,7 +573,7 @@ export default function SmccdPlanner({
     setBusy(false);
   }
 
-  if (loading) return <div className="smccd-loading" role="status">Loading 2025-2026 SMCCD curriculum...</div>;
+  if (!courseCatalogReady || !goalsReady) return <div className="smccd-loading" role="status">Loading SMCCD courses...</div>;
 
   return (
     <div className="smccd-workspace">
@@ -567,7 +649,9 @@ export default function SmccdPlanner({
         {districtRows.length ? <div className="source-list">{districtRows.map((row) => { const catalogCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null; return <article className="source-row dual-enrollment-row" key={row.id}>{catalogCourse ? <InstitutionMark institution={catalogCourse.college_code} decorative /> : <InstitutionMark institution="smccd" decorative />}<div><strong>{row.custom_course_name ?? "SMCCD course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed d.tech credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>; })}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the district catalog or import a transcript to add exact SMCCD courses.</p></div>}
       </section>}
 
-      {section === "degree" && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
+      {section === "degree" && !degreeCatalogReady && <div className="smccd-loading smccd-degree-loading" role="status">Loading degree requirements...</div>}
+
+      {section === "degree" && degreeCatalogReady && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
         <header className="section-heading"><div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div></header>
         {goals.length > 0 && <div className="smccd-tracked-degrees" aria-label="Tracked degrees"><strong>Tracked degrees</strong><div>{goals.map((goal) => {
           const trackedProgram = programs.find((program) => program.id === goal.program_id);
