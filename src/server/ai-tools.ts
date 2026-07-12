@@ -318,9 +318,11 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
 
 function calculatedWorkspace(workspace: AssistantWorkspace) {
   const tracked = requirementsForSettings(workspace.requirements, workspace.settings);
-  const progress = calculateRequirementProgress(tracked, workspace.planCourses, workspace.mappings, workspace.courses, workspace.equivalencies);
+  const overviewProgress = calculateRequirementProgress(tracked, workspace.planCourses, workspace.mappings, workspace.courses, workspace.equivalencies);
+  const graduationProgress = calculateRequirementProgress(workspace.requirements, workspace.planCourses, workspace.mappings, workspace.courses, workspace.equivalencies);
   return {
-    progress,
+    overviewProgress,
+    graduationProgress,
     gpa: calculateGpa(workspace.planCourses)
   };
 }
@@ -351,9 +353,10 @@ export async function executeAssistantReadTool(
       data: {
         student: { grade_level: workspace.settings.grade_level, graduation_year: workspace.settings.graduation_year },
         graduation: {
-          completed_percent: overallCompletedPercent(calculated.progress),
-          projected_percent: overallGraduationPercent(calculated.progress),
-          open_areas: calculated.progress.filter((item) => item.status === "missing").map((item) => item.requirement.name)
+          completed_percent: overallCompletedPercent(calculated.overviewProgress),
+          projected_percent: overallGraduationPercent(calculated.overviewProgress),
+          open_areas: calculated.overviewProgress.filter((item) => item.status === "missing").map((item) => item.requirement.name),
+          scope: workspace.settings.tracker_mode === "selected" ? "Focused overview areas" : "Full diploma"
         },
         gpa: calculated.gpa,
         course_counts: courseCounts
@@ -436,7 +439,7 @@ export async function executeAssistantReadTool(
   }
 
   if (name === "get_graduation_progress") {
-    const data = calculated.progress.map((item) => ({
+    const data = calculated.graduationProgress.map((item) => ({
       area: item.requirement.name,
       required_credits: item.requirement.credits_required,
       completed_credits: item.completedCredits,
@@ -453,7 +456,7 @@ export async function executeAssistantReadTool(
     return {
       summary: "Read current requirement gaps and saved next steps.",
       data: {
-        requirement_gaps: calculated.progress.filter((item) => item.status === "missing").map((item) => ({
+        requirement_gaps: calculated.graduationProgress.filter((item) => item.status === "missing").map((item) => ({
           area: item.requirement.name,
           remaining_credits: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)
         })),
@@ -490,7 +493,7 @@ export async function executeAssistantReadTool(
         scope: "Current user's RLS-protected academic planning records; no auth secrets, admin data, arbitrary SQL, or other users' records.",
         setup: { onboarding_complete: workspace.settings.onboarding_complete },
         active_plan: { course_count: workspace.planCourses.length, completed_count: completed, transcript_imported_count: imported },
-        graduation: { requirement_count: calculated.progress.length },
+        graduation: { requirement_count: calculated.graduationProgress.length },
         gpa: { graded_credits: calculated.gpa.gradedCredits, pass_credits: calculated.gpa.passCredits },
         transcript: {
           source_count: workspace.sources.length,

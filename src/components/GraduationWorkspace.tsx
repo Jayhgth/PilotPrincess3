@@ -45,7 +45,7 @@ export default function GraduationWorkspace({
   onFindDtechCourses,
   onOpenSmccdDegree
 }: Props) {
-  const [view, setView] = useState<GraduationView>("diploma");
+  const [view, setView] = useState<GraduationView>(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("graduation") === "degree" ? "degree" : "diploma");
   const firstDiplomaGap = progress.find((item) => item.status === "missing") ?? progress[0] ?? null;
   const [selectedDiplomaId, setSelectedDiplomaId] = useState(firstDiplomaGap?.requirement.id ?? "");
   const [degreeLoading, setDegreeLoading] = useState(true);
@@ -55,6 +55,12 @@ export default function GraduationWorkspace({
   const [programRequirements, setProgramRequirements] = useState<SmccdProgramRequirement[]>([]);
   const [programOptions, setProgramOptions] = useState<SmccdRequirementCourse[]>([]);
   const [selectedProgramRequirementId, setSelectedProgramRequirementId] = useState("");
+
+  useEffect(() => {
+    const handlePopState = () => setView(new URLSearchParams(window.location.search).get("graduation") === "degree" ? "degree" : "diploma");
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -109,6 +115,14 @@ export default function GraduationWorkspace({
 
   const diplomaMissing = progress.filter((item) => item.status === "missing").length;
 
+  function changeView(next: GraduationView) {
+    setView(next);
+    const url = new URL(window.location.href);
+    if (next === "degree") url.searchParams.set("graduation", "degree");
+    else url.searchParams.delete("graduation");
+    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   return (
     <div className="graduation-workspace">
       <WorkspaceTabs
@@ -118,7 +132,7 @@ export default function GraduationWorkspace({
           { id: "degree", label: "Associate degree", count: degreeProgress?.requirements.filter((item) => item.status === "missing").length }
         ]}
         value={view}
-        onChange={setView}
+        onChange={changeView}
         label="Graduation and eligibility views"
         layoutId="graduation-view-indicator"
       />

@@ -90,7 +90,7 @@ export default function GpaPlanningLab({
     onScenarioChange({
       current_weighted_gpa: result.baseline.projectedWeighted,
       scenario_weighted_gpa: result.scenario.projectedWeighted,
-      saved_schedule_ceiling: result.bestCase.projectedWeighted,
+      all_a_schedule_ceiling: result.bestCase.projectedWeighted,
       target_weighted_gpa: target,
       target_uniform_grade: result.targetGrade,
       missing_grade_assumptions: result.missingExpectedGrades,
@@ -129,7 +129,7 @@ export default function GpaPlanningLab({
         <dl className={styles.comparison}>
           <div><dt>Transcript now</dt><dd>{displayGpa(result.baseline.projectedWeighted)}</dd></div>
           <div><dt>Unweighted scenario</dt><dd>{result.missingExpectedGrades > 0 ? "—" : displayGpa(result.scenario.projectedUnweighted)}</dd></div>
-          <div><dt>Saved schedule ceiling</dt><dd>{displayGpa(result.bestCase.projectedWeighted)}</dd></div>
+          <div><dt>All-A schedule ceiling</dt><dd>{displayGpa(result.bestCase.projectedWeighted)}</dd></div>
         </dl>
       </AnimatedContent>
 

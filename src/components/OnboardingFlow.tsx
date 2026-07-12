@@ -119,7 +119,7 @@ export default function OnboardingFlow({
   const [transcriptSummary, setTranscriptSummary] = useState<string | null>(null);
   const [transcriptAiTransparency, setTranscriptAiTransparency] = useState<TranscriptAiTransparency | null>(null);
   const [aiSetup, setAiSetup] = useState<CodexSetupValue>({
-    enabled: initialSettings.onboarding_complete ? initialSettings.ai_enabled : true,
+    enabled: initialSettings.ai_enabled ?? false,
     model: initialSettings.ai_model ?? "gpt-5.6-luna",
     approved: Boolean(initialSettings.ai_connection_approved_at),
     testedAt: initialSettings.ai_setup_tested_at

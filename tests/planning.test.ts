@@ -409,12 +409,12 @@ describe("planning", () => {
     )).toEqual([mathRequirement]);
   });
 
-  it("produces grade-aware timeline tasks from missing verified coverage", () => {
+  it("produces requirement and summer next steps without removed profile prompts", () => {
     const progress = calculateRequirementProgress([englishRequirement], [], []);
     const tasks = generateTimeline(settings, progress);
 
     expect(tasks.some((task) => task.title === "Choose a course for English")).toBe(true);
-    expect(tasks.some((task) => task.title === "Record two academic or career interests")).toBe(true);
+    expect(tasks.some((task) => task.title === "Record two academic or career interests")).toBe(false);
     expect(tasks.some((task) => task.category === "summer")).toBe(true);
   });
 

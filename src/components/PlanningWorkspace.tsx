@@ -5,11 +5,12 @@ import {
   CheckIcon as Check,
   FileArrowUpIcon as FileArrowUp,
   FloppyDiskIcon as FloppyDisk,
+  GearSixIcon as GearSix,
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
   PlusIcon as Plus,
-  WarningIcon as Warning,
-  XIcon as X
+  TrashIcon as Trash,
+  WarningIcon as Warning
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
@@ -51,6 +52,8 @@ import CourseKanban from "@/components/CourseKanban";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
+import TranscriptCourseEditor from "@/components/TranscriptCourseEditor";
+import StudentSettingsPanel, { type NextStepDraft, type StudentSettingsPatch } from "@/components/StudentSettingsPanel";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   CatalogReviewItem,
@@ -67,7 +70,8 @@ import type {
   SmccdCourse,
   SmccdHighSchoolEquivalency,
   StudentEnrollmentPreference,
-  StudentSettings
+  StudentSettings,
+  TimelineTask
 } from "@/lib/workspace-types";
 import { defaultEnrollmentPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
@@ -88,19 +92,36 @@ type ViewId =
   | "courses"
   | "sources"
   | "graduation"
-  | "gpa";
+  | "gpa"
+  | "settings";
 
 const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
   { id: "courses", label: "Courses", icon: BookOpen },
   { id: "graduation", label: "Graduation", icon: GraduationCap },
-  { id: "gpa", label: "GPA planner", icon: ChartLineUp }
+  { id: "gpa", label: "GPA planner", icon: ChartLineUp },
+  { id: "settings", label: "Settings", icon: GearSix }
 ];
 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
 
 type CourseArea = "mine" | "dtech" | "smccd";
 type SourceAiTransparency = TranscriptAiTransparency;
+
+const VIEW_IDS = new Set<ViewId>(["dashboard", "courses", "sources", "graduation", "gpa", "settings"]);
+const COURSE_AREAS = new Set<CourseArea>(["mine", "dtech", "smccd"]);
+
+function locationState() {
+  if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea, smccdSection: "courses" as const };
+  const params = new URLSearchParams(window.location.search);
+  const requestedView = params.get("view") as ViewId | null;
+  const requestedArea = params.get("course") as CourseArea | null;
+  return {
+    view: requestedView && VIEW_IDS.has(requestedView) ? requestedView : "dashboard",
+    courseArea: requestedArea && COURSE_AREAS.has(requestedArea) ? requestedArea : "mine",
+    smccdSection: params.get("college") === "degree" ? "degree" as const : "courses" as const
+  };
+}
 
 function titleCase(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -178,7 +199,8 @@ export default function PlanningWorkspace() {
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [toastKind, setToastKind] = useState<"info" | "success" | "error">("info");
-  const [view, setView] = useState<ViewId>("dashboard");
+  const [toastAction, setToastAction] = useState<{ label: string; run: () => Promise<void> } | null>(null);
+  const [view, setView] = useState<ViewId>(() => locationState().view);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -187,8 +209,8 @@ export default function PlanningWorkspace() {
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
-  const [courseArea, setCourseArea] = useState<CourseArea>("mine");
-  const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">("courses");
+  const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
+  const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">(() => locationState().smccdSection);
   const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
@@ -209,6 +231,7 @@ export default function PlanningWorkspace() {
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
   const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
   const [enrollmentPreference, setEnrollmentPreference] = useState<StudentEnrollmentPreference | null>(null);
+  const [timelineTasks, setTimelineTasks] = useState<TimelineTask[]>([]);
 
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
@@ -221,7 +244,9 @@ export default function PlanningWorkspace() {
   const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
+  const [selectedTranscriptSourceId, setSelectedTranscriptSourceId] = useState<string | null>(null);
   const [planExplanation, setPlanExplanation] = useState<string | null>(null);
+  const [suggestedPlan, setSuggestedPlan] = useState<ReturnType<typeof generateSuggestedPlan>>([]);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [compareCourses, setCompareCourses] = useState<PlanCourse[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -233,13 +258,17 @@ export default function PlanningWorkspace() {
     () => settings ? requirementsForSettings(requirements, settings) : requirements,
     [settings, requirements]
   );
-  const progress = useMemo(
+  const overviewProgress = useMemo(
     () => calculateRequirementProgress(trackedRequirements, planCourses, mappings, courses, equivalencies),
     [trackedRequirements, planCourses, mappings, courses, equivalencies]
   );
+  const fullProgress = useMemo(
+    () => calculateRequirementProgress(requirements, planCourses, mappings, courses, equivalencies),
+    [requirements, planCourses, mappings, courses, equivalencies]
+  );
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
-  const graduationPercent = useMemo(() => overallGraduationPercent(progress), [progress]);
-  const graduationEarnedPercent = useMemo(() => overallCompletedPercent(progress), [progress]);
+  const graduationPercent = useMemo(() => overallGraduationPercent(fullProgress), [fullProgress]);
+  const graduationEarnedPercent = useMemo(() => overallCompletedPercent(fullProgress), [fullProgress]);
   const loadWorkspace = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!supabase) return;
     if (!options.silent) {
@@ -266,6 +295,7 @@ export default function PlanningWorkspace() {
         reviewResult,
         enrollmentPolicyResult,
         enrollmentPreferenceResult,
+        timelineResult,
         adminResult
       ] = await Promise.all([
         supabase.from("schools").select("*").eq("slug", "design-tech-high-school").single(),
@@ -279,6 +309,7 @@ export default function PlanningWorkspace() {
         supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
         supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
         supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
+        supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
         supabase.rpc("is_app_admin")
       ]);
       const firstError = [
@@ -290,7 +321,8 @@ export default function PlanningWorkspace() {
         equivalencyResult.error,
         planResult.error,
         enrollmentPolicyResult.error,
-        enrollmentPreferenceResult.error
+        enrollmentPreferenceResult.error,
+        timelineResult.error
       ].find(Boolean);
       if (firstError) throw firstError;
 
@@ -325,7 +357,12 @@ export default function PlanningWorkspace() {
       };
       setSchool(schoolResult.data as unknown as School);
       setSettings(loadedSettings);
-      setSources((sourceResult.data ?? []) as unknown as OfficialSource[]);
+      const loadedSources = (sourceResult.data ?? []) as unknown as OfficialSource[];
+      setSources(loadedSources);
+      setSelectedTranscriptSourceId((current) => {
+        const transcripts = loadedSources.filter((source) => !source.is_official && source.document_type === "transcript");
+        return current && transcripts.some((source) => source.id === current) ? current : transcripts[0]?.id ?? null;
+      });
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
@@ -348,6 +385,7 @@ export default function PlanningWorkspace() {
           ? enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference
           : defaultEnrollmentPreference(userId)
       );
+      setTimelineTasks((timelineResult.data ?? []) as unknown as TimelineTask[]);
       setIsAdmin(adminResult.data === true && !adminResult.error);
       setSelectedTranscriptIds((current) => {
         const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
@@ -373,20 +411,70 @@ export default function PlanningWorkspace() {
 
   const refreshWorkspaceSilently = useCallback(() => loadWorkspace({ silent: true }), [loadWorkspace]);
 
+  async function refreshAfterAssistantChange() {
+    if (!supabase || !activeVersion) return refreshWorkspaceSilently();
+    try {
+      const { data, error } = await supabase.from("plan_courses").select("*").eq("plan_version_id", activeVersion.id).order("grade_level").order("sort_order");
+      if (!error) {
+        const nextRows = (data ?? []) as unknown as PlanCourse[];
+        const signature = (rows: PlanCourse[]) => JSON.stringify(rows.map((row) => ({
+          id: row.id,
+          course_id: row.course_id,
+          name: row.custom_course_name,
+          grade: row.grade_level,
+          term: row.term,
+          status: row.status,
+          credits: row.credits,
+          units: row.college_units,
+          letter: row.letter_grade
+        })).sort((a, b) => a.id.localeCompare(b.id)));
+        if (signature(nextRows) !== signature(planCourses)) {
+          await createSnapshot(`Before Pilot change ${new Date().toLocaleString()}`, planCourses);
+        }
+      }
+    } catch {
+      notify("Pilot applied the change, but the automatic backup could not be saved.", "error");
+    } finally {
+      await refreshWorkspaceSilently();
+    }
+  }
+
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timeout);
   }, [loadWorkspace]);
 
   useEffect(() => {
+    const handlePopState = () => {
+      const next = locationState();
+      setView(next.view);
+      setCourseArea(next.courseArea);
+      setSmccdInitialSection(next.smccdSection);
+      setEditingCourseId(null);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(null), 3500);
+    const timeout = window.setTimeout(() => {
+      setToast(null);
+      setToastAction(null);
+    }, toastAction ? 8000 : 3500);
     return () => window.clearTimeout(timeout);
-  }, [toast]);
+  }, [toast, toastAction]);
 
   function notify(message: string, kind: "info" | "success" | "error" = "info") {
     setToastKind(kind);
     setToast(message);
+    setToastAction(null);
+  }
+
+  function notifyUndo(message: string, action: () => Promise<void>) {
+    setToastKind("success");
+    setToast(message);
+    setToastAction({ label: "Undo", run: action });
   }
 
   async function selectComparisonVersion(versionId: string) {
@@ -417,11 +505,13 @@ export default function PlanningWorkspace() {
       if (successMessage) {
         setToastKind("success");
         setToast(successMessage);
+        setToastAction(null);
       }
       return result;
     } catch (caught) {
       setToastKind("error");
       setToast(caught instanceof Error ? caught.message : "That action could not be completed.");
+      setToastAction(null);
       return null;
     } finally {
       setBusyLabel(null);
@@ -450,9 +540,27 @@ export default function PlanningWorkspace() {
     return payload;
   }
 
+  function syncLocation(nextView: ViewId, nextCourseArea = courseArea, nextSmccdSection = smccdInitialSection) {
+    const url = new URL(window.location.href);
+    if (nextView === "dashboard") url.searchParams.delete("view");
+    else url.searchParams.set("view", nextView);
+    if (nextView === "courses") {
+      if (nextCourseArea === "mine") url.searchParams.delete("course");
+      else url.searchParams.set("course", nextCourseArea);
+      if (nextCourseArea === "smccd" && nextSmccdSection === "degree") url.searchParams.set("college", "degree");
+      else url.searchParams.delete("college");
+    } else {
+      url.searchParams.delete("course");
+      url.searchParams.delete("college");
+    }
+    if (nextView !== "graduation") url.searchParams.delete("graduation");
+    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
   function navigate(nextView: ViewId) {
     setView(nextView);
     setMobileNavOpen(false);
+    syncLocation(nextView);
     void logEvent("view_opened", { view: nextView });
   }
 
@@ -460,7 +568,10 @@ export default function PlanningWorkspace() {
     setCourseArea(area);
     if (area === "smccd") setSmccdInitialSection(smccdSection);
     setEditingCourseId(null);
-    navigate("courses");
+    setView("courses");
+    setMobileNavOpen(false);
+    syncLocation("courses", area, smccdSection);
+    void logEvent("view_opened", { view: "courses", course_area: area, college_section: smccdSection });
   }
 
   function openRequirementCourses(area: GraduationRequirement["area"]) {
@@ -553,7 +664,7 @@ export default function PlanningWorkspace() {
     const mappingVerified = mappings.some(
       (mapping) => mapping.course_id === course.id && mapping.confidence === "verified"
     );
-    await runAction(
+    const added = await runAction(
       `Adding ${course.name}`,
       async () => {
         const { data, error } = await supabase
@@ -579,19 +690,33 @@ export default function PlanningWorkspace() {
         setPlanCourses((current) => [...current, data as unknown as PlanCourse]);
         setSelectedDtechCourseId(null);
         await logEvent("course_selected", { course_id: course.id, status });
-      },
-      `${course.name} added to ${status === "completed" ? "Done" : status === "current" ? "In progress" : "Planned"}.`
+        return data as unknown as PlanCourse;
+      }
     );
+    if (added) notifyUndo(`${course.name} added to ${status === "completed" ? "Done" : status === "current" ? "In progress" : "Planned"}.`, async () => {
+      const { error } = await supabase.from("plan_courses").delete().eq("id", added.id);
+      if (error) throw error;
+      setPlanCourses((current) => current.filter((row) => row.id !== added.id));
+    });
   }
 
   async function updatePlanCourse(id: string, patch: Partial<PlanCourse>) {
     if (!supabase) return;
-    await runAction("Updating course", async () => {
+    const previous = planCourses.find((row) => row.id === id);
+    if (!previous) return;
+    const updated = await runAction("Updating course", async () => {
       const safePatch = { ...patch, user_edited: true };
       const { error } = await supabase.from("plan_courses").update(safePatch).eq("id", id);
       if (error) throw error;
       setPlanCourses((current) => current.map((row) => (row.id === id ? { ...row, ...safePatch } : row)));
       await logEvent("plan_edited", { plan_course_id: id });
+      return true;
+    });
+    if (updated) notifyUndo("Course updated.", async () => {
+      const { id: _id, ...restore } = previous;
+      const { error } = await supabase.from("plan_courses").update(restore).eq("id", id);
+      if (error) throw error;
+      setPlanCourses((current) => current.map((row) => row.id === id ? previous : row));
     });
   }
 
@@ -607,27 +732,41 @@ export default function PlanningWorkspace() {
 
   async function removePlanCourse(id: string) {
     if (!supabase) return;
-    await runAction(
+    const removed = planCourses.find((row) => row.id === id);
+    if (!removed) return;
+    const succeeded = await runAction(
       "Removing course",
       async () => {
         const { error } = await supabase.from("plan_courses").delete().eq("id", id);
         if (error) throw error;
         setPlanCourses((current) => current.filter((row) => row.id !== id));
         await logEvent("plan_edited", { action: "remove_course" });
-      },
-      "Course removed."
+        return true;
+      }
     );
+    if (succeeded) notifyUndo("Course removed.", async () => {
+      const { error } = await supabase.from("plan_courses").insert(removed);
+      if (error) throw error;
+      setPlanCourses((current) => [...current, removed]);
+    });
   }
 
   async function generatePlan() {
-    if (!supabase || !session || !activeVersion || !settings) return;
+    if (!settings) return;
     const generated = generateSuggestedPlan(settings, courses, planCourses);
     if (generated.length === 0) {
       notify("The current plan already contains the available d.tech flow courses.");
       return;
     }
-    await runAction(
-      "Generating plan",
+    setSuggestedPlan(generated);
+    notify(`${generated.length} suggested ${generated.length === 1 ? "course is" : "courses are"} ready to review.`);
+  }
+
+  async function confirmSuggestedPlan() {
+    if (!supabase || !session || !activeVersion || suggestedPlan.length === 0) return;
+    const generated = suggestedPlan;
+    const inserted = await runAction(
+      "Adding suggested courses",
       async () => {
         const rows = generated.map((row, index) => ({
           ...row,
@@ -640,13 +779,43 @@ export default function PlanningWorkspace() {
         if (error) throw error;
         const inserted = (data ?? []) as unknown as PlanCourse[];
         setPlanCourses((current) => [...current, ...inserted]);
+        setSuggestedPlan([]);
         const explanation = "Suggested courses were added from the official d.tech flow. Verify each placement and prerequisite before registration.";
         setPlanExplanation(explanation);
         await supabase.from("plan_versions").update({ ai_summary: null }).eq("id", activeVersion.id);
         await logEvent("plan_generated", { course_count: inserted.length, ai_used: false });
-      },
-      `${generated.length} suggested courses added.`
+        return inserted;
+      }
     );
+    if (inserted) notifyUndo(`${generated.length} suggested courses added.`, async () => {
+      const ids = inserted.map((row) => row.id);
+      const { error } = await supabase.from("plan_courses").delete().in("id", ids);
+      if (error) throw error;
+      setPlanCourses((current) => current.filter((row) => !ids.includes(row.id)));
+    });
+  }
+
+  async function createSnapshot(label: string, rows: PlanCourse[]) {
+    if (!supabase || !session || !plan || !activeVersion) throw new Error("The active plan is unavailable.");
+    const { data: snapshot, error } = await supabase
+      .from("plan_versions")
+      .insert({
+        plan_id: plan.id,
+        user_id: session.user.id,
+        label,
+        kind: "snapshot",
+        generation_config: { source_version_id: activeVersion.id }
+      })
+      .select("*")
+      .single();
+    if (error) throw error;
+    if (rows.length > 0) {
+      const copies = rows.map(({ id: _id, ...row }) => ({ ...row, plan_version_id: snapshot.id }));
+      const { error: copyError } = await supabase.from("plan_courses").insert(copies);
+      if (copyError) throw copyError;
+    }
+    setVersions((current) => [snapshot as unknown as PlanVersion, ...current]);
+    return snapshot as unknown as PlanVersion;
   }
 
   async function saveSnapshot() {
@@ -654,31 +823,30 @@ export default function PlanningWorkspace() {
     await runAction(
       "Saving snapshot",
       async () => {
-        const label = `Snapshot ${new Date().toLocaleDateString()}`;
-        const { data: snapshot, error } = await supabase
-          .from("plan_versions")
-          .insert({
-            plan_id: plan.id,
-            user_id: session.user.id,
-            label,
-            kind: "snapshot",
-            generation_config: { source_version_id: activeVersion.id }
-          })
-          .select("*")
-          .single();
-        if (error) throw error;
-        if (planCourses.length > 0) {
-          const copies = planCourses.map(({ id: _id, ...row }) => ({
-            ...row,
-            plan_version_id: snapshot.id
-          }));
-          const { error: copyError } = await supabase.from("plan_courses").insert(copies);
-          if (copyError) throw copyError;
-        }
-        setVersions((current) => [snapshot as unknown as PlanVersion, ...current]);
+        await createSnapshot(`Snapshot ${new Date().toLocaleDateString()}`, planCourses);
       },
       "Plan snapshot saved."
     );
+  }
+
+  async function restoreSnapshot(version: PlanVersion, rows: PlanCourse[]) {
+    if (!supabase || !activeVersion || rows.length === 0) return;
+    await runAction("Restoring saved plan", async () => {
+      await createSnapshot(`Before restoring ${version.label}`, planCourses);
+      const copies = rows.map(({ id: _id, ...row }) => ({ ...row, plan_version_id: activeVersion.id }));
+      const { data: inserted, error: insertError } = await supabase.from("plan_courses").insert(copies).select("id");
+      if (insertError) throw insertError;
+      const previousIds = planCourses.map((row) => row.id);
+      const { error: deleteError } = previousIds.length
+        ? await supabase.from("plan_courses").delete().in("id", previousIds)
+        : { error: null };
+      if (deleteError) {
+        const insertedIds = (inserted ?? []).map((row) => row.id);
+        if (insertedIds.length > 0) await supabase.from("plan_courses").delete().in("id", insertedIds);
+        throw deleteError;
+      }
+      await loadWorkspace({ silent: true });
+    }, `${version.label} restored. A backup of the previous plan was saved.`);
   }
 
   async function submitTranscript(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
@@ -724,6 +892,7 @@ export default function PlanningWorkspace() {
           .select("*")
           .single();
         if (error) throw error;
+        setSelectedTranscriptSourceId(data.id);
         setSourceForm({ rawText: "", file: null });
         form.reset();
         await logEvent("source_added", { kind });
@@ -826,6 +995,7 @@ export default function PlanningWorkspace() {
     await runAction(
       "Importing transcript courses",
       async () => {
+        await createSnapshot(`Before transcript import ${new Date().toLocaleDateString()}`, planCourses);
         const ids = prepared.map(({ item }) => item.id);
         const { error: approveError } = await supabase
           .from("catalog_review_items")
@@ -873,6 +1043,74 @@ export default function PlanningWorkspace() {
       },
       `${prepared.length} ${prepared.length === 1 ? "course" : "courses"} imported to Done.`
     );
+  }
+
+  async function removeTranscriptSource(source: OfficialSource) {
+    if (!supabase) return;
+    const sourceReviewIds = new Set(reviewItems.filter((item) => item.source_id === source.id).map((item) => item.id));
+    const isEvidence = planCourses.some((row) => row.source_review_item_id && sourceReviewIds.has(row.source_review_item_id));
+    if (isEvidence) {
+      notify("This transcript supports imported course records. Remove those courses first so their evidence is not orphaned.", "error");
+      return;
+    }
+    await runAction("Removing transcript", async () => {
+      const { error } = await supabase.from("official_sources").delete().eq("id", source.id);
+      if (error) throw error;
+      if (source.storage_path) await supabase.storage.from("source-uploads").remove([source.storage_path]);
+      setSources((current) => current.filter((candidate) => candidate.id !== source.id));
+      setReviewItems((current) => current.filter((item) => item.source_id !== source.id));
+      setSelectedTranscriptSourceId((current) => current === source.id
+        ? sources.find((candidate) => candidate.id !== source.id && !candidate.is_official && candidate.document_type === "transcript")?.id ?? null
+        : current);
+    }, "Transcript removed.");
+  }
+
+  async function saveStudentSettings(patch: StudentSettingsPatch) {
+    if (!supabase || !session || !settings || Object.keys(patch).length === 0) return;
+    if (patch.ai_enabled === true && !settings.ai_connection_approved_at) {
+      throw new Error("Open Pilot setup from the toolbar and approve the connection before enabling Pilot.");
+    }
+    const normalizedPatch: Record<string, unknown> = { ...patch };
+    if (patch.ai_model && patch.ai_model !== settings.ai_model) {
+      normalizedPatch.ai_enabled = false;
+      normalizedPatch.ai_connection_approved_at = null;
+      normalizedPatch.ai_setup_tested_at = null;
+    }
+    const { data, error } = await supabase.from("student_settings").update(normalizedPatch).eq("id", session.user.id).select("*").single();
+    if (error) throw error;
+    setSettings(data as unknown as StudentSettings);
+    await logEvent("student_settings_updated", { fields: Object.keys(normalizedPatch) });
+  }
+
+  async function addTimelineTask(draft: NextStepDraft) {
+    if (!supabase || !session) return false;
+    const { data, error } = await supabase.from("timeline_tasks").insert({
+      user_id: session.user.id,
+      plan_version_id: activeVersion?.id ?? null,
+      title: draft.title,
+      category: draft.category,
+      due_label: draft.dueLabel || null,
+      due_date: draft.dueDate || null,
+      is_completed: false,
+      is_generated: false
+    }).select("*").single();
+    if (error) throw error;
+    setTimelineTasks((current) => [...current, data as unknown as TimelineTask]);
+    return true;
+  }
+
+  async function updateTimelineTask(id: string, patch: Partial<TimelineTask>) {
+    if (!supabase) return;
+    const { error } = await supabase.from("timeline_tasks").update(patch).eq("id", id);
+    if (error) throw error;
+    setTimelineTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
+  }
+
+  async function deleteTimelineTask(id: string) {
+    if (!supabase) return;
+    const { error } = await supabase.from("timeline_tasks").delete().eq("id", id);
+    if (error) throw error;
+    setTimelineTasks((current) => current.filter((task) => task.id !== id));
   }
 
   if (!configured) {
@@ -987,7 +1225,7 @@ export default function PlanningWorkspace() {
   const plannedSmccdMap = new Map(plannedSmccdCourses.map((course) => [course.id, course]));
   function renderDashboard() {
     if (!settings) return null;
-    const requirementSnapshot = progress.map((item) => {
+    const requirementSnapshot = overviewProgress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
     });
@@ -1043,15 +1281,16 @@ export default function PlanningWorkspace() {
   }
 
   function renderSources() {
-    const latestTranscript = sources.find((source) => !source.is_official && source.document_type === "transcript") ?? null;
+    const transcriptSources = sources.filter((source) => !source.is_official && source.document_type === "transcript");
+    const selectedTranscript = transcriptSources.find((source) => source.id === selectedTranscriptSourceId) ?? transcriptSources[0] ?? null;
     const importedIds = new Set(planCourses.map((row) => row.source_review_item_id).filter(Boolean));
     const transcriptItems = reviewItems.filter(
       (item) => item.entity_type === "transcript_course"
         && item.status !== "rejected"
-        && (!latestTranscript || item.source_id === latestTranscript.id)
+        && (!selectedTranscript || item.source_id === selectedTranscript.id)
     );
     const transcriptNote = reviewItems.find(
-      (item) => item.entity_type === "transcript_note" && item.source_id === latestTranscript?.id
+      (item) => item.entity_type === "transcript_note" && item.source_id === selectedTranscript?.id
     );
     const transcriptSummary = String((transcriptNote?.corrected_payload ?? transcriptNote?.proposed_payload)?.summary ?? "").trim();
     const availableItems = transcriptItems.filter((item) => !importedIds.has(item.id));
@@ -1084,10 +1323,21 @@ export default function PlanningWorkspace() {
           <p className="transcript-parser-note">Readable document text is parsed locally. Codex is only used for image-only files after you approve the connection. <button type="button" onClick={() => setAssistantOpen(true)}>Open Pilot setup</button></p>
         </form>
 
-        {latestTranscript && <div className={`transcript-source-status ${latestTranscript.error_message ? "error" : ""}`}>
-          <span><strong>{latestTranscript.title}</strong><small>{latestTranscript.parse_status === "processing" ? "Reading transcript" : latestTranscript.parse_status === "needs_review" || latestTranscript.parse_status === "complete" ? "Ready to review" : titleCase(latestTranscript.parse_status)}</small></span>
-          {latestTranscript.error_message && <small>{latestTranscript.error_message}</small>}
-          {latestTranscript.parse_status !== "processing" && transcriptItems.length === 0 && <button className="secondary-button small" type="button" onClick={() => void parseSource(latestTranscript)} disabled={Boolean(busyLabel)}><ArrowClockwise size={15} /> Read again</button>}
+        {transcriptSources.length > 0 && <section className="transcript-history" aria-label="Transcript history">
+          <div className="transcript-history-heading"><strong>Transcript history</strong><span>{transcriptSources.length} {transcriptSources.length === 1 ? "source" : "sources"}</span></div>
+          <div className="transcript-history-list">{transcriptSources.map((source) => {
+            const evidenceIds = new Set(reviewItems.filter((item) => item.source_id === source.id).map((item) => item.id));
+            const importedCount = planCourses.filter((row) => row.source_review_item_id && evidenceIds.has(row.source_review_item_id)).length;
+            return <div className={source.id === selectedTranscript?.id ? "selected" : ""} key={source.id}>
+              <button type="button" onClick={() => setSelectedTranscriptSourceId(source.id)} aria-pressed={source.id === selectedTranscript?.id}><span><strong>{source.title}</strong><small>{new Date(source.created_at).toLocaleDateString()} · {titleCase(source.parse_status)}{importedCount ? ` · ${importedCount} imported` : ""}</small></span></button>
+              <button className="icon-button danger" type="button" onClick={() => void removeTranscriptSource(source)} disabled={Boolean(busyLabel) || importedCount > 0} aria-label={`Remove ${source.title}`} title={importedCount > 0 ? "Remove imported courses first to preserve evidence" : "Remove transcript"}><Trash size={15} /></button>
+            </div>;
+          })}</div>
+        </section>}
+        {selectedTranscript && <div className={`transcript-source-status ${selectedTranscript.error_message ? "error" : ""}`}>
+          <span><strong>{selectedTranscript.title}</strong><small>{selectedTranscript.parse_status === "processing" ? "Reading transcript" : selectedTranscript.parse_status === "needs_review" || selectedTranscript.parse_status === "complete" ? "Ready to review" : titleCase(selectedTranscript.parse_status)}</small></span>
+          {selectedTranscript.error_message && <small>{selectedTranscript.error_message}</small>}
+          {selectedTranscript.parse_status !== "processing" && transcriptItems.length === 0 && <button className="secondary-button small" type="button" onClick={() => void parseSource(selectedTranscript)} disabled={Boolean(busyLabel)}><ArrowClockwise size={15} /> Read again</button>}
         </div>}
         {sourceAiTransparency && <TranscriptAiRunDetails run={sourceAiTransparency} />}
         {transcriptItems.length > 0 ? <section className="transcript-results" aria-labelledby="transcript-results-title">
@@ -1095,7 +1345,7 @@ export default function PlanningWorkspace() {
           <header className="transcript-results-heading">
             <div><h2 id="transcript-results-title">Courses found</h2><p>{availableItems.length ? `${selectedCount} of ${availableItems.length} selected` : "All courses imported"}</p></div>
             {availableItems.length > 0
-              ? <button className="primary-button" type="button" onClick={() => void importSelectedTranscriptCourses(latestTranscript?.id ?? null)} disabled={Boolean(busyLabel) || selectedCount === 0}><Check size={17} /> Import selected</button>
+              ? <button className="primary-button" type="button" onClick={() => void importSelectedTranscriptCourses(selectedTranscript?.id ?? null)} disabled={Boolean(busyLabel) || selectedCount === 0}><Check size={17} /> Import selected</button>
               : <button className="secondary-button" type="button" onClick={() => openCourses("mine")}><BookOpen size={17} /> Open Done</button>}
           </header>
           <div className="transcript-course-table" role="table" aria-label="Extracted transcript courses">
@@ -1104,8 +1354,13 @@ export default function PlanningWorkspace() {
               <span role="columnheader">Grade</span><span role="columnheader">Credits</span><span role="columnheader">Year</span><span role="columnheader">Status</span>
             </div>
             <div className="transcript-course-rows">{transcriptItems.map((item) => {
-            const draft = reviewDrafts[item.id] ?? JSON.stringify(item.corrected_payload ?? item.proposed_payload, null, 2);
-            const displayPayload = item.corrected_payload ?? item.proposed_payload;
+            const draft = reviewDrafts[item.id] ?? JSON.stringify(item.corrected_payload ?? item.proposed_payload);
+            let displayPayload = item.corrected_payload ?? item.proposed_payload;
+            try {
+              displayPayload = JSON.parse(draft) as Record<string, unknown>;
+            } catch {
+              // Drafts are produced by the field editor, so this only protects older local state.
+            }
             const transcriptPayload = displayPayload as unknown as TranscriptCoursePayload;
             const resolution = resolveTranscriptCourse(transcriptPayload, courses);
             const visibleNotes = visibleTranscriptUncertaintyNotes(transcriptPayload, item.uncertainty_notes, courses);
@@ -1131,7 +1386,7 @@ export default function PlanningWorkspace() {
                 <span role="cell" data-label="Grade">{grade}</span><span role="cell" data-label="Credits">{String(credits)}</span><span role="cell" data-label="Year">{year}</span><span role="cell" data-label="Status" className={imported ? "transcript-imported" : needsReview ? "transcript-review-needed" : resolution.classification === "dtech_intersession" ? "transcript-intersession-ready" : ""}>{status}</span>
               </div>
               {visibleNotes.length > 0 && <p className="transcript-row-warning">{visibleNotes.join(" ")}</p>}
-              {!imported && <details className="transcript-row-editor"><summary>Edit extracted data</summary><label className="form-field"><span>Structured transcript data</span><textarea className="code-editor" value={draft} onChange={(event) => setReviewDrafts((current) => ({ ...current, [item.id]: event.target.value }))} spellCheck={false} /><small className="form-hint">Changes are saved when this row is imported.</small></label><button className="quiet-button small" type="button" onClick={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)}><X size={15} /> Ignore row</button></details>}
+              {!imported && <details className="transcript-row-editor"><summary>Edit extracted data</summary><TranscriptCourseEditor value={displayPayload as unknown as TranscriptCoursePayload} onChange={(next) => setReviewDrafts((current) => ({ ...current, [item.id]: JSON.stringify(next) }))} onIgnore={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)} /></details>}
             </article>;
           })}</div>
           </div>
@@ -1208,11 +1463,11 @@ export default function PlanningWorkspace() {
     if (!settings || !supabase || !session) return null;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and the selected associate degree." />
+        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and your primary associate-degree plan." />
         <GraduationWorkspace
           supabase={supabase}
           session={session}
-          progress={progress}
+          progress={fullProgress}
           planCourses={planCourses}
           smccdCourses={plannedSmccdCourses}
           onFindDtechCourses={openRequirementCourses}
@@ -1236,6 +1491,23 @@ export default function PlanningWorkspace() {
       onOpenCourses={() => openCourses("mine")}
       onScenarioChange={setGpaScenarioContext}
     /></div>;
+  }
+
+  function renderSettings() {
+    if (!settings) return null;
+    return <div className="settings-page page-frame">
+      <PageHeader title="Settings" description="Student details, planning scope, Pilot consent, and saved next steps." />
+      <StudentSettingsPanel
+        settings={settings}
+        requirements={requirements}
+        tasks={timelineTasks}
+        busy={Boolean(busyLabel)}
+        onSave={saveStudentSettings}
+        onAddTask={addTimelineTask}
+        onUpdateTask={updateTimelineTask}
+        onDeleteTask={deleteTimelineTask}
+      />
+    </div>;
   }
 
   function renderMineCourses() {
@@ -1262,6 +1534,11 @@ export default function PlanningWorkspace() {
     return (
       <>
         {planExplanation && <p className="plan-explanation">{planExplanation}</p>}
+        {suggestedPlan.length > 0 && <section className="suggested-plan-preview" aria-label="Suggested plan preview">
+          <div><strong>Review suggested courses</strong><p>Nothing has been added yet. Check the placements before applying this set.</p></div>
+          <ul>{suggestedPlan.map((row) => <li key={`${row.course_id}-${row.grade_level}`}><span><strong>{courseMap.get(row.course_id)?.name ?? "Course"}</strong><small>Grade {row.grade_level} · {row.school_year}</small></span></li>)}</ul>
+          <div className="suggested-plan-actions"><button className="secondary-button small" type="button" onClick={() => setSuggestedPlan([])}>Cancel</button><button className="primary-button small" type="button" onClick={() => void confirmSuggestedPlan()} disabled={Boolean(busyLabel)}><Check size={15} /> Add {suggestedPlan.length} courses</button></div>
+        </section>}
         <CourseKanban
           rows={planCourses}
           courses={courses}
@@ -1281,7 +1558,7 @@ export default function PlanningWorkspace() {
           <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
           <div className="course-version-body"><button className="secondary-button small" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={15} /> Save snapshot</button>
           {snapshots.length ? <>
-            <div className="compare-controls"><label className="form-field"><span>Saved version</span><select value={compareVersionId} onChange={(event) => void selectComparisonVersion(event.target.value)}><option value="">Choose a snapshot</option>{snapshots.map((version) => <option value={version.id} key={version.id}>{version.label}</option>)}</select></label><p>{compareVersionId ? "The saved copy stays read-only. Differences below are measured against your active plan." : "Choose a saved snapshot."}</p></div>
+            <div className="compare-controls"><label className="form-field"><span>Saved version</span><select value={compareVersionId} onChange={(event) => void selectComparisonVersion(event.target.value)}><option value="">Choose a snapshot</option>{snapshots.map((version) => <option value={version.id} key={version.id}>{version.label}</option>)}</select></label><p>{compareVersionId ? "Differences below are measured against your active plan. Restoring creates a backup first." : "Choose a saved snapshot."}</p>{selectedSnapshot && <button className="secondary-button small" type="button" onClick={() => void restoreSnapshot(selectedSnapshot, compareCourses)} disabled={Boolean(busyLabel) || compareLoading || compareCourses.length === 0}>Restore as active plan</button>}</div>
             {selectedSnapshot && !compareLoading && <div className="snapshot-comparison" aria-live="polite">
               <div className="snapshot-metrics"><div><span>Saved courses</span><strong>{compareCourses.length}</strong></div><div><span>Active courses</span><strong>{planCourses.length}</strong></div><div><span>Saved coverage</span><strong>{overallGraduationPercent(snapshotProgress)}%</strong></div><div><span>Active coverage</span><strong>{graduationPercent}%</strong></div><div><span>Saved projected GPA</span><strong>{formatGpa(snapshotGpa.projectedWeighted)}</strong></div><div><span>Active projected GPA</span><strong>{formatGpa(gpa.projectedWeighted)}</strong></div></div>
               <div className="snapshot-differences">
@@ -1301,7 +1578,7 @@ export default function PlanningWorkspace() {
     if (!supabase || !session || !settings || !activeVersion) return null;
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => { setCourseArea(area); if (area === "smccd") setSmccdInitialSection("courses"); setEditingCourseId(null); }} label="Courses workspace" layoutId="course-area-indicator" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area, area === "smccd" ? "courses" : smccdInitialSection)} label="Courses workspace" layoutId="course-area-indicator" />
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         supabase={supabase}
@@ -1315,8 +1592,21 @@ export default function PlanningWorkspace() {
         onCourseAdded={(course, catalogCourse) => {
           setPlanCourses((current) => [...current, course]);
           if (catalogCourse) setPlannedSmccdCourses((current) => current.some((item) => item.id === catalogCourse.id) ? current : [...current, catalogCourse]);
+          notifyUndo(`${course.custom_course_name ?? "College course"} added.`, async () => {
+            const { error } = await supabase.from("plan_courses").delete().eq("id", course.id);
+            if (error) throw error;
+            setPlanCourses((current) => current.filter((row) => row.id !== course.id));
+          });
         }}
-        onCourseRemoved={(id) => setPlanCourses((current) => current.filter((row) => row.id !== id))}
+        onCourseRemoved={(id) => {
+          const removed = planCourses.find((row) => row.id === id);
+          setPlanCourses((current) => current.filter((row) => row.id !== id));
+          if (removed) notifyUndo(`${removed.custom_course_name ?? "College course"} removed.`, async () => {
+            const { error } = await supabase.from("plan_courses").insert(removed);
+            if (error) throw error;
+            setPlanCourses((current) => [...current, removed]);
+          });
+        }}
         onOpenMyCourses={() => setCourseArea("mine")}
       />}
     </div>;
@@ -1329,6 +1619,7 @@ export default function PlanningWorkspace() {
       case "sources": return renderSources();
       case "graduation": return renderGraduation();
       case "gpa": return renderGpa();
+      case "settings": return renderSettings();
     }
   }
 
@@ -1370,7 +1661,7 @@ export default function PlanningWorkspace() {
         pageContext={assistantPageContext}
         preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reviewMode: settings.ai_review_mode, approvedAt: settings.ai_connection_approved_at, testedAt: settings.ai_setup_tested_at }}
         onClose={() => setAssistantOpen(false)}
-        onDataChanged={refreshWorkspaceSilently}
+        onDataChanged={refreshAfterAssistantChange}
         onPreferencesChanged={async () => {
           const { data, error } = await supabase.from("student_settings").select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
           if (error) throw error;
@@ -1391,7 +1682,7 @@ export default function PlanningWorkspace() {
         onClose={() => setAdminSettingsOpen(false)}
         onResetComplete={() => window.location.assign("/app?reset=1")}
       />}
-      {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}{toast}</div>}
+      {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}<span>{toast}</span>{toastAction && <button type="button" onClick={() => void (async () => { const action = toastAction; setToastAction(null); try { await action.run(); setToastKind("success"); setToast("Change undone."); } catch (caught) { setToastKind("error"); setToast(caught instanceof Error ? caught.message : "The change could not be undone."); } })()}>{toastAction.label}</button>}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
       </div>
   );

@@ -97,14 +97,14 @@ export default function OverviewPath({ data, onOpenCourses, onOpenGraduation, on
         <header className="t3-panel-heading">
           <div>
             <span className="t3-eyebrow"><ChartLineUp size={14} weight="duotone" /> GPA outlook</span>
-            <h2>Saved schedule projection</h2>
+            <h2>GPA from entered grades</h2>
           </div>
           <button className="t3-text-action" type="button" onClick={onOpenGpa}>Open planner <ArrowRight size={14} /></button>
         </header>
         <div className="t3-gpa-primary">
-          <span>Projected weighted GPA</span>
+          <span>Weighted GPA from saved grades</span>
           <strong>{data.projectedWeightedGpa}</strong>
-          <p>Includes saved courses with grades. Use the planner to test a different schedule.</p>
+          <p>Includes only saved courses that have a letter grade. Use the planner to test assumptions for ungraded courses.</p>
         </div>
         <dl className="t3-gpa-details">
           <div><dt>Current unweighted</dt><dd>{data.currentUnweightedGpa}</dd></div>

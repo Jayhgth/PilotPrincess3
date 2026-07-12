@@ -1153,6 +1153,11 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .transcript-row-editor[open] > summary { margin-bottom: 1px; }
 .transcript-row-editor .code-editor { min-height: 170px; }
 .transcript-row-editor .quiet-button { justify-self: start; padding-left: 0; }
+.transcript-course-editor { display: grid; gap: 12px; margin: 0; border: 0; padding: 0; }
+.transcript-course-editor .form-grid { gap: 12px; }
+.transcript-weight-control { display: flex; align-items: center; gap: 9px; color: var(--ink); font-size: var(--type-supporting); font-weight: 650; }
+.transcript-weight-control input { width: 16px; height: 16px; min-height: 16px; flex: 0 0 auto; margin: 0; padding: 0; accent-color: var(--accent); box-shadow: none; }
+.transcript-course-editor .form-hint { margin: 0; }
 .transcript-empty { margin: 26px 0 0; border-top: 1px solid var(--line-strong); padding-top: 18px; color: var(--ink-faint); font-size: 12px; }
 
 /* Unified course workspace */
@@ -2398,6 +2403,38 @@ textarea,
 }
 .plan-explanation { max-width: 78ch; margin: 0 0 14px; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
 
+.suggested-plan-preview { display: grid; gap: 12px; margin-bottom: 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-raised); padding: 14px; }
+.suggested-plan-preview > div:first-child { display: grid; gap: 3px; }
+.suggested-plan-preview p { margin: 0; color: var(--ink-soft); font-size: var(--type-supporting); }
+.suggested-plan-preview ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; margin: 0; padding: 0; list-style: none; }
+.suggested-plan-preview li { border-top: 1px solid var(--line); padding-top: 7px; }
+.suggested-plan-preview li span { display: grid; gap: 2px; }
+.suggested-plan-preview li small { color: var(--ink-faint); }
+.suggested-plan-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.transcript-history { display: grid; gap: 8px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 12px; }
+.transcript-history-heading { display: flex !important; align-items: center; justify-content: space-between; color: var(--ink-soft); font-size: var(--type-supporting); }
+.transcript-history-list { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 7px !important; }
+.transcript-history-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); }
+.transcript-history-list > div.selected { border-color: var(--accent); }
+.transcript-history-list > div > button:first-child { min-width: 0; border: 0; background: transparent; color: var(--ink); padding: 9px 10px; text-align: left; }
+.transcript-history-list > div > button:first-child span { display: grid; min-width: 0; gap: 2px; }
+.transcript-history-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transcript-history-list small { color: var(--ink-faint); }
+.transcript-history-list .icon-button { margin-right: 5px; }
+
+.smccd-tracked-degrees { display: grid; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.smccd-tracked-degrees > strong { color: var(--ink-soft); font-size: var(--type-supporting); }
+.smccd-tracked-degrees > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.smccd-tracked-degrees button { display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); padding: 7px 9px; text-align: left; }
+.smccd-tracked-degrees button.active { border-color: var(--accent); background: var(--accent-soft); }
+.smccd-tracked-degrees button span { display: grid; gap: 1px; }
+.smccd-tracked-degrees button small { color: var(--ink-faint); }
+.smccd-degree-goal-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
+
+.toast > span { flex: 1; }
+.toast > button { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--accent); padding: 0 0 0 10px; font: inherit; font-weight: 700; }
+
 .equivalency-match { color: var(--success) !important; font-weight: 600; }
 .equivalency-readout { display: grid; gap: 3px; background: var(--surface-muted); padding: 11px 12px; }
 .equivalency-readout strong { font-size: var(--type-body); }
@@ -2408,6 +2445,8 @@ textarea,
   .course-kanban { width: max-content; min-width: 0; grid-template-columns: repeat(3, minmax(292px, 82vw)); scroll-snap-type: x proximity; }
   .kanban-column { scroll-snap-align: start; }
   .kanban-column-body { max-height: min(560px, calc(100dvh - 250px)); }
+  .suggested-plan-preview ul,
+  .transcript-history-list { grid-template-columns: 1fr !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {

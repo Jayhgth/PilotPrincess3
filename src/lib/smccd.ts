@@ -7,6 +7,8 @@ import type {
 } from "@/lib/models";
 
 const DOTTED_SUBJECTS = new Set(["BUS", "EMC", "LIT", "MUS", "P.E", "RE", "BCM", "ECE", "HTM"]);
+const PASSING_MAJOR_GRADES = new Set(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "P"]);
+const PASSING_DEGREE_GRADES = new Set(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "P"]);
 
 export const SMCCD_COLLEGE_NAMES = {
   CSM: "College of San Mateo",
@@ -61,6 +63,7 @@ export interface SmccdRequirementProgress {
   requiredUnits: number | null;
   remainingUnits: number | null;
   remainingCount: number | null;
+  remainingDisciplines: number;
   missingSummary: string;
   manualReviewReason: string | null;
   selectedCourses: SmccdProgressCourse[];
@@ -144,13 +147,19 @@ export function calculateSmccdProgramProgressWithContext(
   program: SmccdProgram,
   context: SmccdProgramProgressContext
 ): SmccdProgramProgress {
+  const completedAttempts = bestAttemptsByCode(context.smccdRows, context.courseById, false);
+  const projectedAttempts = bestAttemptsByCode(context.smccdRows, context.courseById, true);
+  const completedMajorCodes = new Set<string>();
+  const projectedMajorCodes = new Set<string>();
   const requirementProgress = (context.requirementsByProgram.get(program.id) ?? []).map((requirement) => {
     const requirementOptions = context.optionsByRequirement.get(requirement.id) ?? [];
     const optionCodes = [...new Set(requirementOptions.map((option) => normalizeSmccdCourseCode(option.course_code)))];
-    const projected = evaluateRequirement(requirement, optionCodes, context.rowsByCode);
-    const completed = evaluateRequirement(requirement, optionCodes, context.completedRowsByCode);
+    const projected = evaluateRequirement(requirement, requirementOptions, optionCodes, projectedAttempts, context.courseById, projectedMajorCodes);
+    const completed = evaluateRequirement(requirement, requirementOptions, optionCodes, completedAttempts, context.courseById, completedMajorCodes);
+    for (const code of projected.selectedCodes) projectedMajorCodes.add(code);
+    for (const code of completed.selectedCodes) completedMajorCodes.add(code);
     const selectedCourses = projected.selectedCodes
-      .map((code) => progressCourse(code, context.rowsByCode, context.courseById))
+      .map((code) => progressCourse(code, projectedAttempts, context.courseById))
       .filter((course): course is SmccdProgressCourse => Boolean(course));
     const manualReviewReason = [
       supplementalRuleReview(requirement),
@@ -158,10 +167,12 @@ export function calculateSmccdProgramProgressWithContext(
         ? `A same-code course from another SMCCD college is included as evidence. Confirm that ${SMCCD_COLLEGE_NAMES[program.college_code]} accepts it for this local program.`
         : null
     ].filter((reason): reason is string => Boolean(reason)).join(" ") || null;
-    const remainingOptions = optionCodes
-      .filter((code) => !projected.selectedCodes.includes(code))
-      .map((code) => catalogOption(code, program, context.coursesByCode))
-      .filter((course): course is SmccdRequirementOption => Boolean(course));
+    const remainingOptions = projected.status === "satisfied"
+      ? []
+      : optionCodes
+          .filter((code) => !projected.selectedCodes.includes(code))
+          .map((code) => catalogOption(code, program, context.coursesByCode))
+          .filter((course): course is SmccdRequirementOption => Boolean(course));
 
     return {
       requirement,
@@ -175,26 +186,23 @@ export function calculateSmccdProgramProgressWithContext(
       requiredUnits: projected.requiredUnits,
       remainingUnits: projected.remainingUnits,
       remainingCount: projected.remainingCount,
-      missingSummary: requirementNeedLabel(requirement, projected.remainingUnits, projected.remainingCount, manualReviewReason),
+      remainingDisciplines: projected.remainingDisciplines,
+      missingSummary: requirementNeedLabel(requirement, projected, manualReviewReason),
       manualReviewReason,
       selectedCourses,
       remainingOptions
     } satisfies SmccdRequirementProgress;
   });
 
-  const majorCourseCodes = new Set(requirementProgress.flatMap((progress) => progress.optionCourseCodes));
-  const completedMajorUnits = sumRows(context.smccdRows.filter((row) => row.status === "completed"), context.courseById, majorCourseCodes);
-  const projectedMajorUnits = sumRows(context.smccdRows, context.courseById, majorCourseCodes);
-  const completedCollegeUnits = sumAllRows(context.smccdRows.filter((row) => row.status === "completed"));
-  const projectedCollegeUnits = sumAllRows(context.smccdRows);
-  const completedDegreeApplicableUnits = sumDegreeApplicableRows(
-    context.smccdRows.filter((row) => row.status === "completed"),
-    context.courseById
-  );
-  const projectedDegreeApplicableUnits = sumDegreeApplicableRows(context.smccdRows, context.courseById);
+  const completedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + progress.completedUnits, 0));
+  const projectedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + progress.earnedUnits, 0));
+  const completedCollegeUnits = sumAttemptUnits(completedAttempts, context.courseById, false);
+  const projectedCollegeUnits = sumAttemptUnits(projectedAttempts, context.courseById, false);
+  const completedDegreeApplicableUnits = sumAttemptUnits(completedAttempts, context.courseById, true);
+  const projectedDegreeApplicableUnits = sumAttemptUnits(projectedAttempts, context.courseById, true);
   const fromCatalog = Number(program.total_major_units_text.match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
   const requiredMajorUnits = fromCatalog || round(requirementProgress.reduce((sum, progress) => sum + Number(progress.requiredUnits ?? 0), 0));
-  const geEvidence = collectGeEvidence(context.smccdRows, context.courseById);
+  const geEvidence = collectGeEvidence(projectedAttempts, context.courseById);
 
   return {
     completedCollegeUnits,
@@ -241,50 +249,102 @@ function groupRowsByCode(rows: readonly PlanCourse[], courseById: Map<string, Sm
 
 function evaluateRequirement(
   requirement: SmccdProgramRequirement,
+  options: SmccdRequirementCourse[],
   optionCodes: string[],
-  rowsByCode: Map<string, PlanCourse[]>
+  attemptsByCode: Map<string, PlanCourse>,
+  courseById: Map<string, SmccdCourse>,
+  alreadyUsed: Set<string>
 ) {
-  const selectedCodes = optionCodes.filter((code) => rowsByCode.has(code));
-  const earnedUnits = round(selectedCodes.reduce((total, code) => total + Number(bestPlanRow(rowsByCode.get(code) ?? [])?.college_units ?? 0), 0));
-  const minUnits = requirement.min_units === null ? null : Number(requirement.min_units);
+  const minUnits = requirementMinUnits(requirement);
   const minCount = requirement.min_count ?? (requirement.kind === "or_group" ? 1 : null);
+  const minDisciplines = minimumDisciplineCount(requirement);
+  const unitSelection = requirement.kind === "all" && isUnitSelectionGroup(requirement, options, courseById);
+
+  if (requirement.kind === "text_rule") {
+    return {
+      status: "manual_review" as const,
+      selectedCodes: [] as string[],
+      earnedUnits: 0,
+      requiredUnits: minUnits,
+      remainingUnits: minUnits,
+      remainingCount: null,
+      remainingDisciplines: minDisciplines
+    };
+  }
+
+  const eligible = optionCodes.filter((code) => {
+    const attempt = attemptsByCode.get(code);
+    return !alreadyUsed.has(code) && Boolean(attempt) && satisfiesMajorAttempt(attempt!);
+  });
+  let selectedCodes: string[];
+
+  if (requirement.kind === "all" && !unitSelection) {
+    selectedCodes = optionCodes.filter((code) => eligible.includes(code));
+  } else if (requirement.kind === "or_group" || requirement.kind === "choose_count") {
+    selectedCodes = eligible.slice(0, minCount ?? 1);
+  } else {
+    const sorted = [...eligible].sort((left, right) => catalogCourseUnitsForCode(right, courseById) - catalogCourseUnitsForCode(left, courseById));
+    selectedCodes = [];
+    let selectedUnits = 0;
+    for (const code of sorted) {
+      selectedCodes.push(code);
+      selectedUnits += attemptUnits(attemptsByCode.get(code)!, courseById);
+      if (requirement.kind === "choose_units" && selectedUnits >= (minUnits ?? Number.POSITIVE_INFINITY) && disciplineCount(selectedCodes) >= minDisciplines) break;
+    }
+  }
+
+  const earnedUnits = round(selectedCodes.reduce((total, code) => total + attemptUnits(attemptsByCode.get(code)!, courseById), 0));
   let status: SmccdRequirementState;
-  if (requirement.kind === "text_rule") status = "manual_review";
-  else if (requirement.kind === "all") {
-    status = optionCodes.length > 0 && selectedCodes.length === optionCodes.length ? "satisfied" : selectedCodes.length > 0 ? "partial" : "missing";
+  if (requirement.kind === "all" && !unitSelection) {
+    status = selectedCodes.length === optionCodes.length ? "satisfied" : selectedCodes.length > 0 ? "partial" : "missing";
   } else if (requirement.kind === "choose_count" || requirement.kind === "or_group") {
     status = selectedCodes.length >= (minCount ?? 1) ? "satisfied" : selectedCodes.length > 0 ? "partial" : "missing";
   } else {
-    status = earnedUnits >= (minUnits ?? Number.POSITIVE_INFINITY) ? "satisfied" : earnedUnits > 0 ? "partial" : "missing";
+    status = earnedUnits >= (minUnits ?? Number.POSITIVE_INFINITY) && disciplineCount(selectedCodes) >= minDisciplines
+      ? "satisfied"
+      : earnedUnits > 0
+        ? "partial"
+        : "missing";
   }
+
   return {
     status,
     selectedCodes,
     earnedUnits,
     requiredUnits: minUnits,
     remainingUnits: minUnits === null ? null : round(Math.max(0, minUnits - earnedUnits)),
-    remainingCount: requirement.kind === "all"
+    remainingCount: requirement.kind === "all" && !unitSelection
       ? Math.max(0, optionCodes.length - selectedCodes.length)
       : requirement.kind === "choose_count" || requirement.kind === "or_group"
         ? Math.max(0, (minCount ?? 1) - selectedCodes.length)
-        : null
+        : null,
+    remainingDisciplines: Math.max(0, minDisciplines - disciplineCount(selectedCodes))
   };
 }
 
-function requirementNeedLabel(requirement: SmccdProgramRequirement, remainingUnits: number | null, remainingCount: number | null, manualReviewReason: string | null) {
+type RequirementEvaluation = ReturnType<typeof evaluateRequirement>;
+
+function requirementNeedLabel(requirement: SmccdProgramRequirement, evaluation: RequirementEvaluation, manualReviewReason: string | null) {
   if (requirement.kind === "text_rule") return "Counselor or catalog review required";
-  if (manualReviewReason && (remainingUnits === 0 || remainingCount === 0)) return "Course minimum covered; verify the text rule";
-  if (remainingUnits !== null) return remainingUnits > 0 ? `${remainingUnits} more units` : "Requirement covered";
-  if (remainingCount !== null) return remainingCount > 0 ? `${remainingCount} more ${remainingCount === 1 ? "course" : "courses"}` : "Requirement covered";
+  if (evaluation.status === "satisfied") return manualReviewReason ? "Course minimum covered; verify the text rule" : "Requirement covered";
+  if (evaluation.remainingCount !== null) {
+    if (requirement.kind === "or_group" || requirement.kind === "choose_count") {
+      return `Choose ${evaluation.remainingCount} more ${evaluation.remainingCount === 1 ? "course" : "courses"} from the options`;
+    }
+    return `${evaluation.remainingCount} required ${evaluation.remainingCount === 1 ? "course" : "courses"} remaining`;
+  }
+  if (evaluation.remainingUnits !== null && evaluation.remainingDisciplines > 0) {
+    return `${formatNumber(evaluation.remainingUnits)} more ${evaluation.remainingUnits === 1 ? "unit" : "units"} and ${evaluation.remainingDisciplines} more ${evaluation.remainingDisciplines === 1 ? "discipline" : "disciplines"} needed from the options`;
+  }
+  if (evaluation.remainingUnits !== null) {
+    return `${formatNumber(evaluation.remainingUnits)} more ${evaluation.remainingUnits === 1 ? "unit" : "units"} needed from the options`;
+  }
   return "Review the official requirement";
 }
 
 function supplementalRuleReview(requirement: SmccdProgramRequirement) {
   if (requirement.kind === "text_rule") return requirement.raw_text ?? "This requirement needs manual review.";
   const text = `${requirement.label} ${requirement.raw_text ?? ""}`;
-  if (/different\s+(?:academic\s+)?disciplines?/i.test(text)) {
-    return "The course or unit minimum is measured, but the required number of different disciplines is not yet verified.";
-  }
   if (/(?:minimum|overall|major)\s+gpa|grade\s+of\s+[A-C][+-]?\s+or\s+better|residen(?:cy|t)/i.test(text)) {
     return "The course or unit minimum is measured, but the grade, GPA, or residency condition still needs official review.";
   }
@@ -304,8 +364,8 @@ function catalogOption(code: string, program: SmccdProgram, coursesByCode: Map<s
   };
 }
 
-function progressCourse(code: string, rowsByCode: Map<string, PlanCourse[]>, courseById: Map<string, SmccdCourse>): SmccdProgressCourse | null {
-  const row = bestPlanRow(rowsByCode.get(code) ?? []);
+function progressCourse(code: string, attemptsByCode: Map<string, PlanCourse>, courseById: Map<string, SmccdCourse>): SmccdProgressCourse | null {
+  const row = attemptsByCode.get(code);
   const course = row?.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
   if (!row || !course) return null;
   return {
@@ -321,9 +381,9 @@ function progressCourse(code: string, rowsByCode: Map<string, PlanCourse[]>, cou
   };
 }
 
-function collectGeEvidence(rows: readonly PlanCourse[], courseById: Map<string, SmccdCourse>) {
+function collectGeEvidence(attemptsByCode: Map<string, PlanCourse>, courseById: Map<string, SmccdCourse>) {
   const areas = new Map<string, { completed: Set<string>; projected: Set<string> }>();
-  for (const row of rows) {
+  for (const row of attemptsByCode.values()) {
     const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
     if (!course) continue;
     for (const attribute of course.attributes ?? []) {
@@ -346,43 +406,101 @@ function collectGeEvidence(rows: readonly PlanCourse[], courseById: Map<string, 
     }));
 }
 
-function bestPlanRow(rows: PlanCourse[]) {
-  return [...rows].sort((a, b) => planRowRank(b) - planRowRank(a))[0];
-}
-
 function planRowRank(row: PlanCourse) {
-  return row.status === "completed" ? 3 : row.status === "current" ? 2 : 1;
+  if (row.status === "completed" && PASSING_MAJOR_GRADES.has(normalizeGrade(row.letter_grade))) return 4;
+  if (row.status === "completed") return 3;
+  return row.status === "current" ? 2 : 1;
 }
 
-function sumRows(rows: PlanCourse[], courseById: Map<string, SmccdCourse>, allowedCodes: Set<string>) {
-  const usedCodes = new Set<string>();
-  let units = 0;
-  for (const row of [...rows].sort((a, b) => planRowRank(b) - planRowRank(a))) {
-    const code = row.smccd_course_id ? courseById.get(row.smccd_course_id)?.course_code : null;
-    const normalized = code ? normalizeSmccdCourseCode(code) : null;
-    if (!normalized || !allowedCodes.has(normalized) || usedCodes.has(normalized)) continue;
-    usedCodes.add(normalized);
-    units += Number(row.college_units ?? 0);
-  }
-  return round(units);
-}
-
-function sumAllRows(rows: readonly PlanCourse[]) {
-  return round(rows.reduce((sum, row) => sum + Number(row.college_units ?? 0), 0));
-}
-
-function sumDegreeApplicableRows(rows: readonly PlanCourse[], courseById: Map<string, SmccdCourse>) {
-  const usedCodes = new Set<string>();
-  let units = 0;
-  for (const row of [...rows].sort((a, b) => planRowRank(b) - planRowRank(a))) {
+function bestAttemptsByCode(rows: readonly PlanCourse[], courseById: Map<string, SmccdCourse>, includeProjection: boolean) {
+  const attempts = new Map<string, PlanCourse>();
+  for (const row of rows) {
     const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
-    if (!course?.degree_applicable) continue;
+    if (!course) continue;
+    const eligible = row.status === "completed"
+      ? PASSING_DEGREE_GRADES.has(normalizeGrade(row.letter_grade))
+      : includeProjection && (row.status === "current" || row.status === "planned");
+    if (!eligible) continue;
     const code = normalizeSmccdCourseCode(course.course_code);
-    if (usedCodes.has(code)) continue;
-    usedCodes.add(code);
-    units += Number(row.college_units ?? course.units_max ?? course.units_min);
+    const existing = attempts.get(code);
+    if (!existing || planRowRank(row) > planRowRank(existing)) attempts.set(code, row);
+  }
+  return attempts;
+}
+
+function normalizeGrade(grade: string | null | undefined) {
+  return grade?.trim().toUpperCase() ?? "";
+}
+
+function satisfiesMajorAttempt(row: PlanCourse) {
+  return row.status === "current" || row.status === "planned" || PASSING_MAJOR_GRADES.has(normalizeGrade(row.letter_grade));
+}
+
+function attemptUnits(row: PlanCourse, courseById: Map<string, SmccdCourse>) {
+  const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
+  return Number(row.college_units ?? course?.units_max ?? course?.units_min ?? 0);
+}
+
+function catalogCourseUnitsForCode(code: string, courseById: Map<string, SmccdCourse>) {
+  let units = 0;
+  for (const course of courseById.values()) {
+    if (normalizeSmccdCourseCode(course.course_code) === code) units = Math.max(units, Number(course.units_max ?? course.units_min ?? 0));
+  }
+  return units;
+}
+
+function sumAttemptUnits(attemptsByCode: Map<string, PlanCourse>, courseById: Map<string, SmccdCourse>, degreeApplicableOnly: boolean) {
+  let units = 0;
+  for (const row of attemptsByCode.values()) {
+    const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
+    if (!course || (degreeApplicableOnly && !course.degree_applicable)) continue;
+    units += attemptUnits(row, courseById);
   }
   return round(units);
+}
+
+function requirementMinUnits(requirement: SmccdProgramRequirement) {
+  if (requirement.min_units !== null) return Number(requirement.min_units);
+  const match = `${requirement.label} ${requirement.raw_text ?? ""}`.match(/(\d+(?:\.\d+)?)(?:\s*(?:-|or)\s*(?:more\s*)?(?:\d+(?:\.\d+)?)?)?\s*units?\b/i);
+  return match ? Number(match[1]) : null;
+}
+
+function isUnitSelectionGroup(
+  requirement: SmccdProgramRequirement,
+  options: readonly SmccdRequirementCourse[],
+  courseById: Map<string, SmccdCourse>
+) {
+  const minUnits = requirementMinUnits(requirement);
+  if (!minUnits) return false;
+  if (/select|selected|minimum|at least|from the following|or more units/i.test(`${requirement.label} ${requirement.raw_text ?? ""}`)) return true;
+  const courseUnitsByCode = new Map<string, number>();
+  for (const course of courseById.values()) {
+    const code = normalizeSmccdCourseCode(course.course_code);
+    courseUnitsByCode.set(code, Math.max(courseUnitsByCode.get(code) ?? 0, Number(course.units_max ?? course.units_min ?? 0)));
+  }
+  const totalOptionUnits = options.reduce((sum, option) => sum + optionUnits(option, courseUnitsByCode), 0);
+  return totalOptionUnits > minUnits;
+}
+
+function optionUnits(option: SmccdRequirementCourse, courseUnitsByCode: Map<string, number>) {
+  const values = [...(option.units_text ?? "").matchAll(/\d+(?:\.\d+)?/g)].map((match) => Number(match[0]));
+  return values.length > 0 ? Math.max(...values) : courseUnitsByCode.get(normalizeSmccdCourseCode(option.course_code)) ?? 0;
+}
+
+function minimumDisciplineCount(requirement: SmccdProgramRequirement) {
+  const text = `${requirement.label} ${requirement.raw_text ?? ""}`.toLowerCase();
+  const match = text.match(/at least\s+(\d+|one|two|three|four|five)\s+different\s+(?:academic\s+)?discipline/);
+  if (!match) return 0;
+  if (/^\d+$/.test(match[1])) return Number(match[1]);
+  return ({ one: 1, two: 2, three: 3, four: 4, five: 5 } as Record<string, number>)[match[1]] ?? 0;
+}
+
+function disciplineCount(courseCodes: readonly string[]) {
+  return new Set(courseCodes.map((code) => code.split(" ")[0])).size;
+}
+
+function formatNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function round(value: number) {

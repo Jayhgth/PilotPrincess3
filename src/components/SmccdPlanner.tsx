@@ -109,6 +109,23 @@ export default function SmccdPlanner({
     gradeLevel: (settings.grade_level ?? 11) as GradeLevel
   });
 
+  function changeSection(next: SmccdSection) {
+    setSection(next);
+    if (embedded) {
+      const url = new URL(window.location.href);
+      if (next === "degree") url.searchParams.set("college", "degree");
+      else url.searchParams.delete("college");
+      window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }
+
+  useEffect(() => {
+    if (!embedded) return;
+    const handlePopState = () => setSection(new URLSearchParams(window.location.search).get("college") === "degree" ? "degree" : "courses");
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [embedded]);
+
   useEffect(() => {
     let active = true;
     void (async () => {
@@ -258,6 +275,7 @@ export default function SmccdPlanner({
     calculateSmccdProgramProgressWithContext(program, progressContext)
   ])), [programs, progressContext]);
   const selectedProgram = programs.find((program) => program.id === goalProgramId) ?? null;
+  const selectedGoal = goals.find((goal) => goal.program_id === goalProgramId) ?? null;
   const selectedProgramProgress = selectedProgram ? programProgress.get(selectedProgram.id) ?? null : null;
   const deferredProgramSearch = useDeferredValue(programSearch);
   const visiblePrograms = useMemo(() => {
@@ -304,10 +322,12 @@ export default function SmccdPlanner({
   }
 
   function findDegreeCourse(courseCode: string, collegeCode: SmccdCourse["college_code"]) {
-    setSection("courses");
+    changeSection("courses");
     setCollegeFilter(collegeCode);
     setSearch(courseCode);
-    setSelectedCourse(null);
+    const exactCourse = courses.find((course) => course.college_code === collegeCode && normalizeSmccdCourseCode(course.course_code) === normalizeSmccdCourseCode(courseCode));
+    if (exactCourse) chooseCourse(exactCourse);
+    else setSelectedCourse(null);
   }
 
   async function saveGoal() {
@@ -318,19 +338,61 @@ export default function SmccdPlanner({
     setBusy(true);
     setError(null);
     try {
-      const goalMutation = primaryGoal
-        ? supabase.from("student_smccd_goals").update({ program_id: goalProgramId }).eq("id", primaryGoal.id)
-        : supabase.from("student_smccd_goals").insert({
-            user_id: session.user.id,
-            program_id: goalProgramId,
-            is_primary: true
-          });
-      const { data, error: mutationError } = await goalMutation.select("*").single();
+      const existing = goals.find((goal) => goal.program_id === goalProgramId);
+      if (existing) {
+        setNotice(existing.is_primary ? "This is already your primary degree." : "This degree is already tracked.");
+        return;
+      }
+      const { data, error: mutationError } = await supabase.from("student_smccd_goals").insert({
+        user_id: session.user.id,
+        program_id: goalProgramId,
+        is_primary: goals.length === 0
+      }).select("*").single();
       if (mutationError) throw mutationError;
-      setGoals([data as unknown as StudentSmccdGoal]);
-      setNotice("Associate-degree goal saved. Progress uses catalog rules and still requires counselor verification.");
+      setGoals((current) => [...current, data as unknown as StudentSmccdGoal]);
+      setNotice("Degree added to your plan. You can compare it with every other tracked degree.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The SMCCD goal could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function makePrimaryGoal(goal: StudentSmccdGoal) {
+    setBusy(true);
+    setError(null);
+    try {
+      if (primaryGoal && primaryGoal.id !== goal.id) {
+        const { error } = await supabase.from("student_smccd_goals").update({ is_primary: false }).eq("id", primaryGoal.id);
+        if (error) throw error;
+      }
+      const { error } = await supabase.from("student_smccd_goals").update({ is_primary: true }).eq("id", goal.id);
+      if (error) throw error;
+      setGoals((current) => current.map((item) => ({ ...item, is_primary: item.id === goal.id })));
+      setNotice("Primary degree updated. Other tracked degrees remain in your plan.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The primary degree could not be updated.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeGoal(goal: StudentSmccdGoal) {
+    setBusy(true);
+    setError(null);
+    try {
+      const { error } = await supabase.from("student_smccd_goals").delete().eq("id", goal.id);
+      if (error) throw error;
+      const remaining = goals.filter((item) => item.id !== goal.id);
+      if (goal.is_primary && remaining[0]) {
+        const { error: primaryError } = await supabase.from("student_smccd_goals").update({ is_primary: true }).eq("id", remaining[0].id);
+        if (primaryError) throw primaryError;
+        remaining[0] = { ...remaining[0], is_primary: true };
+      }
+      setGoals(remaining);
+      setNotice("Degree removed from your plan. Your course plan was not changed.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The degree could not be removed.");
     } finally {
       setBusy(false);
     }
@@ -449,7 +511,7 @@ export default function SmccdPlanner({
         className="dual-enrollment-tabs"
         items={[{ id: "courses", label: "Find courses" }, { id: "degree", label: "Associate degree" }]}
         value={section}
-        onChange={setSection}
+        onChange={changeSection}
         label="SMCCD tools"
         layoutId="smccd-section-indicator"
       />
@@ -507,6 +569,11 @@ export default function SmccdPlanner({
 
       {section === "degree" && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
         <header className="section-heading"><div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div></header>
+        {goals.length > 0 && <div className="smccd-tracked-degrees" aria-label="Tracked degrees"><strong>Tracked degrees</strong><div>{goals.map((goal) => {
+          const trackedProgram = programs.find((program) => program.id === goal.program_id);
+          if (!trackedProgram) return null;
+          return <button className={goalProgramId === goal.program_id ? "active" : ""} type="button" onClick={() => setGoalProgramId(goal.program_id)} key={goal.id}><InstitutionMark institution={trackedProgram.college_code} decorative /><span>{trackedProgram.title}<small>{trackedProgram.award_type}{goal.is_primary ? " · Primary" : ""}</small></span></button>;
+        })}</div></div>}
 
         <div className="smccd-program-filters">
           <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Search program, award, or college" /></label>
@@ -518,7 +585,7 @@ export default function SmccdPlanner({
         <div className="smccd-degree-browser">
           <nav className="smccd-program-list" aria-label="Associate degree results">
             <div className="smccd-program-list-heading"><strong>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs`}</strong><span>Completed and planned units are kept separate</span></div>
-            {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult }) => <button className={`${goalProgramId === program.id ? "selected" : ""} institution-${program.college_code.toLowerCase()}`} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
+            {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult }) => <button className={`${goalProgramId === program.id ? "selected" : ""} ${goals.some((goal) => goal.program_id === program.id) ? "tracked" : ""} institution-${program.college_code.toLowerCase()}`} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
               <span className="smccd-program-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{program.award_type} · {SMCCD_COLLEGE_NAMES[program.college_code]}</small></span></span>
               <span className="smccd-program-row-progress"><strong>{programResult.requiredMajorUnits ? Math.min(programResult.completedMajorUnits, programResult.requiredMajorUnits) : programResult.completedMajorUnits} covered</strong><small>{programResult.requiredMajorUnits ? Math.min(programResult.projectedMajorUnits, programResult.requiredMajorUnits) : programResult.projectedMajorUnits} projected of {programResult.requiredMajorUnits || "review"} units</small></span>
               <CaretRight size={15} aria-hidden />
@@ -530,7 +597,12 @@ export default function SmccdPlanner({
               <header className={`smccd-degree-heading institution-${selectedProgram.college_code.toLowerCase()}`}>
                 <InstitutionMark institution={selectedProgram.college_code} size="rail" decorative />
                 <div><span>{SMCCD_COLLEGE_NAMES[selectedProgram.college_code]} · {selectedProgram.award_type}</span><h3>{selectedProgram.title}</h3><small>{selectedProgram.source_year} catalog</small></div>
-                <button className="primary-button small" type="button" onClick={() => void saveGoal()} disabled={busy || primaryGoal?.program_id === selectedProgram.id}>{primaryGoal?.program_id === selectedProgram.id ? "Primary goal" : "Set as goal"}</button>
+                <div className="smccd-degree-goal-actions">
+                  {!selectedGoal && <button className="primary-button small" type="button" onClick={() => void saveGoal()} disabled={busy}>Track degree</button>}
+                  {selectedGoal && !selectedGoal.is_primary && <button className="secondary-button small" type="button" onClick={() => void makePrimaryGoal(selectedGoal)} disabled={busy}>Make primary</button>}
+                  {selectedGoal?.is_primary && <span className="confidence-tag verified">Primary degree</span>}
+                  {selectedGoal && <button className="quiet-button small" type="button" onClick={() => void removeGoal(selectedGoal)} disabled={busy}>Stop tracking</button>}
+                </div>
               </header>
 
               <dl className="smccd-degree-facts">
@@ -548,7 +620,7 @@ export default function SmccdPlanner({
                     <summary><span><strong>{item.requirement.label}</strong><small>{item.missingSummary}</small></span><b className={`requirement-state ${item.status}`}>{stateLabel}</b></summary>
                     <div className="smccd-requirement-body">
                       {item.selectedCourses.length > 0 && <div><h5>Applied from your plan</h5><ul>{item.selectedCourses.map((course) => <li key={`${item.requirement.id}-${course.courseCode}`}><span><strong>{course.courseCode}</strong> {course.title}</span><small>{course.status} · {course.units} units · Grade {course.gradeLevel}{course.letterGrade ? ` · ${course.letterGrade}` : ""}</small></li>)}</ul></div>}
-                      {item.remainingOptions.length > 0 && item.status !== "satisfied" && <div><h5>Catalog options</h5><ul>{item.remainingOptions.slice(0, 8).map((course) => <li key={`${item.requirement.id}-${course.collegeCode}-${course.courseCode}`}><button type="button" onClick={() => findDegreeCourse(course.courseCode, course.collegeCode)}><span><strong>{course.courseCode}</strong> {course.title}</span><small>{course.units} units · Find in catalog</small></button></li>)}</ul>{item.remainingOptions.length > 8 && <small>{item.remainingOptions.length - 8} more options are listed in the official program page.</small>}</div>}
+                      {item.remainingOptions.length > 0 && item.status !== "satisfied" && <div><h5>Still needed: {item.missingSummary}</h5><ul>{item.remainingOptions.map((course) => <li key={`${item.requirement.id}-${course.collegeCode}-${course.courseCode}`}><button type="button" onClick={() => findDegreeCourse(course.courseCode, course.collegeCode)}><span><strong>{course.courseCode}</strong> {course.title}</span><small>{course.units} units · Open in course planner</small></button></li>)}</ul></div>}
                       {item.requirement.kind === "text_rule" && <p className="smccd-manual-rule">{item.requirement.raw_text ?? "This rule could not be reduced to a reliable course list."}</p>}
                       {item.manualReviewReason && item.requirement.kind !== "text_rule" && <p className="smccd-manual-rule">{item.manualReviewReason}</p>}
                     </div>

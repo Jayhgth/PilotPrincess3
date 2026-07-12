@@ -33,7 +33,7 @@ describe("OverviewPath", () => {
     />);
 
     expect(html).toContain("Credit composition");
-    expect(html).toContain("Saved schedule projection");
+    expect(html).toContain("GPA from entered grades");
     expect(html).toContain("Plan evidence");
     expect(html).toContain("Now");
     expect(html).toContain("Planned");
