@@ -3,22 +3,18 @@ import {
   CheckCircleIcon as CheckCircle,
   InfoIcon as Info,
   SlidersHorizontalIcon as SlidersHorizontal,
-  SparkleIcon as Sparkle,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import InstitutionMark from "@/components/InstitutionMark";
-import { evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { evaluateGpaScenario, initialGpaScenarioChoices, type GpaScenarioChoice } from "@/lib/gpa-planner";
 import type { InstitutionKey } from "@/lib/institutions";
 import { courseDisplayName, LETTER_GRADES } from "@/lib/planning";
 import type {
   Course,
-  EnrollmentPolicy,
   PlanCourse,
   SmccdCourse,
-  StudentEnrollmentPreference,
 } from "@/lib/models";
 import styles from "./gpa-planning-lab.module.css";
 
@@ -26,11 +22,6 @@ interface Props {
   rows: PlanCourse[];
   courses: Course[];
   smccdCourses: SmccdCourse[];
-  policies: EnrollmentPolicy[];
-  enrollmentPreference: StudentEnrollmentPreference;
-  busy: boolean;
-  onPreferenceChange: (preference: StudentEnrollmentPreference) => void;
-  onSavePreference: () => void | Promise<void>;
   onOpenCourses: () => void;
   onScenarioChange: (context: Record<string, unknown>) => void;
 }
@@ -53,11 +44,6 @@ export default function GpaPlanningLab({
   rows,
   courses,
   smccdCourses,
-  policies,
-  enrollmentPreference,
-  busy,
-  onPreferenceChange,
-  onSavePreference,
   onOpenCourses,
   onScenarioChange
 }: Props) {
@@ -65,25 +51,11 @@ export default function GpaPlanningLab({
   const [target, setTarget] = useState(4);
   const courseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const smccdMap = useMemo(() => new Map(smccdCourses.map((course) => [course.id, course])), [smccdCourses]);
-  const policy = useMemo(() => policyForPreference(policies, enrollmentPreference), [policies, enrollmentPreference]);
   const effectiveChoices = useMemo(() => {
     const currentMap = new Map(choices.map((choice) => [choice.planCourseId, choice]));
     return initialGpaScenarioChoices(rows).map((choice) => currentMap.get(choice.planCourseId) ?? choice);
   }, [rows, choices]);
   const result = useMemo(() => evaluateGpaScenario(rows, effectiveChoices, target), [rows, effectiveChoices, target]);
-  const appliedRows = useMemo(() => {
-    const choiceMap = new Map(effectiveChoices.map((choice) => [choice.planCourseId, choice]));
-    return rows.flatMap((row) => {
-      if (row.status === "completed") return [row];
-      const choice = choiceMap.get(row.id);
-      if (row.status === "planned" && choice?.included === false) return [];
-      return [{ ...row, letter_grade: choice?.expectedGrade || row.letter_grade }];
-    });
-  }, [rows, effectiveChoices]);
-  const enrollmentTerms = useMemo(
-    () => policy ? evaluateEnrollmentSchedule(appliedRows, policy, enrollmentPreference) : [],
-    [appliedRows, policy, enrollmentPreference]
-  );
   const openRows = rows.filter((row) => row.status !== "completed");
 
   useEffect(() => {
@@ -93,10 +65,9 @@ export default function GpaPlanningLab({
       all_a_schedule_ceiling: result.bestCase.projectedWeighted,
       target_weighted_gpa: target,
       target_uniform_grade: result.targetGrade,
-      missing_grade_assumptions: result.missingExpectedGrades,
-      enrollment_terms: enrollmentTerms.map((term) => ({ school_year: term.schoolYear, term: term.term, units: term.units, state: term.state }))
+      missing_grade_assumptions: result.missingExpectedGrades
     });
-  }, [result, target, enrollmentTerms, onScenarioChange]);
+  }, [result, target, onScenarioChange]);
 
   function updateChoice(id: string, patch: Partial<GpaScenarioChoice>) {
     setChoices((current) => {
@@ -162,26 +133,7 @@ export default function GpaPlanningLab({
         </div>
       </section>
 
-      <section className={`${styles.section} ${styles.collegeSection}`}>
-        <div className={styles.sectionHeading}>
-          <div><span className={styles.dualLabel}>Dual enrollment guardrail</span><h2>College units by term</h2><p>SMCCD totals combine CSM, Skyline, and Cañada. Limits are policy records, so another district can be added without changing the calculator.</p></div>
-        </div>
-        {policy ? <>
-          <div className={styles.policyControls}>
-            <label><span>Program</span><select value={enrollmentPreference.program_type} onChange={(event) => onPreferenceChange({ ...enrollmentPreference, program_type: event.target.value as StudentEnrollmentPreference["program_type"] })}><option value="concurrent">Concurrent enrollment</option><option value="dual">Dual enrollment partnership</option></select></label>
-            <label><span>Planning limit</span><select value={enrollmentPreference.limit_mode} onChange={(event) => { const limitMode = event.target.value as StudentEnrollmentPreference["limit_mode"]; onPreferenceChange({ ...enrollmentPreference, limit_mode: limitMode, custom_unit_limit: limitMode === "custom" ? enrollmentPreference.custom_unit_limit ?? policy.recommended_max_units : enrollmentPreference.custom_unit_limit }); }}><option value="recommended">Conservative · {policy.recommended_max_units} units</option><option value="fee_free">District fee-free · {policy.fee_free_max_units}</option><option value="absolute">K-12 maximum · {policy.absolute_max_units}</option><option value="custom">Custom</option></select></label>
-            {enrollmentPreference.limit_mode === "custom" && <label><span>Custom units</span><input type="number" min={0} max={policy.absolute_max_units} step={0.5} value={enrollmentPreference.custom_unit_limit ?? ""} onChange={(event) => onPreferenceChange({ ...enrollmentPreference, custom_unit_limit: event.target.value ? Number(event.target.value) : null })} /></label>}
-            <button className="secondary-button small" type="button" onClick={() => void onSavePreference()} disabled={busy}>Save guardrail</button>
-          </div>
-          {enrollmentTerms.length ? <div className={styles.termList}>{enrollmentTerms.map((term) => <div className={styles.termRow} key={term.key} data-state={term.state}>
-            <span><strong>{term.term[0].toUpperCase() + term.term.slice(1)} {term.schoolYear}</strong><small>{term.message}</small></span>
-            <b>{term.units} / {term.selectedLimit} units</b>
-          </div>)}</div> : <div className={styles.empty}><InstitutionMark institution="smccd" decorative /><span><strong>No SMCCD units in the open schedule</strong><small>Add a college course to activate term checks.</small></span></div>}
-          <div className={styles.policyNote}><Info size={17} /><p><strong>{policy.source_label}, {policy.source_year}:</strong> {policy.notes} <a href={policy.source_url} target="_blank" rel="noreferrer">Open source</a></p></div>
-        </> : <div className={styles.empty}><Warning size={19} /><span><strong>No policy record loaded</strong><small>Apply the enrollment policy migration before using college-unit guardrails.</small></span></div>}
-      </section>
-
-      <aside className={styles.aiNote}><Sparkle size={17} weight="duotone" /><p><strong>Pilot can compare this calculator from the global chat.</strong> It reads these deterministic results and must ask before changing the saved schedule.</p></aside>
+      <aside className={styles.aiNote}><Info size={17} /><p><strong>Pilot can compare this calculator from the global chat.</strong> It reads these deterministic results and must ask before changing the saved schedule.</p></aside>
     </div>
   );
 }

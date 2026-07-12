@@ -20,7 +20,7 @@ import {
   ListChecksIcon as ListChecks,
   LockKeyIcon as LockKey,
   PencilSimpleIcon as PencilSimple,
-  SparkleIcon as Sparkle,
+  ListPlusIcon as ListPlus,
   TrashIcon as Trash
 } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
@@ -164,7 +164,7 @@ function KanbanColumn({
       <div className="kanban-column-body">
         {rows.length ? children : <div className="kanban-empty"><strong>No courses</strong><p>{status === "completed" ? "Import a transcript to add finished work." : status === "current" ? "Drop a course here when it starts." : "Add courses from either catalog."}</p><button className="quiet-button small" type="button" onClick={status === "completed" ? onImportTranscript : onBrowseCourses}>{status === "completed" ? "Import transcript" : "Find courses"}</button></div>}
       </div>
-      {status === "planned" && <button className="kanban-column-action" type="button" onClick={onGeneratePlan} disabled={busy}><Sparkle size={14} /> Suggest courses</button>}
+      {status === "planned" && <button className="kanban-column-action" type="button" onClick={onGeneratePlan} disabled={busy}><ListPlus size={14} /> Suggest courses</button>}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import type { EnrollmentPolicy, PlanCourse, StudentEnrollmentPreference } from "@/lib/models";
 
-export type EnrollmentLimitState = "within" | "review" | "over_selected" | "blocked";
+export type EnrollmentLimitState = "within" | "review" | "over_policy" | "blocked";
 
 export interface EnrollmentTermEvaluation {
   key: string;
@@ -34,10 +34,7 @@ export function policyForPreference(
   ) ?? null;
 }
 
-export function selectedEnrollmentLimit(policy: EnrollmentPolicy, preference: StudentEnrollmentPreference) {
-  if (preference.limit_mode === "fee_free") return Number(policy.fee_free_max_units);
-  if (preference.limit_mode === "absolute") return Number(policy.absolute_max_units);
-  if (preference.limit_mode === "custom") return Number(preference.custom_unit_limit ?? policy.recommended_max_units);
+export function selectedEnrollmentLimit(policy: EnrollmentPolicy) {
   return Number(policy.recommended_max_units);
 }
 
@@ -48,10 +45,9 @@ function planTerms(row: PlanCourse): Array<"fall" | "spring" | "summer"> {
 
 export function evaluateEnrollmentSchedule(
   rows: readonly PlanCourse[],
-  policy: EnrollmentPolicy,
-  preference: StudentEnrollmentPreference
+  policy: EnrollmentPolicy
 ): EnrollmentTermEvaluation[] {
-  const selectedLimit = selectedEnrollmentLimit(policy, preference);
+  const selectedLimit = selectedEnrollmentLimit(policy);
   const groups = new Map<string, { schoolYear: string; term: "fall" | "spring" | "summer"; units: number; courseIds: string[] }>();
 
   for (const row of rows) {
@@ -76,18 +72,16 @@ export function evaluateEnrollmentSchedule(
     const recommended = Number(policy.recommended_max_units);
     const feeFree = Number(policy.fee_free_max_units);
     let state: EnrollmentLimitState = "within";
-    let message = `${units} units stay within the selected ${selectedLimit}-unit limit.`;
+    let message = `${units} units stay within the district's ${selectedLimit}-unit ${policy.program_type}-enrollment threshold.`;
     if (units > absolute) {
       state = "blocked";
       message = `${units} units exceed the source-backed ${absolute}-unit K-12 maximum.`;
-    } else if (units > selectedLimit) {
-      state = "over_selected";
-      message = `${units} units exceed the selected ${selectedLimit}-unit planning limit.`;
-    } else if (units > recommended) {
+    } else if (units > feeFree) {
       state = "review";
-      message = units <= feeFree
-        ? `${units} units exceed the conservative ${recommended}-unit threshold but remain within the district's ${feeFree}-unit fee-free figure. Verify fees and approval.`
-        : `${units} units exceed the ${feeFree}-unit fee-free figure. Fees and additional approval may apply.`;
+      message = `${units} units exceed the district's ${feeFree}-unit fee-free figure. Fees and additional approval may apply.`;
+    } else if (units > recommended) {
+      state = "over_policy";
+      message = `${units} units exceed the ${recommended}-unit ${policy.program_type}-enrollment planning threshold. Verify fees and approval.`;
     }
     return {
       key,

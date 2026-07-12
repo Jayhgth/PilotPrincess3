@@ -113,16 +113,61 @@
   line-height: var(--leading-supporting);
 }
 
-.pilotFields {
-  max-width: 720px;
+.fieldsetPlain {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.fieldsetPlain legend {
+  margin-bottom: 10px;
+  color: var(--ink);
+  font-size: var(--type-body);
+  font-weight: 650;
+}
+
+.reviewField {
+  max-width: 420px;
+  margin-top: 18px;
 }
 
 .error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
   margin: 15px 0 0;
   color: var(--danger);
   font-size: var(--type-supporting);
   line-height: var(--leading-supporting);
 }
+
+.archiveSection {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.archiveSection summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-soft);
+  font-size: var(--type-body);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.archiveSection summary span { margin-left: auto; }
+.archiveSection > p { max-width: 68ch; margin: 8px 0 12px; color: var(--ink-soft); font-size: var(--type-supporting); }
+.archiveList { display: grid; gap: 3px; }
+.archiveRow { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 14px; border-radius: 7px; padding: 8px 9px; }
+.archiveRow:hover { background: var(--surface-muted); }
+.archiveRow > span { display: grid; gap: 2px; min-width: 0; }
+.archiveRow strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--type-body); }
+.archiveRow small, .archiveEmpty { color: var(--ink-faint); font-size: var(--type-supporting); }
+.archiveEmpty { padding: 12px 0 2px; }
 
 .saveRow {
   display: flex;

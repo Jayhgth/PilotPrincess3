@@ -71,7 +71,7 @@ The reference-app ideas adopted from DegreeDoesntWorks are indexed search, cours
 
 ## Concurrent and dual-enrollment limits
 
-Unit limits are stored in `enrollment_policies` by provider, program type, term, and semester or quarter system. `student_enrollment_preferences` stores which source-backed threshold the student wants enforced. Do not hardcode one district's number into planning logic.
+Unit limits are stored in `enrollment_policies` by provider, program type, term, and semester or quarter system. `student_enrollment_preferences` stores the student's concurrent- or dual-enrollment context; it does not let the student invent a different policy threshold. Course planning shows a warning only when an open term crosses the matching district threshold. Do not hardcode one district's number into planning logic.
 
 For the reviewed 2026 SMCCD sources:
 

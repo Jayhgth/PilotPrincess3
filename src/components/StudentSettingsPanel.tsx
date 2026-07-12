@@ -5,13 +5,16 @@ import {
   TrashIcon as Trash,
   XIcon as X
 } from "@phosphor-icons/react";
+import type { Session } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
-import { AI_MODEL_OPTIONS } from "@/lib/ai-preferences";
+import PilotSettingsSection from "@/components/PilotSettingsSection";
 import type {
+  EnrollmentPolicy,
   GradeLevel,
   GraduationRequirement,
   RequirementArea,
   StudentSettings,
+  StudentEnrollmentPreference,
   TimelineTask
 } from "@/lib/models";
 import styles from "./StudentSettingsPanel.module.css";
@@ -35,9 +38,6 @@ export type StudentSettingsPatch = Partial<Pick<
   | "plan_end_grade"
   | "tracker_mode"
   | "tracked_requirement_areas"
-  | "ai_enabled"
-  | "ai_review_mode"
-  | "ai_model"
 >>;
 
 export interface NextStepDraft {
@@ -48,11 +48,16 @@ export interface NextStepDraft {
 }
 
 interface StudentSettingsPanelProps {
+  session: Session;
   settings: StudentSettings;
   requirements: GraduationRequirement[];
   tasks: TimelineTask[];
+  enrollmentPolicies: EnrollmentPolicy[];
+  enrollmentPreference: StudentEnrollmentPreference | null;
   busy?: boolean;
   onSave: (patch: StudentSettingsPatch) => void | Promise<void>;
+  onSaveEnrollmentProgram: (programType: StudentEnrollmentPreference["program_type"]) => void | Promise<void>;
+  onAiPreferencesChanged: () => void | Promise<void>;
   onAddTask: (draft: NextStepDraft) => boolean | void | Promise<boolean | void>;
   onUpdateTask: (id: string, patch: Partial<TimelineTask>) => void | Promise<void>;
   onDeleteTask: (id: string) => void | Promise<void>;
@@ -67,9 +72,6 @@ interface SettingsDraft {
   planEndGrade: GradeLevel | null;
   trackerMode: StudentSettings["tracker_mode"];
   trackedAreas: RequirementArea[];
-  aiEnabled: boolean;
-  aiReviewMode: StudentSettings["ai_review_mode"];
-  aiModel: StudentSettings["ai_model"];
 }
 
 interface TaskEditDraft {
@@ -95,10 +97,7 @@ function settingsDraft(settings: StudentSettings): SettingsDraft {
     planStartGrade: settings.plan_start_grade,
     planEndGrade: settings.plan_end_grade,
     trackerMode: settings.tracker_mode,
-    trackedAreas: settings.tracked_requirement_areas,
-    aiEnabled: settings.ai_enabled,
-    aiReviewMode: settings.ai_review_mode,
-    aiModel: settings.ai_model
+    trackedAreas: settings.tracked_requirement_areas
   };
 }
 
@@ -315,11 +314,16 @@ function NextStepsManager({
 }
 
 export default function StudentSettingsPanel({
+  session,
   settings,
   requirements,
   tasks,
+  enrollmentPolicies,
+  enrollmentPreference,
   busy = false,
   onSave,
+  onSaveEnrollmentProgram,
+  onAiPreferencesChanged,
   onAddTask,
   onUpdateTask,
   onDeleteTask
@@ -328,6 +332,8 @@ export default function StudentSettingsPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [savingEnrollment, setSavingEnrollment] = useState(false);
+  const [enrollmentProgram, setEnrollmentProgram] = useState<StudentEnrollmentPreference["program_type"]>(enrollmentPreference?.program_type ?? "concurrent");
 
   const allAreas = useMemo(() => requirements.map((requirement) => requirement.area), [requirements]);
   const dirty = draft.preferredName !== settings.preferred_name
@@ -337,10 +343,7 @@ export default function StudentSettingsPanel({
     || draft.planStartGrade !== settings.plan_start_grade
     || draft.planEndGrade !== settings.plan_end_grade
     || draft.trackerMode !== settings.tracker_mode
-    || !sameAreas(draft.trackedAreas, settings.tracked_requirement_areas)
-    || draft.aiEnabled !== settings.ai_enabled
-    || draft.aiReviewMode !== settings.ai_review_mode
-    || draft.aiModel !== settings.ai_model;
+    || !sameAreas(draft.trackedAreas, settings.tracked_requirement_areas);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -349,6 +352,10 @@ export default function StudentSettingsPanel({
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [settings]);
+
+  useEffect(() => {
+    setEnrollmentProgram(enrollmentPreference?.program_type ?? "concurrent");
+  }, [enrollmentPreference]);
 
   function toggleArea(area: RequirementArea) {
     setDraft((current) => ({
@@ -380,7 +387,6 @@ export default function StudentSettingsPanel({
     const normalizedAreas = draft.trackerMode === "full"
       ? (allAreas.length > 0 ? allAreas : settings.tracked_requirement_areas)
       : draft.trackedAreas;
-    const normalizedReviewMode = draft.aiEnabled ? draft.aiReviewMode : "manual";
     const patch: StudentSettingsPatch = {};
     if (preferredName !== settings.preferred_name) patch.preferred_name = preferredName;
     if (draft.age !== settings.age) patch.age = draft.age;
@@ -390,14 +396,11 @@ export default function StudentSettingsPanel({
     if (draft.planEndGrade !== settings.plan_end_grade) patch.plan_end_grade = draft.planEndGrade;
     if (draft.trackerMode !== settings.tracker_mode) patch.tracker_mode = draft.trackerMode;
     if (!sameAreas(normalizedAreas, settings.tracked_requirement_areas)) patch.tracked_requirement_areas = normalizedAreas;
-    if (draft.aiEnabled !== settings.ai_enabled) patch.ai_enabled = draft.aiEnabled;
-    if (normalizedReviewMode !== settings.ai_review_mode) patch.ai_review_mode = normalizedReviewMode;
-    if (draft.aiModel !== settings.ai_model) patch.ai_model = draft.aiModel;
 
     setSaving(true);
     try {
       await onSave(patch);
-      setDraft((current) => ({ ...current, preferredName, trackedAreas: normalizedAreas, aiReviewMode: normalizedReviewMode }));
+      setDraft((current) => ({ ...current, preferredName, trackedAreas: normalizedAreas }));
       setSaved(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Settings could not be saved.");
@@ -411,6 +414,7 @@ export default function StudentSettingsPanel({
 
   return (
     <div className={styles.settingsPanel}>
+      <PilotSettingsSection session={session} settings={settings} onChanged={onAiPreferencesChanged} />
       <section className={`content-section ${styles.section}`} aria-labelledby="student-settings-heading">
         <header className={styles.sectionHeading}>
           <div>
@@ -450,21 +454,33 @@ export default function StudentSettingsPanel({
             </fieldset>
           )}
 
-          <fieldset className={styles.fieldset}>
-            <legend>Pilot Assistant</legend>
-            <label className={styles.switchRow}><input type="checkbox" checked={draft.aiEnabled} disabled={!settings.ai_connection_approved_at && !draft.aiEnabled} onChange={(event) => setDraft({ ...draft, aiEnabled: event.target.checked, aiReviewMode: event.target.checked ? draft.aiReviewMode : "manual" })} /><span><strong>Enable Pilot</strong><small>{settings.ai_connection_approved_at ? "Pilot stays off unless you choose to enable it." : "Approve and test the connection from Pilot setup before enabling it."}</small></span></label>
-            <div className={`form-grid two ${styles.pilotFields}`}>
-              <label className="form-field"><span>Model</span><select disabled={!draft.aiEnabled} value={draft.aiModel} onChange={(event) => setDraft({ ...draft, aiModel: event.target.value as StudentSettings["ai_model"] })}>{AI_MODEL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>Changing models may require a connection test before Pilot can be enabled.</small></label>
-              <label className="form-field"><span>Change review</span><select disabled={!draft.aiEnabled} value={draft.aiReviewMode} onChange={(event) => setDraft({ ...draft, aiReviewMode: event.target.value as StudentSettings["ai_review_mode"] })}><option value="manual">Manual approval</option><option value="auto_review">Independent auto-review</option></select><small>{draft.aiReviewMode === "auto_review" ? "A separate reviewer applies approved changes and declines unsafe ones." : "You approve each proposed change before it is applied."}</small></label>
-            </div>
-          </fieldset>
-
           {error && <p className={styles.error} role="alert">{error}</p>}
           <div className={styles.saveRow}>
             {saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Settings saved</span>}
             <button className="primary-button" type="submit" disabled={controlsDisabled || !dirty}>{saving ? "Saving" : "Save settings"}</button>
           </div>
         </form>
+      </section>
+
+      <section className={`content-section ${styles.section}`} aria-labelledby="college-planning-heading">
+        <header className={styles.sectionHeading}>
+          <div>
+            <h2 id="college-planning-heading">College planning</h2>
+            <p>This tells course suggestions and Pilot which district policy applies. Unit limits come from the district, not from a user-set guardrail.</p>
+          </div>
+        </header>
+        <fieldset className={styles.fieldsetPlain}>
+          <legend>SMCCD enrollment type</legend>
+          <div className={styles.radioRows}>
+            {(["concurrent", "dual"] as const).map((programType) => {
+              const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
+              return <label key={programType}><input type="radio" name="smccd-program-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current district planning threshold.` : "District policy is not loaded."}</small></span></label>;
+            })}
+          </div>
+        </fieldset>
+        <div className={styles.saveRow}>
+          <button className="primary-button" type="button" disabled={busy || savingEnrollment || !enrollmentPreference || enrollmentProgram === enrollmentPreference.program_type} onClick={() => void (async () => { setSavingEnrollment(true); try { await onSaveEnrollmentProgram(enrollmentProgram); } finally { setSavingEnrollment(false); } })()}>{savingEnrollment ? "Saving" : "Save college planning"}</button>
+        </div>
       </section>
 
       <NextStepsManager tasks={tasks} busy={busy} onAddTask={onAddTask} onUpdateTask={onUpdateTask} onDeleteTask={onDeleteTask} />

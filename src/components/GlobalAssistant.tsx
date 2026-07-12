@@ -3,21 +3,19 @@ import {
   ArrowUpIcon as ArrowUp,
   BrainIcon as Brain,
   CaretDownIcon as CaretDown,
+  ChatCircleDotsIcon as ChatCircleDots,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircle,
   ClockIcon as Clock,
   CopyIcon as Copy,
   CpuIcon as Cpu,
-  GearSixIcon as GearSix,
   ImageIcon as Image,
   PaperclipIcon as Paperclip,
   PaperPlaneRightIcon as PaperPlaneRight,
   PencilSimpleIcon as PencilSimple,
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
-  SparkleIcon as Sparkle,
   StopIcon as Stop,
-  UserCircleCheckIcon as UserCircleCheck,
   ArrowCounterClockwiseIcon as ArrowCounterClockwise,
   WrenchIcon as Wrench,
   WarningIcon as Warning,
@@ -28,8 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent,
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import AssistantMarkdown from "@/components/AssistantMarkdown";
-import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
-import type { AiModel, AiReviewMode } from "@/lib/ai-preferences";
+import type { AiReviewMode } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
 import { assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
@@ -42,14 +39,10 @@ interface GlobalAssistantProps {
   pageContext: Record<string, unknown>;
   preferences: {
     enabled: boolean;
-    model: AiModel;
     reviewMode: AiReviewMode;
-    approvedAt: string | null;
-    testedAt: string | null;
   };
   onClose: () => void;
   onDataChanged: () => void | Promise<void>;
-  onPreferencesChanged: () => void | Promise<void>;
 }
 
 interface ConversationPayload {
@@ -88,8 +81,6 @@ interface SendMessageOptions {
   clearComposerDraft?: boolean;
 }
 
-type AssistantSettingsSection = "connection" | "archive";
-
 const PANEL_WIDTH_KEY = "pilot-princess:assistant-width";
 const DEFAULT_PANEL_WIDTH = 420;
 const MIN_PANEL_WIDTH = 360;
@@ -105,13 +96,6 @@ function loadStoredNumber(key: string, fallback: number) {
   if (typeof window === "undefined") return fallback;
   const value = Number(window.localStorage.getItem(key));
   return Number.isFinite(value) ? value : fallback;
-}
-
-function archiveExpiryLabel(archivedAt: string | null) {
-  const archivedDate = new Date(archivedAt ?? "");
-  if (Number.isNaN(archivedDate.getTime())) return "Deletes 14 days after archiving";
-  archivedDate.setDate(archivedDate.getDate() + 14);
-  return `Deletes ${archivedDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
 const EMPTY_PAYLOAD: ConversationPayload = {
@@ -220,7 +204,7 @@ const TOOL_LABELS: Record<string, string> = {
   remove_plan_course: "Remove course",
   remove_plan_courses: "Remove courses",
   update_plan_course: "Update course",
-  update_enrollment_preference: "Update enrollment guardrail",
+  update_enrollment_preference: "Update college enrollment type",
   add_next_step: "Add next step",
   complete_next_step: "Complete next step",
   complete_next_steps: "Complete next steps",
@@ -367,7 +351,7 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   );
 }
 
-export default function GlobalAssistant({ session, open, pageContext, preferences, onClose, onDataChanged, onPreferencesChanged }: GlobalAssistantProps) {
+export default function GlobalAssistant({ session, open, pageContext, preferences, onClose, onDataChanged }: GlobalAssistantProps) {
   const [data, setData] = useState<ConversationPayload>(EMPTY_PAYLOAD);
   const [liveEvents, setLiveEvents] = useState<LiveActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -377,30 +361,16 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busyTool, setBusyTool] = useState<string | null>(null);
   const [autoReviewing, setAutoReviewing] = useState(false);
-  const [reviewMode, setReviewMode] = useState<AiReviewMode>(preferences.reviewMode);
-  const [reviewMenuOpen, setReviewMenuOpen] = useState(false);
-  const [savingReviewMode, setSavingReviewMode] = useState(false);
+  const reviewMode = preferences.reviewMode;
   const [images, setImages] = useState<ComposerImage[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [draggingImage, setDraggingImage] = useState(false);
   const [previewImage, setPreviewImage] = useState<{ url: string; name: string } | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
-  const [settingsSection, setSettingsSection] = useState<AssistantSettingsSection>("connection");
-  const [archivedConversations, setArchivedConversations] = useState<AiConversation[]>([]);
-  const [archiveLoaded, setArchiveLoaded] = useState(false);
-  const [loadingArchived, setLoadingArchived] = useState(false);
   const [busyArchive, setBusyArchive] = useState<string | null>(null);
   const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
   const [panelWidth, setPanelWidth] = useState(() => clamp(loadStoredNumber(PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH), MIN_PANEL_WIDTH, typeof window === "undefined" ? MAX_PANEL_WIDTH : assistantDockedMaxWidth(window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_WORKSPACE_WITH_SIDEBAR)));
-  const [savingPreferences, setSavingPreferences] = useState(false);
-  const [setup, setSetup] = useState<CodexSetupValue>({
-    enabled: preferences.enabled,
-    model: preferences.model,
-    approved: Boolean(preferences.approvedAt),
-    testedAt: preferences.testedAt
-  });
   const abortRef = useRef<AbortController | null>(null);
   const runningRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -463,21 +433,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     return changed;
   }, [authorizedFetch, onDataChanged]);
 
-  const loadArchivedConversations = useCallback(async () => {
-    setLoadingArchived(true);
-    try {
-      const response = await authorizedFetch("/api/ai/conversations?archived=true");
-      const payload = await response.json() as ConversationPayload & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Archived conversations could not be loaded.");
-      setArchivedConversations(payload.conversations);
-      setArchiveLoaded(true);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Archived conversations could not be loaded.");
-    } finally {
-      setLoadingArchived(false);
-    }
-  }, [authorizedFetch]);
-
   useEffect(() => {
     if (!open || !preferences.enabled) return;
     const loadTimer = window.setTimeout(() => void loadConversation(data.activeConversation?.id), 0);
@@ -510,12 +465,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }, [autoReviewToolCalls, data.activeConversation?.id, data.toolCalls, loadConversation, open, reviewMode, running]);
 
   useEffect(() => {
-    if (!settingsOpen || settingsSection !== "archive" || archiveLoaded) return;
-    const timer = window.setTimeout(() => void loadArchivedConversations(), 0);
-    return () => window.clearTimeout(timer);
-  }, [archiveLoaded, loadArchivedConversations, settingsOpen, settingsSection]);
-
-  useEffect(() => {
     const timer = window.setTimeout(() => setDraft(window.localStorage.getItem(assistantDraftKey(session.user.id, activeId)) ?? ""), 0);
     return () => window.clearTimeout(timer);
   }, [activeId, session.user.id]);
@@ -543,13 +492,11 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || running) return;
       if (previewImage) setPreviewImage(null);
-      else if (settingsOpen) setSettingsOpen(false);
-      else if (reviewMenuOpen) setReviewMenuOpen(false);
       else onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open, previewImage, reviewMenuOpen, running, settingsOpen]);
+  }, [onClose, open, previewImage, running]);
 
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { queueRef.current = queuedMessages; }, [queuedMessages]);
@@ -580,12 +527,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     setLiveEvents([]);
     setHistoryOpen(false);
     return payload.conversation;
-  }
-
-  function openSettings(section: AssistantSettingsSection = "connection") {
-    setSettingsSection(section);
-    setHistoryOpen(false);
-    setSettingsOpen(true);
   }
 
   function handleDockResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
@@ -619,64 +560,34 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     delete document.documentElement.dataset.assistantResizing;
   }
 
-  async function updateConversationArchive(conversationId: string, archived: boolean) {
+  async function archiveConversation(conversationId: string) {
     if (running || busyArchive) return;
-    const conversation = archived
-      ? data.conversations.find((candidate) => candidate.id === conversationId)
-      : archivedConversations.find((candidate) => candidate.id === conversationId);
+    const conversation = data.conversations.find((candidate) => candidate.id === conversationId);
     if (!conversation) return;
     const previousData = data;
-    const previousArchived = archivedConversations;
-    const archiveTime = new Date().toISOString();
-    const optimisticConversation: AiConversation = {
-      ...conversation,
-      is_archived: archived,
-      archived_at: archived ? archiveTime : null,
-      updated_at: archiveTime
-    };
     const remainingActive = data.conversations.filter((candidate) => candidate.id !== conversationId);
     const nextActive = data.activeConversation?.id === conversationId ? remainingActive[0] ?? null : data.activeConversation;
 
     setBusyArchive(conversationId);
     setError(null);
-    if (archived) {
-      setData((current) => ({
-        ...current,
-        conversations: current.conversations.filter((candidate) => candidate.id !== conversationId),
-        ...(current.activeConversation?.id === conversationId
-          ? { activeConversation: nextActive, messages: [], events: [], toolCalls: [] }
-          : {})
-      }));
-      if (archiveLoaded) {
-        setArchivedConversations((current) => [optimisticConversation, ...current]);
-      }
-    } else {
-      setArchivedConversations((current) => current.filter((candidate) => candidate.id !== conversationId));
-      setData((current) => ({ ...current, conversations: [optimisticConversation, ...current.conversations] }));
-    }
+    setData((current) => ({
+      ...current,
+      conversations: current.conversations.filter((candidate) => candidate.id !== conversationId),
+      ...(current.activeConversation?.id === conversationId
+        ? { activeConversation: nextActive, messages: [], events: [], toolCalls: [] }
+        : {})
+    }));
     try {
       const response = await authorizedFetch("/api/ai/conversations", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversationId, archived })
+        body: JSON.stringify({ conversationId, archived: true })
       });
       const payload = await response.json() as { conversation?: AiConversation; error?: string };
       if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "The conversation could not be updated.");
-      if (archived) {
-        if (archiveLoaded) {
-          setArchivedConversations((current) => current.map((candidate) => candidate.id === conversationId ? payload.conversation! : candidate));
-        }
-        if (data.activeConversation?.id === conversationId && nextActive) await loadConversation(nextActive.id);
-      } else {
-        setData((current) => ({
-          ...current,
-          conversations: current.conversations.map((candidate) => candidate.id === conversationId ? payload.conversation! : candidate)
-        }));
-        if (!data.activeConversation) await loadConversation(payload.conversation.id);
-      }
+      if (data.activeConversation?.id === conversationId && nextActive) await loadConversation(nextActive.id);
     } catch (caught) {
       setData(previousData);
-      setArchivedConversations(previousArchived);
       setError(caught instanceof Error ? caught.message : "The conversation could not be updated.");
     } finally {
       setBusyArchive(null);
@@ -949,31 +860,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }
 
-  async function updateReviewMode(mode: AiReviewMode) {
-    if (mode === reviewMode) {
-      setReviewMenuOpen(false);
-      return;
-    }
-    setSavingReviewMode(true);
-    setError(null);
-    try {
-      const response = await authorizedFetch("/api/ai/review-mode", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode })
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Review mode could not be changed.");
-      setReviewMode(mode);
-      setReviewMenuOpen(false);
-      await onPreferencesChanged();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Review mode could not be changed.");
-    } finally {
-      setSavingReviewMode(false);
-    }
-  }
-
   async function decideTool(call: AiToolCall, decision: "confirm" | "reject") {
     setBusyTool(call.id);
     setError(null);
@@ -988,26 +874,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       await loadConversation(call.conversation_id);
     } finally {
       setBusyTool(null);
-    }
-  }
-
-  async function savePreferences() {
-    setSavingPreferences(true);
-    setError(null);
-    try {
-      const response = await authorizedFetch("/api/ai/preferences", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(setup)
-      });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Pilot settings could not be saved.");
-      await onPreferencesChanged();
-      setSettingsOpen(false);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Pilot settings could not be saved.");
-    } finally {
-      setSavingPreferences(false);
     }
   }
 
@@ -1042,7 +908,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         <header className={styles.header}>
           <div className={styles.conversationPicker}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
-              <Sparkle size={15} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={11} />
+              <ChatCircleDots size={15} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={11} />
             </button>
             {historyOpen && <div className={styles.historyMenu}>
               <button className={styles.newConversation} type="button" onClick={() => void createConversation()}><Plus size={14} /> New conversation</button>
@@ -1054,14 +920,13 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 </form> : <>
                   <button className={styles.historySelect} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}><span>{conversation.title}</span></button>
                   <button className={styles.renameConversationButton} type="button" onClick={() => { setRenamingConversationId(conversation.id); setRenameDraft(conversation.title); }} disabled={running} aria-label={`Rename ${conversation.title}`} title="Rename conversation"><PencilSimple size={14} /></button>
-                  <button className={styles.archiveConversation} type="button" onClick={() => void updateConversationArchive(conversation.id, true)} disabled={running || busyArchive === conversation.id} aria-label={`Archive ${conversation.title}`} title="Archive conversation"><Archive size={14} /></button>
+                  <button className={styles.archiveConversation} type="button" onClick={() => void archiveConversation(conversation.id)} disabled={running || busyArchive === conversation.id} aria-label={`Archive ${conversation.title}`} title="Archive conversation"><Archive size={14} /></button>
                 </>}
               </div>)}</div>
             </div>}
           </div>
           <div className={styles.headerActions}>
             <button type="button" onClick={() => void createConversation()} aria-label="New conversation" title="New conversation"><Plus size={15} /></button>
-            <button type="button" onClick={() => openSettings("connection")} aria-label="Pilot settings" title="Settings"><GearSix size={15} /></button>
             <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant" title="Close"><X size={16} /></button>
           </div>
         </header>
@@ -1070,7 +935,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         <div className={styles.timeline} ref={scrollRef}>
           {loading && !data.messages.length ? <div className={styles.loadingHistory}><ShinyText text="Opening conversation" speed={1.8} /></div> : null}
           {!loading && !data.messages.length && !running ? <div className={styles.empty}>
-            <Sparkle size={24} weight="duotone" />
+            <ChatCircleDots size={24} />
             <h2>Ask about your plan</h2>
             <p>Pilot can read your records, search eligible courses, and {reviewMode === "auto_review" ? "apply changes after an independent review" : "prepare exact changes for your approval"}.</p>
             <div>{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void submitMessage(suggestion)}>{suggestion}</button>)}</div>
@@ -1125,21 +990,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 <span className={styles.contextChip} title={`Using ${String(pageContext.label ?? "this page")} context`}>{String(pageContext.label ?? "Page")}</span>
               </div>
               <div className={styles.composerActions}>
-                <div className={styles.reviewMode} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setReviewMenuOpen(false); }}>
-                  <button type="button" onClick={() => setReviewMenuOpen((current) => !current)} disabled={running || savingReviewMode} aria-label={`Change review mode. Current mode: ${reviewMode === "auto_review" ? "Auto-review" : "Manual"}`} aria-haspopup="menu" aria-expanded={reviewMenuOpen} title="Change review mode">
-                    {reviewMode === "auto_review" ? <ShieldCheck size={14} /> : <UserCircleCheck size={14} />}
-                    <span>{reviewMode === "auto_review" ? "Auto" : "Manual"}</span>
-                    <CaretDown size={10} />
-                  </button>
-                  {reviewMenuOpen && <div className={styles.reviewMenu} role="menu" aria-label="Change review mode">
-                    <button type="button" role="menuitemradio" aria-checked={reviewMode === "manual"} onClick={() => void updateReviewMode("manual")}>
-                      <UserCircleCheck size={16} /><span><strong>Manual</strong><small>You approve every proposed change.</small></span>{reviewMode === "manual" && <CheckCircle size={14} weight="fill" />}
-                    </button>
-                    <button type="button" role="menuitemradio" aria-checked={reviewMode === "auto_review"} onClick={() => void updateReviewMode("auto_review")}>
-                      <ShieldCheck size={16} /><span><strong>Auto-review</strong><small>A separate reviewer applies approved changes and declines unsafe ones automatically.</small></span>{reviewMode === "auto_review" && <CheckCircle size={14} weight="fill" />}
-                    </button>
-                  </div>}
-                </div>
+                <span className={styles.contextChip} title="Change this in Settings">{reviewMode === "auto_review" ? "Auto-review" : "Manual review"}</span>
                 {running && !draft.trim() && !images.length
                   ? <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={13} weight="fill" /></button>
                   : <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={15} weight="fill" /></button>}
@@ -1152,33 +1003,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           <Cpu size={22} />
           <strong>Connect Pilot to start</strong>
           <p>Test a Codex model and approve access before sending student context.</p>
-          <button type="button" onClick={() => openSettings("connection")}>Open settings</button>
         </div>}
       </aside>
-      {settingsOpen && <div className={styles.settingsBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
-        <section className={styles.settingsDialog} role="dialog" aria-modal="true" aria-label="Pilot settings">
-          <header className={styles.settingsHeader}><div><GearSix size={17} /><strong>Pilot settings</strong></div><button type="button" onClick={() => setSettingsOpen(false)} aria-label="Close settings"><X size={17} /></button></header>
-          <div className={styles.settingsLayout}>
-            <nav className={styles.settingsNav} aria-label="Pilot settings sections">
-              <button type="button" className={settingsSection === "connection" ? styles.activeSetting : ""} onClick={() => setSettingsSection("connection")}><Cpu size={16} /> Connection</button>
-              <button type="button" className={settingsSection === "archive" ? styles.activeSetting : ""} onClick={() => setSettingsSection("archive")}><Archive size={16} /> Archive</button>
-            </nav>
-            <div className={styles.settingsContent}>
-              {settingsSection === "connection" && <div className={styles.settingsPane}>
-                <div className={styles.settingsIntro}><h2>{preferences.enabled ? "Connection" : "Connect Pilot"}</h2><p>Choose the model used for assistant conversations and image context.</p></div>
-                <CodexConnectionSetup compact session={session} value={setup} onChange={setSetup} />
-                {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
-                <div className={styles.settingsFooter}><button className={styles.saveSetup} type="button" onClick={() => void savePreferences()} disabled={savingPreferences || (setup.enabled && (!setup.approved || !setup.testedAt))}>{savingPreferences ? "Saving" : setup.enabled ? "Save connection" : "Keep AI off"}</button></div>
-              </div>}
-              {settingsSection === "archive" && <div className={styles.settingsPane}>
-                <div className={styles.settingsIntro}><h2>Archived conversations</h2><p>Restore a chat within 14 days. After that, its messages, activity, and attachments are permanently deleted.</p></div>
-                {loadingArchived ? <div className={styles.settingsLoading}><ShinyText text="Loading archive" speed={1.8} /></div> : archivedConversations.length ? <div className={styles.archiveList}>{archivedConversations.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{archiveExpiryLabel(conversation.archived_at)}</small></span><button type="button" onClick={() => void updateConversationArchive(conversation.id, false)} disabled={busyArchive === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}><Archive size={20} /><strong>No archived conversations</strong><p>Archive a chat from the conversation menu when you no longer need it in the active list.</p></div>}
-                {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
-              </div>}
-            </div>
-          </div>
-        </section>
-      </div>}
       {previewImage && <div className={styles.imagePreviewBackdrop} role="dialog" aria-modal="true" aria-label={`Preview ${previewImage.name}`} onClick={() => setPreviewImage(null)}>
         <div className={styles.imagePreview} onClick={(event) => event.stopPropagation()}>
           <div><span>{previewImage.name}</span><button type="button" onClick={() => setPreviewImage(null)} aria-label="Close image preview"><X size={18} /></button></div>

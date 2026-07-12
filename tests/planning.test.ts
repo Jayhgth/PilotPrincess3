@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   Course,
   CourseRequirementMapping,
+  EnrollmentPolicy,
   GraduationRequirement,
   PlanCourse,
   SmccdHighSchoolEquivalency,
@@ -353,6 +354,39 @@ describe("planning", () => {
     expect(generated.map((row) => row.course_id)).toEqual(["world-history", "geometry"]);
     expect(generated.every((row) => row.status === "current" && row.grade_level === 10)).toBe(true);
     expect(existing[0].user_edited).toBe(true);
+  });
+
+  it("does not suggest a dual-credit flow course when it would cross the district term threshold", () => {
+    const policy: EnrollmentPolicy = {
+      id: "smccd-concurrent-2026",
+      provider_code: "SMCCD",
+      provider_name: "San Mateo County Community College District",
+      program_type: "concurrent",
+      term: "any",
+      unit_system: "semester",
+      recommended_max_units: 11,
+      fee_free_max_units: 11.5,
+      absolute_max_units: 19,
+      approval_required: true,
+      source_url: "https://smccd.edu/k-12/faqs.php",
+      source_label: "SMCCD K-12 FAQ",
+      source_year: "2026",
+      notes: null,
+      confidence: "verified"
+    };
+    const catalog = [course({ id: "english-2", name: "English 2", grade_levels: [10], college_units: 3 })];
+    const existing = [planCourse({
+      id: "existing-college-load",
+      course_id: null,
+      status: "current",
+      grade_level: 10,
+      school_year: "2025-2026",
+      term: "fall",
+      college_units: 9,
+      college_provider_code: "SMCCD"
+    })];
+
+    expect(generateSuggestedPlan(settings, catalog, existing, policy)).toEqual([]);
   });
 
   it("does not suggest a completed transcript alias with a missing catalog ID", () => {

@@ -1,6 +1,7 @@
 import type {
   Course,
   CourseRequirementMapping,
+  EnrollmentPolicy,
   GpaSummary,
   GraduationRequirement,
   GradeLevel,
@@ -427,6 +428,8 @@ export interface GeneratedPlanCourse {
   school_year: string;
   status: "current" | "planned";
   credits: number | null;
+  college_units: number | null;
+  college_provider_code: string | null;
   is_weighted: boolean;
   mapping_verified: boolean;
   user_edited: false;
@@ -435,7 +438,8 @@ export interface GeneratedPlanCourse {
 export function generateSuggestedPlan(
   settings: StudentSettings,
   courses: Course[],
-  existing: PlanCourse[]
+  existing: PlanCourse[],
+  enrollmentPolicy?: EnrollmentPolicy | null
 ): GeneratedPlanCourse[] {
   const graduationYear = settings.graduation_year ?? new Date().getFullYear() + 3;
   const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
@@ -450,6 +454,17 @@ export function generateSuggestedPlan(
     }
   }
   const generated: GeneratedPlanCourse[] = [];
+  const collegeUnitsByTerm = new Map<string, number>();
+  for (const row of existing) {
+    if (row.status === "completed" || Number(row.college_units ?? 0) <= 0) continue;
+    const provider = row.college_provider_code ?? (row.smccd_course_id ? "SMCCD" : null);
+    if (enrollmentPolicy && provider !== enrollmentPolicy.provider_code) continue;
+    const terms = row.term === "full_year" ? ["fall", "spring"] : [row.term];
+    for (const term of terms) {
+      const key = `${row.school_year}:${term}`;
+      collegeUnitsByTerm.set(key, (collegeUnitsByTerm.get(key) ?? 0) + Number(row.college_units));
+    }
+  }
 
   for (const grade of selectedPlanGrades(settings)) {
     if (grade < currentGrade) continue;
@@ -459,18 +474,34 @@ export function generateSuggestedPlan(
       if (!course || existingIds.has(course.id)) continue;
       const equivalenceKeys = courseEquivalenceKeys(course.name);
       if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) continue;
+      const schoolYear = schoolYearForGrade(graduationYear, grade);
+      const collegeUnits = Number(course.college_units ?? 0);
+      if (enrollmentPolicy && collegeUnits > 0) {
+        const wouldExceed = ["fall", "spring"].some((term) =>
+          (collegeUnitsByTerm.get(`${schoolYear}:${term}`) ?? 0) + collegeUnits > Number(enrollmentPolicy.recommended_max_units)
+        );
+        if (wouldExceed) continue;
+      }
       generated.push({
         course_id: course.id,
         grade_level: grade,
-        school_year: schoolYearForGrade(graduationYear, grade),
+        school_year: schoolYear,
         status: grade === currentGrade ? "current" : "planned",
         credits: course.credits,
+        college_units: course.college_units,
+        college_provider_code: collegeUnits > 0 ? enrollmentPolicy?.provider_code ?? "SMCCD" : null,
         is_weighted: course.is_weighted,
         mapping_verified: course.confidence === "verified",
         user_edited: false
       });
       existingIds.add(course.id);
       for (const key of equivalenceKeys) existingNameKeys.add(key);
+      if (collegeUnits > 0) {
+        for (const term of ["fall", "spring"]) {
+          const key = `${schoolYear}:${term}`;
+          collegeUnitsByTerm.set(key, (collegeUnitsByTerm.get(key) ?? 0) + collegeUnits);
+        }
+      }
     }
   }
 
@@ -503,7 +534,7 @@ export function generateTimeline(settings: StudentSettings, progress: Requiremen
       title: "Review senior-year rigor with a counselor",
       category: "college",
       due_label: "Before senior registration",
-      explanation: "Confirm prerequisites, graduation coverage, and whether concurrent enrollment fits the selected unit guardrail."
+      explanation: "Confirm prerequisites, graduation coverage, and whether concurrent enrollment fits the district unit threshold."
     });
   }
   if (grade === 12) {

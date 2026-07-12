@@ -57,11 +57,9 @@ function row(id: string, units: number, term: PlanCourse["term"], overrides: Par
 }
 
 describe("enrollment policy evaluation", () => {
-  it("keeps source-backed limits in policy data and honors the student's selected mode", () => {
+  it("keeps source-backed limits in policy data and uses the saved enrollment type", () => {
     expect(policyForPreference([policy], preference)?.id).toBe(policy.id);
-    expect(selectedEnrollmentLimit(policy, preference)).toBe(11);
-    expect(selectedEnrollmentLimit(policy, { ...preference, limit_mode: "fee_free" })).toBe(11.5);
-    expect(selectedEnrollmentLimit(policy, { ...preference, limit_mode: "custom", custom_unit_limit: 8 })).toBe(8);
+    expect(selectedEnrollmentLimit(policy)).toBe(11);
   });
 
   it("aggregates units across all SMCCD colleges within the same term", () => {
@@ -69,27 +67,27 @@ describe("enrollment policy evaluation", () => {
       row("CIS 117", 4, "fall"),
       row("MATH 200", 5, "fall", { smccd_course_id: "SKY:MATH 200" }),
       row("ENGL 100", 3, "fall", { smccd_course_id: "CAN:ENGL 100" })
-    ], policy, preference);
-    expect(term).toMatchObject({ units: 12, selectedLimit: 11, state: "over_selected" });
+    ], policy);
+    expect(term).toMatchObject({ units: 12, selectedLimit: 11, state: "review" });
     expect(term?.courseIds).toHaveLength(3);
   });
 
   it("treats full-year college rows as load in both fall and spring", () => {
-    const terms = evaluateEnrollmentSchedule([row("CIS 117", 4, "full_year")], policy, preference);
+    const terms = evaluateEnrollmentSchedule([row("CIS 117", 4, "full_year")], policy);
     expect(terms.map((term) => [term.term, term.units])).toEqual([["fall", 4], ["spring", 4]]);
   });
 
   it("distinguishes conservative, fee, and absolute thresholds", () => {
-    expect(evaluateEnrollmentSchedule([row("A", 11.5, "fall")], policy, { ...preference, limit_mode: "fee_free" })[0]?.state).toBe("review");
-    expect(evaluateEnrollmentSchedule([row("A", 12, "fall")], policy, { ...preference, limit_mode: "absolute" })[0]?.state).toBe("review");
-    expect(evaluateEnrollmentSchedule([row("A", 20, "fall")], policy, { ...preference, limit_mode: "absolute" })[0]?.state).toBe("blocked");
+    expect(evaluateEnrollmentSchedule([row("A", 11.5, "fall")], policy)[0]?.state).toBe("over_policy");
+    expect(evaluateEnrollmentSchedule([row("A", 12, "fall")], policy)[0]?.state).toBe("review");
+    expect(evaluateEnrollmentSchedule([row("A", 20, "fall")], policy)[0]?.state).toBe("blocked");
   });
 
   it("ignores completed rows and other providers", () => {
     const terms = evaluateEnrollmentSchedule([
       row("completed", 12, "fall", { status: "completed" }),
       row("other", 12, "fall", { smccd_course_id: null, college_provider_code: "CCSF" })
-    ], policy, preference);
+    ], policy);
     expect(terms).toEqual([]);
   });
 });

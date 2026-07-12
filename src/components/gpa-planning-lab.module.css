@@ -2,7 +2,7 @@
 .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .header h1 { margin: 7px 0 5px; font-size: var(--type-page); line-height: var(--leading-page); letter-spacing: -0.04em; }
 .header p { max-width: 66ch; margin: 0; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
-.eyebrow, .dualLabel { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: var(--type-supporting); font-weight: 650; }
+.eyebrow { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-size: var(--type-supporting); font-weight: 650; }
 .resultPanel { display: grid; width: min(100%, 820px); grid-template-columns: minmax(180px, .8fr) 2fr; gap: 22px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .primaryResult { display: flex; min-width: 0; flex-direction: column; justify-content: center; }
 .primaryResult span, .primaryResult small, .comparison dt { color: var(--ink-soft); font-size: var(--type-supporting); }
@@ -13,13 +13,12 @@
 .comparison dt { margin-bottom: 4px; }
 .comparison dd { margin: 0; font-size: var(--type-number); font-weight: 650; letter-spacing: -.025em; }
 .section { width: min(100%, 860px); margin-top: 18px; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
-.collegeSection { width: 100%; }
 .sectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
 .sectionHeading h2 { margin: 0; font-size: var(--type-section); font-weight: 650; letter-spacing: -.015em; line-height: var(--leading-section); }
 .sectionHeading p { max-width: 70ch; margin: 4px 0 0; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
-.targetField, .policyControls label, .gradeControl { display: grid; gap: 5px; color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 650; }
+.targetField, .gradeControl { display: grid; gap: 5px; color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 650; }
 .targetField input { width: 118px; }
-.targetField input, .policyControls input, .policyControls select, .gradeControl select { min-height: 38px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-raised); color: var(--ink); padding: 7px 10px; }
+.targetField input, .gradeControl select { min-height: 38px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface-raised); color: var(--ink); padding: 7px 10px; }
 .courseList { display: grid; gap: 8px; }
 .courseRow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto 132px; align-items: center; gap: 12px; min-height: 68px; padding: 10px 12px; border-radius: 8px; background: var(--surface-muted); transition: opacity 140ms ease, transform 140ms ease; }
 .courseRow[data-excluded="true"] { opacity: .54; }
@@ -32,25 +31,11 @@
 .targetReadout[data-reachable="true"] { background: var(--success-soft); color: var(--success); }
 .targetReadout span { display: grid; gap: 2px; }
 .targetReadout small { color: var(--ink-soft); }
-.collegeSection { border-color: color-mix(in srgb, var(--dual-ui) 28%, var(--line)); }
-.dualLabel { margin-bottom: 6px; color: var(--dual-ui); }
-.policyControls { display: flex; align-items: end; gap: 10px; padding: 14px; border-radius: 8px; background: var(--dual-soft); }
-.policyControls label { flex: 1 1 180px; }
-.policyControls button { flex: 0 0 auto; }
-.termList { display: grid; gap: 8px; margin-top: 14px; }
-.termRow { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 14px; border-radius: 8px; background: var(--surface-muted); }
-.termRow > span { display: grid; gap: 2px; }
-.termRow small { color: var(--ink-soft); font-size: var(--type-supporting); }
-.termRow b { white-space: nowrap; font-size: var(--type-body); }
-.termRow[data-state="blocked"], .termRow[data-state="over_selected"] { background: var(--danger-soft); color: var(--danger); }
-.termRow[data-state="review"] { background: var(--warning-soft); color: var(--warning); }
-.policyNote, .aiNote { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.policyNote p, .aiNote p { margin: 0; }
-.policyNote a { color: var(--dual-ui); font-weight: 700; }
+.aiNote { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; padding: 0 4px; color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.aiNote p { margin: 0; }
 .empty { display: flex; align-items: center; gap: 10px; min-height: 66px; padding: 12px; border-radius: 8px; background: var(--surface-muted); color: var(--ink-soft); }
 .empty span { display: grid; gap: 2px; }
 .empty small { font-size: var(--type-supporting); }
-.aiNote { margin-top: 16px; padding: 0 4px; }
 
 @media (max-width: 760px) {
   .lab { padding-top: 20px; }
@@ -62,9 +47,6 @@
   .courseRow { grid-template-columns: 28px minmax(0, 1fr); }
   .includeControl, .gradeControl { grid-column: 2; }
   .gradeControl select { width: 100%; }
-  .policyControls { align-items: stretch; flex-direction: column; }
-  .policyControls label, .policyControls button { width: 100%; flex: none; }
-  .termRow { align-items: flex-start; flex-direction: column; gap: 6px; }
 }
 
 @media (prefers-reduced-motion: reduce) { .courseRow { transition: none; } }

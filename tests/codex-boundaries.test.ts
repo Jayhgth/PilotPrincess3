@@ -87,7 +87,7 @@ describe("Codex feature boundaries", () => {
   it("validates exact tool arguments and marks writes for confirmation", () => {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent", limit_mode: "recommended", custom_unit_limit: null })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("evaluate_gpa_scenario", { target_weighted_gpa: 4, choices: [] })).toMatchObject({ mutatesData: false });
@@ -155,8 +155,8 @@ describe("Codex feature boundaries", () => {
   it("accepts the expanded student-data tools in structured assistant output", () => {
     expect(assistantTurnSchema.parse({ assistant_message: "I prepared the update.", tool_calls: [{
       name: "update_enrollment_preference",
-      arguments_json: '{"program_type":"concurrent","limit_mode":"recommended","custom_unit_limit":null}',
-      explanation: "Use the recommended SMCCD guardrail."
+      arguments_json: '{"program_type":"concurrent"}',
+      explanation: "Use the SMCCD concurrent-enrollment policy."
     }] }).tool_calls[0]?.name).toBe("update_enrollment_preference");
     expect(assistantTurnSchema.parse({ assistant_message: "I checked the saved schedule.", tool_calls: [{
       name: "evaluate_gpa_scenario",

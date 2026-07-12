@@ -461,6 +461,25 @@ input:focus, select:focus, textarea:focus {
 .inline-alert.error { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 28%, var(--line)); color: var(--danger); }
 .inline-alert.success { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 28%, var(--line)); color: var(--success); }
 
+.enrollment-policy-callout {
+  display: flex;
+  width: min(100%, 920px);
+  align-items: flex-start;
+  gap: 10px;
+  margin: 14px 0 18px;
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line));
+  border-radius: var(--radius);
+  background: var(--warning-soft);
+  padding: 12px 14px;
+  color: var(--warning);
+}
+
+.enrollment-policy-callout > svg { flex: 0 0 auto; margin-top: 1px; }
+.enrollment-policy-callout > div { display: grid; gap: 4px; }
+.enrollment-policy-callout p { margin: 0; color: var(--ink); font-size: var(--type-body); line-height: var(--leading-body); }
+.enrollment-policy-callout small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.enrollment-policy-callout a { color: inherit; font-weight: 700; }
+
 @media (max-width: 900px) {
   .auth-page { grid-template-columns: 1fr; }
   .auth-story { min-height: 52dvh; padding: 28px 22px 36px; }
@@ -638,6 +657,7 @@ input:focus, select:focus, textarea:focus {
 .onboarding-form-stack { display: grid; gap: 24px; }
 .onboarding-form-stack > * { min-width: 0; }
 .onboarding-choice-list, .requirement-picker { display: grid; gap: 8px; margin: 0; border: 0; padding: 0; }
+.enrollment-choice-list { margin-top: 22px; }
 .onboarding-choice-list legend, .requirement-picker legend { margin-bottom: 10px; font-size: 12px; font-weight: 650; }
 .onboarding-choice-list > label,
 .tracker-mode-switch > label,

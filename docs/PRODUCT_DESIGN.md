@@ -9,7 +9,7 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 1. **Overview** answers: what is true now, what needs attention, and where should I go next?
 2. **Courses** is the only place where Done, In progress, and Planned courses are organized or changed.
 3. **Graduation** explains d.tech diploma and selected associate-degree evidence.
-4. **GPA planner** compares grade assumptions and college-unit guardrails for the saved schedule.
+4. **GPA planner** compares grade assumptions for the saved schedule. College-unit policy warnings belong with Courses, where the schedule changes.
 5. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
 
 Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
@@ -68,7 +68,7 @@ React Bits adaptations may clarify loading, selection, reveal, drag, and bounded
 
 AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps page context and review mode in one quiet metadata row; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. Read tools run automatically. Every write begins as a visible exact proposal. Manual mode uses a focused approval card. Auto-review makes an independent binary decision, then applies approved changes or declines unsupported ones without a student confirmation step.
 
-Assistant chrome stays secondary to the student's page. The rail stays attached to the workspace, uses a forgiving invisible resize target on wide screens, and stores only its width. Archiving updates the picker optimistically without closing it; archived conversations remain restorable for 14 days. Connection and archive management appear in one centered settings dialog rather than replacing chat content inside the rail. Mobile uses a full-width rail and a bottom-aligned settings surface, with resize controls removed.
+Assistant chrome stays secondary to the student's page. The rail stays attached to the workspace, uses a forgiving invisible resize target on wide screens, and stores only its width. Archiving updates the picker optimistically without closing it; archived conversations remain restorable for 14 days. Connection, model, review mode, and archive management live in the universal Settings page. The rail contains conversation work only. Mobile uses a full-width rail with resize controls removed.
 
 The Pilot control sits in the authenticated top-right toolbar. At wide desktop sizes, the 420px rail docks without obscuring the current page; at narrower sizes it becomes a dismissible overlay and then a full-width mobile surface. Setup uses one recommended model, optional alternatives, one consent statement, one connection test, and one save action. No student is opted in by default.
 

@@ -17,6 +17,7 @@ import type {
   CatalogReviewItem,
   Course,
   CourseRequirementMapping,
+  EnrollmentPolicy,
   GradeLevel,
   GraduationRequirement,
   PlanCourse,
@@ -24,6 +25,7 @@ import type {
   RequirementArea,
   School,
   SmccdHighSchoolEquivalency,
+  StudentEnrollmentPreference,
   StudentSettings
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
@@ -75,6 +77,8 @@ interface OnboardingFlowProps {
   equivalencies: SmccdHighSchoolEquivalency[];
   activeVersion: PlanVersion;
   existingPlanCourses: PlanCourse[];
+  enrollmentPolicies: EnrollmentPolicy[];
+  enrollmentPreference: StudentEnrollmentPreference;
   mode?: "initial" | "replay";
   onComplete: () => Promise<void>;
   onExit?: () => void;
@@ -92,6 +96,8 @@ export default function OnboardingFlow({
   equivalencies,
   activeVersion,
   existingPlanCourses,
+  enrollmentPolicies,
+  enrollmentPreference,
   mode = "initial",
   onComplete,
   onExit,
@@ -124,6 +130,7 @@ export default function OnboardingFlow({
     approved: Boolean(initialSettings.ai_connection_approved_at),
     testedAt: initialSettings.ai_setup_tested_at
   });
+  const [enrollmentProgram, setEnrollmentProgram] = useState<StudentEnrollmentPreference["program_type"]>(enrollmentPreference.program_type);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -385,6 +392,14 @@ export default function OnboardingFlow({
         .update(completedSettings)
         .eq("id", session.user.id);
       if (settingsError) throw settingsError;
+      const { error: enrollmentError } = await supabase.from("student_enrollment_preferences").upsert({
+        user_id: session.user.id,
+        provider_code: "SMCCD",
+        program_type: enrollmentProgram,
+        limit_mode: "recommended",
+        custom_unit_limit: null
+      }, { onConflict: "user_id,provider_code" });
+      if (enrollmentError) throw enrollmentError;
       const { error: versionError } = await supabase
         .from("plan_versions")
         .update({
@@ -472,6 +487,13 @@ export default function OnboardingFlow({
             <div className="onboarding-plan-line" aria-label="Selected plan grades">
               {GRADE_LEVELS.map((grade) => <span key={grade} className={grade >= currentGrade && grade <= planEndGrade ? "included" : ""}>Grade {grade}</span>)}
             </div>
+            <fieldset className="onboarding-choice-list enrollment-choice-list">
+              <legend>College enrollment type</legend>
+              {(["concurrent", "dual"] as const).map((programType) => {
+                const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
+                return <label key={programType} className={enrollmentProgram === programType ? "selected" : ""}><input type="radio" name="onboarding-enrollment-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current SMCCD planning threshold.` : "District policy is not loaded."}</small></span></label>;
+              })}
+            </fieldset>
           </>}
 
           {stage === "requirements" && <>

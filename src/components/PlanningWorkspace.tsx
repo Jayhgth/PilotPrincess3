@@ -73,7 +73,7 @@ import type {
   StudentSettings,
   TimelineTask
 } from "@/lib/workspace-types";
-import { defaultEnrollmentPreference } from "@/lib/enrollment-policy";
+import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateDtechPlannerPrerequisites } from "@/lib/prerequisites";
@@ -382,7 +382,7 @@ export default function PlanningWorkspace() {
       setEnrollmentPolicies((enrollmentPolicyResult.data ?? []) as unknown as EnrollmentPolicy[]);
       setEnrollmentPreference(
         enrollmentPreferenceResult.data
-          ? enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference
+          ? { ...enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference, limit_mode: "recommended", custom_unit_limit: null }
           : defaultEnrollmentPreference(userId)
       );
       setTimelineTasks((timelineResult.data ?? []) as unknown as TimelineTask[]);
@@ -604,23 +604,23 @@ export default function PlanningWorkspace() {
     window.location.assign("/");
   }
 
-  async function saveEnrollmentPreference() {
+  async function saveEnrollmentProgramType(programType: StudentEnrollmentPreference["program_type"]) {
     if (!supabase || !session || !enrollmentPreference) return;
     await runAction(
-      "Saving college-unit guardrail",
+      "Saving college enrollment type",
       async () => {
         const { data, error } = await supabase.from("student_enrollment_preferences").upsert({
           user_id: session.user.id,
           provider_code: enrollmentPreference.provider_code,
-          program_type: enrollmentPreference.program_type,
-          limit_mode: enrollmentPreference.limit_mode,
-          custom_unit_limit: enrollmentPreference.limit_mode === "custom" ? enrollmentPreference.custom_unit_limit : null
+          program_type: programType,
+          limit_mode: "recommended",
+          custom_unit_limit: null
         }, { onConflict: "user_id,provider_code" }).select("*").single();
         if (error) throw error;
-        setEnrollmentPreference(data as unknown as StudentEnrollmentPreference);
-        await logEvent("enrollment_guardrail_updated", { provider_code: enrollmentPreference.provider_code, limit_mode: enrollmentPreference.limit_mode });
+        setEnrollmentPreference({ ...data as unknown as StudentEnrollmentPreference, limit_mode: "recommended", custom_unit_limit: null });
+        await logEvent("enrollment_program_updated", { provider_code: enrollmentPreference.provider_code, program_type: programType });
       },
-      "College-unit guardrail saved."
+      "College enrollment type saved."
     );
   }
 
@@ -753,7 +753,8 @@ export default function PlanningWorkspace() {
 
   async function generatePlan() {
     if (!settings) return;
-    const generated = generateSuggestedPlan(settings, courses, planCourses);
+    const enrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
+    const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy);
     if (generated.length === 0) {
       notify("The current plan already contains the available d.tech flow courses.");
       return;
@@ -1067,19 +1068,26 @@ export default function PlanningWorkspace() {
 
   async function saveStudentSettings(patch: StudentSettingsPatch) {
     if (!supabase || !session || !settings || Object.keys(patch).length === 0) return;
-    if (patch.ai_enabled === true && !settings.ai_connection_approved_at) {
-      throw new Error("Open Pilot setup from the toolbar and approve the connection before enabling Pilot.");
-    }
     const normalizedPatch: Record<string, unknown> = { ...patch };
-    if (patch.ai_model && patch.ai_model !== settings.ai_model) {
-      normalizedPatch.ai_enabled = false;
-      normalizedPatch.ai_connection_approved_at = null;
-      normalizedPatch.ai_setup_tested_at = null;
-    }
     const { data, error } = await supabase.from("student_settings").update(normalizedPatch).eq("id", session.user.id).select("*").single();
     if (error) throw error;
     setSettings(data as unknown as StudentSettings);
     await logEvent("student_settings_updated", { fields: Object.keys(normalizedPatch) });
+  }
+
+  async function refreshAiPreferences() {
+    if (!supabase || !session) return;
+    const { data, error } = await supabase.from("student_settings").select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
+    if (error) throw error;
+    setSettings((current) => current ? {
+      ...current,
+      ai_enabled: data.ai_enabled,
+      ai_model: data.ai_model as StudentSettings["ai_model"],
+      ai_reasoning_effort: data.ai_reasoning_effort as "low",
+      ai_review_mode: data.ai_review_mode as StudentSettings["ai_review_mode"],
+      ai_connection_approved_at: data.ai_connection_approved_at,
+      ai_setup_tested_at: data.ai_setup_tested_at
+    } : current);
   }
 
   async function addTimelineTask(draft: NextStepDraft) {
@@ -1149,6 +1157,8 @@ export default function PlanningWorkspace() {
           equivalencies={equivalencies}
           activeVersion={activeVersion}
           existingPlanCourses={planCourses}
+          enrollmentPolicies={enrollmentPolicies}
+          enrollmentPreference={enrollmentPreference ?? defaultEnrollmentPreference(session.user.id)}
           mode={replayingOnboarding ? "replay" : "initial"}
           onComplete={async () => {
             await loadWorkspace();
@@ -1478,31 +1488,30 @@ export default function PlanningWorkspace() {
   }
 
   function renderGpa() {
-    if (!enrollmentPreference) return null;
     return <div className="gpa-page page-frame"><GpaPlanningLab
       rows={planCourses}
       courses={courses}
       smccdCourses={plannedSmccdCourses}
-      policies={enrollmentPolicies}
-      enrollmentPreference={enrollmentPreference}
-      busy={Boolean(busyLabel)}
-      onPreferenceChange={setEnrollmentPreference}
-      onSavePreference={saveEnrollmentPreference}
       onOpenCourses={() => openCourses("mine")}
       onScenarioChange={setGpaScenarioContext}
     /></div>;
   }
 
   function renderSettings() {
-    if (!settings) return null;
+    if (!settings || !session) return null;
     return <div className="settings-page page-frame">
       <PageHeader title="Settings" description="Student details, planning scope, Pilot consent, and saved next steps." />
       <StudentSettingsPanel
+        session={session}
         settings={settings}
         requirements={requirements}
         tasks={timelineTasks}
+        enrollmentPolicies={enrollmentPolicies}
+        enrollmentPreference={enrollmentPreference}
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
+        onSaveEnrollmentProgram={saveEnrollmentProgramType}
+        onAiPreferencesChanged={refreshAiPreferences}
         onAddTask={addTimelineTask}
         onUpdateTask={updateTimelineTask}
         onDeleteTask={deleteTimelineTask}
@@ -1576,9 +1585,21 @@ export default function PlanningWorkspace() {
 
   function renderCourses() {
     if (!supabase || !session || !settings || !activeVersion) return null;
+    const activeEnrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
+    const enrollmentWarnings = activeEnrollmentPolicy
+      ? evaluateEnrollmentSchedule(planCourses, activeEnrollmentPolicy).filter((term) => term.state !== "within")
+      : [];
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
       <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area, area === "smccd" ? "courses" : smccdInitialSection)} label="Courses workspace" layoutId="course-area-indicator" />
+      {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && <aside className="enrollment-policy-callout" role="status">
+        <Warning size={18} weight="fill" aria-hidden />
+        <div>
+          <strong>{activeEnrollmentPolicy.provider_name} unit limit needs attention</strong>
+          {enrollmentWarnings.map((term) => <p key={term.key}><b>{term.term[0].toUpperCase() + term.term.slice(1)} {term.schoolYear}:</b> {term.message}</p>)}
+          <small>Your saved enrollment type is {activeEnrollmentPolicy.program_type} enrollment. <a href={activeEnrollmentPolicy.source_url} target="_blank" rel="noreferrer">Review the district source</a> or change the enrollment type in Settings.</small>
+        </div>
+      </aside>}
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         supabase={supabase}
@@ -1645,7 +1666,7 @@ export default function PlanningWorkspace() {
         isAdmin={isAdmin}
         onNavigate={navigate}
         onMobileNavChange={setMobileNavOpen}
-        onAssistantToggle={() => setAssistantOpen((current) => !current)}
+        onAssistantToggle={() => settings.ai_enabled ? setAssistantOpen((current) => !current) : navigate("settings")}
         onAdmin={() => { setMobileNavOpen(false); setAdminSettingsOpen(true); }}
         onReplayOnboarding={() => { setMobileNavOpen(false); setReplayingOnboarding(true); }}
         onViewLogin={() => { setMobileNavOpen(false); window.location.assign("/?demo=login"); }}
@@ -1659,22 +1680,9 @@ export default function PlanningWorkspace() {
         session={session}
         open={assistantOpen}
         pageContext={assistantPageContext}
-        preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reviewMode: settings.ai_review_mode, approvedAt: settings.ai_connection_approved_at, testedAt: settings.ai_setup_tested_at }}
+        preferences={{ enabled: settings.ai_enabled, reviewMode: settings.ai_review_mode }}
         onClose={() => setAssistantOpen(false)}
         onDataChanged={refreshAfterAssistantChange}
-        onPreferencesChanged={async () => {
-          const { data, error } = await supabase.from("student_settings").select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
-          if (error) throw error;
-          setSettings((current) => current ? {
-            ...current,
-            ai_enabled: data.ai_enabled,
-            ai_model: data.ai_model as StudentSettings["ai_model"],
-            ai_reasoning_effort: data.ai_reasoning_effort as "low",
-            ai_review_mode: data.ai_review_mode as StudentSettings["ai_review_mode"],
-            ai_connection_approved_at: data.ai_connection_approved_at,
-            ai_setup_tested_at: data.ai_setup_tested_at
-          } : current);
-        }}
       /></Suspense>
       {isAdmin && adminSettingsOpen && <AdminSettingsDialog
         accessToken={session.access_token}

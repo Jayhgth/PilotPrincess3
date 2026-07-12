@@ -1,12 +1,12 @@
 import { Button as BaseButton } from "@base-ui/react/button";
 import {
   ArrowClockwiseIcon as ArrowClockwise,
+  ChatCircleDotsIcon as ChatCircleDots,
   GearSixIcon as GearSix,
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
   MoonIcon as Moon,
   SignOutIcon as SignOut,
-  SparkleIcon as Sparkle,
   SunIcon as Sun,
   XIcon as X
 } from "@phosphor-icons/react";
@@ -204,13 +204,13 @@ export default function AppChrome<ViewId extends string>({
         <button className="icon-button" onClick={() => onMobileNavChange(true)} aria-label="Open navigation"><BrandMark /></button>
         <span>{activeLabel}</span>
         <div className="mobile-bar-actions">
-          <button className="icon-button" onClick={onAssistantToggle} aria-label="Open Pilot Assistant"><Sparkle size={18} weight="duotone" /></button>
+          <button className="icon-button" onClick={onAssistantToggle} aria-label="Open Pilot Assistant"><ChatCircleDots size={18} /></button>
           <button className="icon-button" onClick={onThemeToggle} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
         </div>
       </div>
       <div className="app-toolbar">
         <button className={assistantOpen ? "active" : ""} type="button" onClick={onAssistantToggle}>
-          <Sparkle size={17} weight={assistantOpen ? "fill" : "duotone"} />
+          <ChatCircleDots size={17} weight={assistantOpen ? "fill" : "regular"} />
           <span>{assistantOpen ? "Collapse Pilot" : aiEnabled ? "Ask Pilot" : "Set up Pilot"}</span>
         </button>
       </div>

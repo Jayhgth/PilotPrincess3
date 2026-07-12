@@ -22,7 +22,7 @@ Pilot Assistant is one global, persistent rail available from the authenticated 
 - conversations reload from Supabase, can be renamed, continued from any workspace page, and reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
-Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection and archived conversations live in a centered settings dialog opened from the global rail.
+Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection, model, review mode, and archived conversations live in the universal Settings page.
 
 Raw JSON, validation internals, event names, model protocol fields, and hidden chain-of-thought are not the primary interface. Errors are translated into a useful student-facing message. Sanitized technical evidence remains available to developers through server logs and tests rather than being presented as the answer.
 
@@ -53,7 +53,7 @@ Write tools may prepare these changes:
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
 - add a next step or complete an exact set of open next steps;
 - edit an unlocked plan course;
-- update the student's source-bounded concurrent/dual enrollment guardrail;
+- update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
 - edit or remove an exact set of student-owned next steps; and
 - select or clear an associate-degree goal.
 
@@ -85,7 +85,7 @@ Queued follow-ups also remain browser-memory-only until their turn starts. Their
 
 After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. This is evidence of the exact application-side mutation, not a claim made by the model. When the active plan changed, the workspace saves the previous client-visible plan as a **Before Pilot change** snapshot before refreshing to the canonical server result, so the student can restore it from Plan versions.
 
-Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from Pilot settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
+Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from the Pilot Assistant section in Settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
 
 Bulk plan-change language such as “remove all my in progress classes” or “mark all my planned classes in progress” triggers a deterministic `list_plan_courses` read for the requested source state before Codex responds. Bulk next-step completion or removal similarly triggers `get_next_steps`. Pilot uses the returned stable IDs in one bounded batch proposal instead of relying on conversational memory or generic retrieval; transcript-backed courses and generated requirement steps retain their normal protections.
 

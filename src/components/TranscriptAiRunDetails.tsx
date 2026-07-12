@@ -1,4 +1,4 @@
-import { SparkleIcon as Sparkle } from "@phosphor-icons/react";
+import { CpuIcon as Cpu } from "@phosphor-icons/react";
 import { useState } from "react";
 
 export interface TranscriptAiTransparency {
@@ -37,7 +37,7 @@ export default function TranscriptAiRunDetails({ run, summary = "Codex run detai
 
   return (
     <details className="transcript-ai-inspector">
-      <summary><Sparkle size={15} /> {summary}</summary>
+      <summary><Cpu size={15} /> {summary}</summary>
       <div>
         <dl>
           <div><dt>Model</dt><dd>{run.model}</dd></div>

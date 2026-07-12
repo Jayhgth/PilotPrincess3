@@ -114,9 +114,7 @@ const toolArgumentSchemas = {
     notes: optionalText(1200).optional()
   }).refine((value) => Object.keys(value).some((key) => key !== "plan_course_id"), "Provide at least one course field to update."),
   update_enrollment_preference: z.object({
-    program_type: z.enum(["concurrent", "dual"]),
-    limit_mode: z.enum(["recommended", "fee_free", "absolute", "custom"]),
-    custom_unit_limit: z.number().min(0.5).max(30).nullable().default(null)
+    program_type: z.enum(["concurrent", "dual"])
   }),
   add_next_step: z.object({
     title: z.string().trim().min(1).max(240),
@@ -175,7 +173,7 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
   { name: "remove_plan_courses", mutatesData: true, description: "Propose removing an exact set of editable courses from the active plan in one atomic request. Use this for all/every bulk removal requests after listing the matching plan courses.", arguments: '{"plan_course_ids":["uuid"]}' },
   { name: "update_plan_course", mutatesData: true, description: "Propose editing the placement, grade, or notes of an unlocked plan course.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","notes":"string|null"}' },
-  { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing the student's SMCCD concurrent- or dual-enrollment unit guardrail. Source-backed limits are revalidated when the change runs.", arguments: '{"program_type":"concurrent|dual","limit_mode":"recommended|fee_free|absolute|custom","custom_unit_limit":number|null}' },
+  { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing whether the student plans to use SMCCD concurrent enrollment or a dual-enrollment partnership. District unit thresholds remain source-backed policy and cannot be customized.", arguments: '{"program_type":"concurrent|dual"}' },
   { name: "add_next_step", mutatesData: true, description: "Propose adding one student-owned next step. The selected review route must approve it.", arguments: '{"title":"string","category":"academics|activities|college|summer|admin","due_label":"string|null"}' },
   { name: "complete_next_step", mutatesData: true, description: "Propose completing one saved next step. The selected review route must approve it.", arguments: '{"task_id":"uuid"}' },
   { name: "complete_next_steps", mutatesData: true, description: "Propose completing an exact set of open next steps in one atomic request. Use this for all/every bulk completion requests after reading next steps.", arguments: '{"task_ids":["uuid"]}' },
@@ -219,7 +217,7 @@ export function assistantToolLabel(name: string) {
     remove_plan_course: "Remove course",
     remove_plan_courses: "Remove courses",
     update_plan_course: "Update course",
-    update_enrollment_preference: "Update enrollment guardrail",
+    update_enrollment_preference: "Update college enrollment type",
     add_next_step: "Add next step",
     complete_next_step: "Complete next step",
     complete_next_steps: "Complete next steps",
@@ -502,7 +500,7 @@ export async function executeAssistantReadTool(
         },
         next_steps: { count: workspace.tasks.length, open_count: workspace.tasks.filter((task) => !task.is_completed).length },
         college_goal: { selected: workspace.collegeGoals.length > 0 },
-        enrollment_guardrail: { provider: workspace.enrollmentPreference.provider_code, program_type: workspace.enrollmentPreference.program_type, limit_mode: workspace.enrollmentPreference.limit_mode },
+        college_enrollment_preference: { provider: workspace.enrollmentPreference.provider_code, program_type: workspace.enrollmentPreference.program_type },
         available_detail_tools: [
           "list_plan_courses",
           "get_graduation_progress",
@@ -601,13 +599,13 @@ export async function executeAssistantReadTool(
   if (name === "get_enrollment_constraints") {
     const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
     if (!policy) return { summary: "No enrollment policy matches the saved provider and program.", data: null };
-    const terms = evaluateEnrollmentSchedule(workspace.planCourses, policy, workspace.enrollmentPreference);
+    const terms = evaluateEnrollmentSchedule(workspace.planCourses, policy);
     return {
       summary: `Checked ${terms.length} open college ${terms.length === 1 ? "term" : "terms"} against ${policy.provider_name} limits.`,
       data: {
         provider: policy.provider_name,
         program_type: policy.program_type,
-        selected_limit_mode: workspace.enrollmentPreference.limit_mode,
+        planning_threshold_units: policy.recommended_max_units,
         recommended_max_units: policy.recommended_max_units,
         fee_free_max_units: policy.fee_free_max_units,
         absolute_max_units: policy.absolute_max_units,
@@ -963,22 +961,17 @@ export async function executeAssistantMutationTool(
     const args = toolArgumentSchemas.update_enrollment_preference.parse(argumentsValue);
     const policy = workspace.enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === args.program_type);
     if (!policy) throw new Error("No source-backed SMCCD policy matches that enrollment type.");
-    if (args.limit_mode === "custom" && args.custom_unit_limit === null) throw new Error("A custom guardrail needs a unit limit.");
-    if (args.custom_unit_limit !== null && args.custom_unit_limit > policy.absolute_max_units) {
-      throw new Error(`The custom guardrail cannot exceed the published ${policy.absolute_max_units}-unit maximum.`);
-    }
-    const customMaxUnits = args.limit_mode === "custom" ? args.custom_unit_limit : null;
     const { data, error } = await supabase.from("student_enrollment_preferences").upsert({
       user_id: userId,
       provider_code: "SMCCD",
       program_type: args.program_type,
-      limit_mode: args.limit_mode,
-      custom_unit_limit: customMaxUnits
+      limit_mode: "recommended",
+      custom_unit_limit: null
     }, { onConflict: "user_id,provider_code" }).select("user_id,provider_code").single();
     if (error) throw new Error(error.message);
     return {
-      summary: `The SMCCD ${args.program_type === "dual" ? "dual-enrollment" : "concurrent-enrollment"} guardrail was updated.`,
-      data: { provider_code: "SMCCD", ...args, custom_unit_limit: customMaxUnits, published_absolute_max_units: policy.absolute_max_units },
+      summary: `The SMCCD ${args.program_type === "dual" ? "dual-enrollment" : "concurrent-enrollment"} preference was updated.`,
+      data: { provider_code: "SMCCD", ...args, planning_threshold_units: policy.recommended_max_units, published_absolute_max_units: policy.absolute_max_units },
       changed: { entity: "student_enrollment_preference", id: `${data.user_id}:${data.provider_code}` }
     };
   }

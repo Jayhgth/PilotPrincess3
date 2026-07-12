@@ -265,8 +265,8 @@ export interface StudentEnrollmentPreference {
   user_id: string;
   provider_code: string;
   program_type: EnrollmentPolicy["program_type"];
-  limit_mode: "recommended" | "fee_free" | "absolute" | "custom";
-  custom_unit_limit: number | null;
+  limit_mode: "recommended";
+  custom_unit_limit: null;
   updated_at: string;
 }
 
