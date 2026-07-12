@@ -3,7 +3,6 @@ import {
   ArrowClockwiseIcon as ArrowClockwise,
   ChatCircleDotsIcon as ChatCircleDots,
   GearSixIcon as GearSix,
-  GraduationCapIcon as GraduationCap,
   HouseIcon as House,
   MoonIcon as Moon,
   SignOutIcon as SignOut,
@@ -20,6 +19,7 @@ import {
   type ReactNode
 } from "react";
 import BrandMark from "@/components/BrandMark";
+import InstitutionMark from "@/components/InstitutionMark";
 
 const SIDEBAR_WIDTH_KEY = "pilot-princess:sidebar-width";
 const SIDEBAR_COLLAPSED_WIDTH = 64;
@@ -167,7 +167,7 @@ export default function AppChrome<ViewId extends string>({
       </nav>
       <div className="sidebar-footer">
         <div className="school-chip" title={`${school.short_name}, ${school.source_year ?? "Current"} sources`}>
-          <GraduationCap size={18} weight="duotone" />
+          <InstitutionMark institution="dtech" decorative />
           <span><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
         </div>
         <div className="sidebar-account-actions">

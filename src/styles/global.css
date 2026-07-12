@@ -821,7 +821,6 @@ input:focus, select:focus, textarea:focus {
   padding: 7px 10px;
   color: var(--ink-soft);
 }
-.school-chip svg { color: var(--accent); }
 .school-chip span { display: grid; }
 .school-chip strong { color: var(--ink); font-size: 12px; }
 .school-chip small { margin-top: 2px; color: var(--ink-faint); font-size: 12px; }
@@ -1815,9 +1814,8 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .graduation-workspace-tabs { margin-bottom: 18px; }
 .graduation-workspace-tabs button:nth-child(1).active { color: var(--dtech-ui); }
 .graduation-workspace-tabs button:nth-child(1) i { background: var(--dtech-brand); }
-.graduation-workspace-tabs button:nth-child(2) i { background: var(--accent); }
-.graduation-workspace-tabs button:nth-child(3).active { color: var(--dual-ui); }
-.graduation-workspace-tabs button:nth-child(3) i { background: var(--dual-ui); }
+.graduation-workspace-tabs button:nth-child(2).active { color: var(--dual-ui); }
+.graduation-workspace-tabs button:nth-child(2) i { background: var(--dual-ui); }
 .graduation-view-transition { min-width: 0; }
 .eligibility-summary { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); gap: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 22px; }
 .eligibility-summary.dtech { background: color-mix(in srgb, var(--dtech-soft) 34%, var(--surface)); }

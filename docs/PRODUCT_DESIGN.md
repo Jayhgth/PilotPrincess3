@@ -48,7 +48,7 @@ External references inform the local rules; they are not product requirements.
 
 ## Visual system
 
-The production interface uses DM Sans and the semantic tokens in `src/styles/global.css` and `src/styles/t3code.css`. Its retained structure follows the useful parts of t3code: a compact fixed navigation rail, dense workbench rows, restrained surfaces, and an inspectable assistant rail. Dark mode uses deep neutral graphite. d.tech uses official orange `#EF5024` and charcoal `#20242C` only in institution-scoped identity. SMCCD colleges use their official marks and scoped colors.
+The production interface uses DM Sans and the semantic tokens in `src/styles/global.css` and `src/styles/t3code.css`. Its retained structure follows the useful parts of t3code: a compact fixed navigation rail, dense workbench rows, restrained surfaces, and an inspectable assistant rail. Pilot Princess rose is the single product accent for navigation, focus, selection, and general actions. Dark mode uses deep neutral graphite. d.tech uses its official mark plus orange `#EF5024` and charcoal `#20242C` only in institution-scoped identity. SMCCD colleges use their official marks and scoped colors; institution colors do not replace the product accent in shared chrome.
 
 Type roles: 28px page title, 16px section title, 14px body/control, 12px label/supporting, 20px numeric, and at most one 40px primary answer in a view. Use weights 450-650.
 

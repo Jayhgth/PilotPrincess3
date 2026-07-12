@@ -9,9 +9,6 @@
   --line: rgb(0 0 0 / 0.08);
   --line-strong: rgb(0 0 0 / 0.12);
   --control-line: rgb(0 0 0 / 0.16);
-  --accent: oklch(0.488 0.217 264);
-  --accent-hover: oklch(0.44 0.217 264);
-  --accent-soft: oklch(0.96 0.025 264);
   --radius: 10px;
   --sidebar: var(--app-sidebar-width, 248px);
   background: var(--bg);
@@ -30,15 +27,6 @@
   --line: rgb(255 255 255 / 0.065);
   --line-strong: rgb(255 255 255 / 0.1);
   --control-line: rgb(255 255 255 / 0.16);
-  --accent: oklch(0.62 0.19 264);
-  --accent-hover: oklch(0.68 0.18 264);
-  --accent-soft: oklch(0.24 0.045 264);
-}
-
-:root[data-theme="dark"] .t3code-app .primary-button {
-  border-color: oklch(0.5 0.18 264);
-  background: oklch(0.5 0.18 264);
-  color: #fff;
 }
 
 .t3code-app.app-shell {
