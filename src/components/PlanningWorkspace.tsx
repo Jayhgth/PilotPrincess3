@@ -89,6 +89,8 @@ import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateDtechPlannerPrerequisites } from "@/lib/prerequisites";
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import { LabButton, UiLabProvider, UiLabSwitcher, useUiVariant } from "@/ui-lab/UiLab";
+import { uiVariantClass } from "@/ui-lab/variants";
 
 const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
 const GlobalAssistant = lazy(() => import("@/components/GlobalAssistant"));
@@ -218,6 +220,7 @@ export default function PlanningWorkspace() {
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
+  const [uiVariant, setUiVariant] = useUiVariant();
   const [courseArea, setCourseArea] = useState<CourseArea>("mine");
   const [smccdInitialSection, setSmccdInitialSection] = useState<"courses" | "degree">("courses");
   const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
@@ -1151,6 +1154,9 @@ export default function PlanningWorkspace() {
             notify("Onboarding exited without saving changes.");
           } : undefined}
           onSignOut={signOut}
+          theme={theme}
+          uiVariant={uiVariant}
+          onUiVariantChange={setUiVariant}
         />
       </Suspense>
     );
@@ -1587,7 +1593,9 @@ export default function PlanningWorkspace() {
   }).length;
 
   return (
-    <div className={`app-shell ${assistantOpen ? "assistant-docked" : ""}`}>
+    <UiLabProvider variant={uiVariant} theme={theme}>
+      <UiLabSwitcher value={uiVariant} onChange={setUiVariant} />
+      <div className={`app-shell ${uiVariantClass(uiVariant)} ${assistantOpen ? "assistant-docked" : ""}`}>
       <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
         <div className="sidebar-top">
           <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
@@ -1596,7 +1604,7 @@ export default function PlanningWorkspace() {
         <nav className="sidebar-nav" aria-label="Planning workspace">
           {PRIMARY_NAV_ITEMS.map((item) => {
             const NavIcon = item.icon;
-            return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span></button>;
+            return <LabButton variant={uiVariant} key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} type="button"><NavIcon size={18} weight={view === item.id ? "fill" : "regular"} aria-hidden /><span>{item.label}</span></LabButton>;
           })}
         </nav>
         <div className="sidebar-footer">
@@ -1692,6 +1700,7 @@ export default function PlanningWorkspace() {
       />}
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}{toast}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
-    </div>
+      </div>
+    </UiLabProvider>
   );
 }

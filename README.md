@@ -50,6 +50,22 @@ pnpm check:release  # opt-in release gate
 
 Use focused tests while debugging. Run browser, SMCCD, migration, RLS, storage, or linked-Supabase checks only when that system changes. The default command intentionally avoids the old 148-test milestone loop.
 
+## UI comparison lab
+
+The authenticated dashboard and onboarding expose a test-only UI switcher. Open `/app?ui=t3code` or choose **UI Lab** in the workspace; the selection persists locally. Every version keeps the same student data, actions, institution marks, navigation destinations, onboarding flow, and Pilot Assistant.
+
+- `t3code`: Base UI with a close adaptation of the MIT-licensed [t3code](https://github.com/pingdotgg/t3code) shell and visual language
+- `material`: Material UI tonal rail
+- `mantine`: Mantine modular workspace
+- `chakra`: Chakra UI student-friendly planner
+- `ant`: Ant Design campus portal
+- `radix`: Radix Themes editorial workspace
+- `aria`: React Aria high-contrast workspace
+- `reactbits`: React Bits kinetic, asymmetric workspace
+- `current`: the original Pilot Graphite interface, retained as the backup
+
+This is a presentation comparison, not nine forks of product logic. Keep shared behavior in the existing feature components and scope experiments through `src/ui-lab/` and `src/styles/ui-lab.css`.
+
 ## Data refreshes
 
 The checked-in SMCCD catalog is generated from official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs.
@@ -102,7 +118,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 1. Choose and deploy a Node host. Run `HOST=0.0.0.0 PORT=4321 node dist/server/entry.mjs` after `pnpm build`.
 2. Configure Supabase redirects for the production origin, `/app`, and `/reset-password`.
 3. Configure custom SMTP, email confirmation, server-only Codex credentials, HTTPS, monitoring, backups, and retention.
-4. Run the full checklist against the deployed origin.
+4. Run `pnpm check:release` against the deployed origin.
 5. Confirm institutional trademark use and current counseling approval for dated equivalencies.
 
 Durable references are [product and design](./docs/PRODUCT_DESIGN.md), [academic rules](./docs/ACADEMIC_RULES.md), and [Codex transparency](./docs/AI_TRANSPARENCY.md). Do not add task-completion or implementation-status documents.

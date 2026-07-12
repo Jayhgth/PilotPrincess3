@@ -37,6 +37,8 @@ import {
 import BrandMark from "@/components/BrandMark";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
+import { LabButton, UiLabProvider, UiLabSwitcher } from "@/ui-lab/UiLab";
+import { uiVariantClass, type UiVariant } from "@/ui-lab/variants";
 
 type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "assistant" | "transcript";
 
@@ -81,6 +83,9 @@ interface OnboardingFlowProps {
   onComplete: () => Promise<void>;
   onExit?: () => void;
   onSignOut: () => Promise<void>;
+  theme: "light" | "dark";
+  uiVariant: UiVariant;
+  onUiVariantChange: (variant: UiVariant) => void;
 }
 
 export default function OnboardingFlow({
@@ -97,7 +102,10 @@ export default function OnboardingFlow({
   mode = "initial",
   onComplete,
   onExit,
-  onSignOut
+  onSignOut,
+  theme,
+  uiVariant,
+  onUiVariantChange
 }: OnboardingFlowProps) {
   const isReplay = mode === "replay";
   const [stage, setStage] = useState<OnboardingStage>("student");
@@ -438,12 +446,14 @@ export default function OnboardingFlow({
   }
 
   return (
-    <main className="onboarding-shell">
+    <UiLabProvider variant={uiVariant} theme={theme}>
+      <UiLabSwitcher value={uiVariant} onChange={onUiVariantChange} />
+      <main className={`onboarding-shell ${uiVariantClass(uiVariant)}`}>
       <header className="onboarding-topbar">
         <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">
           {isReplay && <span>Profile changes save at Finish. Pilot approval saves on its step.</span>}
-          <button className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</button>
+          <LabButton variant={uiVariant} className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</LabButton>
         </div>
       </header>
       <div className="onboarding-layout">
@@ -560,14 +570,15 @@ export default function OnboardingFlow({
 
           {error && <div className="inline-alert error" role="alert"><Warning size={17} /> {error}</div>}
           <footer className="onboarding-actions">
-            {stageIndex > 0 ? <button className="secondary-button" type="button" onClick={previousStage} disabled={Boolean(busyLabel)}><ArrowLeft size={17} /> Back</button> : <span />}
+            {stageIndex > 0 ? <LabButton variant={uiVariant} className="secondary-button" type="button" onClick={previousStage} disabled={Boolean(busyLabel)}><ArrowLeft size={17} /> Back</LabButton> : <span />}
             {stage !== "transcript"
-              ? <button className="primary-button" type="button" onClick={() => void nextStage()} disabled={Boolean(busyLabel)}>Continue <ArrowRight size={17} /></button>
-              : <button className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel ? (isReplay ? "Saving changes" : "Creating workspace") : isReplay ? "Save changes" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></button>}
+              ? <LabButton variant={uiVariant} className="primary-button" type="button" onClick={() => void nextStage()} disabled={Boolean(busyLabel)}>Continue <ArrowRight size={17} /></LabButton>
+              : <LabButton variant={uiVariant} className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel ? (isReplay ? "Saving changes" : "Creating workspace") : isReplay ? "Save changes" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></LabButton>}
           </footer>
         </section>
       </div>
       {busyLabel && <div className="busy-bar onboarding-busy" role="status">{busyLabel}</div>}
-    </main>
+      </main>
+    </UiLabProvider>
   );
 }
