@@ -1,7 +1,6 @@
 import {
   ArchiveIcon as Archive,
   ArrowUpIcon as ArrowUp,
-  ArrowSquareOutIcon as ArrowSquareOut,
   BrainIcon as Brain,
   CaretDownIcon as CaretDown,
   CheckIcon as Check,
@@ -15,7 +14,6 @@ import {
   PaperPlaneRightIcon as PaperPlaneRight,
   PencilSimpleIcon as PencilSimple,
   PlusIcon as Plus,
-  PushPinIcon as PushPin,
   ShieldCheckIcon as ShieldCheck,
   SparkleIcon as Sparkle,
   StopIcon as Stop,
@@ -26,7 +24,7 @@ import {
   XIcon as X
 } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import AssistantMarkdown from "@/components/AssistantMarkdown";
@@ -90,19 +88,9 @@ interface SendMessageOptions {
   clearComposerDraft?: boolean;
 }
 
-type AssistantPanelMode = "docked" | "floating";
-type AssistantSettingsSection = "connection" | "archive" | "interface";
-
-interface FloatingLayout {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
+type AssistantSettingsSection = "connection" | "archive";
 
 const PANEL_WIDTH_KEY = "pilot-princess:assistant-width";
-const PANEL_MODE_KEY = "pilot-princess:assistant-mode";
-const PANEL_FLOATING_LAYOUT_KEY = "pilot-princess:assistant-floating-layout";
 const DEFAULT_PANEL_WIDTH = 420;
 const MIN_PANEL_WIDTH = 360;
 const MAX_PANEL_WIDTH = 680;
@@ -117,30 +105,6 @@ function loadStoredNumber(key: string, fallback: number) {
   if (typeof window === "undefined") return fallback;
   const value = Number(window.localStorage.getItem(key));
   return Number.isFinite(value) ? value : fallback;
-}
-
-function loadPanelMode(): AssistantPanelMode {
-  if (typeof window === "undefined") return "docked";
-  return window.localStorage.getItem(PANEL_MODE_KEY) === "floating" ? "floating" : "docked";
-}
-
-function loadFloatingLayout(): FloatingLayout {
-  const fallback = { left: Math.max(16, (typeof window === "undefined" ? 1440 : window.innerWidth) - 452), top: 16, width: 420, height: Math.max(560, (typeof window === "undefined" ? 900 : window.innerHeight) - 32) };
-  if (typeof window === "undefined") return fallback;
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(PANEL_FLOATING_LAYOUT_KEY) ?? "null") as Partial<FloatingLayout> | null;
-    if (!saved) return fallback;
-    const width = clamp(Number(saved.width) || fallback.width, MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, window.innerWidth - 24));
-    const height = clamp(Number(saved.height) || fallback.height, 460, window.innerHeight - 24);
-    return {
-      left: clamp(Number(saved.left) || fallback.left, 12, Math.max(12, window.innerWidth - width - 12)),
-      top: clamp(Number(saved.top) || fallback.top, 12, Math.max(12, window.innerHeight - height - 12)),
-      width,
-      height
-    };
-  } catch {
-    return fallback;
-  }
 }
 
 const EMPTY_PAYLOAD: ConversationPayload = {
@@ -415,9 +379,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [savingRename, setSavingRename] = useState(false);
-  const [panelMode, setPanelModeState] = useState<AssistantPanelMode>(loadPanelMode);
   const [panelWidth, setPanelWidth] = useState(() => clamp(loadStoredNumber(PANEL_WIDTH_KEY, DEFAULT_PANEL_WIDTH), MIN_PANEL_WIDTH, typeof window === "undefined" ? MAX_PANEL_WIDTH : assistantDockedMaxWidth(window.innerWidth, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, MIN_WORKSPACE_WITH_SIDEBAR)));
-  const [floatingLayout, setFloatingLayout] = useState<FloatingLayout>(loadFloatingLayout);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [setup, setSetup] = useState<CodexSetupValue>({
     enabled: preferences.enabled,
@@ -434,7 +396,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const imagesRef = useRef<ComposerImage[]>([]);
   const queueRef = useRef<QueuedMessage[]>([]);
   const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
-  const panelDragRef = useRef<{ pointerId: number; startX: number; startY: number; startLeft: number; startTop: number } | null>(null);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
   const activeId = data.activeConversation?.id ?? null;
 
@@ -497,15 +458,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
 
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.assistantMode = panelMode;
     root.style.setProperty("--assistant-panel-width", `${panelWidth}px`);
-    window.localStorage.setItem(PANEL_MODE_KEY, panelMode);
     window.localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
     return () => {
-      delete root.dataset.assistantMode;
       root.style.removeProperty("--assistant-panel-width");
     };
-  }, [panelMode, panelWidth]);
+  }, [panelWidth]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -566,32 +524,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     setSettingsOpen(true);
   }
 
-  function changePanelMode(mode: AssistantPanelMode) {
-    if (mode === "floating") {
-      const width = clamp(panelWidth, MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, window.innerWidth - 24));
-      const height = clamp(window.innerHeight - 32, 460, window.innerHeight - 24);
-      const next = { left: Math.max(12, window.innerWidth - width - 16), top: 16, width, height };
-      setFloatingLayout(next);
-      window.localStorage.setItem(PANEL_FLOATING_LAYOUT_KEY, JSON.stringify(next));
-    }
-    setPanelModeState(mode);
-  }
-
-  function commitFloatingLayout() {
-    if (panelMode !== "floating" || !drawerRef.current || window.innerWidth < 1200) return;
-    const rect = drawerRef.current.getBoundingClientRect();
-    const next = {
-      left: clamp(rect.left, 12, Math.max(12, window.innerWidth - rect.width - 12)),
-      top: clamp(rect.top, 12, Math.max(12, window.innerHeight - rect.height - 12)),
-      width: clamp(rect.width, MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, window.innerWidth - 24)),
-      height: clamp(rect.height, 460, window.innerHeight - 24)
-    };
-    setFloatingLayout(next);
-    window.localStorage.setItem(PANEL_FLOATING_LAYOUT_KEY, JSON.stringify(next));
-  }
-
   function handleDockResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
-    if (panelMode !== "docked" || event.button !== 0 || !drawerRef.current) return;
+    if (event.button !== 0 || !drawerRef.current) return;
     dockResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: drawerRef.current.getBoundingClientRect().width };
     event.currentTarget.setPointerCapture(event.pointerId);
     document.documentElement.dataset.assistantResizing = "true";
@@ -619,35 +553,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     document.body.style.removeProperty("cursor");
     document.body.style.removeProperty("user-select");
     delete document.documentElement.dataset.assistantResizing;
-  }
-
-  function handlePanelDragStart(event: ReactPointerEvent<HTMLElement>) {
-    if (panelMode !== "floating" || event.button !== 0 || !drawerRef.current || (event.target as HTMLElement).closest("button, input, textarea")) return;
-    const rect = drawerRef.current.getBoundingClientRect();
-    panelDragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, startLeft: rect.left, startTop: rect.top };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    document.body.style.cursor = "move";
-    document.body.style.userSelect = "none";
-  }
-
-  function handlePanelDragMove(event: ReactPointerEvent<HTMLElement>) {
-    const drag = panelDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId || !drawerRef.current) return;
-    const rect = drawerRef.current.getBoundingClientRect();
-    const left = clamp(drag.startLeft + event.clientX - drag.startX, 12, Math.max(12, window.innerWidth - rect.width - 12));
-    const top = clamp(drag.startTop + event.clientY - drag.startY, 12, Math.max(12, window.innerHeight - rect.height - 12));
-    drawerRef.current.style.left = `${left}px`;
-    drawerRef.current.style.top = `${top}px`;
-  }
-
-  function handlePanelDragEnd(event: ReactPointerEvent<HTMLElement>) {
-    const drag = panelDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    panelDragRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    document.body.style.removeProperty("cursor");
-    document.body.style.removeProperty("user-select");
-    commitFloatingLayout();
   }
 
   async function updateConversationArchive(conversationId: string, archived: boolean) {
@@ -772,14 +677,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
     await sendMessage(value, { context });
     return true;
-  }
-
-  function resetPanelLayout() {
-    const next = { left: Math.max(12, window.innerWidth - DEFAULT_PANEL_WIDTH - 16), top: 16, width: DEFAULT_PANEL_WIDTH, height: Math.max(460, window.innerHeight - 32) };
-    setPanelWidth(DEFAULT_PANEL_WIDTH);
-    setFloatingLayout(next);
-    window.localStorage.setItem(PANEL_WIDTH_KEY, String(DEFAULT_PANEL_WIDTH));
-    window.localStorage.setItem(PANEL_FLOATING_LAYOUT_KEY, JSON.stringify(next));
   }
 
   function addImages(files: File[]) {
@@ -1046,17 +943,13 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const answeredQuestionMessages = new Set(data.messages
     .filter((message) => message.role === "user" && typeof message.page_context.structured_answer_to === "string")
     .map((message) => String(message.page_context.structured_answer_to)));
-  const drawerStyle: CSSProperties = panelMode === "floating"
-    ? { left: floatingLayout.left, top: floatingLayout.top, width: floatingLayout.width, height: floatingLayout.height }
-    : { width: panelWidth };
-
   if (!open) return null;
   return (
     <>
       <button className={styles.backdrop} type="button" onClick={() => !running && onClose()} aria-label="Close Pilot Assistant" />
-      <aside ref={drawerRef} style={drawerStyle} className={`${styles.drawer} ${panelMode === "floating" ? styles.floatingDrawer : styles.dockedDrawer}`} role="dialog" aria-modal="false" aria-label="Pilot Assistant" onPointerUpCapture={commitFloatingLayout}>
+      <aside ref={drawerRef} style={{ width: panelWidth }} className={`${styles.drawer} ${styles.dockedDrawer}`} role="dialog" aria-modal="false" aria-label="Pilot Assistant">
         <div className={styles.resizeRail} role="separator" aria-label="Resize Pilot Assistant" aria-orientation="vertical" onPointerDown={handleDockResizeStart} onPointerMove={handleDockResizeMove} onPointerUp={handleDockResizeEnd} onPointerCancel={handleDockResizeEnd}><span /></div>
-        <header className={styles.header} onPointerDown={handlePanelDragStart} onPointerMove={handlePanelDragMove} onPointerUp={handlePanelDragEnd} onPointerCancel={handlePanelDragEnd}>
+        <header className={styles.header}>
           <div className={styles.conversationPicker}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
               <Sparkle size={15} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={11} />
@@ -1078,7 +971,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           </div>
           <div className={styles.headerActions}>
             <button type="button" onClick={() => void createConversation()} aria-label="New conversation" title="New conversation"><Plus size={15} /></button>
-            <button className={styles.panelModeButton} type="button" onClick={() => changePanelMode(panelMode === "docked" ? "floating" : "docked")} aria-label={panelMode === "docked" ? "Float assistant panel" : "Dock assistant panel"} title={panelMode === "docked" ? "Float panel" : "Dock panel"}>{panelMode === "docked" ? <ArrowSquareOut size={15} /> : <PushPin size={15} />}</button>
             <button type="button" onClick={() => openSettings("connection")} aria-label="Pilot settings" title="Settings"><GearSix size={15} /></button>
             <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant" title="Close"><X size={16} /></button>
           </div>
@@ -1180,7 +1072,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             <nav className={styles.settingsNav} aria-label="Pilot settings sections">
               <button type="button" className={settingsSection === "connection" ? styles.activeSetting : ""} onClick={() => setSettingsSection("connection")}><Cpu size={16} /> Connection</button>
               <button type="button" className={settingsSection === "archive" ? styles.activeSetting : ""} onClick={() => setSettingsSection("archive")}><Archive size={16} /> Archive</button>
-              <button type="button" className={settingsSection === "interface" ? styles.activeSetting : ""} onClick={() => setSettingsSection("interface")}><ArrowSquareOut size={16} /> Interface</button>
             </nav>
             <div className={styles.settingsContent}>
               {settingsSection === "connection" && <div className={styles.settingsPane}>
@@ -1193,14 +1084,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 <div className={styles.settingsIntro}><h2>Archived conversations</h2><p>Archived chats leave the history menu but keep their messages and activity.</p></div>
                 {loadingArchived ? <div className={styles.settingsLoading}><ShinyText text="Loading archive" speed={1.8} /></div> : archivedConversations.length ? <div className={styles.archiveList}>{archivedConversations.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{new Date(conversation.updated_at).toLocaleDateString()}</small></span><button type="button" onClick={() => void updateConversationArchive(conversation.id, false)} disabled={busyArchive === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}><Archive size={20} /><strong>No archived conversations</strong><p>Archive a chat from the conversation menu when you no longer need it in the active list.</p></div>}
                 {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
-              </div>}
-              {settingsSection === "interface" && <div className={styles.settingsPane}>
-                <div className={styles.settingsIntro}><h2>Panel layout</h2><p>Keep Pilot attached to the workspace or move it as a floating panel.</p></div>
-                <div className={styles.layoutOptions}>
-                  <button type="button" className={panelMode === "docked" ? styles.selectedLayout : ""} onClick={() => changePanelMode("docked")}><PushPin size={18} /><span><strong>Docked</strong><small>Resize from the left edge while the workspace stays visible.</small></span>{panelMode === "docked" && <CheckCircle size={15} weight="fill" />}</button>
-                  <button type="button" className={panelMode === "floating" ? styles.selectedLayout : ""} onClick={() => changePanelMode("floating")}><ArrowSquareOut size={18} /><span><strong>Floating</strong><small>Drag the header to move it and resize from the lower-right corner.</small></span>{panelMode === "floating" && <CheckCircle size={15} weight="fill" />}</button>
-                </div>
-                <button className={styles.resetLayout} type="button" onClick={resetPanelLayout}>Reset panel size and position</button>
               </div>}
             </div>
           </div>

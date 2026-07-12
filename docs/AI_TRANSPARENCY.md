@@ -16,13 +16,13 @@ Pilot Assistant is one global, persistent rail available from the authenticated 
 - running work shows live elapsed time, while settled work folds automatically behind a persisted **Worked for …** duration label;
 - older tool calls fold behind a readable **Show more** control while pending approvals remain visible;
 - every message has a timestamp and copy action, assistant replies can be retried as a preserved new turn, and unfinished text drafts remain local to that browser and conversation;
-- the compact composer floats above the rail edge as one prompt surface with attachments, page context, review mode, stop, and send controls in its footer; submitted text clears immediately so the next message can be written while Pilot works;
+- the docked rail contains one prompt surface with attachments, page context, review mode, stop, and send controls; submitted text clears immediately so the next message can be written while Pilot works;
 - submitted follow-ups enter a visible five-message in-memory queue, run automatically in order, and can be removed or promoted to **Steer** next; stopping or steering records a readable cancelled-turn event before the next prompt runs;
 - when a missing academic fact blocks useful progress, Pilot can ask one to three bounded multiple-choice questions with an optional written answer instead of returning a vague paragraph;
 - conversations reload from Supabase, can be renamed, continued from any workspace page, and reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
-Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection, archived conversations, and panel layout live in a centered settings dialog opened from the global rail.
+Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection and archived conversations live in a centered settings dialog opened from the global rail.
 
 Raw JSON, validation internals, event names, model protocol fields, and hidden chain-of-thought are not the primary interface. Errors are translated into a useful student-facing message. Sanitized technical evidence remains available to developers through server logs and tests rather than being presented as the answer.
 

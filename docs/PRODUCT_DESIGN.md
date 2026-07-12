@@ -20,7 +20,7 @@ Do not duplicate course management, graduation totals, or action lists across de
 | --- | --- | --- |
 | GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, and source-backed college-unit checks |
 | Overview actions | Know the next action and why it comes next | Plan-derived and student-owned actions live beside the current path, with add, complete, delete, and reconciliation controls |
-| Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a compact rail that can be resized, detached and moved, archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
+| Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a docked rail that archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
 
@@ -68,7 +68,7 @@ React Bits adaptations may clarify loading, selection, reveal, drag, and bounded
 
 AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps page context and review mode in one quiet metadata row; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. Read tools run automatically. Every write begins as a visible exact proposal. Manual mode uses a focused approval card. Auto-review displays a separate reviewer decision and automatically applies only low-risk proposals; sensitive or uncertain proposals become the same manual card.
 
-Assistant chrome stays secondary to the student's page. The docked rail uses a forgiving invisible resize target and stores its width. Floating mode preserves size and position and uses the header as the move target. Connection and archive management appear in one centered settings dialog rather than replacing chat content inside the rail. Mobile always uses a full-width rail and a bottom-aligned settings surface, with movement and resize controls removed.
+Assistant chrome stays secondary to the student's page. The rail stays attached to the workspace, uses a forgiving invisible resize target on wide screens, and stores only its width. Connection and archive management appear in one centered settings dialog rather than replacing chat content inside the rail. Mobile uses a full-width rail and a bottom-aligned settings surface, with resize controls removed.
 
 The Pilot control sits in the authenticated top-right toolbar. At wide desktop sizes, the 420px rail docks without obscuring the current page; at narrower sizes it becomes a dismissible overlay and then a full-width mobile surface. Setup uses one recommended model, optional alternatives, one consent statement, one connection test, and one save action. No student is opted in by default.
 

@@ -21,17 +21,6 @@
   animation: assistant-drawer-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 .dockedDrawer { inset: 0 0 0 auto; min-width: 360px; border-left: 1px solid var(--line-strong); box-shadow: -5px 0 16px rgb(20 22 26 / 0.07); }
-.floatingDrawer {
-  min-width: 360px;
-  min-height: 460px;
-  max-width: calc(100vw - 24px);
-  max-height: calc(100dvh - 24px);
-  overflow: hidden;
-  resize: both;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  box-shadow: 0 6px 18px rgb(20 22 26 / 0.16);
-}
 .resizeRail {
   position: absolute;
   inset: 0 auto 0 -5px;
@@ -42,7 +31,6 @@
 }
 .resizeRail span { position: absolute; inset: 0 auto 0 4px; width: 1px; background: transparent; transition: background-color 140ms ease; }
 .resizeRail:hover span, .resizeRail:active span { background: color-mix(in srgb, var(--accent) 62%, var(--line-strong)); }
-.floatingDrawer .resizeRail { display: none; }
 
 .header {
   position: relative;
@@ -56,7 +44,6 @@
   padding: 0 8px 0 11px;
   touch-action: none;
 }
-.floatingDrawer .header { cursor: move; }
 
 .conversationPicker { position: relative; min-width: 0; flex: 1 1 auto; }
 .conversationPicker > button {
@@ -575,35 +562,11 @@
 .archiveRow > span { display: grid; min-width: 0; gap: 2px; }
 .archiveRow strong { overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .archiveRow small { color: var(--ink-faint); font-size: 11px; }
-.archiveRow button, .resetLayout { min-height: 32px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--ink); padding: 0 10px; font: inherit; font-size: 11px; font-weight: 650; }
-.archiveRow button:hover, .resetLayout:hover { background: var(--surface-muted); }
+.archiveRow button { min-height: 32px; border: 1px solid var(--line-strong); border-radius: 7px; background: var(--surface); color: var(--ink); padding: 0 10px; font: inherit; font-size: 11px; font-weight: 650; }
+.archiveRow button:hover { background: var(--surface-muted); }
 .archiveEmpty { display: grid; min-height: 240px; align-content: center; justify-items: center; color: var(--ink-faint); text-align: center; }
 .archiveEmpty strong { margin-top: 9px; color: var(--ink); font-size: 13px; }
 .archiveEmpty p { max-width: 38ch; margin: 5px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
-.layoutOptions { display: grid; gap: 7px; }
-.layoutOptions > button {
-  display: grid;
-  min-height: 72px;
-  grid-template-columns: 22px minmax(0, 1fr) 18px;
-  align-items: start;
-  gap: 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--ink-soft);
-  padding: 13px;
-  font: inherit;
-  text-align: left;
-}
-.layoutOptions > button:hover { border-color: var(--line-strong); }
-.layoutOptions > button.selectedLayout { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
-.layoutOptions > button > svg:first-child { margin-top: 1px; color: var(--accent); }
-.layoutOptions > button > svg:last-child { margin-top: 2px; color: var(--accent); }
-.layoutOptions span { display: grid; gap: 3px; }
-.layoutOptions strong { font-size: 12px; }
-.layoutOptions small { color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
-.resetLayout { margin-top: 14px; }
-
 .imagePreviewBackdrop {
   position: fixed;
   inset: 0;
@@ -635,7 +598,7 @@
 @media (max-width: 1439px) {
   .backdrop { display: block; }
   .drawer { inset: 0 0 0 auto !important; width: min(420px, 100vw) !important; min-width: 0; height: 100dvh !important; resize: none; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: -10px 0 28px rgb(20 22 26 / 0.14); }
-  .resizeRail, .panelModeButton { display: none !important; }
+  .resizeRail { display: none !important; }
 }
 
 @media (max-width: 620px) {
