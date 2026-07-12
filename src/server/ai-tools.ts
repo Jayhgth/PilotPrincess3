@@ -70,7 +70,7 @@ const toolArgumentSchemas = {
   }),
   get_enrollment_constraints: z.object({}),
   get_plan_versions: z.object({}),
-  get_degree_progress: z.object({}),
+  get_degree_progress: z.object({ program_id: z.string().trim().min(1).max(180).optional() }),
   get_college_goal: z.object({}),
   search_smccd_programs: z.object({
     query: z.string().trim().min(1).max(100),
@@ -162,9 +162,9 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the saved schedule, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
   { name: "get_enrollment_constraints", mutatesData: false, description: "Read source-backed concurrent or dual-enrollment limits and evaluate the saved college schedule by term.", arguments: "{}" },
   { name: "get_plan_versions", mutatesData: false, description: "Read active and saved plan versions with labels, creation dates, and course counts.", arguments: "{}" },
-  { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for the selected SMCCD associate-degree goal.", arguments: "{}" },
-  { name: "get_college_goal", mutatesData: false, description: "Read the selected SMCCD associate-degree goal.", arguments: "{}" },
-  { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to set a college goal.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
+  { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for one bookmarked SMCCD associate degree. Omit program_id only when one bookmark is sufficient context.", arguments: '{"program_id":"string|optional"}' },
+  { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
+  { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
   { name: "save_plan_snapshot", mutatesData: true, description: "Propose saving a read-only copy of the active course plan before a larger change.", arguments: '{"label":"optional short label"}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
@@ -180,8 +180,8 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "update_next_step", mutatesData: true, description: "Propose editing a saved next step.", arguments: '{"task_id":"uuid",...changed fields}' },
   { name: "remove_next_step", mutatesData: true, description: "Propose removing a student-created next step. Generated requirement gaps cannot be deleted here.", arguments: '{"task_id":"uuid"}' },
   { name: "remove_next_steps", mutatesData: true, description: "Propose removing an exact set of student-created next steps in one atomic request. Generated requirement steps cannot be deleted.", arguments: '{"task_ids":["uuid"]}' },
-  { name: "set_college_goal", mutatesData: true, description: "Propose selecting one SMCCD AA or AS program as the primary college goal.", arguments: '{"program_id":"string","notes":"string"}' },
-  { name: "clear_college_goal", mutatesData: true, description: "Propose removing a selected SMCCD degree goal.", arguments: '{"program_id":"string"}' }
+  { name: "set_college_goal", mutatesData: true, description: "Propose bookmarking one SMCCD AA or AS degree. Existing bookmarks remain marked.", arguments: '{"program_id":"string","notes":"string"}' },
+  { name: "clear_college_goal", mutatesData: true, description: "Propose removing one SMCCD degree bookmark.", arguments: '{"program_id":"string"}' }
 ];
 
 export function assistantToolCatalogPrompt() {
@@ -273,7 +273,7 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
     supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
     supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
-    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("is_primary", { ascending: false }),
+    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("created_at"),
     supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
     supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle()
   ]);
@@ -651,11 +651,14 @@ export async function executeAssistantReadTool(
   }
 
   if (name === "get_degree_progress") {
-    const primaryGoal = workspace.collegeGoals.find((goal) => goal.is_primary) ?? workspace.collegeGoals[0];
-    if (!primaryGoal) return { summary: "No SMCCD degree goal is selected.", data: null };
+    const args = toolArgumentSchemas.get_degree_progress.parse(argumentsValue);
+    const selectedGoal = args.program_id
+      ? workspace.collegeGoals.find((goal) => goal.program_id === args.program_id)
+      : workspace.collegeGoals[0];
+    if (!selectedGoal) return { summary: args.program_id ? "That degree is not bookmarked." : "No SMCCD degree is bookmarked.", data: null };
     const [programResult, requirementResult] = await Promise.all([
-      supabase.from("smccd_programs").select("*").eq("id", primaryGoal.program_id).single(),
-      supabase.from("smccd_program_requirements").select("*").eq("program_id", primaryGoal.program_id).order("sort_order")
+      supabase.from("smccd_programs").select("*").eq("id", selectedGoal.program_id).single(),
+      supabase.from("smccd_program_requirements").select("*").eq("program_id", selectedGoal.program_id).order("sort_order")
     ]);
     if (programResult.error) throw new Error(programResult.error.message);
     if (requirementResult.error) throw new Error(requirementResult.error.message);
@@ -708,13 +711,13 @@ export async function executeAssistantReadTool(
   }
 
   if (name === "get_college_goal") {
-    if (!workspace.collegeGoals.length) return { summary: "No SMCCD degree goal is selected.", data: [] };
+    if (!workspace.collegeGoals.length) return { summary: "No SMCCD degree is bookmarked.", data: [] };
     const programIds = workspace.collegeGoals.map((goal) => goal.program_id);
     const { data: programs, error } = await supabase.from("smccd_programs").select("id, college_code, title, award_type, source_year").in("id", programIds);
     if (error) throw new Error(error.message);
     const programMap = new Map((programs ?? []).map((program) => [program.id, program]));
     const data = workspace.collegeGoals.map((goal) => ({ ...goal, program: programMap.get(goal.program_id) ?? null }));
-    return { summary: `Read ${data.length} selected college ${data.length === 1 ? "goal" : "goals"}.`, data };
+    return { summary: `Read ${data.length} bookmarked ${data.length === 1 ? "degree" : "degrees"}.`, data };
   }
 
   if (name === "search_smccd_programs") {
@@ -1115,12 +1118,10 @@ export async function executeAssistantMutationTool(
     const args = toolArgumentSchemas.set_college_goal.parse(argumentsValue);
     const programResult = await supabase.from("smccd_programs").select("id, title, award_type, college_code").eq("id", args.program_id).single();
     if (programResult.error || !programResult.data) throw new Error("That SMCCD degree program is no longer available.");
-    const clearResult = await supabase.from("student_smccd_goals").update({ is_primary: false }).eq("user_id", userId).eq("is_primary", true);
-    if (clearResult.error) throw new Error(clearResult.error.message);
-    const { data, error } = await supabase.from("student_smccd_goals").upsert({ user_id: userId, program_id: args.program_id, is_primary: true, notes: args.notes }, { onConflict: "user_id,program_id" }).select("id").single();
+    const { data, error } = await supabase.from("student_smccd_goals").upsert({ user_id: userId, program_id: args.program_id, is_primary: false, notes: args.notes }, { onConflict: "user_id,program_id" }).select("id").single();
     if (error) throw new Error(error.message);
     return {
-      summary: `${programResult.data.title} was selected as the primary college goal.`,
+      summary: `${programResult.data.title} was bookmarked.`,
       data: { ...programResult.data, notes: args.notes },
       changed: { entity: "student_smccd_goal", id: data.id }
     };
@@ -1129,14 +1130,14 @@ export async function executeAssistantMutationTool(
   if (name === "clear_college_goal") {
     const args = toolArgumentSchemas.clear_college_goal.parse(argumentsValue);
     const goal = workspace.collegeGoals.find((candidate) => candidate.program_id === args.program_id);
-    if (!goal) throw new Error("That college goal is not currently selected.");
+    if (!goal) throw new Error("That degree is not currently bookmarked.");
     const { error } = await supabase.from("student_smccd_goals").delete().eq("id", goal.id);
     if (error) throw new Error(error.message);
     return {
-      summary: "The selected college goal was removed.",
+      summary: "The degree bookmark was removed.",
       data: { program_id: args.program_id },
       changed: { entity: "student_smccd_goal", id: goal.id },
-      undo: { kind: "restore_rows", table: "student_smccd_goals", rows: [goal as unknown as Record<string, unknown>], summary: "The college goal was restored." }
+      undo: { kind: "restore_rows", table: "student_smccd_goals", rows: [goal as unknown as Record<string, unknown>], summary: "The degree bookmark was restored." }
     };
   }
 

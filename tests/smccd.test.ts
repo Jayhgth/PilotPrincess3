@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSmccdGeEvidence, calculateSmccdProgramProgress, createSmccdProgramProgressContext, normalizeSmccdCourseCode } from "@/lib/smccd";
+import { calculateSmccdGeEvidence, calculateSmccdGeProgress, calculateSmccdProgramProgress, createSmccdProgramProgressContext, normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { PlanCourse, SmccdCourse, SmccdProgram, SmccdProgramRequirement, SmccdRequirementCourse } from "@/lib/models";
 
 describe("SMCCD curriculum planning", () => {
@@ -87,6 +87,62 @@ describe("SMCCD curriculum planning", () => {
     expect(calculateSmccdGeEvidence(createSmccdProgramProgressContext([], [], planRows, courses))).toEqual([
       { area: "5A", label: "Area 5A", completedCourseCodes: ["BIOL 100"], projectedCourseCodes: ["BIOL 100", "CHEM 110"] }
     ]);
+  });
+
+  it("audits every CSM local GE area, including communication, activity, and Area 8", () => {
+    const courses = [
+      { id: "CSM:COMM C1000", course_code: "COMM C1000", attributes: ["AA/AS Degree Requirements: Area 1B"], units_min: 3, units_max: 3 },
+      { id: "CSM:ADAP 110", course_code: "ADAP 110", attributes: ["AA/AS Degree Requirements: Area 7A"], units_min: 1, units_max: 1 }
+    ] as SmccdCourse[];
+    const rows = [
+      { smccd_course_id: "CSM:COMM C1000", status: "planned", college_units: 3 },
+      { smccd_course_id: "CSM:ADAP 110", status: "completed", college_units: 1, letter_grade: "P" }
+    ] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "CSM");
+
+    expect(progress).toHaveLength(10);
+    expect(progress.find((area) => area.area === "1B")).toMatchObject({
+      description: "Oral Communication & Critical Thinking",
+      status: "planned",
+      projectedCourseCodes: ["COMM C1000"]
+    });
+    expect(progress.find((area) => area.area === "7A")).toMatchObject({
+      description: "Wellness & Kinesiology Activity",
+      status: "completed",
+      completedCourseCodes: ["ADAP 110"]
+    });
+    expect(progress.find((area) => area.area === "7B")).toMatchObject({ status: "missing", requiredUnits: 2 });
+    expect(progress.find((area) => area.area === "8")).toMatchObject({ status: "missing", requiredUnits: 3 });
+  });
+
+  it("uses the awarding college's local GE pattern", () => {
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], [], []), "CAN");
+
+    expect(progress).toHaveLength(9);
+    expect(progress.some((area) => area.area === "8")).toBe(false);
+    expect(progress.find((area) => area.area === "5")).toMatchObject({
+      description: "Natural Science with Lab",
+      requiredUnits: 4,
+      status: "missing"
+    });
+  });
+
+  it("restores official secondary GE designations and assigns constrained areas first", () => {
+    const courses = [{
+      id: "CSM:ETHN 103",
+      college_code: "CSM",
+      course_code: "ETHN 103",
+      attributes: ["AA/AS Degree Requirements: Area 4"],
+      units_min: 3,
+      units_max: 3
+    }] as SmccdCourse[];
+    const rows = [{ smccd_course_id: "CSM:ETHN 103", status: "completed", college_units: 3, letter_grade: "A" }] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "CSM");
+
+    expect(progress.find((area) => area.area === "6")).toMatchObject({ status: "completed", completedCourseCodes: ["ETHN 103"] });
+    expect(progress.find((area) => area.area === "4")).toMatchObject({ status: "missing", completedCourseCodes: [] });
   });
 
   it("enforces a discipline condition alongside the unit total", () => {

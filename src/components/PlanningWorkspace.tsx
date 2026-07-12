@@ -1508,7 +1508,7 @@ export default function PlanningWorkspace() {
     if (!settings || !supabase || !session || !activeVersion) return null;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and your primary associate-degree plan." />
+        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and bookmarked associate-degree plans." />
         <GraduationWorkspace
           progress={fullProgress}
           onFindDtechCourses={openRequirementCourses}

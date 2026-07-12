@@ -197,7 +197,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_enrollment_constraints: "College unit limits",
   get_plan_versions: "Plan versions",
   get_degree_progress: "Degree progress",
-  get_college_goal: "College goal",
+  get_college_goal: "Degree bookmarks",
   search_smccd_programs: "SMCCD programs",
   save_plan_snapshot: "Save plan snapshot",
   add_dtech_course: "Add d.tech course",
@@ -214,8 +214,8 @@ const TOOL_LABELS: Record<string, string> = {
   update_next_step: "Update next step",
   remove_next_step: "Remove next step",
   remove_next_steps: "Remove next steps",
-  set_college_goal: "Set college goal",
-  clear_college_goal: "Clear college goal"
+  set_college_goal: "Bookmark degree",
+  clear_college_goal: "Remove degree bookmark"
 };
 
 function friendlyToolLabel(name: string) {

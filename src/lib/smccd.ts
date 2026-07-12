@@ -8,7 +8,21 @@ import type {
 
 const DOTTED_SUBJECTS = new Set(["BUS", "EMC", "LIT", "MUS", "P.E", "RE", "BCM", "ECE", "HTM"]);
 const PASSING_MAJOR_GRADES = new Set(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "P"]);
+const PASSING_C_MINUS_GRADES = new Set([...PASSING_MAJOR_GRADES, "C-"]);
 const PASSING_DEGREE_GRADES = new Set(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "P"]);
+
+const OFFICIAL_LOCAL_GE_OVERRIDES: Record<SmccdCourse["college_code"], Partial<Record<string, Set<string>>>> = {
+  CSM: {
+    "6": new Set(["ETHN 101", "ETHN 103", "ETHN 104", "ETHN 105", "ETHN 106", "ETHN 107", "ETHN 108", "ETHN 109", "ETHN 110", "ETHN 265", "ETHN 288", "ETHN 300", "ETHN 585"]),
+    "8": new Set(["HIST 201", "HIST 202", "HIST 260", "HIST 261", "HIST 262", "HIST 310", "POLS C1000", "POLS 210", "POLS 310"])
+  },
+  CAN: {
+    "6": new Set(["ETHN 103", "ETHN 105", "ETHN 107", "ETHN 108", "ETHN 109", "ETHN 130", "ETHN 265", "ETHN 288"])
+  },
+  SKY: {
+    "6": new Set(["ETHN 101", "ETHN 103", "ETHN 107", "ETHN 108", "ETHN 109", "ETHN 120", "ETHN 142", "ETHN 265"])
+  }
+};
 
 export const SMCCD_COLLEGE_NAMES = {
   CSM: "College of San Mateo",
@@ -75,6 +89,50 @@ export interface SmccdGeEvidence {
   label: string;
   completedCourseCodes: string[];
   projectedCourseCodes: string[];
+}
+
+export type SmccdGeState = "completed" | "planned" | "partial" | "missing";
+
+export interface SmccdGeProgress extends SmccdGeEvidence {
+  description: string;
+  status: SmccdGeState;
+  completedUnits: number;
+  projectedUnits: number;
+  requiredUnits: number;
+  missingSummary: string;
+}
+
+export const CSM_LOCAL_GE_WORKSHEET_URL = "https://collegeofsanmateo.edu/forms/docs/counseling/AAAS_DegreeWorksheet_25-26.pdf";
+export const SMCCD_LOCAL_GE_SOURCE_URLS: Record<SmccdCourse["college_code"], string> = {
+  CSM: CSM_LOCAL_GE_WORKSHEET_URL,
+  CAN: "https://catalog.canadacollege.edu/current/ge-worksheets/_docs/aa-as-req.pdf",
+  SKY: "https://catalog.skylinecollege.edu/current/generaldegreerequirements/associatestable.php"
+};
+
+type GeGradeMinimum = "c" | "c_minus" | "degree";
+
+interface LocalGeAreaDefinition {
+  area: string;
+  label: string;
+  description: string;
+  requiredUnits: number;
+  minimumGrade: GeGradeMinimum;
+}
+
+function localGeAreas(collegeCode: SmccdCourse["college_code"]): LocalGeAreaDefinition[] {
+  const minimumGrade: GeGradeMinimum = collegeCode === "SKY" ? "c_minus" : "c";
+  return [
+    { area: "1A", label: "Area 1A", description: "English Composition", requiredUnits: 3, minimumGrade },
+    { area: "1B", label: "Area 1B", description: "Oral Communication & Critical Thinking", requiredUnits: 3, minimumGrade },
+    { area: "2", label: "Area 2", description: "Mathematics & Quantitative Reasoning", requiredUnits: 3, minimumGrade },
+    { area: "3", label: "Area 3", description: "Arts & Humanities", requiredUnits: 3, minimumGrade: "degree" },
+    { area: "4", label: "Area 4", description: "Social & Behavioral Sciences", requiredUnits: 3, minimumGrade: "degree" },
+    { area: "5", label: "Area 5", description: collegeCode === "CAN" ? "Natural Science with Lab" : "Natural Sciences", requiredUnits: collegeCode === "CAN" ? 4 : 3, minimumGrade: "degree" },
+    { area: "6", label: "Area 6", description: "Ethnic Studies", requiredUnits: 3, minimumGrade: "degree" },
+    { area: "7A", label: "Area 7A", description: collegeCode === "CAN" ? "Physical Education Activity" : "Wellness & Kinesiology Activity", requiredUnits: 1, minimumGrade: "degree" },
+    { area: "7B", label: "Area 7B", description: "Additional Area 7 units", requiredUnits: 2, minimumGrade: "degree" },
+    ...(collegeCode === "CSM" ? [{ area: "8", label: "Area 8", description: "American History & Institutions and California Government", requiredUnits: 3, minimumGrade: "degree" as const }] : [])
+  ];
 }
 
 export interface SmccdProgramProgress {
@@ -225,6 +283,51 @@ export function calculateSmccdProgramProgressWithContext(
 
 export function calculateSmccdGeEvidence(context: SmccdProgramProgressContext): SmccdGeEvidence[] {
   return collectGeEvidence(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById);
+}
+
+export function calculateSmccdGeProgress(
+  context: SmccdProgramProgressContext,
+  collegeCode: SmccdCourse["college_code"] = "CSM"
+): SmccdGeProgress[] {
+  const definitions = localGeAreas(collegeCode);
+  const completed = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, false), context.courseById, definitions);
+  const projected = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById, definitions);
+
+  return definitions.map((definition) => {
+    const completedArea = completed.get(definition.area) ?? emptyGeArea(definition.requiredUnits);
+    const projectedArea = projected.get(definition.area) ?? emptyGeArea(definition.requiredUnits);
+    const requiredUnits = projectedArea.requiredUnits;
+    const completedCovered = completedArea.units >= completedArea.requiredUnits;
+    const projectedCovered = projectedArea.units >= requiredUnits;
+    const status: SmccdGeState = completedCovered
+      ? "completed"
+      : projectedCovered
+        ? "planned"
+        : projectedArea.units > 0
+          ? "partial"
+          : "missing";
+    const remainingUnits = round(Math.max(0, requiredUnits - projectedArea.units));
+    const missingSummary = definition.area === "7B" && requiredUnits === 0
+      ? "Area 7 is covered by Area 7A coursework"
+      : status === "completed"
+        ? "Completed"
+        : status === "planned"
+          ? "Covered by the active plan"
+          : `${formatNumber(remainingUnits)} more ${remainingUnits === 1 ? "unit" : "units"} needed`;
+
+    return {
+      area: definition.area,
+      label: definition.label,
+      description: definition.description,
+      status,
+      completedUnits: completedArea.units,
+      projectedUnits: projectedArea.units,
+      requiredUnits,
+      completedCourseCodes: completedArea.codes,
+      projectedCourseCodes: projectedArea.codes,
+      missingSummary
+    };
+  });
 }
 
 export function calculateSmccdProgramProgress(
@@ -408,6 +511,105 @@ function collectGeEvidence(attemptsByCode: Map<string, PlanCourse>, courseById: 
       completedCourseCodes: [...evidence.completed],
       projectedCourseCodes: [...evidence.projected]
     }));
+}
+
+interface GeAuditArea {
+  codes: string[];
+  units: number;
+  requiredUnits: number;
+}
+
+function emptyGeArea(requiredUnits: number): GeAuditArea {
+  return { codes: [], units: 0, requiredUnits };
+}
+
+function auditLocalGe(
+  attemptsByCode: Map<string, PlanCourse>,
+  courseById: Map<string, SmccdCourse>,
+  definitions: LocalGeAreaDefinition[]
+) {
+  const assigned = new Set<string>();
+  const result = new Map<string, GeAuditArea>();
+  const constrainedOrder = ["1A", "1B", "2", "6", "8", "5", "3", "4"];
+
+  for (const area of constrainedOrder) {
+    const definition = definitions.find((candidate) => candidate.area === area);
+    if (!definition) continue;
+    const candidates = geCandidates(area, attemptsByCode, courseById, assigned, definition.minimumGrade)
+      .sort((left, right) => right.units - left.units || left.code.localeCompare(right.code));
+    result.set(area, assignGeCandidates(candidates, definition.requiredUnits, assigned));
+  }
+
+  const area7ACandidates = geCandidates("7A", attemptsByCode, courseById, assigned, "degree")
+    .sort((left, right) => left.units - right.units || left.code.localeCompare(right.code));
+  const area7A = assignGeCandidates(area7ACandidates, 1, assigned);
+  result.set("7A", area7A);
+
+  const area7BRequired = round(Math.max(0, 3 - area7A.units));
+  const area7Candidates = [
+    ...geCandidates("7B", attemptsByCode, courseById, assigned, "degree"),
+    ...geCandidates("7A", attemptsByCode, courseById, assigned, "degree")
+  ].filter((candidate, index, rows) => rows.findIndex((row) => row.code === candidate.code) === index)
+    .sort((left, right) => right.units - left.units || left.code.localeCompare(right.code));
+  result.set("7B", assignGeCandidates(area7Candidates, area7BRequired, assigned));
+
+  return result;
+}
+
+function geCandidates(
+  area: string,
+  attemptsByCode: Map<string, PlanCourse>,
+  courseById: Map<string, SmccdCourse>,
+  assigned: Set<string>,
+  minimumGrade: GeGradeMinimum
+) {
+  const candidates: Array<{ code: string; units: number }> = [];
+  for (const [code, row] of attemptsByCode) {
+    if (assigned.has(code) || !qualifiesForLocalGe(row, minimumGrade)) continue;
+    const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
+    if (!course || !courseGeAreas(course).some((candidate) => geAreaMatches(area, candidate))) continue;
+    candidates.push({ code: course.course_code, units: attemptUnits(row, courseById) });
+  }
+  return candidates;
+}
+
+function assignGeCandidates(candidates: Array<{ code: string; units: number }>, requiredUnits: number, assigned: Set<string>): GeAuditArea {
+  const codes: string[] = [];
+  let units = 0;
+  for (const candidate of candidates) {
+    if (units >= requiredUnits) break;
+    const normalized = normalizeSmccdCourseCode(candidate.code);
+    if (assigned.has(normalized)) continue;
+    assigned.add(normalized);
+    codes.push(candidate.code);
+    units += candidate.units;
+  }
+  return { codes, units: round(units), requiredUnits };
+}
+
+function courseGeAreas(course: SmccdCourse) {
+  const areas = (course.attributes ?? []).flatMap((attribute) => {
+    const match = attribute.match(/AA\/AS Degree Requirements:\s*Area\s+(.+)$/i);
+    return match ? [match[1].trim().toUpperCase()] : [];
+  });
+  const normalizedCode = normalizeSmccdCourseCode(course.course_code);
+  for (const [area, courseCodes] of Object.entries(OFFICIAL_LOCAL_GE_OVERRIDES[course.college_code] ?? {})) {
+    if (courseCodes?.has(normalizedCode)) areas.push(area);
+  }
+  return [...new Set(areas)];
+}
+
+function geAreaMatches(requiredArea: string, catalogArea: string) {
+  if (["1A", "1B", "7A", "7B"].includes(requiredArea)) return catalogArea === requiredArea;
+  return catalogArea === requiredArea || catalogArea.startsWith(requiredArea);
+}
+
+function qualifiesForLocalGe(row: PlanCourse, minimumGrade: GeGradeMinimum) {
+  if (row.status === "current" || row.status === "planned") return true;
+  const grade = normalizeGrade(row.letter_grade);
+  if (minimumGrade === "c") return PASSING_MAJOR_GRADES.has(grade);
+  if (minimumGrade === "c_minus") return PASSING_C_MINUS_GRADES.has(grade);
+  return PASSING_DEGREE_GRADES.has(grade);
 }
 
 function planRowRank(row: PlanCourse) {
