@@ -49,7 +49,7 @@ Write tools may prepare these changes:
 
 - save a read-only snapshot of the active course plan;
 - add a d.tech or SMCCD course;
-- move or remove an unlocked plan course;
+- move an unlocked plan course or remove an exact set of unlocked plan courses;
 - add or complete a next step;
 - edit an unlocked plan course;
 - update the student's source-bounded concurrent/dual enrollment guardrail;
@@ -84,7 +84,9 @@ Queued follow-ups also remain browser-memory-only until their turn starts. Their
 
 After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. This is evidence of the exact application-side mutation, not a claim made by the model.
 
-Archiving sets the owning conversation's existing `is_archived` flag. It removes that conversation from active history without deleting messages, attachments, events, or tool calls. The student can restore it from Pilot settings. Per-user RLS applies to both actions.
+Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from Pilot settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
+
+Bulk plan-change language such as “remove all my in progress classes” triggers a deterministic `list_plan_courses` read for the requested status before Codex responds. Pilot then uses the returned stable IDs in one bounded `remove_plan_courses` proposal instead of relying on conversational memory or generic retrieval.
 
 ## t3code and SDK boundary
 

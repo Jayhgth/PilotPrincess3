@@ -288,6 +288,7 @@ export interface AiConversation {
   user_id: string;
   title: string;
   is_archived: boolean;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }

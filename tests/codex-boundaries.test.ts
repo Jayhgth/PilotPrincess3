@@ -172,4 +172,17 @@ describe("Codex feature boundaries", () => {
     });
     expect(requiredAssistantEvidenceRead("What is a transcript?")).toBeNull();
   });
+
+  it("loads exact plan IDs before bulk course changes", () => {
+    expect(requiredAssistantEvidenceRead("Remove all my in progress classes.")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "current" }
+    });
+    expect(requiredAssistantEvidenceRead("Delete every planned course")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "planned" }
+    });
+    expect(requiredAssistantEvidenceRead("What are all my current classes?")).toBeNull();
+    expect(parseAssistantToolCall("remove_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
+  });
 });

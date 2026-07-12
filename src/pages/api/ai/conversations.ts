@@ -4,6 +4,8 @@ import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 
 export const prerender = false;
 
+const ARCHIVE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
 const createSchema = z.object({
   title: z.string().trim().min(1).max(120).optional()
 });
@@ -14,12 +16,42 @@ const updateSchema = z.object({
   title: z.string().trim().min(1).max(120).optional()
 }).refine((value) => value.archived !== undefined || value.title !== undefined, "Add a title or archive state.");
 
+async function purgeExpiredArchives(auth: NonNullable<Awaited<ReturnType<typeof authenticateRequest>>>) {
+  const cutoff = new Date(Date.now() - ARCHIVE_RETENTION_MS).toISOString();
+  const expiredResult = await auth.supabase
+    .from("ai_conversations")
+    .select("id")
+    .eq("user_id", auth.user.id)
+    .eq("is_archived", true)
+    .lt("archived_at", cutoff)
+    .limit(100);
+  if (expiredResult.error || !expiredResult.data?.length) return;
+  const ids = expiredResult.data.map((conversation) => conversation.id);
+  const attachmentResult = await auth.supabase
+    .from("ai_message_attachments")
+    .select("storage_path")
+    .eq("user_id", auth.user.id)
+    .in("conversation_id", ids);
+  if (attachmentResult.error) return;
+  const paths = (attachmentResult.data ?? []).map((attachment) => attachment.storage_path);
+  if (paths.length) {
+    const storageResult = await auth.supabase.storage.from("ai-attachments").remove(paths);
+    if (storageResult.error) return;
+  }
+  await auth.supabase
+    .from("ai_conversations")
+    .delete()
+    .eq("user_id", auth.user.id)
+    .in("id", ids);
+}
+
 export const GET: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
   if (!auth) return jsonError("Authentication required.", 401);
   const url = new URL(request.url);
   const requestedId = url.searchParams.get("conversationId");
   const archived = url.searchParams.get("archived") === "true";
+  if (archived) await purgeExpiredArchives(auth);
   const conversationResult = await auth.supabase
     .from("ai_conversations")
     .select("*")
@@ -106,10 +138,11 @@ export const PATCH: APIRoute = async ({ request }) => {
   if (!auth) return jsonError("Authentication required.", 401);
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid conversation update.", 400);
+  const now = new Date().toISOString();
   const patch = {
-    ...(parsed.data.archived !== undefined ? { is_archived: parsed.data.archived } : {}),
+    ...(parsed.data.archived !== undefined ? { is_archived: parsed.data.archived, archived_at: parsed.data.archived ? now : null } : {}),
     ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
-    updated_at: new Date().toISOString()
+    updated_at: now
   };
   const { data, error } = await auth.supabase
     .from("ai_conversations")

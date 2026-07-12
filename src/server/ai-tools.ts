@@ -92,6 +92,10 @@ const toolArgumentSchemas = {
     status: z.enum(["completed", "current", "planned"])
   }),
   remove_plan_course: z.object({ plan_course_id: z.uuid() }),
+  remove_plan_courses: z.object({
+    plan_course_ids: z.array(z.uuid()).min(1).max(40)
+      .refine((ids) => new Set(ids).size === ids.length, "Course IDs must be unique.")
+  }),
   update_plan_course: z.object({
     plan_course_id: z.uuid(),
     grade_level: gradeSchema.optional(),
@@ -149,6 +153,7 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
+  { name: "remove_plan_courses", mutatesData: true, description: "Propose removing an exact set of editable courses from the active plan in one atomic request. Use this for all/every bulk removal requests after listing the matching plan courses.", arguments: '{"plan_course_ids":["uuid"]}' },
   { name: "update_plan_course", mutatesData: true, description: "Propose editing the placement, grade, or notes of an unlocked plan course.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","notes":"string|null"}' },
   { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing the student's SMCCD concurrent- or dual-enrollment unit guardrail. Source-backed limits are revalidated when the change runs.", arguments: '{"program_type":"concurrent|dual","limit_mode":"recommended|fee_free|absolute|custom","custom_unit_limit":number|null}' },
   { name: "add_next_step", mutatesData: true, description: "Propose adding one student-owned next step. The selected review route must approve it.", arguments: '{"title":"string","category":"academics|activities|college|summer|admin","due_label":"string|null"}' },
@@ -188,6 +193,7 @@ export function assistantToolLabel(name: string) {
     add_smccd_course: "Add SMCCD course",
     move_plan_course: "Move course",
     remove_plan_course: "Remove course",
+    remove_plan_courses: "Remove courses",
     update_plan_course: "Update course",
     update_enrollment_preference: "Update enrollment guardrail",
     add_next_step: "Add next step",
@@ -807,6 +813,28 @@ export async function executeAssistantMutationTool(
     const { error } = await supabase.from("plan_courses").delete().eq("id", row.id);
     if (error) throw new Error(error.message);
     return { summary: "The course was removed from the active plan.", data: { plan_course_id: row.id }, changed: { entity: "plan_course", id: row.id } };
+  }
+
+  if (name === "remove_plan_courses") {
+    const args = toolArgumentSchemas.remove_plan_courses.parse(argumentsValue);
+    const rows = args.plan_course_ids.map((id) => workspace.planCourses.find((candidate) => candidate.id === id));
+    if (rows.some((row) => !row)) throw new Error("One or more courses are no longer in the active plan.");
+    const matchedRows = rows as PlanCourse[];
+    if (matchedRows.some((row) => row.source_review_item_id)) {
+      throw new Error("Transcript-backed courses must be corrected through transcript review and cannot be removed here.");
+    }
+    const { error } = await supabase.from("plan_courses").delete().in("id", args.plan_course_ids);
+    if (error) throw new Error(error.message);
+    const courseMap = new Map(workspace.courses.map((course) => [course.id, course]));
+    return {
+      summary: `${matchedRows.length} ${matchedRows.length === 1 ? "course was" : "courses were"} removed from the active plan.`,
+      data: {
+        plan_course_ids: args.plan_course_ids,
+        courses: matchedRows.map((row) => courseDisplayName(row, courseMap)),
+        removed_count: matchedRows.length
+      },
+      changed: { entity: "plan_courses", id: args.plan_course_ids.join(",") }
+    };
   }
 
   if (name === "update_plan_course") {

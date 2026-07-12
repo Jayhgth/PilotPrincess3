@@ -107,6 +107,13 @@ function loadStoredNumber(key: string, fallback: number) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function archiveExpiryLabel(archivedAt: string | null) {
+  const archivedDate = new Date(archivedAt ?? "");
+  if (Number.isNaN(archivedDate.getTime())) return "Deletes 14 days after archiving";
+  archivedDate.setDate(archivedDate.getDate() + 14);
+  return `Deletes ${archivedDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+}
+
 const EMPTY_PAYLOAD: ConversationPayload = {
   conversations: [],
   activeConversation: null,
@@ -374,6 +381,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [settingsOpen, setSettingsOpen] = useState(!preferences.enabled);
   const [settingsSection, setSettingsSection] = useState<AssistantSettingsSection>("connection");
   const [archivedConversations, setArchivedConversations] = useState<AiConversation[]>([]);
+  const [archiveLoaded, setArchiveLoaded] = useState(false);
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [busyArchive, setBusyArchive] = useState<string | null>(null);
   const [renamingConversationId, setRenamingConversationId] = useState<string | null>(null);
@@ -456,6 +464,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       const payload = await response.json() as ConversationPayload & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Archived conversations could not be loaded.");
       setArchivedConversations(payload.conversations);
+      setArchiveLoaded(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Archived conversations could not be loaded.");
     } finally {
@@ -495,10 +504,10 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }, [autoReviewToolCalls, data.activeConversation?.id, data.toolCalls, loadConversation, open, reviewMode, running]);
 
   useEffect(() => {
-    if (!settingsOpen || settingsSection !== "archive") return;
+    if (!settingsOpen || settingsSection !== "archive" || archiveLoaded) return;
     const timer = window.setTimeout(() => void loadArchivedConversations(), 0);
     return () => window.clearTimeout(timer);
-  }, [loadArchivedConversations, settingsOpen, settingsSection]);
+  }, [archiveLoaded, loadArchivedConversations, settingsOpen, settingsSection]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDraft(window.localStorage.getItem(assistantDraftKey(session.user.id, activeId)) ?? ""), 0);
@@ -606,8 +615,39 @@ export default function GlobalAssistant({ session, open, pageContext, preference
 
   async function updateConversationArchive(conversationId: string, archived: boolean) {
     if (running || busyArchive) return;
+    const conversation = archived
+      ? data.conversations.find((candidate) => candidate.id === conversationId)
+      : archivedConversations.find((candidate) => candidate.id === conversationId);
+    if (!conversation) return;
+    const previousData = data;
+    const previousArchived = archivedConversations;
+    const archiveTime = new Date().toISOString();
+    const optimisticConversation: AiConversation = {
+      ...conversation,
+      is_archived: archived,
+      archived_at: archived ? archiveTime : null,
+      updated_at: archiveTime
+    };
+    const remainingActive = data.conversations.filter((candidate) => candidate.id !== conversationId);
+    const nextActive = data.activeConversation?.id === conversationId ? remainingActive[0] ?? null : data.activeConversation;
+
     setBusyArchive(conversationId);
     setError(null);
+    if (archived) {
+      setData((current) => ({
+        ...current,
+        conversations: current.conversations.filter((candidate) => candidate.id !== conversationId),
+        ...(current.activeConversation?.id === conversationId
+          ? { activeConversation: nextActive, messages: [], events: [], toolCalls: [] }
+          : {})
+      }));
+      if (archiveLoaded) {
+        setArchivedConversations((current) => [optimisticConversation, ...current]);
+      }
+    } else {
+      setArchivedConversations((current) => current.filter((candidate) => candidate.id !== conversationId));
+      setData((current) => ({ ...current, conversations: [optimisticConversation, ...current.conversations] }));
+    }
     try {
       const response = await authorizedFetch("/api/ai/conversations", {
         method: "PATCH",
@@ -617,14 +657,20 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       const payload = await response.json() as { conversation?: AiConversation; error?: string };
       if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "The conversation could not be updated.");
       if (archived) {
-        setHistoryOpen(false);
-        if (data.activeConversation?.id === conversationId) await loadConversation();
-        else setData((current) => ({ ...current, conversations: current.conversations.filter((conversation) => conversation.id !== conversationId) }));
+        if (archiveLoaded) {
+          setArchivedConversations((current) => current.map((candidate) => candidate.id === conversationId ? payload.conversation! : candidate));
+        }
+        if (data.activeConversation?.id === conversationId && nextActive) await loadConversation(nextActive.id);
       } else {
-        await loadConversation(data.activeConversation?.id);
+        setData((current) => ({
+          ...current,
+          conversations: current.conversations.map((candidate) => candidate.id === conversationId ? payload.conversation! : candidate)
+        }));
+        if (!data.activeConversation) await loadConversation(payload.conversation.id);
       }
-      if (settingsOpen && settingsSection === "archive") await loadArchivedConversations();
     } catch (caught) {
+      setData(previousData);
+      setArchivedConversations(previousArchived);
       setError(caught instanceof Error ? caught.message : "The conversation could not be updated.");
     } finally {
       setBusyArchive(null);
@@ -1119,8 +1165,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 <div className={styles.settingsFooter}><button className={styles.saveSetup} type="button" onClick={() => void savePreferences()} disabled={savingPreferences || (setup.enabled && (!setup.approved || !setup.testedAt))}>{savingPreferences ? "Saving" : setup.enabled ? "Save connection" : "Keep AI off"}</button></div>
               </div>}
               {settingsSection === "archive" && <div className={styles.settingsPane}>
-                <div className={styles.settingsIntro}><h2>Archived conversations</h2><p>Archived chats leave the history menu but keep their messages and activity.</p></div>
-                {loadingArchived ? <div className={styles.settingsLoading}><ShinyText text="Loading archive" speed={1.8} /></div> : archivedConversations.length ? <div className={styles.archiveList}>{archivedConversations.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{new Date(conversation.updated_at).toLocaleDateString()}</small></span><button type="button" onClick={() => void updateConversationArchive(conversation.id, false)} disabled={busyArchive === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}><Archive size={20} /><strong>No archived conversations</strong><p>Archive a chat from the conversation menu when you no longer need it in the active list.</p></div>}
+                <div className={styles.settingsIntro}><h2>Archived conversations</h2><p>Restore a chat within 14 days. After that, its messages, activity, and attachments are permanently deleted.</p></div>
+                {loadingArchived ? <div className={styles.settingsLoading}><ShinyText text="Loading archive" speed={1.8} /></div> : archivedConversations.length ? <div className={styles.archiveList}>{archivedConversations.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{archiveExpiryLabel(conversation.archived_at)}</small></span><button type="button" onClick={() => void updateConversationArchive(conversation.id, false)} disabled={busyArchive === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}><Archive size={20} /><strong>No archived conversations</strong><p>Archive a chat from the conversation menu when you no longer need it in the active list.</p></div>}
                 {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
               </div>}
             </div>

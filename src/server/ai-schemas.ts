@@ -192,6 +192,7 @@ export const assistantToolNames = [
   "add_smccd_course",
   "move_plan_course",
   "remove_plan_course",
+  "remove_plan_courses",
   "update_plan_course",
   "update_enrollment_preference",
   "add_next_step",

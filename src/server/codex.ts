@@ -528,9 +528,21 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   const normalized = userMessage.toLowerCase();
   const transcript = /trans(?:cript|cipt)/.test(normalized);
   const auditIntent = /\b(audit|check|double[ -]?check|error|wrong|mismatch|parse|parsed|accurate|accuracy)\b/.test(normalized);
-  return transcript && auditIntent
-    ? { name: "audit_transcript_data", arguments: { include_source_text: true } }
-    : null;
+  if (transcript && auditIntent) return { name: "audit_transcript_data", arguments: { include_source_text: true } };
+
+  const bulkCourseTarget = /\b(all|every|each)\b/.test(normalized) && /\b(course|courses|class|classes)\b/.test(normalized);
+  const courseChangeIntent = /\b(remove|delete|drop)\b/.test(normalized);
+  if (bulkCourseTarget && courseChangeIntent) {
+    const status = /\b(in[ -]?progress|current)\b/.test(normalized)
+      ? "current"
+      : /\b(planned|future)\b/.test(normalized)
+        ? "planned"
+        : /\b(done|completed|finished)\b/.test(normalized)
+          ? "completed"
+          : "all";
+    return { name: "list_plan_courses", arguments: { status } };
+  }
+  return null;
 }
 
 function addUsage(current: Usage | null, next: Usage): Usage {
@@ -611,9 +623,64 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       try {
         const result = await options.executeReadTool(requiredRead.name, requiredRead.arguments);
         await options.onToolActivity({ ...activity, status: "completed", result });
+        if (requiredRead.name === "list_plan_courses" && Array.isArray(result.data)) {
+          const rows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const locked = rows.filter((row) => row.transcript_locked === true);
+          const ids = rows.map((row) => row.plan_course_id).filter((id): id is string => typeof id === "string");
+          const statusLabel = requiredRead.arguments.status === "current"
+            ? "In progress"
+            : requiredRead.arguments.status === "planned"
+              ? "Planned"
+              : requiredRead.arguments.status === "completed"
+                ? "Done"
+                : "saved";
+          if (!rows.length) {
+            return {
+              message: `You do not have any ${statusLabel} courses to remove.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          if (locked.length || ids.length !== rows.length) {
+            return {
+              message: `I could not remove all ${statusLabel} courses because ${locked.length || rows.length - ids.length} ${locked.length === 1 ? "record is" : "records are"} transcript-backed or missing a stable plan ID.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          const proposal: AssistantChatToolActivity = {
+            id: crypto.randomUUID(),
+            name: "remove_plan_courses",
+            label: assistantToolLabel("remove_plan_courses"),
+            arguments: { plan_course_ids: ids },
+            explanation: `Remove all ${rows.length} ${statusLabel} courses requested by the student.`,
+            mutatesData: true,
+            status: "pending_confirmation"
+          };
+          await options.onToolActivity(proposal);
+          return {
+            message: options.reviewMode === "auto_review"
+              ? `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact batch removal automatically.`
+              : `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"} and prepared one exact batch removal for your approval.`,
+            questions: [],
+            threadId: thread.id,
+            usage,
+            latencyMs: Date.now() - startedAt,
+            model,
+            proposals: [proposal]
+          };
+        }
         prompt += "\n\n" + [
           "A required read-only evidence check already ran for this request. Do not say that you are about to check, and do not call the same tool again.",
-          "Answer directly from this result. For a transcript audit, state the deterministic verdict first, distinguish confirmed mismatches from unresolved verification, and never treat needs_review status or a graduation gap as proof of a parsing error.",
+          "Answer directly from this result. For a transcript audit, state the deterministic verdict first, distinguish confirmed mismatches from unresolved verification, and never treat needs_review status or a graduation gap as proof of a parsing error. For a bulk course removal, use one remove_plan_courses call containing every matching unlocked plan_course_id from this result; do not guess IDs or omit a matching course.",
           `REQUIRED TOOL RESULT: ${JSON.stringify({ tool: requiredRead.name, status: "completed", result })}`
         ].join("\n\n");
       } catch (error) {
