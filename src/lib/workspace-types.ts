@@ -1,5 +1,4 @@
 export type {
-  Activity,
   CatalogReviewItem,
   Confidence,
   Course,
@@ -12,8 +11,6 @@ export type {
   PlanCourse,
   PlanVersion,
   School,
-  SimulationConfig,
-  SimulationResult,
   SmccdCollege,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
@@ -22,6 +19,6 @@ export type {
   SmccdRequirementCourse,
   StudentSmccdGoal,
   StudentEnrollmentPreference,
-  StudentProfile,
+  StudentSettings,
   TimelineTask
 } from "@/lib/models";

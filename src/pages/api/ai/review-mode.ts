@@ -15,7 +15,7 @@ export const POST: APIRoute = async ({ request }) => {
   if (!parsed.success) return jsonError("Choose Manual or Auto-review.", 400);
   const preferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
   if (!preferences.enabled || !preferences.approvedAt) return jsonError("Connect Pilot Assistant before changing review mode.", 403);
-  const { error } = await auth.supabase.from("student_profiles").update({ ai_review_mode: parsed.data.mode }).eq("id", auth.user.id);
+  const { error } = await auth.supabase.from("student_settings").update({ ai_review_mode: parsed.data.mode }).eq("id", auth.user.id);
   if (error) return jsonError(error.message, 500);
   return new Response(JSON.stringify({ mode: parsed.data.mode }), {
     headers: { "content-type": "application/json", "cache-control": "no-store" }

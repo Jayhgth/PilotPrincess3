@@ -12,7 +12,7 @@ export interface UserAiPreferences {
 
 export async function loadUserAiPreferences(supabase: SupabaseClient, userId: string): Promise<UserAiPreferences> {
   const { data, error } = await supabase
-    .from("student_profiles")
+    .from("student_settings")
     .select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at")
     .eq("id", userId)
     .single();

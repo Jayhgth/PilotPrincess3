@@ -20,7 +20,6 @@ import {
   normalizeSmccdCourseCode,
   SMCCD_COLLEGE_NAMES
 } from "@/lib/smccd";
-import { programProfileFit } from "@/lib/profile-planning";
 import { schoolYearForGrade, selectedPlanGrades } from "@/lib/planning";
 import { createSmccdPlannerPrerequisiteEvaluator } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
@@ -35,7 +34,7 @@ import type {
   SmccdProgram,
   SmccdProgramRequirement,
   SmccdRequirementCourse,
-  StudentProfile,
+  StudentSettings,
   StudentSmccdGoal
 } from "@/lib/models";
 
@@ -44,7 +43,7 @@ interface Props {
   initialSection?: SmccdSection;
   supabase: SupabaseClient;
   session: Session;
-  profile: StudentProfile;
+  settings: StudentSettings;
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
@@ -56,7 +55,7 @@ interface Props {
 
 type CourseStatus = "completed" | "current" | "planned";
 type CollegeFilter = "all" | SmccdCollege["code"];
-type ProgramMode = "coursework" | "profile" | "all";
+type ProgramMode = "coursework" | "all";
 type ProgramAwardFilter = "all" | SmccdProgram["award_type"];
 type SmccdSection = "courses" | "degree";
 
@@ -65,7 +64,7 @@ export default function SmccdPlanner({
   initialSection = "courses",
   supabase,
   session,
-  profile,
+  settings,
   activeVersion,
   planCourses,
   equivalencies,
@@ -94,8 +93,8 @@ export default function SmccdPlanner({
   const [programAwardFilter, setProgramAwardFilter] = useState<ProgramAwardFilter>("all");
   const [programMode, setProgramMode] = useState<ProgramMode>("coursework");
   const [selectedCourse, setSelectedCourse] = useState<SmccdCourse | null>(null);
-  const availablePlanGrades = selectedPlanGrades(profile);
-  const [targetGrade, setTargetGrade] = useState<GradeLevel>(availablePlanGrades[0] ?? (profile.grade_level ?? 11) as GradeLevel);
+  const availablePlanGrades = selectedPlanGrades(settings);
+  const [targetGrade, setTargetGrade] = useState<GradeLevel>(availablePlanGrades[0] ?? (settings.grade_level ?? 11) as GradeLevel);
   const [courseDraft, setCourseDraft] = useState({
     gradeLevel: targetGrade,
     status: "planned" as CourseStatus,
@@ -107,7 +106,7 @@ export default function SmccdPlanner({
     name: "",
     collegeUnits: 3,
     dtechCredits: 0,
-    gradeLevel: (profile.grade_level ?? 11) as GradeLevel
+    gradeLevel: (settings.grade_level ?? 11) as GradeLevel
   });
 
   useEffect(() => {
@@ -264,21 +263,16 @@ export default function SmccdPlanner({
   const visiblePrograms = useMemo(() => {
     const query = deferredProgramSearch.trim().toLowerCase();
     return programs
-      .map((program) => ({
-        program,
-        progress: programProgress.get(program.id)!,
-        fit: programProfileFit(program, profile)
-      }))
+      .map((program) => ({ program, progress: programProgress.get(program.id)! }))
       .filter((row) => !query || `${row.program.title} ${row.program.award_type} ${SMCCD_COLLEGE_NAMES[row.program.college_code]}`.toLowerCase().includes(query))
       .filter((row) => programCollegeFilter === "all" || row.program.college_code === programCollegeFilter)
       .filter((row) => programAwardFilter === "all" || row.program.award_type === programAwardFilter)
-      .filter((row) => programMode === "all" || (programMode === "coursework" ? row.progress.projectedMajorUnits > 0 : row.fit.score > 0))
+      .filter((row) => programMode === "all" || row.progress.projectedMajorUnits > 0)
       .sort((a, b) => Number(b.program.id === goalProgramId) - Number(a.program.id === goalProgramId)
         || b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
-        || b.fit.score - a.fit.score
         || a.program.title.localeCompare(b.program.title))
       .slice(0, 60);
-  }, [deferredProgramSearch, goalProgramId, profile, programAwardFilter, programCollegeFilter, programMode, programProgress, programs]);
+  }, [deferredProgramSearch, goalProgramId, programAwardFilter, programCollegeFilter, programMode, programProgress, programs]);
   const nextDegreeOptions = useMemo(() => {
     if (!selectedProgramProgress) return [];
     const seen = new Set<string>();
@@ -363,7 +357,7 @@ export default function SmccdPlanner({
         college_provider_code: "SMCCD",
         custom_course_name: `${selectedCourse.course_code} ${selectedCourse.title}`,
         grade_level: courseDraft.gradeLevel,
-        school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, courseDraft.gradeLevel),
+        school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, courseDraft.gradeLevel),
         term: courseDraft.term,
         status: courseDraft.status,
         credits: courseDraft.dtechCredits,
@@ -401,7 +395,7 @@ export default function SmccdPlanner({
         user_id: session.user.id,
         custom_course_name: manualDraft.name.trim(),
         grade_level: manualDraft.gradeLevel,
-        school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, manualDraft.gradeLevel),
+        school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, manualDraft.gradeLevel),
         term: "fall",
         status: "planned",
         credits: manualDraft.dtechCredits,
@@ -516,7 +510,7 @@ export default function SmccdPlanner({
 
         <div className="smccd-program-filters">
           <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Search program, award, or college" /></label>
-          <label className="form-field"><span>Start with</span><select value={programMode} onChange={(event) => setProgramMode(event.target.value as ProgramMode)}><option value="coursework">Programs my courses advance</option><option value="profile">Profile matches</option><option value="all">All programs</option></select></label>
+          <label className="form-field"><span>Start with</span><select value={programMode} onChange={(event) => setProgramMode(event.target.value as ProgramMode)}><option value="coursework">Programs my courses advance</option><option value="all">All programs</option></select></label>
           <label className="form-field"><span>Award</span><select value={programAwardFilter} onChange={(event) => setProgramAwardFilter(event.target.value as ProgramAwardFilter)}><option value="all">AA and AS</option><option value="AA">Associate in Arts</option><option value="AS">Associate in Science</option></select></label>
         </div>
         <fieldset className="catalog-college-filter smccd-program-colleges"><legend>College</legend><div><button className={programCollegeFilter === "all" ? "active" : ""} type="button" onClick={() => setProgramCollegeFilter("all")}><InstitutionMark institution="smccd" decorative /><span>All three</span></button>{colleges.map((college) => <button className={`${programCollegeFilter === college.code ? "active" : ""} institution-${college.code.toLowerCase()}`} type="button" onClick={() => setProgramCollegeFilter(college.code)} key={college.code}><InstitutionMark institution={college.code} decorative /><span>{college.name.replace("College of ", "")}</span></button>)}</div></fieldset>
@@ -524,11 +518,11 @@ export default function SmccdPlanner({
         <div className="smccd-degree-browser">
           <nav className="smccd-program-list" aria-label="Associate degree results">
             <div className="smccd-program-list-heading"><strong>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs`}</strong><span>Completed and planned units are kept separate</span></div>
-            {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult, fit }) => <button className={`${goalProgramId === program.id ? "selected" : ""} institution-${program.college_code.toLowerCase()}`} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
-              <span className="smccd-program-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{program.award_type} · {SMCCD_COLLEGE_NAMES[program.college_code]}</small>{fit.reasons.length > 0 && <small>{fit.reasons[0]}</small>}</span></span>
+            {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult }) => <button className={`${goalProgramId === program.id ? "selected" : ""} institution-${program.college_code.toLowerCase()}`} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
+              <span className="smccd-program-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{program.award_type} · {SMCCD_COLLEGE_NAMES[program.college_code]}</small></span></span>
               <span className="smccd-program-row-progress"><strong>{programResult.requiredMajorUnits ? Math.min(programResult.completedMajorUnits, programResult.requiredMajorUnits) : programResult.completedMajorUnits} covered</strong><small>{programResult.requiredMajorUnits ? Math.min(programResult.projectedMajorUnits, programResult.requiredMajorUnits) : programResult.projectedMajorUnits} projected of {programResult.requiredMajorUnits || "review"} units</small></span>
               <CaretRight size={15} aria-hidden />
-            </button>) : <div className="smccd-program-empty"><strong>No programs in this view</strong><p>{programMode === "coursework" ? "No listed program uses a course in the active plan. Switch to profile matches or all programs." : "Change the search or filters."}</p></div>}
+            </button>) : <div className="smccd-program-empty"><strong>No programs in this view</strong><p>{programMode === "coursework" ? "No listed program uses a course in the active plan. Switch to all programs." : "Change the search or filters."}</p></div>}
           </nav>
 
           <article className="smccd-degree-detail" aria-live="polite">

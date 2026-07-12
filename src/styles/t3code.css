@@ -1,0 +1,136 @@
+.t3code-app {
+  --bg: #fff;
+  --surface: #fff;
+  --surface-raised: #fff;
+  --surface-muted: rgb(0 0 0 / 0.04);
+  --ink: #262626;
+  --ink-soft: #565656;
+  --ink-faint: #777;
+  --line: rgb(0 0 0 / 0.08);
+  --line-strong: rgb(0 0 0 / 0.12);
+  --control-line: rgb(0 0 0 / 0.16);
+  --accent: oklch(0.488 0.217 264);
+  --accent-hover: oklch(0.44 0.217 264);
+  --accent-soft: oklch(0.96 0.025 264);
+  --radius: 10px;
+  --sidebar: 248px;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "DM Sans Variable", "DM Sans", sans-serif;
+}
+
+:root[data-theme="dark"] .t3code-app {
+  --bg: #101112;
+  --surface: #111213;
+  --surface-raised: #161719;
+  --surface-muted: rgb(255 255 255 / 0.045);
+  --ink: #f0f0f1;
+  --ink-soft: #b7b7ba;
+  --ink-faint: #88898d;
+  --line: rgb(255 255 255 / 0.065);
+  --line-strong: rgb(255 255 255 / 0.1);
+  --control-line: rgb(255 255 255 / 0.16);
+  --accent: oklch(0.62 0.19 264);
+  --accent-hover: oklch(0.68 0.18 264);
+  --accent-soft: oklch(0.24 0.045 264);
+}
+
+:root[data-theme="dark"] .t3code-app .primary-button {
+  border-color: oklch(0.5 0.18 264);
+  background: oklch(0.5 0.18 264);
+  color: #fff;
+}
+
+.t3code-app.app-shell {
+  background-image: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%);
+}
+
+.t3code-app :is(input, select, textarea, button) { font-family: inherit; }
+.t3code-app .app-sidebar,
+.t3code-app .app-toolbar,
+.t3code-app .onboarding-topbar { background: var(--surface); }
+.t3code-app .app-sidebar { border-right-color: var(--line); }
+.t3code-app .sidebar-top { min-height: 52px; border-bottom-color: var(--line); padding: 0 14px; }
+.t3code-app .wordmark { font-size: 13px; font-weight: 600; }
+.t3code-app .wordmark-mark { width: 28px; height: 28px; flex-basis: 28px; }
+.t3code-app .sidebar-nav { gap: 1px; padding: 9px 8px; }
+.t3code-app .sidebar-nav button,
+.t3code-app .sidebar-utility { min-height: 34px; border-radius: 7px; padding: 0 9px; font-size: 13px; font-weight: 520; box-shadow: none; }
+.t3code-app .sidebar-nav button.active { background: var(--surface-muted); box-shadow: inset 2px 0 var(--accent); }
+.t3code-app .sidebar-footer { padding: 8px 8px 66px; }
+.t3code-app .school-chip { border-radius: 8px; background: var(--surface-muted); }
+.t3code-app .app-toolbar { min-height: 52px; border-bottom: 1px solid var(--line); padding: 0 18px; }
+.t3code-app .app-toolbar button { min-height: 32px; border-radius: 8px; font-size: 12px; }
+.t3code-app .app-content { width: min(100%, 1360px); min-width: 0; padding-top: 22px; }
+.t3code-app .page-header { min-height: 58px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+.t3code-app .page-header h1 { color: var(--ink); font-size: 20px; font-weight: 600; letter-spacing: -0.025em; }
+.t3code-app .page-header p { margin-top: 3px; font-size: 12px; }
+
+.t3code-app.onboarding-shell .onboarding-topbar { min-height: 52px; padding-block: 0; }
+.t3code-app .onboarding-layout { grid-template-columns: 248px minmax(0, 1fr); max-width: none; padding: 0; }
+.t3code-app .onboarding-progress { min-height: calc(100dvh - 52px); border-right: 1px solid var(--line); padding: 28px 18px 80px; }
+.t3code-app .onboarding-stage { width: min(100%, 920px); min-width: 0; padding: 48px 48px 80px; }
+.t3code-app .onboarding-stage > header h1 { color: var(--ink); font-size: 28px; font-weight: 600; }
+.t3code-app .onboarding-choice-list > label,
+.t3code-app .tracker-mode-switch > label { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+
+.overview-t3-workbench { display: grid; gap: 12px; }
+.t3-status-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); border-radius: 9px; background: var(--surface); margin: 0; }
+.t3-status-strip > div { display: grid; gap: 3px; padding: 13px 15px; }
+.t3-status-strip > div + div { border-left: 1px solid var(--line); }
+.t3-status-strip dt { color: var(--ink-faint); font-size: 11px; }
+.t3-status-strip dd { margin: 0; font-size: 17px; font-weight: 650; }
+.t3-workbench-grid { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 12px; align-items: start; }
+.t3-plan-log { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.t3-plan-log > header { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); padding: 0 14px; }
+.t3-plan-log h2,
+.t3-workbench-rail h2 { margin: 0; font-size: 13px; }
+.t3-plan-log > header span { color: var(--ink-faint); font-size: 11px; }
+.t3-plan-log > article { display: grid; grid-template-columns: 58px minmax(0, 1fr) 64px; gap: 14px; align-items: start; min-height: 104px; padding: 14px; }
+.t3-plan-log > article + article { border-top: 1px solid var(--line); }
+.t3-log-code { display: grid; min-height: 26px; place-items: center; border-radius: 5px; background: var(--surface-muted); color: var(--ink-soft); font-size: 11px; font-weight: 650; }
+.t3-log-code.complete { color: var(--success); }
+.t3-log-code.next { color: var(--accent); }
+.t3-plan-log article > div { display: grid; gap: 8px; }
+.t3-plan-log article > div > strong { font-size: 13px; }
+.t3-plan-log article > div > p { margin: 0; color: var(--ink-faint); font-size: 11px; }
+.t3-plan-log article > button { min-height: 30px; border: 1px solid var(--line-strong); border-radius: 6px; background: transparent; color: var(--ink-soft); }
+.t3-plan-log .overview-course-name-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.t3-plan-log .overview-course-name-list > span { background: var(--surface-muted); padding: 6px 8px; }
+.t3-plan-log .overview-path-gaps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.t3-workbench-rail { display: grid; gap: 12px; }
+.t3-workbench-rail > section { display: grid; gap: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 14px; }
+.t3-next-gap > span { color: var(--ink-faint); font-size: 11px; }
+.t3-next-gap > strong { font-size: 15px; }
+.t3-next-gap > p { margin: 0; color: var(--ink-soft); font-size: 12px; }
+.t3-next-gap .primary-button { justify-self: start; }
+
+@media (max-width: 1100px) {
+  .t3-workbench-grid { grid-template-columns: 1fr; }
+  .t3-workbench-rail { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 900px) {
+  .t3code-app .app-content { padding: 22px 16px 92px; }
+  .t3code-app .page-header { min-height: 0; align-items: flex-start; padding-top: 4px; }
+  .t3code-app .page-header h1 { font-size: 28px; }
+  .t3code-app .onboarding-topbar { min-height: 64px; padding: 12px 16px; }
+  .t3code-app .onboarding-layout { display: block; padding: 0 16px 80px; }
+  .t3code-app .onboarding-progress { min-height: 0; border: 0; border-bottom: 1px solid var(--line); padding: 14px 0; }
+  .t3code-app .onboarding-progress > p,
+  .t3code-app .onboarding-route-summary { display: none; }
+  .t3code-app .onboarding-progress ol { display: flex; gap: 6px; overflow-x: auto; padding: 2px; }
+  .t3code-app .onboarding-progress li { min-width: max-content; min-height: 38px; flex-direction: row; border-radius: 7px; background: var(--surface-muted); padding: 6px 9px; font-size: 12px; }
+  .t3code-app .onboarding-stage { width: 100%; padding: 36px 0 20px; }
+}
+
+@media (max-width: 620px) {
+  .t3-status-strip { grid-template-columns: 1fr 1fr; }
+  .t3-status-strip > div + div { border-left: 0; }
+  .t3-status-strip > div { border: 1px solid var(--line); margin: -1px 0 0 -1px; }
+  .t3-plan-log > article { grid-template-columns: 52px minmax(0, 1fr); }
+  .t3-plan-log article > button { grid-column: 2; justify-self: start; padding-inline: 10px; }
+  .t3-plan-log .overview-course-name-list,
+  .t3-plan-log .overview-path-gaps { grid-template-columns: 1fr; }
+  .t3-workbench-rail { grid-template-columns: 1fr; }
+}

@@ -1,31 +1,27 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-  Activity,
   Course,
   CourseRequirementMapping,
   GraduationRequirement,
   PlanCourse,
   SmccdHighSchoolEquivalency,
-  SmccdProgram,
-  StudentProfile,
+  StudentSettings,
   TimelineTask
 } from "@/lib/models";
 import {
   appliedCreditBreakdown,
   calculateGpa,
   calculateRequirementProgress,
-  calculateWorkload,
   generateSuggestedPlan,
   generateTimeline,
   overallGraduationPercent,
   overallCompletedPercent,
   planCourseMovePatch,
   reconcileGeneratedTimelineTasks,
-  requirementsForProfile,
+  requirementsForSettings,
   schoolYearForGrade,
-  selectedPlanGrades,
-  simulatePlan
+  selectedPlanGrades
 } from "@/lib/planning";
 import {
   findTranscriptCatalogMatch,
@@ -33,26 +29,14 @@ import {
   transcriptPlanCourseDraft,
   visibleTranscriptUncertaintyNotes
 } from "@/lib/transcript";
-import { courseProfileFit, programProfileFit } from "@/lib/profile-planning";
 
-const profile: StudentProfile = {
+const settings: StudentSettings = {
   id: "student-1",
   school_id: "school-1",
   preferred_name: "Avery",
   age: 15,
   grade_level: 10,
   graduation_year: 2028,
-  academic_interests: ["engineering"],
-  career_interest_areas: [],
-  work_values: [],
-  exploration_questions: [],
-  major_direction: "stem",
-  career_direction: "",
-  goal_intensity: "balanced",
-  workload_tolerance: "balanced",
-  stress_level: 3,
-  activity_load_hours: 4,
-  weekly_commitment_limit: 20,
   school_confirmed: true,
   onboarding_complete: true,
   ai_enabled: true,
@@ -307,7 +291,7 @@ describe("graduation requirement calculations", () => {
   });
 });
 
-describe("GPA and workload calculations", () => {
+describe("GPA calculations", () => {
   it("separates current and projected GPA and applies a capped honors point", () => {
     const summary = calculateGpa([
       planCourse({ letter_grade: "A", credits: 10 }),
@@ -345,143 +329,15 @@ describe("GPA and workload calculations", () => {
     expect(summary.weightedCredits).toBe(10);
   });
 
-  it("combines academic and activity load and warns above profile tolerance", () => {
-    const activities: Activity[] = [{
-      id: "activity-1",
-      user_id: profile.id,
-      name: "Robotics",
-      kind: "club",
-      role: null,
-      weekly_hours: 30,
-      start_grade: 10,
-      end_grade: 12,
-      notes: null,
-      organization: null,
-      weeks_per_year: 20,
-      impact: null,
-      description: null,
-      is_active: true
-    }];
-    const workload = calculateWorkload(
-      { ...profile, workload_tolerance: "light" },
-      [planCourse({ status: "current", is_weighted: true, college_units: 3 })],
-      [course()],
-      activities
-    );
-
-    expect(workload.level).toBe("over_limit");
-    expect(workload.warning).toContain("exceed your weekly limit");
-  });
-
-  it("does not count every future year as one simultaneous workload", () => {
-    const workload = calculateWorkload(
-      profile,
-      [
-        planCourse({ id: "grade-10", status: "planned", grade_level: 10, college_units: 3, is_weighted: true }),
-        planCourse({ id: "grade-11", status: "planned", grade_level: 11, college_units: 5, is_weighted: true }),
-        planCourse({ id: "grade-12", status: "planned", grade_level: 12, college_units: 5, is_weighted: true })
-      ],
-      [course()],
-      []
-    );
-
-    expect(workload.collegeWeeklyHours).toBe(9);
-    expect(workload.demandingCourseCount).toBe(1);
-  });
-
-  it("excludes past experiences from the current weekly workload", () => {
-    const activities: Activity[] = [
-      {
-        id: "current-activity",
-        user_id: profile.id,
-        name: "Robotics",
-        kind: "club",
-        role: null,
-        weekly_hours: 4,
-        start_grade: 10,
-        end_grade: 10,
-        notes: null,
-        organization: null,
-        weeks_per_year: 20,
-        impact: null,
-        description: null,
-        is_active: true
-      },
-      {
-        id: "past-activity",
-        user_id: profile.id,
-        name: "Past job",
-        kind: "work",
-        role: null,
-        weekly_hours: 12,
-        start_grade: 9,
-        end_grade: 9,
-        notes: null,
-        organization: null,
-        weeks_per_year: 12,
-        impact: null,
-        description: null,
-        is_active: false
-      }
-    ];
-
-    const workload = calculateWorkload(profile, [], [], activities);
-
-    expect(workload.weeklyActivityHours).toBe(4);
-    expect(workload.knownWeeklyHours).toBe(4);
-  });
 });
 
-describe("profile-driven planning", () => {
-  it("surfaces visible reasons for matching courses", () => {
-    const fit = courseProfileFit(
-      course({ name: "Introduction to Programming", subject: "Design Lab", description: "Build software with data." }),
-      { ...profile, academic_interests: ["Computer science"], career_direction: "software engineering" }
-    );
-
-    expect(fit.score).toBeGreaterThan(0);
-    expect(fit.reasons.length).toBeGreaterThan(0);
-  });
-
-  it("uses interests and career keywords to rank associate degrees", () => {
-    const program = {
-      title: "Computer Science",
-      college_code: "CSM",
-      award_type: "AS"
-    } as SmccdProgram;
-    const fit = programProfileFit(program, {
-      ...profile,
-      academic_interests: ["Computer science"],
-      career_direction: "software engineering"
-    });
-
-    expect(fit.score).toBeGreaterThan(0);
-    expect(fit.reasons).toContain("Matches computer science");
-  });
-
-  it("does not treat every science title as a computer-science match", () => {
-    const fit = programProfileFit({
-      title: "Political Science",
-      college_code: "CSM",
-      award_type: "AA"
-    } as SmccdProgram, {
-      ...profile,
-      academic_interests: ["Computer science"],
-      career_direction: ""
-    });
-
-    expect(fit.score).toBe(0);
-    expect(fit.reasons).toEqual([]);
-  });
-});
-
-describe("planning and simulation", () => {
+describe("planning", () => {
   it("moves editable courses to the status grade and locks transcript rows", () => {
-    const planned = planCourseMovePatch(profile, planCourse({ status: "current", letter_grade: "A" }), "planned", 3);
+    const planned = planCourseMovePatch(settings, planCourse({ status: "current", letter_grade: "A" }), "planned", 3);
     expect(planned).toMatchObject({ status: "planned", grade_level: 11, school_year: "2026-2027", letter_grade: null, sort_order: 3 });
-    const current = planCourseMovePatch(profile, planCourse({ grade_level: 12, status: "planned" }), "current", 1);
+    const current = planCourseMovePatch(settings, planCourse({ grade_level: 12, status: "planned" }), "current", 1);
     expect(current).toMatchObject({ status: "current", grade_level: 10, school_year: "2025-2026" });
-    expect(planCourseMovePatch(profile, planCourse({ source_review_item_id: "review-locked" }), "planned", 0)).toBeNull();
+    expect(planCourseMovePatch(settings, planCourse({ source_review_item_id: "review-locked" }), "planned", 0)).toBeNull();
   });
 
   it("generates the source-backed flow without duplicating manual courses", () => {
@@ -492,7 +348,7 @@ describe("planning and simulation", () => {
     ];
     const existing = [planCourse({ id: "manual", course_id: "english-2", user_edited: true })];
 
-    const generated = generateSuggestedPlan(profile, catalog, existing);
+    const generated = generateSuggestedPlan(settings, catalog, existing);
 
     expect(generated.map((row) => row.course_id)).toEqual(["world-history", "geometry"]);
     expect(generated.every((row) => row.status === "current" && row.grade_level === 10)).toBe(true);
@@ -500,13 +356,12 @@ describe("planning and simulation", () => {
   });
 
   it("does not suggest a completed transcript alias with a missing catalog ID", () => {
-    const seniorProfile: StudentProfile = {
-      ...profile,
+    const seniorSettings: StudentSettings = {
+      ...settings,
       grade_level: 12,
       graduation_year: 2026,
       plan_start_grade: 12,
-      plan_end_grade: 12,
-      goal_intensity: "competitive"
+      plan_end_grade: 12
     };
     const catalog = [
       course({ id: "precalculus", name: "Precalculus", subject: "Mathematics", grade_levels: [12] }),
@@ -520,8 +375,7 @@ describe("planning and simulation", () => {
       grade_level: 10
     })];
 
-    expect(generateSuggestedPlan(seniorProfile, catalog, completedTranscript)).toEqual([]);
-    expect(generateSuggestedPlan({ ...seniorProfile, goal_intensity: "lower_stress" }, catalog, completedTranscript)).toEqual([]);
+    expect(generateSuggestedPlan(seniorSettings, catalog, completedTranscript)).toEqual([]);
   });
 
   it("uses the student's graduation year to label school years", () => {
@@ -530,15 +384,15 @@ describe("planning and simulation", () => {
   });
 
   it("limits plan generation to the onboarding plan window", () => {
-    const shortenedProfile = { ...profile, plan_start_grade: 10 as const, plan_end_grade: 11 as const };
+    const shortenedSettings = { ...settings, plan_start_grade: 10 as const, plan_end_grade: 11 as const };
     const catalog = [
       course({ id: "english-2", name: "English 2 / English 2 Honors", grade_levels: [10] }),
       course({ id: "english-3", name: "English 3 / English 3 Honors", grade_levels: [11] }),
       course({ id: "english-4", name: "English 4 / English 4 Honors", grade_levels: [12] })
     ];
 
-    expect(selectedPlanGrades(shortenedProfile)).toEqual([10, 11]);
-    expect(generateSuggestedPlan(shortenedProfile, catalog, []).map((row) => row.course_id)).toEqual(["english-2", "english-3"]);
+    expect(selectedPlanGrades(shortenedSettings)).toEqual([10, 11]);
+    expect(generateSuggestedPlan(shortenedSettings, catalog, []).map((row) => row.course_id)).toEqual(["english-2", "english-3"]);
   });
 
   it("filters the tracker to onboarding-selected requirement areas", () => {
@@ -549,15 +403,15 @@ describe("planning and simulation", () => {
       name: "Mathematics"
     };
 
-    expect(requirementsForProfile(
+    expect(requirementsForSettings(
       [englishRequirement, mathRequirement],
-      { ...profile, tracker_mode: "selected", tracked_requirement_areas: ["math"] }
+      { ...settings, tracker_mode: "selected", tracked_requirement_areas: ["math"] }
     )).toEqual([mathRequirement]);
   });
 
   it("produces grade-aware timeline tasks from missing verified coverage", () => {
     const progress = calculateRequirementProgress([englishRequirement], [], []);
-    const tasks = generateTimeline(profile, progress);
+    const tasks = generateTimeline(settings, progress);
 
     expect(tasks.some((task) => task.title === "Choose a course for English")).toBe(true);
     expect(tasks.some((task) => task.title === "Record two academic or career interests")).toBe(true);
@@ -567,7 +421,7 @@ describe("planning and simulation", () => {
   it("reconciles generated next steps with the current deterministic set", () => {
     const task = (overrides: Partial<TimelineTask>): TimelineTask => ({
       id: "task-default",
-      user_id: profile.id,
+      user_id: settings.id,
       plan_version_id: "version-1",
       title: "Manual step",
       category: "admin",
@@ -610,68 +464,6 @@ describe("planning and simulation", () => {
     expect(result.insertTasks.map((item) => item.title)).toEqual(["Review senior-year rigor with a counselor"]);
   });
 
-  it("keeps simulation changes bounded and exposes risks", () => {
-    const progress = calculateRequirementProgress([englishRequirement], [planCourse()], [verifiedMapping]);
-    const gpa = calculateGpa([planCourse()]);
-    const workload = calculateWorkload(profile, [planCourse({ status: "current" })], [course()], []);
-    const result = simulatePlan(
-      {
-        collegeUnits: 3,
-        activityHoursChange: 4
-      },
-      { ...profile, stress_level: 5 },
-      progress,
-      gpa,
-      workload
-    );
-
-    expect(result.simulated.projectedWeightedGpa).toBe(4);
-    expect(result.risks).toContain("The estimate uses three weekly student-work hours per college unit. Verify the actual course schedule and your own study needs.");
-    expect(result.simulated.stressLevel).toBe(5);
-    expect(result.simulated.activityHours).toBe(4);
-    expect(result.simulated.demandingCourseCount).toBe(workload.demandingCourseCount);
-    expect(result.risks.length).toBeGreaterThan(0);
-  });
-
-  it("cannot remove more activity time than the current week contains", () => {
-    const progress = calculateRequirementProgress([englishRequirement], [planCourse()], [verifiedMapping]);
-    const gpa = calculateGpa([planCourse()]);
-    const activity: Activity = {
-      id: "activity-1",
-      user_id: profile.id,
-      name: "Club",
-      kind: "club",
-      role: null,
-      weekly_hours: 2,
-      start_grade: 10,
-      end_grade: 10,
-      notes: null,
-      organization: null,
-      weeks_per_year: 20,
-      impact: null,
-      description: null,
-      is_active: true
-    };
-    const workload = calculateWorkload(
-      profile,
-      [planCourse({ status: "current", college_units: 3, smccd_course_id: "CSM:CIS 117" })],
-      [],
-      [activity]
-    );
-
-    const result = simulatePlan(
-      { collegeUnits: 0, activityHoursChange: -20 },
-      profile,
-      progress,
-      gpa,
-      workload
-    );
-
-    expect(result.current.workloadScore).toBe(11);
-    expect(result.simulated.workloadScore).toBe(9);
-    expect(result.simulated.activityHours).toBe(0);
-    expect(result.risks).toContain("Only 2 recorded activity hours can be removed from the current week.");
-  });
 });
 
 describe("transcript import", () => {
@@ -698,7 +490,7 @@ describe("transcript import", () => {
         matched_course_id: catalogCourse.id,
         matched_course_name: catalogCourse.name
       },
-      profile,
+      settings,
       [catalogCourse],
       [mapping],
       "review-1"
@@ -714,7 +506,7 @@ describe("transcript import", () => {
   it("keeps an unmatched transcript row custom and unverified", () => {
     const draft = transcriptPlanCourseDraft(
       { course_name: "Independent Study in Robotics", grade_level: 9, credits: 5 },
-      profile,
+      settings,
       [],
       [],
       "review-2"
@@ -737,7 +529,7 @@ describe("transcript import", () => {
         letter_grade: "A",
         weighted: false
       },
-      profile,
+      settings,
       [],
       [],
       "review-smccd"
@@ -769,7 +561,7 @@ describe("transcript import", () => {
         letter_grade: "A",
         matched_smccd_course_id: "CSM:CHIN 132"
       },
-      profile,
+      settings,
       [],
       [],
       "review-chinese",
@@ -798,7 +590,7 @@ describe("transcript import", () => {
         weighted: false,
         matched_course_id: chemistry.id
       },
-      profile,
+      settings,
       [chemistry],
       [{ ...verifiedMapping, course_id: chemistry.id }],
       "review-chemistry"
@@ -816,7 +608,7 @@ describe("transcript import", () => {
         credits: 2.5,
         letter_grade: "P"
       },
-      profile,
+      settings,
       [],
       [],
       "review-pass"
@@ -935,7 +727,7 @@ describe("transcript import", () => {
         credits: 2.5,
         letter_grade: "F"
       },
-      profile,
+      settings,
       [],
       [],
       "review-failed-intersession"
@@ -973,7 +765,7 @@ describe("transcript import", () => {
         credits: 10,
         letter_grade: "A"
       },
-      profile,
+      settings,
       [designLabCourse],
       [{ ...verifiedMapping, course_id: designLabCourse.id }],
       "review-design-lab"

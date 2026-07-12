@@ -93,7 +93,7 @@ export default function AdminSettingsDialog({
           <section className={styles.resetSection} aria-labelledby="reset-workspace-title">
             <div>
               <h3 id="reset-workspace-title">Reset this user workspace</h3>
-              <p>Remove all plans, profile answers, transcripts and uploads, activities, tasks, simulations, summaries, and Pilot conversations. Your sign-in and administrator access remain.</p>
+              <p>Remove all plans, transcripts and uploads, tasks, summaries, and Pilot conversations. Your sign-in and administrator access remain.</p>
             </div>
 
             {!confirming ? (

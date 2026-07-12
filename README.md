@@ -1,6 +1,6 @@
 # Pilot Princess
 
-Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines d.tech graduation tracking, deterministic transcript import, course planning, SMCCD concurrent-enrollment discovery, workload constraints, and narrowly scoped Codex assistance.
+Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines d.tech graduation tracking, deterministic transcript import, course planning, SMCCD concurrent-enrollment discovery, and narrowly scoped Codex assistance.
 
 Current reference data is labeled 2025-26. Registration accepts any valid email address. Planning results are advisory and preserve source age, verification, and uncertainty.
 
@@ -50,22 +50,6 @@ pnpm check:release  # opt-in release gate
 
 Use focused tests while debugging. Run browser, SMCCD, migration, RLS, storage, or linked-Supabase checks only when that system changes. The default command intentionally avoids the old 148-test milestone loop.
 
-## UI comparison lab
-
-The authenticated dashboard and onboarding expose a test-only UI switcher. Open `/app?ui=t3code` or choose **UI Lab** in the workspace; the selection persists locally. Every version keeps the same student data, actions, institution marks, navigation destinations, onboarding flow, and Pilot Assistant.
-
-- `t3code`: Base UI with a close adaptation of the MIT-licensed [t3code](https://github.com/pingdotgg/t3code) shell and visual language
-- `material`: Material UI journey timeline for visual planners
-- `mantine`: Mantine semester-first modular studio
-- `chakra`: Chakra UI single-decision focus workspace
-- `ant`: Ant Design scan-first campus ledger
-- `radix`: Radix Themes reading-first academic brief
-- `aria`: React Aria high-contrast sequential checklist
-- `reactbits`: React Bits asymmetric spatial route map
-- `current`: the original Pilot Graphite interface, retained as the backup
-
-This is a presentation comparison, not nine forks of product logic. Keep shared behavior in the existing feature components and scope experiments through `src/ui-lab/` and `src/styles/ui-lab.css`.
-
 ## Data refreshes
 
 The checked-in SMCCD catalog is generated from official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs.
@@ -90,28 +74,26 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/OnboardingFlow.tsx`: guided student, tracker, and optional Codex consent/setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
 - `src/components/AdminSettingsDialog.tsx` and `src/pages/api/admin/reset.ts`: administrator-only QA controls with a server- and database-enforced self-reset that preserves auth and role membership.
-- `src/components/student-tools/`: embedded Student profile sections for planning context and the factual experience register; next actions live on Overview and load constraints live in the GPA planner.
 - `src/components/GlobalAssistant.tsx`: persistent t3code-inspired conversation rail with a compact floating composer, concise sanitized GFM answers, timed and folded reasoning summaries, student-data tool activity, reversible conversation archiving, Manual/Auto-review, centered settings, and persisted docked/floating layout.
-- `src/components/OverviewPath.tsx`: the selected Finished/In progress/Next Overview.
+- `src/components/AppChrome.tsx`, `src/components/OverviewPath.tsx`, and `src/styles/t3code.css`: the retained t3code-inspired workspace shell and planning overview.
 - `src/components/GraduationWorkspace.tsx`: d.tech diploma and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
-- `src/lib/planning.ts`: deterministic graduation, GPA, workload, next-step, and load-check logic.
+- `src/lib/planning.ts`: deterministic graduation, GPA, course-plan, and next-step logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
 - `src/lib/prerequisites/`: exact prerequisite parsing, evaluation, and audits.
-- `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/assistant-knowledge.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, private image context, retrieved product guidance, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.
+- `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, private image context, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
 
 ## Decision rules
 
-- Text-layer PDF extraction, catalog matching, GPA, graduation, workload, and SMCCD progress are deterministic.
-- Codex is opt-in. Onboarding explains the boundary, requires explicit approval, runs a real connection test, and saves the selected model before the assistant can run. The global rail may then read every student-facing planning domain through validated, RLS-protected tools—never arbitrary SQL, secrets, administrator data, or another user's records. Transcript audits can compare bounded source text with parsed, reviewed, catalog-linked, and imported rows while keeping transcript-backed records read-only. Answers default to one to three short sentences and are schema-bounded to 900 characters. Students may attach up to eight PNG, JPEG, or WebP images; local thumbnails appear before sending, the originals are stored in the private `ai-attachments` bucket, and history uses short-lived signed previews. Every write—including plan snapshots and supported dashboard edits—is stored as an exact pending tool call. Manual mode, the default, waits for the student. Auto-review sends eligible proposals to a separate risk reviewer; removals, grade changes, identity changes, and anything not clearly low-risk still wait for the student. Normal RLS, prerequisite, eligibility, transcript-lock, and record rules run again at execution. Curated product and academic guidance is retrieved from `ai_knowledge_chunks` for each turn, while conversations and readable activity persist in Supabase under per-user RLS. Hidden chain-of-thought, shell, files, network, MCP, plugins, skills, and subagents are not exposed or enabled. The selected context, tool results, and explicitly attached images are sent to OpenAI, whose provider-side handling follows the configured account.
+- Text-layer PDF extraction, catalog matching, GPA, graduation, and SMCCD progress are deterministic.
+- Codex is opt-in. Onboarding explains the boundary, requires explicit approval, runs a real connection test, and saves the selected model before the assistant can run. The global rail reads only allowlisted, RLS-protected academic records. Transcript audits can compare bounded source text with parsed, reviewed, catalog-linked, and imported rows while keeping transcript-backed records read-only. Answers default to one to three short sentences and are schema-bounded to 900 characters. Every write is stored as an exact pending tool call. Manual mode waits for the student; Auto-review may apply only independently approved low-risk proposals. Normal RLS, prerequisite, eligibility, transcript-lock, and record rules run again at execution. Hidden chain-of-thought, shell, files, network, MCP, plugins, skills, and subagents are disabled.
 - `P` earns credit but does not enter GPA. Quarter-coded pass/fail rows are intersession records.
 - `A+`, `A`, and `A-` use the same four-point band while preserving the exact mark.
 - A d.tech `*` is a UC course-list marker, not Honors. d.tech weighting requires reviewed Honors evidence; every SMCCD course is weighted.
 - Laboratory Science requires Biology, Chemistry, and a third lab science at 10 credits each.
 - A verified Level 3/III world-language course satisfies the full 20-credit sequence.
-- Workload includes recorded activities and current-year SMCCD study time. It does not invent d.tech homework or unrecorded responsibilities.
 
 ## Production release
 

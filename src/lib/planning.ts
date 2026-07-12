@@ -1,5 +1,4 @@
 import type {
-  Activity,
   Course,
   CourseRequirementMapping,
   GpaSummary,
@@ -7,15 +6,11 @@ import type {
   GradeLevel,
   PlanCourse,
   RequirementProgress,
-  SimulationConfig,
-  SimulationResult,
   SmccdHighSchoolEquivalency,
-  StudentProfile,
-  TimelineTask,
-  WorkloadSummary
+  StudentSettings,
+  TimelineTask
 } from "@/lib/models";
 import { courseEquivalenceKeys } from "@/lib/course-names";
-import { majorDirectionLabel } from "@/lib/profile-planning";
 
 const GRADE_POINTS: Record<string, number> = {
   "A+": 4,
@@ -67,32 +62,32 @@ export function schoolYearForGrade(graduationYear: number, grade: GradeLevel) {
 }
 
 export function planCourseMovePatch(
-  profile: StudentProfile,
+  settings: StudentSettings,
   row: PlanCourse,
   status: PlanCourse["status"],
   sortOrder: number
 ): Partial<PlanCourse> | null {
   if (row.source_review_item_id) return null;
-  const currentGrade = Math.max(9, Math.min(12, Number(profile.grade_level ?? row.grade_level))) as GradeLevel;
+  const currentGrade = Math.max(9, Math.min(12, Number(settings.grade_level ?? row.grade_level))) as GradeLevel;
   const grade = (status === "planned" ? Math.min(12, currentGrade + 1) : currentGrade) as GradeLevel;
   return {
     status,
     grade_level: grade,
-    school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade),
+    school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, grade),
     letter_grade: status === "completed" ? row.letter_grade : null,
     sort_order: sortOrder
   };
 }
 
-export function selectedPlanGrades(profile: StudentProfile) {
-  const start = (profile.plan_start_grade ?? profile.grade_level ?? 9) as GradeLevel;
-  const end = (profile.plan_end_grade ?? 12) as GradeLevel;
+export function selectedPlanGrades(settings: StudentSettings) {
+  const start = (settings.plan_start_grade ?? settings.grade_level ?? 9) as GradeLevel;
+  const end = (settings.plan_end_grade ?? 12) as GradeLevel;
   return GRADE_LEVELS.filter((grade) => grade >= start && grade <= end);
 }
 
-export function requirementsForProfile(requirements: GraduationRequirement[], profile: StudentProfile) {
-  if (profile.tracker_mode !== "selected") return requirements;
-  const selected = new Set(profile.tracked_requirement_areas);
+export function requirementsForSettings(requirements: GraduationRequirement[], settings: StudentSettings) {
+  if (settings.tracker_mode !== "selected") return requirements;
+  const selected = new Set(settings.tracked_requirement_areas);
   return requirements.filter((requirement) => selected.has(requirement.area));
 }
 
@@ -419,60 +414,6 @@ export function calculateGpa(rows: PlanCourse[]): GpaSummary {
   };
 }
 
-export function calculateWorkload(
-  profile: StudentProfile,
-  planCourses: PlanCourse[],
-  courses: Course[],
-  activities: Activity[]
-): WorkloadSummary {
-  const courseMap = new Map(courses.map((course) => [course.id, course]));
-  const currentCourses = planCourses.filter((course) => course.status === "current");
-  const activeCourses = currentCourses.length > 0
-    ? currentCourses
-    : planCourses.filter((course) => course.status === "planned" && course.grade_level === profile.grade_level);
-  const weightedCount = activeCourses.filter((row) =>
-    row.is_weighted || Boolean(row.smccd_course_id) || Number(row.college_units ?? 0) > 0 || Boolean(row.course_id && courseMap.get(row.course_id)?.is_weighted)
-  ).length;
-  const dualUnits = activeCourses.reduce((total, row) => total + Number(row.college_units ?? 0), 0);
-  const weeklyActivityHours = activities
-    .filter((activity) => activity.is_active ?? true)
-    .reduce((total, activity) => total + Number(activity.weekly_hours), 0);
-  const collegeWeeklyHours = round(dualUnits * 3, 1);
-  const knownWeeklyHours = round(collegeWeeklyHours + weeklyActivityHours, 1);
-  const capacityHours = profile.weekly_commitment_limit === null ? null : Number(profile.weekly_commitment_limit);
-  const capacityRemaining = capacityHours === null ? null : round(capacityHours - knownWeeklyHours, 1);
-  const demandingCourseLimit = profile.workload_tolerance === "light" ? 2 : profile.workload_tolerance === "balanced" ? 4 : 6;
-  const capacityRatio = capacityHours && capacityHours > 0 ? knownWeeklyHours / capacityHours : null;
-  const overLimit = weightedCount > demandingCourseLimit || (capacityRemaining !== null && capacityRemaining < 0);
-  const nearLimit = weightedCount === demandingCourseLimit || (capacityRatio !== null && capacityRatio >= 0.8);
-  const level = capacityHours === null
-    ? "needs_input"
-    : overLimit
-      ? "over_limit"
-      : nearLimit
-        ? "near_limit"
-        : "within_limit";
-  const warnings = [] as string[];
-  if (capacityHours === null) warnings.push("Add a weekly commitment limit in Student profile to compare this plan with your available time.");
-  if (capacityRemaining !== null && capacityRemaining < 0) warnings.push(`Known commitments exceed your weekly limit by ${Math.abs(capacityRemaining)} hours.`);
-  if (weightedCount > demandingCourseLimit) warnings.push(`${weightedCount} weighted or college courses exceed your selected limit of ${demandingCourseLimit}.`);
-  if (profile.stress_level >= 4) warnings.push("Your current stress baseline is high, so increasing commitments should be reviewed carefully.");
-
-  return {
-    weeklyActivityHours: round(weeklyActivityHours, 1),
-    collegeWeeklyHours,
-    knownWeeklyHours,
-    demandingCourseCount: weightedCount,
-    demandingCourseLimit,
-    capacityHours,
-    capacityRemaining,
-    academicLoad: collegeWeeklyHours,
-    totalScore: knownWeeklyHours,
-    level,
-    warning: warnings.length ? warnings.join(" ") : null
-  };
-}
-
 const FLOW_BY_GRADE: Record<GradeLevel, string[]> = {
   9: ["English 1", "Ethnic Studies", "Algebra 1", "Environmental Science", "Foundation in Design Thinking", "Spanish 1", "Introduction to Prototyping and Fabrication"],
   10: ["English 2", "World History", "Geometry", "Chemistry", "Co-designers", "Spanish 2", "Introduction to Visual Art"],
@@ -492,12 +433,12 @@ export interface GeneratedPlanCourse {
 }
 
 export function generateSuggestedPlan(
-  profile: StudentProfile,
+  settings: StudentSettings,
   courses: Course[],
   existing: PlanCourse[]
 ): GeneratedPlanCourse[] {
-  const graduationYear = profile.graduation_year ?? new Date().getFullYear() + 3;
-  const currentGrade = (profile.grade_level ?? 9) as GradeLevel;
+  const graduationYear = settings.graduation_year ?? new Date().getFullYear() + 3;
+  const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
   const courseMap = new Map(courses.map((course) => [course.id, course]));
   const existingIds = new Set(existing.map((row) => row.course_id).filter(Boolean));
   const existingNameKeys = new Set<string>();
@@ -510,15 +451,11 @@ export function generateSuggestedPlan(
   }
   const generated: GeneratedPlanCourse[] = [];
 
-  for (const grade of selectedPlanGrades(profile)) {
+  for (const grade of selectedPlanGrades(settings)) {
     if (grade < currentGrade) continue;
     for (const courseName of FLOW_BY_GRADE[grade]) {
       const candidates = courses.filter((candidate) => candidate.name.toLowerCase().startsWith(courseName.toLowerCase()));
-      const course = profile.goal_intensity === "competitive"
-        ? candidates.find((candidate) => candidate.is_weighted || candidate.is_honors) ?? candidates[0]
-        : profile.goal_intensity === "lower_stress"
-          ? candidates.find((candidate) => !candidate.is_weighted && !candidate.is_honors) ?? candidates[0]
-          : candidates[0];
+      const course = candidates[0];
       if (!course || existingIds.has(course.id)) continue;
       const equivalenceKeys = courseEquivalenceKeys(course.name);
       if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) continue;
@@ -547,8 +484,8 @@ export interface GeneratedTimelineTask {
   explanation: string;
 }
 
-export function generateTimeline(profile: StudentProfile, progress: RequirementProgress[]): GeneratedTimelineTask[] {
-  const grade = (profile.grade_level ?? 9) as GradeLevel;
+export function generateTimeline(settings: StudentSettings, progress: RequirementProgress[]): GeneratedTimelineTask[] {
+  const grade = (settings.grade_level ?? 9) as GradeLevel;
   const tasks: GeneratedTimelineTask[] = [];
   const missing = progress.filter((item) => item.status === "missing").slice(0, 3);
 
@@ -561,36 +498,12 @@ export function generateTimeline(profile: StudentProfile, progress: RequirementP
     });
   }
 
-  if (grade <= 10 && profile.academic_interests.length < 2 && !profile.career_direction.trim()) {
-    tasks.push({
-      title: "Record two academic or career interests",
-      category: "college",
-      due_label: "This semester",
-      explanation: "Early interests help future course and activity suggestions stay relevant without locking in a major."
-    });
-  }
-  if (profile.major_direction !== "undecided") {
-    tasks.push({
-      title: `Compare ${majorDirectionLabel(profile.major_direction)} course and SMCCD options`,
-      category: "college",
-      due_label: "Before next course registration",
-      explanation: "Use the profile-matched catalog and associate-degree results, then verify prerequisites before changing the saved plan."
-    });
-  }
-  if (profile.career_direction.trim()) {
-    tasks.push({
-      title: `Test the ${profile.career_direction.trim()} direction`,
-      category: "activities",
-      due_label: "This semester",
-      explanation: "Choose one course, project, activity, or conversation that can confirm or challenge this career idea."
-    });
-  }
   if (grade === 11) {
     tasks.push({
       title: "Review senior-year rigor with a counselor",
       category: "college",
       due_label: "Before senior registration",
-      explanation: "Confirm prerequisites, graduation coverage, and whether concurrent enrollment fits your workload."
+      explanation: "Confirm prerequisites, graduation coverage, and whether concurrent enrollment fits the selected unit guardrail."
     });
   }
   if (grade === 12) {
@@ -668,77 +581,4 @@ export function overallCompletedPercent(progress: RequirementProgress[]) {
   const required = progress.reduce((total, item) => total + item.requirement.credits_required, 0);
   const completed = progress.reduce((total, item) => total + Math.min(item.completedCredits, item.requirement.credits_required), 0);
   return required > 0 ? clamp(Math.round((completed / required) * 100), 0, 100) : 0;
-}
-
-export function simulatePlan(
-  config: SimulationConfig,
-  profile: StudentProfile,
-  progress: RequirementProgress[],
-  gpa: GpaSummary,
-  workload: WorkloadSummary
-): SimulationResult {
-  const graduationPercent = overallGraduationPercent(progress);
-  const collegeUnits = clamp(Number(config.collegeUnits) || 0, 0, 6);
-  const requestedActivityDelta = clamp(Number(config.activityHoursChange) || 0, -20, 20);
-  const activityDelta = Math.max(requestedActivityDelta, -workload.weeklyActivityHours);
-  const collegeHourDelta = round(collegeUnits * 3, 1);
-  const workloadDelta = round(collegeHourDelta + activityDelta, 1);
-  const changes: string[] = [];
-  const risks: string[] = [];
-
-  if (collegeUnits > 0) {
-    changes.push(`Adds ${collegeUnits} SMCCD ${collegeUnits === 1 ? "unit" : "units"}, modeled as ${collegeHourDelta} weekly class-and-study hours.`);
-    risks.push("The estimate uses three weekly student-work hours per college unit. Verify the actual course schedule and your own study needs.");
-    risks.push("College calendars, prerequisites, approvals, and transcript delivery must be verified.");
-  }
-  if (activityDelta > 0) changes.push(`Adds ${activityDelta} activity ${activityDelta === 1 ? "hour" : "hours"} per week.`);
-  if (activityDelta < 0) changes.push(`Removes ${Math.abs(activityDelta)} activity ${Math.abs(activityDelta) === 1 ? "hour" : "hours"} per week.`);
-  if (requestedActivityDelta < activityDelta) risks.push(`Only ${workload.weeklyActivityHours} recorded activity hours can be removed from the current week.`);
-  if (changes.length === 0) changes.push("Keeps the recorded weekly commitments unchanged.");
-
-  const simulatedHours = round(Math.max(0, workload.knownWeeklyHours + workloadDelta), 1);
-  const simulatedDemandingCourses = workload.demandingCourseCount;
-  const newlyOverCapacity = workload.capacityHours !== null && simulatedHours > workload.capacityHours && workload.knownWeeklyHours <= workload.capacityHours;
-  const reducedLoad = workloadDelta < 0;
-  const stressDelta = newlyOverCapacity ? 1 : reducedLoad ? -1 : 0;
-  if (workload.capacityHours === null) risks.push("Add a weekly commitment limit before treating the workload comparison as complete.");
-  else if (simulatedHours > workload.capacityHours) risks.push(`The scenario exceeds the saved weekly limit by ${round(simulatedHours - workload.capacityHours, 1)} hours.`);
-
-  return {
-    current: {
-      graduationPercent,
-      projectedWeightedGpa: gpa.projectedWeighted,
-      workloadScore: workload.knownWeeklyHours,
-      demandingCourseCount: workload.demandingCourseCount,
-      stressLevel: profile.stress_level,
-      activityHours: workload.weeklyActivityHours
-    },
-    simulated: {
-      graduationPercent,
-      projectedWeightedGpa: gpa.projectedWeighted,
-      workloadScore: simulatedHours,
-      demandingCourseCount: simulatedDemandingCourses,
-      stressLevel: clamp(profile.stress_level + stressDelta, 1, 5),
-      activityHours: round(Math.max(0, workload.weeklyActivityHours + activityDelta), 1)
-    },
-    changes,
-    risks
-  };
-}
-
-export function fallbackSummary(
-  profile: StudentProfile,
-  progress: RequirementProgress[],
-  gpa: GpaSummary,
-  workload: WorkloadSummary
-) {
-  const name = profile.preferred_name || "This student";
-  const missing = progress.filter((item) => item.status === "missing").map((item) => item.requirement.name);
-  const gpaText = gpa.projectedWeighted === null ? "GPA needs graded courses before an estimate is available" : `projected weighted GPA is ${gpa.projectedWeighted.toFixed(2)}`;
-  const requirementText = missing.length === 0 ? "all listed requirements are covered by verified current or planned courses" : `the plan still needs verified coverage for ${missing.slice(0, 3).join(", ")}`;
-  const workloadLevel = workload.level.replaceAll("_", " ");
-  const workloadText = workload.capacityHours === null
-    ? `${workload.knownWeeklyHours} known hours per week are recorded, but workload needs a saved weekly limit`
-    : `${workload.knownWeeklyHours} known hours per week put the plan ${workloadLevel}`;
-  return `${name}'s ${gpaText}. Based on the saved plan, ${requirementText}. ${workloadText}; confirm course mappings and final graduation status with d.tech counseling.`;
 }

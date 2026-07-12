@@ -24,10 +24,9 @@ import type {
   RequirementArea,
   School,
   SmccdHighSchoolEquivalency,
-  StudentProfile
+  StudentSettings
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
-import { ACADEMIC_INTEREST_OPTIONS, MAJOR_DIRECTION_OPTIONS } from "@/lib/profile-planning";
 import {
   isDtechIntersessionCourse,
   resolveTranscriptCourse,
@@ -37,14 +36,11 @@ import {
 import BrandMark from "@/components/BrandMark";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
-import { LabButton, UiLabProvider, UiLabSwitcher } from "@/ui-lab/UiLab";
-import { uiVariantClass, type UiVariant } from "@/ui-lab/variants";
 
-type OnboardingStage = "student" | "priorities" | "plan" | "requirements" | "assistant" | "transcript";
+type OnboardingStage = "student" | "plan" | "requirements" | "assistant" | "transcript";
 
 const STAGES: Array<{ id: OnboardingStage; label: string }> = [
   { id: "student", label: "About you" },
-  { id: "priorities", label: "Priorities" },
   { id: "plan", label: "Plan window" },
   { id: "requirements", label: "Requirement tracker" },
   { id: "assistant", label: "Pilot Assistant" },
@@ -72,7 +68,7 @@ interface OnboardingFlowProps {
   supabase: SupabaseClient;
   session: Session;
   school: School;
-  profile: StudentProfile;
+  settings: StudentSettings;
   requirements: GraduationRequirement[];
   courses: Course[];
   mappings: CourseRequirementMapping[];
@@ -83,16 +79,13 @@ interface OnboardingFlowProps {
   onComplete: () => Promise<void>;
   onExit?: () => void;
   onSignOut: () => Promise<void>;
-  theme: "light" | "dark";
-  uiVariant: UiVariant;
-  onUiVariantChange: (variant: UiVariant) => void;
 }
 
 export default function OnboardingFlow({
   supabase,
   session,
   school,
-  profile: initialProfile,
+  settings: initialSettings,
   requirements,
   courses,
   mappings,
@@ -102,26 +95,20 @@ export default function OnboardingFlow({
   mode = "initial",
   onComplete,
   onExit,
-  onSignOut,
-  theme,
-  uiVariant,
-  onUiVariantChange
+  onSignOut
 }: OnboardingFlowProps) {
   const isReplay = mode === "replay";
   const [stage, setStage] = useState<OnboardingStage>("student");
-  const [profile, setProfile] = useState<StudentProfile>({
-    ...initialProfile,
-    career_interest_areas: initialProfile.career_interest_areas ?? [],
-    work_values: initialProfile.work_values ?? [],
-    exploration_questions: initialProfile.exploration_questions ?? [],
-    tracker_mode: initialProfile.tracker_mode ?? "full",
-    tracked_requirement_areas: initialProfile.tracked_requirement_areas?.length
-      ? initialProfile.tracked_requirement_areas
+  const [settings, setSettings] = useState<StudentSettings>({
+    ...initialSettings,
+    tracker_mode: initialSettings.tracker_mode ?? "full",
+    tracked_requirement_areas: initialSettings.tracked_requirement_areas?.length
+      ? initialSettings.tracked_requirement_areas
       : ALL_REQUIREMENT_AREAS
   });
   const [planYears, setPlanYears] = useState(() => {
-    const start = initialProfile.plan_start_grade ?? initialProfile.grade_level;
-    const end = initialProfile.plan_end_grade;
+    const start = initialSettings.plan_start_grade ?? initialSettings.grade_level;
+    const end = initialSettings.plan_end_grade;
     return start && end ? end - start + 1 : start ? 13 - start : 4;
   });
   const [transcriptTitle, setTranscriptTitle] = useState("My transcript");
@@ -132,22 +119,22 @@ export default function OnboardingFlow({
   const [transcriptSummary, setTranscriptSummary] = useState<string | null>(null);
   const [transcriptAiTransparency, setTranscriptAiTransparency] = useState<TranscriptAiTransparency | null>(null);
   const [aiSetup, setAiSetup] = useState<CodexSetupValue>({
-    enabled: initialProfile.onboarding_complete ? initialProfile.ai_enabled : true,
-    model: initialProfile.ai_model ?? "gpt-5.6-luna",
-    approved: Boolean(initialProfile.ai_connection_approved_at),
-    testedAt: initialProfile.ai_setup_tested_at
+    enabled: initialSettings.onboarding_complete ? initialSettings.ai_enabled : true,
+    model: initialSettings.ai_model ?? "gpt-5.6-luna",
+    approved: Boolean(initialSettings.ai_connection_approved_at),
+    testedAt: initialSettings.ai_setup_tested_at
   });
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const stageIndex = STAGES.findIndex((candidate) => candidate.id === stage);
-  const currentGrade = (profile.grade_level ?? 9) as GradeLevel;
+  const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
   const maximumPlanYears = 13 - currentGrade;
   const availablePlanYears = Array.from({ length: maximumPlanYears }, (_, index) => index + 1);
   const planEndGrade = Math.min(12, currentGrade + planYears - 1) as GradeLevel;
-  const selectedRequirementCount = profile.tracker_mode === "full"
+  const selectedRequirementCount = settings.tracker_mode === "full"
     ? requirements.length
-    : profile.tracked_requirement_areas.length;
+    : settings.tracked_requirement_areas.length;
   const completedCourseCount = existingPlanCourses.filter((course) => course.status === "completed").length;
 
   const selectedTranscriptItems = useMemo(
@@ -163,16 +150,12 @@ export default function OnboardingFlow({
   function validateStage() {
     setError(null);
     if (stage === "student") {
-      if (!profile.preferred_name.trim() || !profile.age || !profile.grade_level || !profile.graduation_year) {
+      if (!settings.preferred_name.trim() || !settings.age || !settings.grade_level || !settings.graduation_year) {
         setError("Add your name, age, current grade, and expected graduation year.");
         return false;
       }
     }
-    if (stage === "priorities" && !profile.weekly_commitment_limit) {
-      setError("Add the weekly hours you can realistically use for activities and college coursework.");
-      return false;
-    }
-    if (stage === "requirements" && profile.tracker_mode === "selected" && profile.tracked_requirement_areas.length === 0) {
+    if (stage === "requirements" && settings.tracker_mode === "selected" && settings.tracked_requirement_areas.length === 0) {
       setError("Choose at least one requirement area to track.");
       return false;
     }
@@ -196,11 +179,11 @@ export default function OnboardingFlow({
     });
     const preferences = payload.preferences as {
       enabled: boolean;
-      model: StudentProfile["ai_model"];
+      model: StudentSettings["ai_model"];
       approvedAt: string | null;
       testedAt: string | null;
     };
-    setProfile((current) => ({
+    setSettings((current) => ({
       ...current,
       ai_enabled: preferences.enabled,
       ai_model: preferences.model,
@@ -236,7 +219,7 @@ export default function OnboardingFlow({
   function changeGrade(grade: GradeLevel) {
     const maxYears = 13 - grade;
     setPlanYears((current) => Math.min(current, maxYears));
-    setProfile((current) => ({
+    setSettings((current) => ({
       ...current,
       grade_level: grade,
       plan_start_grade: grade,
@@ -245,20 +228,11 @@ export default function OnboardingFlow({
   }
 
   function toggleRequirement(area: RequirementArea) {
-    setProfile((current) => {
+    setSettings((current) => {
       const selected = new Set(current.tracked_requirement_areas);
       if (selected.has(area)) selected.delete(area);
       else selected.add(area);
       return { ...current, tracked_requirement_areas: [...selected] };
-    });
-  }
-
-  function toggleAcademicInterest(interest: string) {
-    setProfile((current) => {
-      const selected = new Set(current.academic_interests);
-      if (selected.has(interest)) selected.delete(interest);
-      else selected.add(interest);
-      return { ...current, academic_interests: [...selected] };
     });
   }
 
@@ -364,7 +338,7 @@ export default function OnboardingFlow({
       const candidates = selectedTranscriptItems
         .filter((item) => !existingReviewIds.has(item.id))
         .map((item, index) => ({
-          ...transcriptPlanCourseDraft(payloadFor(item), profile, courses, mappings, item.id, equivalencies),
+          ...transcriptPlanCourseDraft(payloadFor(item), settings, courses, mappings, item.id, equivalencies),
           plan_version_id: activeVersion.id,
           user_id: session.user.id,
           sort_order: existingPlanCourses.length + index
@@ -390,27 +364,27 @@ export default function OnboardingFlow({
         if (importError) throw importError;
       }
 
-      const completedProfile: StudentProfile = {
-        ...profile,
+      const completedSettings: StudentSettings = {
+        ...settings,
         school_id: school.id,
         school_confirmed: true,
         onboarding_complete: true,
         ai_enabled: aiSetup.enabled,
         ai_model: aiSetup.model,
         ai_reasoning_effort: "low",
-        ai_connection_approved_at: aiSetup.enabled ? (profile.ai_connection_approved_at ?? new Date().toISOString()) : null,
+        ai_connection_approved_at: aiSetup.enabled ? (settings.ai_connection_approved_at ?? new Date().toISOString()) : null,
         ai_setup_tested_at: aiSetup.testedAt,
         plan_start_grade: currentGrade,
         plan_end_grade: planEndGrade,
-        tracked_requirement_areas: profile.tracker_mode === "full"
+        tracked_requirement_areas: settings.tracker_mode === "full"
           ? ALL_REQUIREMENT_AREAS
-          : profile.tracked_requirement_areas
+          : settings.tracked_requirement_areas
       };
-      const { error: profileError } = await supabase
-        .from("student_profiles")
-        .update(completedProfile)
+      const { error: settingsError } = await supabase
+        .from("student_settings")
+        .update(completedSettings)
         .eq("id", session.user.id);
-      if (profileError) throw profileError;
+      if (settingsError) throw settingsError;
       const { error: versionError } = await supabase
         .from("plan_versions")
         .update({
@@ -418,10 +392,10 @@ export default function OnboardingFlow({
             ...activeVersion.generation_config,
             plan_start_grade: currentGrade,
             plan_end_grade: planEndGrade,
-            tracker_mode: completedProfile.tracker_mode,
-            tracked_requirement_areas: completedProfile.tracked_requirement_areas,
-            ai_enabled: completedProfile.ai_enabled,
-            ai_model: completedProfile.ai_model,
+            tracker_mode: completedSettings.tracker_mode,
+            tracked_requirement_areas: completedSettings.tracked_requirement_areas,
+            ai_enabled: completedSettings.ai_enabled,
+            ai_model: completedSettings.ai_model,
             ...(isReplay ? {} : { transcript_courses_imported: candidates.length })
           }
         })
@@ -431,9 +405,9 @@ export default function OnboardingFlow({
         event_name: isReplay ? "onboarding_replayed" : "onboarding_completed",
         properties: {
           plan_years: planYears,
-          tracker_mode: completedProfile.tracker_mode,
-          ai_enabled: completedProfile.ai_enabled,
-          ai_model: completedProfile.ai_model,
+          tracker_mode: completedSettings.tracker_mode,
+          ai_enabled: completedSettings.ai_enabled,
+          ai_model: completedSettings.ai_model,
           transcript_courses_imported: candidates.length
         }
       });
@@ -446,14 +420,12 @@ export default function OnboardingFlow({
   }
 
   return (
-    <UiLabProvider variant={uiVariant} theme={theme}>
-      <UiLabSwitcher value={uiVariant} onChange={onUiVariantChange} />
-      <main className={`onboarding-shell ${uiVariantClass(uiVariant)}`} data-stage={stage} data-stage-index={stageIndex}>
+    <main className="onboarding-shell t3code-app" data-stage={stage} data-stage-index={stageIndex}>
       <header className="onboarding-topbar">
         <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">
-          {isReplay && <span>Profile changes save at Finish. Pilot approval saves on its step.</span>}
-          <LabButton variant={uiVariant} className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</LabButton>
+          {isReplay && <span>Setup changes save at Finish. Pilot approval saves on its step.</span>}
+          <button className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</button>
         </div>
       </header>
       <div className="onboarding-layout">
@@ -478,32 +450,13 @@ export default function OnboardingFlow({
 
         <section className="onboarding-stage" aria-live="polite">
           {stage === "student" && <>
-            <header><UserCircle size={25} weight="duotone" /><h1>Tell us where you are now</h1><p>This anchors school years, workload, and every plan suggestion.</p></header>
+            <header><UserCircle size={25} weight="duotone" /><h1>Tell us where you are now</h1><p>This anchors school years and the planning window.</p></header>
             <div className="form-grid two">
-              <label className="form-field"><span>Preferred name</span><input autoFocus value={profile.preferred_name} onChange={(event) => setProfile({ ...profile, preferred_name: event.target.value })} /></label>
+              <label className="form-field"><span>Preferred name</span><input autoFocus value={settings.preferred_name} onChange={(event) => setSettings({ ...settings, preferred_name: event.target.value })} /></label>
               <label className="form-field"><span>School</span><input value={school.name} readOnly aria-readonly="true" /></label>
-              <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={profile.age ?? ""} onChange={(event) => setProfile({ ...profile, age: asNumber(event.target.value) })} /></label>
-              <label className="form-field"><span>Current grade</span><select value={profile.grade_level ?? ""} onChange={(event) => changeGrade(Number(event.target.value) as GradeLevel)}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
-              <label className="form-field"><span>Expected graduation year</span><input type="number" min={2026} max={2040} value={profile.graduation_year ?? ""} onChange={(event) => setProfile({ ...profile, graduation_year: asNumber(event.target.value) })} /></label>
-            </div>
-          </>}
-
-          {stage === "priorities" && <>
-            <header><UserCircle size={25} weight="duotone" /><h1>What should the plan optimize for?</h1><p>These answers sort real courses and degrees, set workload limits, and establish the simulator baseline.</p></header>
-            <div className="onboarding-form-stack">
-              <fieldset className="profile-choice-grid"><legend>Current academic direction</legend>{MAJOR_DIRECTION_OPTIONS.map((option) => <label className={profile.major_direction === option.value ? "selected" : ""} key={option.value}><input type="radio" name="onboarding-major" checked={profile.major_direction === option.value} onChange={() => setProfile({ ...profile, major_direction: option.value })} /><span><strong>{option.label}</strong><small>{option.description}</small></span></label>)}</fieldset>
-              <fieldset className="profile-interest-grid"><legend>Interests to match</legend>{ACADEMIC_INTEREST_OPTIONS.map((interest) => <label className={profile.academic_interests.includes(interest) ? "selected" : ""} key={interest}><input type="checkbox" checked={profile.academic_interests.includes(interest)} onChange={() => toggleAcademicInterest(interest)} /><span>{interest}</span></label>)}</fieldset>
-              <label className="form-field"><span>Career ideas <small>(optional)</small></span><input value={profile.career_direction} onChange={(event) => setProfile({ ...profile, career_direction: event.target.value })} placeholder="Software engineering" /><small className="form-hint">Only used to rank course and degree matches.</small></label>
-              <fieldset className="profile-choice-grid three"><legend>Planning priority</legend>{[
-                { value: "lower_stress", label: "Protect capacity", body: "Prefer fewer demanding courses." },
-                { value: "balanced", label: "Balanced", body: "Mix rigor, activities, and recovery." },
-                { value: "competitive", label: "More rigorous", body: "Prefer honors when limits allow." }
-              ].map((option) => <label className={profile.goal_intensity === option.value ? "selected" : ""} key={option.value}><input type="radio" name="onboarding-intensity" checked={profile.goal_intensity === option.value} onChange={() => setProfile({ ...profile, goal_intensity: option.value as StudentProfile["goal_intensity"] })} /><span><strong>{option.label}</strong><small>{option.body}</small></span></label>)}</fieldset>
-              <div className="form-grid two onboarding-capacity-grid">
-                <label className="form-field"><span>Demanding-course limit</span><select value={profile.workload_tolerance} onChange={(event) => setProfile({ ...profile, workload_tolerance: event.target.value as StudentProfile["workload_tolerance"] })}><option value="light">Up to 2 at once</option><option value="balanced">Up to 4 at once</option><option value="high">Up to 6 at once</option></select><small className="form-hint">Weighted and college courses count toward this limit.</small></label>
-                <label className="form-field"><span>Weekly commitment limit</span><input type="number" min={1} max={80} step={0.5} value={profile.weekly_commitment_limit ?? ""} onChange={(event) => setProfile({ ...profile, weekly_commitment_limit: asNumber(event.target.value) })} placeholder="24" /><small className="form-hint">Hours outside d.tech for activities and SMCCD coursework.</small></label>
-                <label className="form-field"><span>Current stress baseline</span><select value={profile.stress_level} onChange={(event) => setProfile({ ...profile, stress_level: Number(event.target.value) })}><option value={1}>1 · Low</option><option value={2}>2 · Manageable</option><option value={3}>3 · Stretched</option><option value={4}>4 · High</option><option value={5}>5 · Overloaded</option></select><small className="form-hint">Used for warnings only, never to predict grades.</small></label>
-              </div>
+              <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={settings.age ?? ""} onChange={(event) => setSettings({ ...settings, age: asNumber(event.target.value) })} /></label>
+              <label className="form-field"><span>Current grade</span><select value={settings.grade_level ?? ""} onChange={(event) => changeGrade(Number(event.target.value) as GradeLevel)}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+              <label className="form-field"><span>Expected graduation year</span><input type="number" min={2026} max={2040} value={settings.graduation_year ?? ""} onChange={(event) => setSettings({ ...settings, graduation_year: asNumber(event.target.value) })} /></label>
             </div>
           </>}
 
@@ -524,10 +477,10 @@ export default function OnboardingFlow({
           {stage === "requirements" && <>
             <header><GraduationCap size={25} weight="duotone" /><h1>Choose your graduation tracker</h1><p>The full diploma view is recommended. A focused view keeps only selected areas in daily progress totals.</p></header>
             <div className="tracker-mode-switch">
-              <label className={profile.tracker_mode === "full" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={profile.tracker_mode === "full"} onChange={() => setProfile({ ...profile, tracker_mode: "full", tracked_requirement_areas: ALL_REQUIREMENT_AREAS })} /><span><strong>Full d.tech diploma</strong><small>Track all {requirements.length} official requirement areas.</small></span></label>
-              <label className={profile.tracker_mode === "selected" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={profile.tracker_mode === "selected"} onChange={() => setProfile({ ...profile, tracker_mode: "selected", tracked_requirement_areas: [] })} /><span><strong>Focused tracker</strong><small>Choose the areas you want on your overview.</small></span></label>
+              <label className={settings.tracker_mode === "full" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "full"} onChange={() => setSettings({ ...settings, tracker_mode: "full", tracked_requirement_areas: ALL_REQUIREMENT_AREAS })} /><span><strong>Full d.tech diploma</strong><small>Track all {requirements.length} official requirement areas.</small></span></label>
+              <label className={settings.tracker_mode === "selected" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "selected"} onChange={() => setSettings({ ...settings, tracker_mode: "selected", tracked_requirement_areas: [] })} /><span><strong>Focused tracker</strong><small>Choose the areas you want on your overview.</small></span></label>
             </div>
-            {profile.tracker_mode === "selected" && <fieldset className="requirement-picker"><legend>Visible requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id} className={profile.tracked_requirement_areas.includes(requirement.area) ? "selected" : ""}><input type="checkbox" checked={profile.tracked_requirement_areas.includes(requirement.area)} onChange={() => toggleRequirement(requirement.area)} /><span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span></label>)}</fieldset>}
+            {settings.tracker_mode === "selected" && <fieldset className="requirement-picker"><legend>Visible requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id} className={settings.tracked_requirement_areas.includes(requirement.area) ? "selected" : ""}><input type="checkbox" checked={settings.tracked_requirement_areas.includes(requirement.area)} onChange={() => toggleRequirement(requirement.area)} /><span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span></label>)}</fieldset>}
           </>}
 
           {stage === "assistant" && <>
@@ -536,10 +489,10 @@ export default function OnboardingFlow({
           </>}
 
           {stage === "transcript" && <>
-            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates your profile and planning preferences without changing saved courses." : "Upload a transcript or paste its text. Nothing counts until you review and import it."}</p></header>
+            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates setup choices without changing saved courses." : "Upload a transcript or paste its text. Nothing counts until you review and import it."}</p></header>
             {isReplay ? <div className="onboarding-replay-summary">
               <CheckCircle size={20} weight="duotone" />
-              <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save the profile, plan window, and tracker choices from this walkthrough. Exit onboarding to discard them all.</p></div>
+              <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save the plan window and tracker choices from this walkthrough. Exit onboarding to discard them all.</p></div>
             </div> : transcriptItems.length === 0 ? <div className="transcript-entry">
               <label className="form-field"><span>Transcript label</span><input value={transcriptTitle} onChange={(event) => setTranscriptTitle(event.target.value)} /></label>
               <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setTranscriptFile(event.target.files?.[0] ?? null)} /></label>
@@ -570,15 +523,14 @@ export default function OnboardingFlow({
 
           {error && <div className="inline-alert error" role="alert"><Warning size={17} /> {error}</div>}
           <footer className="onboarding-actions">
-            {stageIndex > 0 ? <LabButton variant={uiVariant} className="secondary-button" type="button" onClick={previousStage} disabled={Boolean(busyLabel)}><ArrowLeft size={17} /> Back</LabButton> : <span />}
+            {stageIndex > 0 ? <button className="secondary-button" type="button" onClick={previousStage} disabled={Boolean(busyLabel)}><ArrowLeft size={17} /> Back</button> : <span />}
             {stage !== "transcript"
-              ? <LabButton variant={uiVariant} className="primary-button" type="button" onClick={() => void nextStage()} disabled={Boolean(busyLabel)}>Continue <ArrowRight size={17} /></LabButton>
-              : <LabButton variant={uiVariant} className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel ? (isReplay ? "Saving changes" : "Creating workspace") : isReplay ? "Save changes" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></LabButton>}
+              ? <button className="primary-button" type="button" onClick={() => void nextStage()} disabled={Boolean(busyLabel)}>Continue <ArrowRight size={17} /></button>
+              : <button className="primary-button" type="button" onClick={() => void finishOnboarding()} disabled={Boolean(busyLabel)}>{busyLabel ? (isReplay ? "Saving changes" : "Creating workspace") : isReplay ? "Save changes" : transcriptItems.length ? "Import selected and finish" : "Finish setup"} <ArrowRight size={17} /></button>}
           </footer>
         </section>
       </div>
       {busyLabel && <div className="busy-bar onboarding-busy" role="status">{busyLabel}</div>}
-      </main>
-    </UiLabProvider>
+    </main>
   );
 }

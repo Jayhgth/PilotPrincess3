@@ -9,9 +9,8 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 1. **Overview** answers: what is true now, what needs attention, and where should I go next?
 2. **Courses** is the only place where Done, In progress, and Planned courses are organized or changed.
 3. **Graduation** explains d.tech diploma and selected associate-degree evidence.
-4. **GPA planner** compares grade assumptions, workload, and college-unit guardrails for the saved schedule.
-5. **Student profile** is a settings dialog for interests, capacity, and experiences.
-6. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
+4. **GPA planner** compares grade assumptions and college-unit guardrails for the saved schedule.
+5. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
 
 Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
 
@@ -19,9 +18,8 @@ Do not duplicate course management, graduation totals, or action lists across de
 
 | Tool | Student job | Standout capability |
 | --- | --- | --- |
-| GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, workload context, and source-backed college-unit checks |
+| GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, and source-backed college-unit checks |
 | Overview actions | Know the next action and why it comes next | Plan-derived and student-owned actions live beside the current path, with add, complete, delete, and reconciliation controls |
-| Student profile | Preserve the context that planning needs without adding a destination | Planning priorities and a factual active/past experience register share one centered, tabbed dialog |
 | Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a compact rail that can be resized, detached and moved, archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
@@ -32,18 +30,10 @@ Pilot Assistant is one global, contextual rail rather than a second AI panel rep
 
 The current interaction model was checked against more than ten contemporary references:
 
-- BigFuture interest areas and career/major exploration: interest categories should open exploration rather than prescribe one answer.
-- O*NET Interest Profiler: RIASEC is useful as a vocabulary for interests; Pilot Princess uses student-selected descriptions, not a copied assessment or diagnostic score.
-- Common App activity guidance: time, role, responsibility, and concrete contribution are more reusable than a generic activity count.
-- Common App places activities, responsibilities, and work inside the student application profile, while transcript and current-course evidence live under Education and Courses & Grades.
-- Scoir keeps activities in My Profile and puts assignments on the dashboard, supporting the decision to remove separate Experiences and Next steps destinations.
 - BigFuture uses a personalized dashboard checklist rather than a standalone task product.
-- CaliforniaColleges.edu: academic plan, career plan, goals, experiences, documents, and tasks should connect without becoming one undifferentiated dashboard.
-- Xello: grade-aware tasks, course planning, career exploration, experience hours, and resume evidence benefit from separate focused workflows.
 - SMCCD K-12 guidance: prerequisites, approval, calendars, college record, and registration remain explicit concurrent-enrollment boundaries.
 - CSM and the SMCCD district publish slightly different fee-free concurrent figures. The product therefore stores 11 as the conservative planning threshold, 11.5 as the district FAQ fee-free figure, and 19 as the absolute K-12 maximum instead of flattening them into one rule.
 - CCSF, Foothill, and De Anza show that limits vary by district, term, unit system, grade, and approval path. Enrollment policies are data records keyed by provider, program, and term rather than application constants.
-- REL/NCES career-exploration guidance: interests, career research, work-based experiences, and a portfolio create stronger exploration than keyword matching alone.
 - Baymard catalog/list research: search, high-value filters, comparable rows, and honest hidden-result explanations reduce discovery friction.
 - Shopify Polaris resource lists and tabs: related views use concise tabs; list rows summarize while a stable detail view owns action and evidence.
 - Tailwind application UI patterns: strong alignment, restrained surfaces, predictable controls, and clear table/list density fit decision dashboards better than card grids.
@@ -56,9 +46,7 @@ External references inform the local rules; they are not product requirements.
 
 ## Visual system
 
-The retained production interface uses Manrope and the semantic tokens in `src/styles/global.css`. Its palette is Pilot Graphite. Dark mode uses deep neutral graphite, never a gray veil. d.tech uses official orange `#EF5024` and charcoal `#20242C` only in institution-scoped identity. SMCCD colleges use their official marks and scoped colors.
-
-The test-only UI lab deliberately explores eight alternative systems plus the original backup: t3code workbench, Material journey, Mantine semester studio, Chakra focus mode, Ant campus ledger, Radix academic brief, React Aria checklist, and React Bits route map. Each direction serves a different student working style and changes navigation, information order, density, component composition, and onboarding presentation. Student capabilities, source language, institutional identity, and the Pilot Assistant interaction model remain shared. Select a direction with `/app?ui=<variant>` or the in-app UI Lab switcher.
+The production interface uses DM Sans and the semantic tokens in `src/styles/global.css` and `src/styles/t3code.css`. Its retained structure follows the useful parts of t3code: a compact fixed navigation rail, dense workbench rows, restrained surfaces, and an inspectable assistant rail. Dark mode uses deep neutral graphite. d.tech uses official orange `#EF5024` and charcoal `#20242C` only in institution-scoped identity. SMCCD colleges use their official marks and scoped colors.
 
 Type roles: 28px page title, 16px section title, 14px body/control, 12px label/supporting, 20px numeric, and at most one 40px primary answer in a view. Use weights 450-650.
 

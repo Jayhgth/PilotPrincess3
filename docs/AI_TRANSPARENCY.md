@@ -1,8 +1,8 @@
 # Codex transparency contract
 
-Last reviewed: 2026-07-11
+Last reviewed: 2026-07-12
 
-Pilot Princess uses Codex as an optional conversational layer over deterministic academic records. GPA, graduation, prerequisite, workload, catalog eligibility, and text-layer transcript extraction remain deterministic and usable without AI.
+Pilot Princess uses Codex as an optional conversational layer over deterministic academic records. GPA, graduation, prerequisite, catalog eligibility, and text-layer transcript extraction remain deterministic and usable without AI.
 
 ## Student experience
 
@@ -18,7 +18,7 @@ Pilot Assistant is one global, persistent rail available from the authenticated 
 - every message has a timestamp and copy action, assistant replies can be retried as a preserved new turn, and unfinished text drafts remain local to that browser and conversation;
 - the compact composer floats above the rail edge as one prompt surface with attachments, page context, review mode, stop, and send controls in its footer; submitted text clears immediately so the next message can be written while Pilot works;
 - submitted follow-ups enter a visible five-message in-memory queue, run automatically in order, and can be removed or promoted to **Steer** next; stopping or steering records a readable cancelled-turn event before the next prompt runs;
-- when a missing preference blocks useful progress, Pilot can ask one to three bounded multiple-choice questions with an optional written answer instead of returning a vague paragraph;
+- when a missing academic fact blocks useful progress, Pilot can ask one to three bounded multiple-choice questions with an optional written answer instead of returning a vague paragraph;
 - conversations reload from Supabase, can be renamed, continued from any workspace page, and reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
@@ -40,13 +40,10 @@ Read tools may run automatically after a student sends a message:
 - saved-schedule GPA scenario arithmetic and the all-A ceiling;
 - source-backed concurrent and dual-enrollment limits with term totals;
 - next steps;
-- experiences;
-- planning preferences and capacity inputs;
 - transcript-source labels and review state;
 - a transcript evidence audit that compares printed GPA/credit totals, bounded source text, parsed rows, review decisions, catalog matches, and imported plan rows;
 - the selected associate-degree goal; and
-- deterministic selected-degree requirement progress;
-- a deterministic workload scenario.
+- deterministic selected-degree requirement progress.
 
 Write tools may prepare these changes:
 
@@ -54,9 +51,8 @@ Write tools may prepare these changes:
 - add a d.tech or SMCCD course;
 - move or remove an unlocked plan course;
 - add or complete a next step;
-- edit an unlocked plan course or planning preferences;
+- edit an unlocked plan course;
 - update the student's source-bounded concurrent/dual enrollment guardrail;
-- add, edit, or remove an experience;
 - edit or remove a student-owned next step; and
 - select or clear an associate-degree goal.
 
@@ -65,9 +61,9 @@ Every write is an exact proposal first. The chat composer exposes two persisted 
 - **Manual** is the default. Every proposal appears as an approval card and nothing changes until the student chooses **Apply change**.
 - **Auto-review** routes each eligible proposal to a separate isolated Codex reviewer. The reviewer sees the student's request, action name, exact arguments, and explanation, then returns `approve`, `manual`, or `deny` with a bounded risk label and student-readable summary. Only a low-risk approval may continue automatically.
 
-Product policy overrides the reviewer and forces removals, preferred-name changes, grade edits, and marking a course Done to Manual. Medium-risk, high-risk, ambiguous, failed, or uncertain reviews also become manual approval cards. A denied proposal is recorded as not applied. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
+Product policy overrides the reviewer and forces removals, grade edits, and marking a course Done to Manual. Medium-risk, high-risk, ambiguous, failed, or uncertain reviews also become manual approval cards. A denied proposal is recorded as not applied. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
 
-The read surface covers student-facing planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. GPA optimization is bounded to deterministic arithmetic on the saved schedule and student-supplied assumptions. Pilot must call the all-A output a saved-schedule ceiling and check graduation, prerequisites, workload, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
+The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. GPA optimization is bounded to deterministic arithmetic on the saved schedule and student-supplied assumptions. Pilot must call the all-A output a saved-schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
 
 Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent triggers the deterministic evidence tool before the model answers, so Pilot cannot return a placeholder such as “I’m checking” without doing the check. Pilot must lead with that verdict, compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. A `needs_review` status alone is not an error, and a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows remain read-only in chat even when Pilot can inspect their evidence.
 
@@ -89,14 +85,6 @@ Queued follow-ups also remain browser-memory-only until their turn starts. Their
 After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. This is evidence of the exact application-side mutation, not a claim made by the model.
 
 Archiving sets the owning conversation's existing `is_archived` flag. It removes that conversation from active history without deleting messages, attachments, events, or tool calls. The student can restore it from Pilot settings. Per-user RLS applies to both actions.
-
-## Retrieval boundary
-
-`ai_knowledge_chunks` stores concise, source-controlled guidance about Pilot's role, page ownership, academic evidence rules, approval behavior, and answer style. Each turn uses tagged Postgres full-text search to select a bounded set of relevant chunks. The assistant timeline shows the retrieved chunk titles as **App guidance** so the student can understand which product rules shaped the answer.
-
-The role and answer-style chunks enforce a student-specific brevity contract: answer first, include only decision-changing evidence, mention uncertainty once, and avoid ratings, generic motivation, repeated page data, or report-shaped output. The structured response schema rejects assistant messages longer than 900 characters and asks the model to repair them before anything is persisted.
-
-Student records are not copied into the retrieval corpus. Current courses, profile fields, graduation evidence, transcript-source state, experiences, tasks, and college goals are read through allowlisted RLS-protected tools. This keeps static role guidance separate from live private data and prevents stale embeddings from becoming academic evidence.
 
 ## t3code and SDK boundary
 

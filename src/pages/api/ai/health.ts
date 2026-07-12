@@ -48,7 +48,7 @@ export const POST: APIRoute = async ({ request }) => {
       signal: request.signal
     });
     const testedAt = new Date().toISOString();
-    const { error: preferenceError } = await auth.supabase.from("student_profiles").update({
+    const { error: preferenceError } = await auth.supabase.from("student_settings").update({
       ai_model: parsed.data.model,
       ai_reasoning_effort: AI_REASONING_EFFORT,
       ai_setup_tested_at: testedAt

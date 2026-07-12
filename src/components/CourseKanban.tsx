@@ -27,7 +27,7 @@ import { useState, type ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import { INSTITUTIONS } from "@/lib/institutions";
 import { courseDisplayName, GRADE_LEVELS, LETTER_GRADES, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
-import type { Course, CourseStatus, GradeLevel, PlanCourse, SmccdCourse, StudentProfile } from "@/lib/models";
+import type { Course, CourseStatus, GradeLevel, PlanCourse, SmccdCourse, StudentSettings } from "@/lib/models";
 
 const STATUS_ORDER: CourseStatus[] = ["completed", "current", "planned"];
 const STATUS_CONTENT = {
@@ -44,7 +44,7 @@ interface CourseKanbanProps {
   rows: PlanCourse[];
   courses: Course[];
   smccdCourses: SmccdCourse[];
-  profile: StudentProfile;
+  settings: StudentSettings;
   editingCourseId: string | null;
   busy: boolean;
   onEditingChange: (id: string | null) => void;
@@ -60,7 +60,7 @@ function CourseCard({
   row,
   courseMap,
   smccdCourseMap,
-  profile,
+  settings,
   editing,
   busy,
   onEditingChange,
@@ -71,7 +71,7 @@ function CourseCard({
   row: PlanCourse;
   courseMap: Map<string, Course>;
   smccdCourseMap: Map<string, SmccdCourse>;
-  profile: StudentProfile;
+  settings: StudentSettings;
   editing: boolean;
   busy: boolean;
   onEditingChange: (id: string | null) => void;
@@ -127,7 +127,7 @@ function CourseCard({
         <label><span>Final grade</span><select value={row.letter_grade ?? ""} onChange={(event) => onUpdate(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((grade) => <option value={grade} key={grade}>{grade || "Not entered"}</option>)}</select></label>
         <label><span>Grade level</span>{locked
           ? <input value={`Grade ${row.grade_level}`} readOnly />
-          : <select value={row.grade_level} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; onUpdate(row.id, { grade_level: grade, school_year: schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade) }); }}>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select>}</label>
+          : <select value={row.grade_level} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; onUpdate(row.id, { grade_level: grade, school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, grade) }); }}>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select>}</label>
         <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => onUpdate(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "SMCCD courses are weighted" : "Weighted or honors"}</span></label>
         <button className="danger-button small" type="button" onClick={() => onRemove(row.id)}><Trash size={15} /> Remove</button>
       </div>}
@@ -203,7 +203,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
               .filter((row) => row.status === status)
               .sort((a, b) => status === "completed" ? b.grade_level - a.grade_level : a.grade_level - b.grade_level || a.sort_order - b.sort_order);
             return <KanbanColumn status={status} rows={rows} busy={props.busy} onGeneratePlan={props.onGeneratePlan} onImportTranscript={props.onImportTranscript} onBrowseCourses={props.onBrowseCourses} key={status}>
-              {rows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} profile={props.profile} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
+              {rows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} settings={props.settings} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
             </KanbanColumn>;
           })}
         </section>

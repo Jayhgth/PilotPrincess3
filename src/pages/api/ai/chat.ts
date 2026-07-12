@@ -8,7 +8,6 @@ import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import type { AiMessage } from "@/lib/models";
 import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat } from "@/server/codex";
 import { executeAssistantReadTool } from "@/server/ai-tools";
-import { assistantKnowledgePrompt, retrieveAssistantKnowledge } from "@/server/assistant-knowledge";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 
@@ -167,18 +166,12 @@ export const POST: APIRoute = async ({ request }) => {
             summary: `${attachmentRows.length} ${attachmentRows.length === 1 ? "image" : "images"} provided by the student.`
           });
         }
-        const knowledge = await retrieveAssistantKnowledge(auth.supabase, parsed.data.message || "student image attachment", parsed.data.pageContext);
-        record("retrieval.completed", {
-          sources: knowledge.map((chunk) => ({ id: chunk.id, title: chunk.title, sourcePath: chunk.sourcePath })),
-          summary: `Used ${knowledge.length} Pilot Princess guidance ${knowledge.length === 1 ? "source" : "sources"}.`
-        });
         const result = await runAssistantChat({
           history,
           userMessage: parsed.data.message,
           images: localImages,
           imageNames: attachmentRows.map((attachment) => attachment.name),
           pageContext: parsed.data.pageContext,
-          knowledge: assistantKnowledgePrompt(knowledge),
           model: preferences.model,
           reviewMode: preferences.reviewMode,
           signal,

@@ -21,24 +21,13 @@ export interface School {
   source_year: string | null;
 }
 
-export interface StudentProfile {
+export interface StudentSettings {
   id: string;
   school_id: string | null;
   preferred_name: string;
   age: number | null;
   grade_level: number | null;
   graduation_year: number | null;
-  academic_interests: string[];
-  career_interest_areas: string[];
-  work_values: string[];
-  exploration_questions: string[];
-  major_direction: string;
-  career_direction: string;
-  goal_intensity: "lower_stress" | "balanced" | "competitive";
-  workload_tolerance: "light" | "balanced" | "high";
-  stress_level: number;
-  activity_load_hours: number;
-  weekly_commitment_limit: number | null;
   school_confirmed: boolean;
   onboarding_complete: boolean;
   ai_enabled: boolean;
@@ -281,23 +270,6 @@ export interface StudentEnrollmentPreference {
   updated_at: string;
 }
 
-export interface Activity {
-  id: string;
-  user_id: string;
-  name: string;
-  kind: "club" | "athletics" | "service" | "work" | "family" | "internship" | "other";
-  role: string | null;
-  weekly_hours: number;
-  start_grade: number | null;
-  end_grade: number | null;
-  notes: string | null;
-  organization: string | null;
-  weeks_per_year: number | null;
-  impact: string | null;
-  description: string | null;
-  is_active: boolean;
-}
-
 export interface TimelineTask {
   id: string;
   user_id: string;
@@ -385,11 +357,6 @@ export interface CatalogReviewItem {
   created_at: string;
 }
 
-export interface SimulationConfig {
-  collegeUnits: number;
-  activityHoursChange: number;
-}
-
 export interface RequirementProgress {
   requirement: GraduationRequirement;
   completedCredits: number;
@@ -425,39 +392,4 @@ export interface GpaSummary {
   weightedCredits: number;
   passCredits: number;
   isEstimate: true;
-}
-
-export interface WorkloadSummary {
-  weeklyActivityHours: number;
-  collegeWeeklyHours: number;
-  knownWeeklyHours: number;
-  demandingCourseCount: number;
-  demandingCourseLimit: number;
-  capacityHours: number | null;
-  capacityRemaining: number | null;
-  academicLoad: number;
-  totalScore: number;
-  level: "within_limit" | "near_limit" | "over_limit" | "needs_input";
-  warning: string | null;
-}
-
-export interface SimulationResult {
-  current: {
-    graduationPercent: number;
-    projectedWeightedGpa: number | null;
-    workloadScore: number;
-    demandingCourseCount: number;
-    stressLevel: number;
-    activityHours: number;
-  };
-  simulated: {
-    graduationPercent: number;
-    projectedWeightedGpa: number | null;
-    workloadScore: number;
-    demandingCourseCount: number;
-    stressLevel: number;
-    activityHours: number;
-  };
-  changes: string[];
-  risks: string[];
 }

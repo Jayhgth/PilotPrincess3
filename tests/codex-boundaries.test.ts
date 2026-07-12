@@ -3,7 +3,6 @@ import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATUR
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
-import { assistantKnowledgePrompt } from "@/server/assistant-knowledge";
 import { autoReviewManualReason, autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, aiModelSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 
@@ -73,11 +72,11 @@ describe("Codex feature boundaries", () => {
 
   it("accepts bounded structured student questions without treating them as tools", () => {
     const parsed = assistantTurnSchema.parse({
-      assistant_message: "Choose the planning priority that fits you.",
+      assistant_message: "Choose the school year for this course.",
       questions: [{
-        id: "planning_priority",
-        prompt: "What should this plan protect first?",
-        options: [{ id: "capacity", label: "My weekly capacity" }, { id: "rigor", label: "More academic rigor" }],
+        id: "school_year",
+        prompt: "When do you plan to take it?",
+        options: [{ id: "junior", label: "Grade 11" }, { id: "senior", label: "Grade 12" }],
         allow_custom: true
       }],
       tool_calls: []
@@ -88,10 +87,7 @@ describe("Codex feature boundaries", () => {
   it("validates exact tool arguments and marks writes for confirmation", () => {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("update_student_profile", { stress_level: 4, weekly_commitment_limit: 18 })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent", limit_mode: "recommended", custom_unit_limit: null })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("add_experience", { name: "Robotics", kind: "club", weekly_hours: 4 })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("run_load_check", { college_units: 3, activity_hours_change: -2 })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("evaluate_gpa_scenario", { target_weighted_gpa: 4, choices: [] })).toMatchObject({ mutatesData: false });
@@ -100,7 +96,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
-    expect(() => parseAssistantToolCall("update_experience", { experience_id: crypto.randomUUID() })).toThrow();
+    expect(() => parseAssistantToolCall("unknown_removed_tool", {})).toThrow();
   });
 
   it("allowlists the onboarding model choices and recommends Luna", () => {
@@ -115,7 +111,6 @@ describe("Codex feature boundaries", () => {
     expect(autoReviewManualReason("remove_plan_course", { plan_course_id: crypto.randomUUID() })).toContain("removes saved student data");
     expect(autoReviewManualReason("move_plan_course", { status: "completed" })).toContain("academic status");
     expect(autoReviewManualReason("update_plan_course", { letter_grade: "A" })).toContain("recorded grade");
-    expect(autoReviewManualReason("update_student_profile", { preferred_name: "Jay" })).toContain("identity");
     expect(autoReviewManualReason("add_next_step", { title: "Meet counselor" })).toBeNull();
   });
 
@@ -132,13 +127,6 @@ describe("Codex feature boundaries", () => {
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
   });
 
-  it("formats retrieved product guidance with source ownership", () => {
-    const prompt = assistantKnowledgePrompt([{ id: "role", title: "Pilot role", content: "Use deterministic evidence.", sourcePath: "docs/AI_TRANSPARENCY.md", tags: ["assistant"], score: 1 }]);
-    expect(prompt).toContain("[Pilot role]");
-    expect(prompt).toContain("Use deterministic evidence.");
-    expect(prompt).toContain("docs/AI_TRANSPARENCY.md");
-  });
-
   it("tells the assistant to read records and defer writes to the selected review mode", () => {
     const prompt = assistantConversationPrompt({
       history: [],
@@ -146,7 +134,6 @@ describe("Codex feature boundaries", () => {
       images: [{ type: "local_image", path: "/private/tmp/schedule.png" }],
       imageNames: ["schedule.png"],
       pageContext: { view: "courses" },
-      knowledge: "Course changes require confirmation.",
       model: "gpt-5.6-luna",
       reviewMode: "manual",
       executeReadTool: async () => ({ summary: "ok", data: {} }),
@@ -164,7 +151,6 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Default to one to three short sentences");
     expect(prompt).toContain("Keep assistant_message under 900 characters");
     expect(prompt).toContain("use the available mutating tool");
-    expect(prompt).toContain("Course changes require confirmation.");
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
@@ -172,10 +158,10 @@ describe("Codex feature boundaries", () => {
 
   it("accepts the expanded student-data tools in structured assistant output", () => {
     expect(assistantTurnSchema.parse({ assistant_message: "I prepared the update.", tool_calls: [{
-      name: "update_student_profile",
-      arguments_json: '{"stress_level":3}',
-      explanation: "Update the requested stress level."
-    }] }).tool_calls[0]?.name).toBe("update_student_profile");
+      name: "update_enrollment_preference",
+      arguments_json: '{"program_type":"concurrent","limit_mode":"recommended","custom_unit_limit":null}',
+      explanation: "Use the recommended SMCCD guardrail."
+    }] }).tool_calls[0]?.name).toBe("update_enrollment_preference");
     expect(assistantTurnSchema.parse({ assistant_message: "I checked the saved schedule.", tool_calls: [{
       name: "evaluate_gpa_scenario",
       arguments_json: '{"target_weighted_gpa":4.5,"choices":[]}',

@@ -46,7 +46,6 @@
 .policyNote, .aiNote { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .policyNote p, .aiNote p { margin: 0; }
 .policyNote a { color: var(--dual-ui); font-weight: 700; }
-.workloadNote { margin: 10px 0 0 26px; color: var(--ink-faint); font-size: var(--type-supporting); }
 .empty { display: flex; align-items: center; gap: 10px; min-height: 66px; padding: 12px; border-radius: 8px; background: var(--surface-muted); color: var(--ink-soft); }
 .empty span { display: grid; gap: 2px; }
 .empty small { font-size: var(--type-supporting); }

@@ -2,7 +2,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createSmccdPlanCourseIndex, dtechCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import type {
-  Activity,
   CatalogReviewItem,
   Course,
   CourseRequirementMapping,
@@ -20,21 +19,19 @@ import type {
   SmccdRequirementCourse,
   StudentSmccdGoal,
   StudentEnrollmentPreference,
-  StudentProfile,
+  StudentSettings,
   TimelineTask
 } from "@/lib/models";
 import {
   calculateGpa,
   calculateRequirementProgress,
-  calculateWorkload,
   courseDisplayName,
   dtechGradePoint,
   overallCompletedPercent,
   overallGraduationPercent,
   planCourseMovePatch,
-  requirementsForProfile,
-  schoolYearForGrade,
-  simulatePlan
+  requirementsForSettings,
+  schoolYearForGrade
 } from "@/lib/planning";
 import { calculateSmccdProgramProgress } from "@/lib/smccd";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
@@ -47,7 +44,6 @@ const courseStatusSchema = z.enum(["current", "planned"]);
 const termSchema = z.enum(["fall", "spring", "summer", "full_year"]);
 const gradeSchema = z.union([z.literal(9), z.literal(10), z.literal(11), z.literal(12)]);
 const timelineCategorySchema = z.enum(["academics", "activities", "college", "summer", "admin"]);
-const activityKindSchema = z.enum(["club", "athletics", "service", "work", "family", "internship", "other"]);
 const optionalText = (maximum: number) => z.string().trim().max(maximum).nullable();
 
 const toolArgumentSchemas = {
@@ -60,8 +56,6 @@ const toolArgumentSchemas = {
   }),
   get_graduation_progress: z.object({}),
   get_next_steps: z.object({}),
-  get_experiences: z.object({ active_only: z.boolean().default(false) }),
-  get_student_profile: z.object({}),
   get_transcript_sources: z.object({}),
   get_student_data_inventory: z.object({}),
   audit_transcript_data: z.object({ include_source_text: z.boolean().default(false) }),
@@ -78,10 +72,6 @@ const toolArgumentSchemas = {
   get_plan_versions: z.object({}),
   get_degree_progress: z.object({}),
   get_college_goal: z.object({}),
-  run_load_check: z.object({
-    college_units: z.number().min(0).max(18),
-    activity_hours_change: z.number().min(-80).max(80)
-  }),
   save_plan_snapshot: z.object({
     label: z.string().trim().min(1).max(80).optional()
   }),
@@ -109,52 +99,11 @@ const toolArgumentSchemas = {
     letter_grade: optionalText(12).optional(),
     notes: optionalText(1200).optional()
   }).refine((value) => Object.keys(value).some((key) => key !== "plan_course_id"), "Provide at least one course field to update."),
-  update_student_profile: z.object({
-    preferred_name: z.string().trim().min(1).max(120).optional(),
-    academic_interests: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-    career_interest_areas: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-    work_values: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-    exploration_questions: z.array(z.string().trim().min(1).max(240)).max(12).optional(),
-    major_direction: z.string().trim().min(1).max(120).optional(),
-    career_direction: z.string().trim().max(240).optional(),
-    goal_intensity: z.enum(["lower_stress", "balanced", "competitive"]).optional(),
-    workload_tolerance: z.enum(["light", "balanced", "high"]).optional(),
-    stress_level: z.number().int().min(1).max(5).optional(),
-    weekly_commitment_limit: z.number().min(1).max(80).nullable().optional()
-  }).refine((value) => Object.keys(value).length > 0, "Provide at least one profile field to update."),
   update_enrollment_preference: z.object({
     program_type: z.enum(["concurrent", "dual"]),
     limit_mode: z.enum(["recommended", "fee_free", "absolute", "custom"]),
     custom_unit_limit: z.number().min(0.5).max(30).nullable().default(null)
   }),
-  add_experience: z.object({
-    name: z.string().trim().min(1).max(180),
-    kind: activityKindSchema,
-    role: optionalText(180).default(null),
-    organization: optionalText(180).default(null),
-    weekly_hours: z.number().min(0).max(80),
-    weeks_per_year: z.number().min(0).max(52).nullable().default(null),
-    start_grade: gradeSchema.nullable().default(null),
-    end_grade: gradeSchema.nullable().default(null),
-    description: optionalText(1200).default(null),
-    impact: optionalText(1200).default(null),
-    is_active: z.boolean().default(true)
-  }),
-  update_experience: z.object({
-    experience_id: z.uuid(),
-    name: z.string().trim().min(1).max(180).optional(),
-    kind: activityKindSchema.optional(),
-    role: optionalText(180).optional(),
-    organization: optionalText(180).optional(),
-    weekly_hours: z.number().min(0).max(80).optional(),
-    weeks_per_year: z.number().min(0).max(52).nullable().optional(),
-    start_grade: gradeSchema.nullable().optional(),
-    end_grade: gradeSchema.nullable().optional(),
-    description: optionalText(1200).optional(),
-    impact: optionalText(1200).optional(),
-    is_active: z.boolean().optional()
-  }).refine((value) => Object.keys(value).some((key) => key !== "experience_id"), "Provide at least one experience field to update."),
-  remove_experience: z.object({ experience_id: z.uuid() }),
   add_next_step: z.object({
     title: z.string().trim().min(1).max(240),
     category: timelineCategorySchema,
@@ -181,13 +130,11 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   description: string;
   arguments: string;
 }> = [
-  { name: "get_student_overview", mutatesData: false, description: "Read the current student profile, graduation, GPA, workload, and course-count summary.", arguments: "{}" },
+  { name: "get_student_overview", mutatesData: false, description: "Read the current graduation, GPA, and course-count summary.", arguments: "{}" },
   { name: "list_plan_courses", mutatesData: false, description: "List courses already in the active plan, with stable IDs and Done/In progress/Planned state.", arguments: '{"status":"completed|current|planned|all"}' },
   { name: "search_course_catalog", mutatesData: false, description: "Search eligible d.tech and/or SMCCD catalog courses. Returns stable course IDs needed for add-course requests.", arguments: '{"query":"string","source":"dtech|smccd|all","grade_level":9|10|11|12}' },
   { name: "get_graduation_progress", mutatesData: false, description: "Read requirement-by-requirement completed, scheduled, and remaining credit evidence.", arguments: "{}" },
   { name: "get_next_steps", mutatesData: false, description: "Read open graduation gaps and saved next-step tasks.", arguments: "{}" },
-  { name: "get_experiences", mutatesData: false, description: "Read the student's factual experience register and recorded weekly hours.", arguments: '{"active_only":boolean}' },
-  { name: "get_student_profile", mutatesData: false, description: "Read the student's setup, tracker scope, planning preferences, interests, direction, stress, capacity, and AI connection state.", arguments: "{}" },
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Transcript evidence remains read-only in chat.", arguments: "{}" },
   { name: "get_student_data_inventory", mutatesData: false, description: "Read a compact inventory of the current student's available records so the assistant can choose the correct evidence tool.", arguments: "{}" },
   { name: "audit_transcript_data", mutatesData: false, description: "Compare transcript source text, parsed rows, review decisions, catalog identities, and imported plan rows. Use source text for an actual extraction audit; never treat a graduation gap as a parsing error.", arguments: '{"include_source_text":boolean}' },
@@ -197,18 +144,13 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_plan_versions", mutatesData: false, description: "Read active and saved plan versions with labels, creation dates, and course counts.", arguments: "{}" },
   { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for the selected SMCCD associate-degree goal.", arguments: "{}" },
   { name: "get_college_goal", mutatesData: false, description: "Read the selected SMCCD associate-degree goal.", arguments: "{}" },
-  { name: "run_load_check", mutatesData: false, description: "Run the deterministic current-versus-proposed workload check without saving a scenario.", arguments: '{"college_units":number,"activity_hours_change":number}' },
   { name: "save_plan_snapshot", mutatesData: true, description: "Propose saving a read-only copy of the active course plan before a larger change.", arguments: '{"label":"optional short label"}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
   { name: "update_plan_course", mutatesData: true, description: "Propose editing the placement, grade, or notes of an unlocked plan course.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","notes":"string|null"}' },
-  { name: "update_student_profile", mutatesData: true, description: "Propose changing the student's planning preferences, interests, direction, stress, or weekly capacity.", arguments: "Only include fields the student explicitly requested." },
   { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing the student's SMCCD concurrent- or dual-enrollment unit guardrail. Source-backed limits are revalidated when the change runs.", arguments: '{"program_type":"concurrent|dual","limit_mode":"recommended|fee_free|absolute|custom","custom_unit_limit":number|null}' },
-  { name: "add_experience", mutatesData: true, description: "Propose adding a factual experience and its workload evidence.", arguments: '{"name":"string","kind":"club|athletics|service|work|family|internship|other","weekly_hours":number,...}' },
-  { name: "update_experience", mutatesData: true, description: "Propose editing one saved experience by experience_id.", arguments: '{"experience_id":"uuid",...changed fields}' },
-  { name: "remove_experience", mutatesData: true, description: "Propose removing one saved experience.", arguments: '{"experience_id":"uuid"}' },
   { name: "add_next_step", mutatesData: true, description: "Propose adding one student-owned next step. The selected review route must approve it.", arguments: '{"title":"string","category":"academics|activities|college|summer|admin","due_label":"string|null"}' },
   { name: "complete_next_step", mutatesData: true, description: "Propose completing one saved next step. The selected review route must approve it.", arguments: '{"task_id":"uuid"}' },
   { name: "update_next_step", mutatesData: true, description: "Propose editing a saved next step.", arguments: '{"task_id":"uuid",...changed fields}' },
@@ -232,8 +174,6 @@ export function assistantToolLabel(name: string) {
     search_course_catalog: "Search course catalogs",
     get_graduation_progress: "Check graduation progress",
     get_next_steps: "Read next steps",
-    get_experiences: "Read experiences",
-    get_student_profile: "Read student profile",
     get_transcript_sources: "Read transcript sources",
     get_student_data_inventory: "Inventory student records",
     audit_transcript_data: "Audit transcript evidence",
@@ -243,18 +183,13 @@ export function assistantToolLabel(name: string) {
     get_plan_versions: "Read plan versions",
     get_degree_progress: "Read degree progress",
     get_college_goal: "Read college goal",
-    run_load_check: "Run load check",
     save_plan_snapshot: "Save plan snapshot",
     add_dtech_course: "Add d.tech course",
     add_smccd_course: "Add SMCCD course",
     move_plan_course: "Move course",
     remove_plan_course: "Remove course",
     update_plan_course: "Update course",
-    update_student_profile: "Update planning preferences",
     update_enrollment_preference: "Update enrollment guardrail",
-    add_experience: "Add experience",
-    update_experience: "Update experience",
-    remove_experience: "Remove experience",
     add_next_step: "Add next step",
     complete_next_step: "Complete next step",
     update_next_step: "Update next step",
@@ -276,7 +211,7 @@ export function parseAssistantToolCall(name: string, argumentsValue: unknown) {
 }
 
 interface AssistantWorkspace {
-  profile: StudentProfile;
+  settings: StudentSettings;
   plan: FourYearPlan;
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
@@ -284,7 +219,6 @@ interface AssistantWorkspace {
   requirements: GraduationRequirement[];
   mappings: CourseRequirementMapping[];
   equivalencies: SmccdHighSchoolEquivalency[];
-  activities: Activity[];
   tasks: TimelineTask[];
   plannedSmccdCourses: SmccdCourse[];
   sources: OfficialSource[];
@@ -299,14 +233,13 @@ function firstError(results: ReadonlyArray<{ error: { message: string } | null }
 }
 
 async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string): Promise<AssistantWorkspace> {
-  const [profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult] = await Promise.all([
-    supabase.from("student_profiles").select("*").eq("id", userId).single(),
+  const [settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult] = await Promise.all([
+    supabase.from("student_settings").select("*").eq("id", userId).single(),
     supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
     supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
     supabase.from("graduation_requirements").select("*").eq("review_status", "approved").order("name"),
     supabase.from("course_requirement_mappings").select("*"),
     supabase.from("smccd_high_school_equivalencies").select("*"),
-    supabase.from("activities").select("*").eq("user_id", userId).order("created_at"),
     supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
     supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
     supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
@@ -314,7 +247,7 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
     supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle()
   ]);
-  const error = firstError([profileResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, activityResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult]);
+  const error = firstError([settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult]);
   if (error) throw new Error(error.message);
 
   const plan = planResult.data as unknown as FourYearPlan;
@@ -330,14 +263,8 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     : { data: [], error: null };
   if (smccdResult.error) throw new Error(smccdResult.error.message);
 
-  const rawProfile = profileResult.data as unknown as StudentProfile;
   return {
-    profile: {
-      ...rawProfile,
-      career_interest_areas: rawProfile.career_interest_areas ?? [],
-      work_values: rawProfile.work_values ?? [],
-      exploration_questions: rawProfile.exploration_questions ?? []
-    },
+    settings: settingsResult.data as unknown as StudentSettings,
     plan,
     activeVersion,
     planCourses,
@@ -345,7 +272,6 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     requirements: (requirementResult.data ?? []) as unknown as GraduationRequirement[],
     mappings: (mappingResult.data ?? []) as unknown as CourseRequirementMapping[],
     equivalencies: (equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[],
-    activities: (activityResult.data ?? []) as unknown as Activity[],
     tasks: (taskResult.data ?? []) as unknown as TimelineTask[],
     plannedSmccdCourses: (smccdResult.data ?? []) as unknown as SmccdCourse[],
     sources: (sourceResult.data ?? []) as unknown as OfficialSource[],
@@ -359,12 +285,11 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
 }
 
 function calculatedWorkspace(workspace: AssistantWorkspace) {
-  const tracked = requirementsForProfile(workspace.requirements, workspace.profile);
+  const tracked = requirementsForSettings(workspace.requirements, workspace.settings);
   const progress = calculateRequirementProgress(tracked, workspace.planCourses, workspace.mappings, workspace.courses, workspace.equivalencies);
   return {
     progress,
-    gpa: calculateGpa(workspace.planCourses),
-    workload: calculateWorkload(workspace.profile, workspace.planCourses, workspace.courses, workspace.activities)
+    gpa: calculateGpa(workspace.planCourses)
   };
 }
 
@@ -392,20 +317,13 @@ export async function executeAssistantReadTool(
     return {
       summary: "Read the current student overview.",
       data: {
-        student: {
-          preferred_name: workspace.profile.preferred_name,
-          grade_level: workspace.profile.grade_level,
-          graduation_year: workspace.profile.graduation_year,
-          major_direction: workspace.profile.major_direction,
-          academic_interests: workspace.profile.academic_interests
-        },
+        student: { grade_level: workspace.settings.grade_level, graduation_year: workspace.settings.graduation_year },
         graduation: {
           completed_percent: overallCompletedPercent(calculated.progress),
           projected_percent: overallGraduationPercent(calculated.progress),
           open_areas: calculated.progress.filter((item) => item.status === "missing").map((item) => item.requirement.name)
         },
         gpa: calculated.gpa,
-        workload: calculated.workload,
         course_counts: courseCounts
       }
     };
@@ -435,7 +353,7 @@ export async function executeAssistantReadTool(
   if (name === "search_course_catalog") {
     const query = String(argumentsValue.query ?? "").trim().toLowerCase();
     const source = String(argumentsValue.source ?? "all");
-    const targetGrade = Number(argumentsValue.grade_level ?? workspace.profile.grade_level ?? 9) as GradeLevel;
+    const targetGrade = Number(argumentsValue.grade_level ?? workspace.settings.grade_level ?? 9) as GradeLevel;
     const matches: Array<Record<string, unknown>> = [];
     if (source === "dtech" || source === "all") {
       const candidates = workspace.courses.filter((course) => [course.name, course.subject, course.course_code ?? ""].join(" ").toLowerCase().includes(query));
@@ -518,57 +436,6 @@ export async function executeAssistantReadTool(
     };
   }
 
-  if (name === "get_experiences") {
-    const activeOnly = argumentsValue.active_only === true;
-    const data = workspace.activities.filter((activity) => !activeOnly || activity.is_active).map((activity) => ({
-      experience_id: activity.id,
-      name: activity.name,
-      type: activity.kind,
-      role: activity.role,
-      organization: activity.organization,
-      weekly_hours: activity.weekly_hours,
-      active: activity.is_active,
-      contribution_or_growth: activity.impact
-    }));
-    return { summary: `Read ${data.length} recorded experiences.`, data };
-  }
-
-  if (name === "get_student_profile") {
-    return {
-      summary: "Read the current planning preferences.",
-      data: {
-        preferred_name: workspace.profile.preferred_name,
-        age: workspace.profile.age,
-        grade_level: workspace.profile.grade_level,
-        graduation_year: workspace.profile.graduation_year,
-        school_confirmed: workspace.profile.school_confirmed,
-        onboarding_complete: workspace.profile.onboarding_complete,
-        plan_start_grade: workspace.profile.plan_start_grade,
-        plan_end_grade: workspace.profile.plan_end_grade,
-        tracker_mode: workspace.profile.tracker_mode,
-        tracked_requirement_areas: workspace.profile.tracked_requirement_areas,
-        academic_interests: workspace.profile.academic_interests,
-        career_interest_areas: workspace.profile.career_interest_areas,
-        work_values: workspace.profile.work_values,
-        exploration_questions: workspace.profile.exploration_questions,
-        major_direction: workspace.profile.major_direction,
-        career_direction: workspace.profile.career_direction,
-        planning_priority: workspace.profile.goal_intensity,
-        workload_tolerance: workspace.profile.workload_tolerance,
-        stress_level: workspace.profile.stress_level,
-        weekly_commitment_limit: workspace.profile.weekly_commitment_limit,
-        ai_connection: {
-          enabled: workspace.profile.ai_enabled,
-          model: workspace.profile.ai_model,
-          reasoning: workspace.profile.ai_reasoning_effort,
-          review_mode: workspace.profile.ai_review_mode,
-          approved_at: workspace.profile.ai_connection_approved_at,
-          last_tested_at: workspace.profile.ai_setup_tested_at
-        }
-      }
-    };
-  }
-
   if (name === "get_transcript_sources") {
     const data = workspace.sources.map((source) => ({
       source_id: source.id,
@@ -589,7 +456,7 @@ export async function executeAssistantReadTool(
       summary: "Read the available student-record inventory.",
       data: {
         scope: "Current user's RLS-protected academic planning records; no auth secrets, admin data, arbitrary SQL, or other users' records.",
-        profile: { available: true, onboarding_complete: workspace.profile.onboarding_complete },
+        setup: { onboarding_complete: workspace.settings.onboarding_complete },
         active_plan: { course_count: workspace.planCourses.length, completed_count: completed, transcript_imported_count: imported },
         graduation: { requirement_count: calculated.progress.length },
         gpa: { graded_credits: calculated.gpa.gradedCredits, pass_credits: calculated.gpa.passCredits },
@@ -598,7 +465,6 @@ export async function executeAssistantReadTool(
           parsed_course_row_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course").length,
           pending_review_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course" && item.status === "pending").length
         },
-        experiences: { count: workspace.activities.length },
         next_steps: { count: workspace.tasks.length, open_count: workspace.tasks.filter((task) => !task.is_completed).length },
         college_goal: { selected: workspace.collegeGoals.length > 0 },
         enrollment_guardrail: { provider: workspace.enrollmentPreference.provider_code, program_type: workspace.enrollmentPreference.program_type, limit_mode: workspace.enrollmentPreference.limit_mode },
@@ -610,9 +476,7 @@ export async function executeAssistantReadTool(
           "get_enrollment_constraints",
           "audit_transcript_data",
           "get_plan_versions",
-          "get_experiences",
           "get_next_steps",
-          "get_student_profile",
           "get_degree_progress"
         ]
       }
@@ -814,12 +678,6 @@ export async function executeAssistantReadTool(
     return { summary: `Read ${data.length} selected college ${data.length === 1 ? "goal" : "goals"}.`, data };
   }
 
-  if (name === "run_load_check") {
-    const args = toolArgumentSchemas.run_load_check.parse(argumentsValue);
-    const result = simulatePlan({ collegeUnits: args.college_units, activityHoursChange: args.activity_hours_change }, workspace.profile, calculated.progress, calculated.gpa, calculated.workload);
-    return { summary: "Ran the deterministic load check without changing the saved plan.", data: result };
-  }
-
   throw new Error(`${assistantToolLabel(name)} is not a read-only tool.`);
 }
 
@@ -874,7 +732,7 @@ export async function executeAssistantMutationTool(
       user_id: userId,
       course_id: course.id,
       grade_level: args.grade_level,
-      school_year: schoolYearForGrade(workspace.profile.graduation_year ?? new Date().getFullYear() + 3, args.grade_level),
+      school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, args.grade_level),
       term: args.term,
       status: args.status,
       credits: course.credits,
@@ -911,7 +769,7 @@ export async function executeAssistantMutationTool(
       college_provider_code: "SMCCD",
       custom_course_name: `${course.course_code} ${course.title}`,
       grade_level: args.grade_level,
-      school_year: schoolYearForGrade(workspace.profile.graduation_year ?? new Date().getFullYear() + 3, args.grade_level),
+      school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, args.grade_level),
       term: args.term,
       status: args.status,
       credits: equivalency?.high_school_credits ?? 0,
@@ -934,7 +792,7 @@ export async function executeAssistantMutationTool(
     const row = workspace.planCourses.find((candidate) => candidate.id === args.plan_course_id);
     if (!row) throw new Error("That course is no longer in the active plan.");
     if (row.source_review_item_id) throw new Error("Transcript-backed Done courses cannot be moved.");
-    const patch = planCourseMovePatch(workspace.profile, row, args.status, workspace.planCourses.filter((candidate) => candidate.status === args.status).length);
+    const patch = planCourseMovePatch(workspace.settings, row, args.status, workspace.planCourses.filter((candidate) => candidate.status === args.status).length);
     if (!patch) throw new Error("That course cannot be moved.");
     const { error } = await supabase.from("plan_courses").update({ ...patch, user_edited: true }).eq("id", row.id);
     if (error) throw new Error(error.message);
@@ -976,7 +834,7 @@ export async function executeAssistantMutationTool(
     const patch: Record<string, unknown> = { user_edited: true };
     if (args.grade_level !== undefined) {
       patch.grade_level = args.grade_level;
-      patch.school_year = schoolYearForGrade(workspace.profile.graduation_year ?? new Date().getFullYear() + 3, args.grade_level);
+      patch.school_year = schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, args.grade_level);
     }
     if (args.term !== undefined) patch.term = args.term;
     if (args.letter_grade !== undefined) patch.letter_grade = args.letter_grade;
@@ -984,13 +842,6 @@ export async function executeAssistantMutationTool(
     const { error } = await supabase.from("plan_courses").update(patch).eq("id", row.id);
     if (error) throw new Error(error.message);
     return { summary: "The course details were updated.", data: { plan_course_id: row.id, ...patch }, changed: { entity: "plan_course", id: row.id } };
-  }
-
-  if (name === "update_student_profile") {
-    const args = toolArgumentSchemas.update_student_profile.parse(argumentsValue);
-    const { error } = await supabase.from("student_profiles").update(args).eq("id", userId);
-    if (error) throw new Error(error.message);
-    return { summary: "Planning preferences were updated.", data: args, changed: { entity: "student_profile", id: userId } };
   }
 
   if (name === "update_enrollment_preference") {
@@ -1015,32 +866,6 @@ export async function executeAssistantMutationTool(
       data: { provider_code: "SMCCD", ...args, custom_unit_limit: customMaxUnits, published_absolute_max_units: policy.absolute_max_units },
       changed: { entity: "student_enrollment_preference", id: `${data.user_id}:${data.provider_code}` }
     };
-  }
-
-  if (name === "add_experience") {
-    const args = toolArgumentSchemas.add_experience.parse(argumentsValue);
-    const { data, error } = await supabase.from("activities").insert({ user_id: userId, ...args }).select("id").single();
-    if (error) throw new Error(error.message);
-    return { summary: `${args.name} was added to Experiences.`, data: args, changed: { entity: "activity", id: data.id } };
-  }
-
-  if (name === "update_experience") {
-    const args = toolArgumentSchemas.update_experience.parse(argumentsValue);
-    const activity = workspace.activities.find((candidate) => candidate.id === args.experience_id);
-    if (!activity) throw new Error("That experience no longer exists.");
-    const { experience_id: _id, ...patch } = args;
-    const { error } = await supabase.from("activities").update(patch).eq("id", activity.id);
-    if (error) throw new Error(error.message);
-    return { summary: `${args.name ?? activity.name} was updated.`, data: { experience_id: activity.id, ...patch }, changed: { entity: "activity", id: activity.id } };
-  }
-
-  if (name === "remove_experience") {
-    const args = toolArgumentSchemas.remove_experience.parse(argumentsValue);
-    const activity = workspace.activities.find((candidate) => candidate.id === args.experience_id);
-    if (!activity) throw new Error("That experience no longer exists.");
-    const { error } = await supabase.from("activities").delete().eq("id", activity.id);
-    if (error) throw new Error(error.message);
-    return { summary: `${activity.name} was removed from Experiences.`, data: { experience_id: activity.id }, changed: { entity: "activity", id: activity.id } };
   }
 
   if (name === "add_next_step") {

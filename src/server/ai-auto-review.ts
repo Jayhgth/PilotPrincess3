@@ -24,7 +24,6 @@ const autoReviewJsonSchema = {
 
 const DESTRUCTIVE_TOOLS = new Set<AssistantToolName>([
   "remove_plan_course",
-  "remove_experience",
   "remove_next_step",
   "clear_college_goal"
 ]);
@@ -33,7 +32,6 @@ export function autoReviewManualReason(name: AssistantToolName, argumentsValue: 
   if (DESTRUCTIVE_TOOLS.has(name)) return "This removes saved student data, so it needs your confirmation.";
   if (name === "move_plan_course" && argumentsValue.status === "completed") return "Marking a course Done changes academic status, so it needs your confirmation.";
   if (name === "update_plan_course" && argumentsValue.letter_grade !== undefined) return "Changing a recorded grade needs your confirmation.";
-  if (name === "update_student_profile" && argumentsValue.preferred_name !== undefined) return "Changing student identity information needs your confirmation.";
   return null;
 }
 

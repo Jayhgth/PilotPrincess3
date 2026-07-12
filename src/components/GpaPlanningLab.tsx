@@ -14,7 +14,6 @@ import { evaluateGpaScenario, initialGpaScenarioChoices, type GpaScenarioChoice 
 import type { InstitutionKey } from "@/lib/institutions";
 import { courseDisplayName, LETTER_GRADES } from "@/lib/planning";
 import type {
-  Activity,
   Course,
   EnrollmentPolicy,
   PlanCourse,
@@ -27,7 +26,6 @@ interface Props {
   rows: PlanCourse[];
   courses: Course[];
   smccdCourses: SmccdCourse[];
-  activities: Activity[];
   policies: EnrollmentPolicy[];
   enrollmentPreference: StudentEnrollmentPreference;
   busy: boolean;
@@ -55,7 +53,6 @@ export default function GpaPlanningLab({
   rows,
   courses,
   smccdCourses,
-  activities,
   policies,
   enrollmentPreference,
   busy,
@@ -88,9 +85,6 @@ export default function GpaPlanningLab({
     [appliedRows, policy, enrollmentPreference]
   );
   const openRows = rows.filter((row) => row.status !== "completed");
-  const activeActivityHours = activities
-    .filter((activity) => activity.is_active ?? true)
-    .reduce((sum, activity) => sum + Number(activity.weekly_hours), 0);
 
   useEffect(() => {
     onScenarioChange({
@@ -184,7 +178,6 @@ export default function GpaPlanningLab({
             <b>{term.units} / {term.selectedLimit} units</b>
           </div>)}</div> : <div className={styles.empty}><InstitutionMark institution="smccd" decorative /><span><strong>No SMCCD units in the open schedule</strong><small>Add a college course to activate term checks.</small></span></div>}
           <div className={styles.policyNote}><Info size={17} /><p><strong>{policy.source_label}, {policy.source_year}:</strong> {policy.notes} <a href={policy.source_url} target="_blank" rel="noreferrer">Open source</a></p></div>
-          <p className={styles.workloadNote}>Known non-school time: {activeActivityHours} hours each week. College planning uses about three weekly hours per unit until a course-specific estimate exists.</p>
         </> : <div className={styles.empty}><Warning size={19} /><span><strong>No policy record loaded</strong><small>Apply the enrollment policy migration before using college-unit guardrails.</small></span></div>}
       </section>
 

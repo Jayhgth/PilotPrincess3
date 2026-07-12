@@ -155,13 +155,10 @@ function contextSuggestions(context: Record<string, unknown>) {
   const view = String(context.view ?? "dashboard");
   return ({
     dashboard: ["What should I focus on next?", "Check whether my current plan is balanced.", "What should I verify with my counselor?"],
-    courses: ["Find an eligible course that fits my interests.", "Check my current course sequence.", "Help me add a course to my plan."],
+    courses: ["Find an eligible course for my plan.", "Check my current course sequence.", "Help me add a course to my plan."],
     graduation: ["Which graduation requirement still needs attention?", "Explain what is completed versus only scheduled.", "What should I plan next for graduation?"],
     gpa: ["Explain my GPA in plain language.", "Which courses are included in this GPA?", "What GPA evidence should I verify?"],
-    activities: ["Where is my experience record incomplete?", "How many current activity hours are recorded?", "Help me make one experience more specific."],
-    timeline: ["What is my most important next step?", "Check whether any steps are out of order.", "Add a next step for me."],
-    simulator: ["Explain the current load-check assumptions.", "Would one SMCCD course fit my saved limit?", "What information is missing from this load check?"],
-    profile: ["What courses match my saved interests?", "Help me test one career direction.", "Which planning preference is still unclear?"]
+    timeline: ["What is my most important next step?", "Check whether any steps are out of order.", "Add a next step for me."]
   } as Record<string, string[]>)[view] ?? ["What should I focus on next?", "Check my current plan.", "What can you help me change?"];
 }
 
@@ -234,8 +231,6 @@ const TOOL_LABELS: Record<string, string> = {
   search_course_catalog: "Course catalog",
   get_graduation_progress: "Graduation progress",
   get_next_steps: "Next steps",
-  get_experiences: "Experiences",
-  get_student_profile: "Student profile",
   get_transcript_sources: "Transcript sources",
   get_student_data_inventory: "Student records",
   audit_transcript_data: "Transcript audit",
@@ -245,17 +240,12 @@ const TOOL_LABELS: Record<string, string> = {
   get_plan_versions: "Plan versions",
   get_degree_progress: "Degree progress",
   get_college_goal: "College goal",
-  run_load_check: "Load check",
   add_dtech_course: "Add d.tech course",
   add_smccd_course: "Add college course",
   move_plan_course: "Move course",
   remove_plan_course: "Remove course",
   update_plan_course: "Update course",
-  update_student_profile: "Update planning preferences",
   update_enrollment_preference: "Update enrollment guardrail",
-  add_experience: "Add experience",
-  update_experience: "Update experience",
-  remove_experience: "Remove experience",
   add_next_step: "Add next step",
   complete_next_step: "Complete next step",
   update_next_step: "Update next step",
@@ -326,16 +316,6 @@ function activityItem(event: LiveActivity) {
   if (event.type === "auto_review.completed") {
     const review = event.review as Record<string, unknown> | undefined;
     return { kind: "review", label: "Auto-review", detail: String(review?.summary ?? "Review completed") };
-  }
-  if (event.type === "retrieval.completed") {
-    const sources = Array.isArray(event.sources) ? event.sources as Array<Record<string, unknown>> : [];
-    return {
-      kind: "retrieval",
-      label: "App guidance",
-      detail: sources.length
-        ? sources.map((source) => String(source.title ?? "Pilot guidance")).join(", ")
-        : String(event.summary ?? "Used Pilot Princess guidance")
-    };
   }
   const toolCall = event.toolCall as Record<string, unknown> | undefined;
   if (toolCall) {

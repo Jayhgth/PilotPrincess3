@@ -147,7 +147,7 @@ export const CODEX_FEATURES = [
   },
   {
     id: "planning_math",
-    label: "Graduation, GPA, workload, and SMCCD progress",
+    label: "Graduation, GPA, and SMCCD progress",
     usesCodex: false,
     condition: "Deterministic calculations only."
   }
@@ -157,7 +157,7 @@ export const CODEX_RUNTIME_CAPABILITIES = [
   { id: "agent_output", label: "Agent output", state: "available", detail: "Every assistant item and the final structured result are included in the run record." },
   { id: "reasoning", label: "Reasoning summaries", state: "available_if_emitted", detail: "Codex-provided summaries are shown when emitted. Hidden chain-of-thought is never requested." },
   { id: "todo", label: "Task plan", state: "available_if_emitted", detail: "Todo lifecycle items appear when the SDK emits them." },
-  { id: "student_data_tools", label: "Student data tools", state: "available", detail: "Structured read-only tools cover the student's profile, plan, versions, catalogs, graduation, GPA evidence, transcript evidence, degree progress, next steps, experiences, and workload under the student's RLS identity." },
+  { id: "student_data_tools", label: "Student data tools", state: "available", detail: "Structured read-only tools cover the student's plan, versions, catalogs, graduation, GPA evidence, transcript evidence, degree progress, and next steps under the student's RLS identity." },
   { id: "shell_tools", label: "Shell, MCP, and web tools", state: "disabled", detail: "The student assistant cannot run shell commands, use arbitrary MCP servers, browse, or inspect the host filesystem." },
   { id: "files", label: "File changes", state: "disabled", detail: "The thread runs in an empty read-only directory and cannot change student files." },
   { id: "skills", label: "Skills", state: "disabled", detail: "No Codex skill is loaded into student review threads." },
@@ -515,7 +515,6 @@ export interface AssistantChatOptions {
   images?: Array<{ type: "local_image"; path: string }>;
   imageNames?: string[];
   pageContext: Record<string, unknown>;
-  knowledge: string;
   model: AiModel;
   reviewMode: AiReviewMode;
   signal?: AbortSignal;
@@ -560,10 +559,9 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will assess eligible proposals; sensitive changes may still wait for the student." : "Manual. The student must approve every proposed change."}`,
     "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
-    "When one missing student preference materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
+    "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
     "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Available tools:\n" + assistantToolCatalogPrompt(),
-    `Retrieved Pilot Princess guidance:\n${options.knowledge}`,
     `Current page context: ${JSON.stringify(options.pageContext)}`,
     history ? `Recent conversation:\n${history}` : "This is the first message in the conversation.",
     `USER: ${options.userMessage || "Please review the attached image context."}`

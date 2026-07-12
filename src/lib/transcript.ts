@@ -4,7 +4,7 @@ import type {
   GradeLevel,
   PlanCourse,
   SmccdHighSchoolEquivalency,
-  StudentProfile
+  StudentSettings
 } from "@/lib/models";
 import { courseEquivalenceKeys, courseNameAliases, normalizeCourseName } from "@/lib/course-names";
 import { schoolYearForGrade } from "@/lib/planning";
@@ -140,7 +140,7 @@ export function visibleTranscriptUncertaintyNotes(
 
 export function transcriptPlanCourseDraft(
   payload: TranscriptCoursePayload,
-  profile: StudentProfile,
+  settings: StudentSettings,
   courses: Course[],
   mappings: CourseRequirementMapping[],
   reviewItemId: string,
@@ -148,7 +148,7 @@ export function transcriptPlanCourseDraft(
 ): Omit<PlanCourse, "id" | "plan_version_id" | "user_id"> {
   const resolution = resolveTranscriptCourse(payload, courses);
   const matched = resolution.matchedCourse;
-  const fallbackGrade = Math.max(9, Math.min(12, (profile.grade_level ?? 9) - 1)) as GradeLevel;
+  const fallbackGrade = Math.max(9, Math.min(12, (settings.grade_level ?? 9) - 1)) as GradeLevel;
   const grade = Math.max(9, Math.min(12, Number(payload.grade_level ?? fallbackGrade))) as GradeLevel;
   const equivalency = findHighSchoolEquivalency(payload, equivalencies);
   const reportedCredits = equivalency?.high_school_credits ?? payload.credits ?? matched?.credits ?? null;
@@ -167,7 +167,7 @@ export function transcriptPlanCourseDraft(
     course_id: matched?.id ?? null,
     custom_course_name: matched ? payload.course_name : payload.matched_smccd_course_name ?? payload.course_name,
     grade_level: grade,
-    school_year: payload.school_year ?? schoolYearForGrade(profile.graduation_year ?? new Date().getFullYear() + 3, grade),
+    school_year: payload.school_year ?? schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, grade),
     term: payload.term ?? (matched?.term_type === "semester" ? "fall" : "full_year"),
     status: "completed",
     credits,

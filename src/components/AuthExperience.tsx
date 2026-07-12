@@ -140,7 +140,7 @@ export default function AuthExperience() {
           <p className="auth-kicker">Built for d.tech</p>
           <h1 id="auth-title">See the whole path.</h1>
           <p>
-            Build a source-backed four-year plan before choosing classes, SMCCD options, activities, and workload.
+            Build a source-backed four-year plan before choosing classes and SMCCD options.
           </p>
         </div>
         <div className="auth-story-footer">

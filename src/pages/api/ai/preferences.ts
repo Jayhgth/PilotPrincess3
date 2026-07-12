@@ -35,7 +35,7 @@ export const POST: APIRoute = async ({ request }) => {
     return jsonError("Test the selected model before enabling Pilot.", 400);
   }
   const approvedAt = parsed.data.enabled ? new Date().toISOString() : null;
-  const { error } = await auth.supabase.from("student_profiles").update({
+  const { error } = await auth.supabase.from("student_settings").update({
     ai_enabled: parsed.data.enabled,
     ai_model: parsed.data.model,
     ai_reasoning_effort: AI_REASONING_EFFORT,
