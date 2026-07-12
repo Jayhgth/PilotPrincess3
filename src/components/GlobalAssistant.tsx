@@ -228,7 +228,7 @@ function humanizeActivityText(value: unknown) {
   text = text
     .replace(/^Reading tool ['"]?(.+?)['"]?$/i, "Reading $1")
     .replace(/^Waiting for tool response\.?$/i, "Checking saved records")
-    .replace(/^Mutating proposal only\.?$/i, "Preparing a change for your approval")
+    .replace(/^Mutating proposal only\.?$/i, "Preparing an exact change")
     .replace(/^Calling tool ['"]?(.+?)['"]?$/i, "Checking $1");
   return text;
 }
@@ -257,7 +257,7 @@ function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boole
       <FadeContent className={styles.approvalCard} duration={0.16}>
         <div className={styles.approvalHeading}><Wrench size={16} /><div><strong>Confirm this change</strong><span>{label}</span></div></div>
         <p>{call.explanation}</p>
-        {autoReviewSummary && <p className={styles.reviewNote}><ShieldCheck size={15} /> Auto-review left this for you: {autoReviewSummary}</p>}
+        {autoReviewSummary && <p className={styles.reviewNote}><ShieldCheck size={15} /> Previous reviewer note: {autoReviewSummary}</p>}
         <dl>{readableArguments(call).map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>)}</dl>
         <div className={styles.approvalActions}>
           <button type="button" onClick={() => onDecision(call, "confirm")} disabled={busy}>Apply change</button>
@@ -395,6 +395,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const drawerRef = useRef<HTMLElement>(null);
   const imagesRef = useRef<ComposerImage[]>([]);
   const queueRef = useRef<QueuedMessage[]>([]);
+  const reviewedPendingRef = useRef<Set<string>>(new Set());
+  const autoReviewBacklogRef = useRef(false);
   const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
   const activeId = data.activeConversation?.id ?? null;
@@ -421,6 +423,32 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }, [authorizedFetch]);
 
+  const autoReviewToolCalls = useCallback(async (toolCallIds: string[], signal?: AbortSignal) => {
+    let changed = false;
+    try {
+      for (const toolCallId of toolCallIds) {
+        const reviewResponse = await authorizedFetch("/api/ai/tool", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ toolCallId, decision: "auto_review" }),
+          signal
+        });
+        const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean; toolCall?: AiToolCall };
+        if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Auto-review could not complete.");
+        if (reviewPayload.toolCall) {
+          setData((current) => ({
+            ...current,
+            toolCalls: current.toolCalls.map((call) => call.id === reviewPayload.toolCall!.id ? reviewPayload.toolCall! : call)
+          }));
+        }
+        changed ||= reviewPayload.applied === true;
+      }
+    } finally {
+      if (changed) await onDataChanged();
+    }
+    return changed;
+  }, [authorizedFetch, onDataChanged]);
+
   const loadArchivedConversations = useCallback(async () => {
     setLoadingArchived(true);
     try {
@@ -444,6 +472,27 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       window.clearTimeout(focusTimer);
     };
   }, [open, preferences.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open || reviewMode !== "auto_review" || running || autoReviewBacklogRef.current) return;
+    const pendingIds = data.toolCalls
+      .filter((call) => call.status === "pending_confirmation" && !reviewedPendingRef.current.has(call.id))
+      .map((call) => call.id);
+    if (!pendingIds.length) return;
+    pendingIds.forEach((id) => reviewedPendingRef.current.add(id));
+    autoReviewBacklogRef.current = true;
+    setAutoReviewing(true);
+    void autoReviewToolCalls(pendingIds)
+      .then(() => loadConversation(data.activeConversation?.id))
+      .catch((caught) => {
+        pendingIds.forEach((id) => reviewedPendingRef.current.delete(id));
+        setError(caught instanceof Error ? caught.message : "Auto-review could not complete.");
+      })
+      .finally(() => {
+        autoReviewBacklogRef.current = false;
+        setAutoReviewing(false);
+      });
+  }, [autoReviewToolCalls, data.activeConversation?.id, data.toolCalls, loadConversation, open, reviewMode, running]);
 
   useEffect(() => {
     if (!settingsOpen || settingsSection !== "archive") return;
@@ -805,19 +854,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       }
       if (reviewMode === "auto_review" && proposalIds.length) {
         setAutoReviewing(true);
-        let changed = false;
-        for (const toolCallId of proposalIds) {
-          const reviewResponse = await authorizedFetch("/api/ai/tool", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ toolCallId, decision: "auto_review" }),
-            signal: abortController.signal
-          });
-          const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean };
-          if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Auto-review could not complete.");
-          changed ||= reviewPayload.applied === true;
-        }
-        if (changed) await onDataChanged();
+        proposalIds.forEach((id) => reviewedPendingRef.current.add(id));
+        await autoReviewToolCalls(proposalIds, abortController.signal);
       }
       await loadConversation(activeConversation.id);
       if (clearComposerDraft) window.localStorage.removeItem(assistantDraftKey(session.user.id, activeConversation.id));
@@ -982,7 +1020,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           {!loading && !data.messages.length && !running ? <div className={styles.empty}>
             <Sparkle size={24} weight="duotone" />
             <h2>Ask about your plan</h2>
-            <p>Pilot can read your current records, search eligible courses, and prepare changes for your approval.</p>
+            <p>Pilot can read your records, search eligible courses, and {reviewMode === "auto_review" ? "apply changes after an independent review" : "prepare exact changes for your approval"}.</p>
             <div>{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void submitMessage(suggestion)}>{suggestion}</button>)}</div>
           </div> : null}
 
@@ -991,7 +1029,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             if (message.role === "user") return <div key={message.id} className={styles.userTurn}>
               <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <AssistantMarkdown text={message.content} />}</FadeContent>
               <MessageActions message={message} align="right" />
-              {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} running={running && message.turn_id === latestTurnId} busyTool={busyTool} onDecision={decideTool} />}
+              {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} running={running && message.turn_id === latestTurnId} busyTool={busyTool ?? (autoReviewing ? "auto-review" : null)} onDecision={decideTool} />}
             </div>;
             if (message.role === "assistant") {
               const questions = assistantQuestionsFromContext(message.page_context);
@@ -1046,7 +1084,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                       <UserCircleCheck size={16} /><span><strong>Manual</strong><small>You approve every proposed change.</small></span>{reviewMode === "manual" && <CheckCircle size={14} weight="fill" />}
                     </button>
                     <button type="button" role="menuitemradio" aria-checked={reviewMode === "auto_review"} onClick={() => void updateReviewMode("auto_review")}>
-                      <ShieldCheck size={16} /><span><strong>Auto-review</strong><small>A separate reviewer may apply low-risk changes. Sensitive changes still wait.</small></span>{reviewMode === "auto_review" && <CheckCircle size={14} weight="fill" />}
+                      <ShieldCheck size={16} /><span><strong>Auto-review</strong><small>A separate reviewer applies approved changes and declines unsafe ones automatically.</small></span>{reviewMode === "auto_review" && <CheckCircle size={14} weight="fill" />}
                     </button>
                   </div>}
                 </div>
@@ -1056,7 +1094,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
               </div>
             </div>
           </div>
-          {(running || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : autoReviewing ? "Reviewing change" : "Pilot is working"}</span>}
+          {(running || autoReviewing || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : autoReviewing ? "Reviewing change" : "Pilot is working"}</span>}
         </form>
         </> : <div className={styles.disconnected}>
           <Cpu size={22} />

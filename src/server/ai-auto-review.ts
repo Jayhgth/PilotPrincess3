@@ -4,7 +4,7 @@ import { assistantToolLabel, type AssistantToolName } from "@/server/ai-tools";
 import { runCodexStructured } from "@/server/codex";
 
 export const autoReviewResultSchema = z.object({
-  decision: z.enum(["approve", "manual", "deny"]),
+  decision: z.enum(["approve", "deny"]),
   risk: z.enum(["low", "medium", "high"]),
   summary: z.string().trim().min(1).max(240)
 });
@@ -16,24 +16,11 @@ const autoReviewJsonSchema = {
   additionalProperties: false,
   required: ["decision", "risk", "summary"],
   properties: {
-    decision: { type: "string", enum: ["approve", "manual", "deny"] },
+    decision: { type: "string", enum: ["approve", "deny"] },
     risk: { type: "string", enum: ["low", "medium", "high"] },
     summary: { type: "string" }
   }
 } as const;
-
-const DESTRUCTIVE_TOOLS = new Set<AssistantToolName>([
-  "remove_plan_course",
-  "remove_next_step",
-  "clear_college_goal"
-]);
-
-export function autoReviewManualReason(name: AssistantToolName, argumentsValue: Record<string, unknown>) {
-  if (DESTRUCTIVE_TOOLS.has(name)) return "This removes saved student data, so it needs your confirmation.";
-  if (name === "move_plan_course" && argumentsValue.status === "completed") return "Marking a course Done changes academic status, so it needs your confirmation.";
-  if (name === "update_plan_course" && argumentsValue.letter_grade !== undefined) return "Changing a recorded grade needs your confirmation.";
-  return null;
-}
 
 export function buildAutoReviewPrompt(input: {
   userMessage: string;
@@ -43,10 +30,10 @@ export function buildAutoReviewPrompt(input: {
 }) {
   return [
     "You are a separate approval reviewer for Pilot Princess, not the assistant that proposed the change.",
-    "Review one proposed student-data mutation using a conservative risk framework.",
-    "Approve only when the student's message explicitly requests this exact change, the arguments match that request, the action is low-risk and reversible, and no missing fact needs interpretation.",
-    "Choose manual when the request is ambiguous, consequential, identity-sensitive, destructive, or depends on counselor or institutional judgment.",
-    "Deny when the proposal is unrelated to the request, contradicts it, attempts to certify an outcome, or bypasses product evidence rules.",
+    "Review one proposed student-data mutation and make the final autonomous apply-or-decline decision.",
+    "Approve when the student's message explicitly and unambiguously requests this exact change, the target and arguments match, and no missing fact needs interpretation.",
+    "An explicit removal, grade edit, or move to Done may be approved. Use the risk label to describe impact, not to force a student confirmation.",
+    "Deny when the request is ambiguous, the proposal is unrelated or broader than requested, it contradicts the request, depends on counselor or institutional judgment, attempts to certify an outcome, or bypasses product evidence rules.",
     "Normal RLS, transcript locks, eligibility, prerequisite, and record validation will run again after approval. Do not assume approval guarantees execution.",
     "Return a short student-readable summary. Do not expose hidden reasoning or mention this schema.",
     `Student message: ${input.userMessage}`,
@@ -64,9 +51,6 @@ export async function reviewAssistantProposal(input: {
   model: AiModel;
   signal?: AbortSignal;
 }): Promise<AutoReviewResult> {
-  const manualReason = autoReviewManualReason(input.toolName, input.arguments);
-  if (manualReason) return { decision: "manual", risk: "high", summary: manualReason };
-
   const result = await runCodexStructured({
     feature: "assistant_auto_review",
     prompt: buildAutoReviewPrompt(input),
@@ -78,8 +62,5 @@ export async function reviewAssistantProposal(input: {
     signal: input.signal
   });
 
-  if (result.value.decision === "approve" && result.value.risk !== "low") {
-    return { ...result.value, decision: "manual", summary: "Auto-review found enough risk that this change still needs your confirmation." };
-  }
   return result.value;
 }

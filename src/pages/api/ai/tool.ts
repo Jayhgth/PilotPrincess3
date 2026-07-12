@@ -77,24 +77,11 @@ export const POST: APIRoute = async ({ request }) => {
         signal: request.signal
       });
     } catch {
-      review = { decision: "manual", risk: "medium", summary: "Auto-review could not reach a safe decision, so this change still needs your confirmation." };
-    }
-
-    if (review.decision === "manual") {
-      const { data, error } = await auth.supabase.from("ai_tool_calls")
-        .update({ result: { auto_review: review } })
-        .eq("id", toolCall.id)
-        .eq("status", "pending_confirmation")
-        .select("*")
-        .maybeSingle();
-      if (error) return jsonError(error.message, 500);
-      if (!data) return jsonError("This tool request has already been handled.", 409);
-      await recordEvent("auto_review.completed", await nextSequence(), { review, toolCall: data });
-      return new Response(JSON.stringify({ toolCall: data, review, applied: false }), { headers: { "content-type": "application/json" } });
+      review = { decision: "deny", risk: "high", summary: "Auto-review could not verify this change, so it was not applied." };
     }
 
     if (review.decision === "deny") {
-      const result = { summary: "Auto-review did not approve this change.", auto_review: review };
+      const result = { summary: review.summary, auto_review: review };
       const { data, error } = await auth.supabase.from("ai_tool_calls")
         .update({ status: "rejected", result, completed_at: new Date().toISOString() })
         .eq("id", toolCall.id)

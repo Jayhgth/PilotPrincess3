@@ -556,7 +556,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change supported dashboard data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to three exact related changes in one turn.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
-    `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will assess eligible proposals; sensitive changes may still wait for the student." : "Manual. The student must approve every proposed change."}`,
+    `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will autonomously apply an exact approved proposal or decline it; it will not ask the student to confirm." : "Manual. The student must approve every proposed change."}`,
     "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
     "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
@@ -693,7 +693,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       if (mutationCalls.length > 0) {
         for (const call of mutationCalls) await options.onToolActivity(call);
         return {
-          message: latestMessage || (options.reviewMode === "auto_review" ? "I prepared the requested change. Auto-review will check it before anything runs." : "I prepared the requested change. Review it before applying it."),
+          message: latestMessage || (options.reviewMode === "auto_review" ? "I prepared the requested change. Auto-review will apply or decline it automatically." : "I prepared the requested change. Review it before applying it."),
           questions: [],
           threadId: thread.id,
           usage,

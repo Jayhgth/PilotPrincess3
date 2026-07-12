@@ -59,9 +59,9 @@ Write tools may prepare these changes:
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
 
 - **Manual** is the default. Every proposal appears as an approval card and nothing changes until the student chooses **Apply change**.
-- **Auto-review** routes each eligible proposal to a separate isolated Codex reviewer. The reviewer sees the student's request, action name, exact arguments, and explanation, then returns `approve`, `manual`, or `deny` with a bounded risk label and student-readable summary. Only a low-risk approval may continue automatically.
+- **Auto-review** routes each proposal to a separate isolated Codex reviewer. The reviewer sees the student's request, action name, exact arguments, and explanation, then returns `approve` or `deny` with a bounded risk label and student-readable summary. An approval executes automatically; a denial is recorded as not applied. Auto-review never turns into a student confirmation card.
 
-Product policy overrides the reviewer and forces removals, grade edits, and marking a course Done to Manual. Medium-risk, high-risk, ambiguous, failed, or uncertain reviews also become manual approval cards. A denied proposal is recorded as not applied. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
+Risk labels describe impact but do not create a second approval step. Explicit removals, grade edits, and moves to Done can be approved when the request and exact arguments match. Ambiguous, broader-than-requested, unsupported, or unverifiable proposals are denied automatically. A reviewer failure also declines the proposal instead of leaving it pending. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
 
 The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. GPA optimization is bounded to deterministic arithmetic on the saved schedule and student-supplied assumptions. Pilot must call the all-A output a saved-schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
 
@@ -88,7 +88,7 @@ Archiving sets the owning conversation's existing `is_archived` flag. It removes
 
 ## t3code and SDK boundary
 
-[t3code](https://github.com/pingdotgg/t3code) is the interaction reference: a chat timeline, folded agent work, readable tools, and approval-reviewer routing. Its `auto_review` contract uses a separately prompted reviewer and risk framework rather than blind full access. Pilot Princess mirrors that concept for student-data proposals with stricter forced-manual categories. It uses the official TypeScript `@openai/codex-sdk`, not t3code's app-server transport.
+[t3code](https://github.com/pingdotgg/t3code) is the interaction reference: a chat timeline, folded agent work, readable tools, and approval-reviewer routing. Its `auto_review` contract uses a separately prompted reviewer and risk framework rather than blind full access. Pilot Princess keeps that independent review while making the result autonomous: apply or decline. It uses the official TypeScript `@openai/codex-sdk`, not t3code's app-server transport.
 
 Each request runs in an isolated temporary workspace and Codex home. The app replays bounded conversation history and selected page context into the turn, executes only its own allowlisted student-data tools, and deletes the temporary runtime after the request. Product persistence therefore lives in Supabase rather than Codex CLI history.
 
@@ -110,7 +110,7 @@ Selected conversation history, page context, tool results, and images explicitly
 
 - AI starts only after explicit connection approval, a successful model test, and a student message, except an explicitly requested image-only transcript interpretation by an already-connected student.
 - A read tool may run automatically. Every write begins as an exact visible proposal.
-- Manual waits for the student. Auto-review may apply only an independently approved low-risk proposal; protected categories and uncertain decisions wait for the student.
+- Manual waits for the student. Auto-review independently applies an approved exact proposal or declines it without asking for confirmation.
 - Deterministic results stay available and clearly labeled.
 - Assistant failure cannot corrupt or block deterministic planning.
 - Reasoning and tool labels must be human-readable; raw transport metadata is not a substitute for transparency.

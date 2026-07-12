@@ -3,7 +3,7 @@ import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATUR
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
-import { autoReviewManualReason, autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
+import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, aiModelSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 
 describe("Codex feature boundaries", () => {
@@ -107,14 +107,7 @@ describe("Codex feature boundaries", () => {
     expect(() => aiReviewModeSchema.parse("full_access")).toThrow();
   });
 
-  it("keeps destructive and academic-evidence changes in manual review", () => {
-    expect(autoReviewManualReason("remove_plan_course", { plan_course_id: crypto.randomUUID() })).toContain("removes saved student data");
-    expect(autoReviewManualReason("move_plan_course", { status: "completed" })).toContain("academic status");
-    expect(autoReviewManualReason("update_plan_course", { letter_grade: "A" })).toContain("recorded grade");
-    expect(autoReviewManualReason("add_next_step", { title: "Meet counselor" })).toBeNull();
-  });
-
-  it("builds a separate risk-review prompt and bounds its decision", () => {
+  it("builds a separate autonomous review prompt and bounds its decision", () => {
     const prompt = buildAutoReviewPrompt({
       userMessage: "Add a counseling task",
       toolName: "add_next_step",
@@ -122,9 +115,12 @@ describe("Codex feature boundaries", () => {
       explanation: "Add the requested task."
     });
     expect(prompt).toContain("separate approval reviewer");
-    expect(prompt).toContain("Approve only when the student's message explicitly requests this exact change");
+    expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
+    expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
     expect(prompt).toContain('"title":"Meet counselor"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
+    expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
+    expect(() => autoReviewResultSchema.parse({ decision: "manual", risk: "medium", summary: "Ask the student." })).toThrow();
   });
 
   it("tells the assistant to read records and defer writes to the selected review mode", () => {

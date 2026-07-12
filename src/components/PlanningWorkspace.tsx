@@ -240,10 +240,12 @@ export default function PlanningWorkspace() {
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
   const graduationPercent = useMemo(() => overallGraduationPercent(progress), [progress]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(progress), [progress]);
-  const loadWorkspace = useCallback(async () => {
+  const loadWorkspace = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!supabase) return;
-    setLoading(true);
-    setFatalError(null);
+    if (!options.silent) {
+      setLoading(true);
+      setFatalError(null);
+    }
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
@@ -357,11 +359,19 @@ export default function PlanningWorkspace() {
         return preserved.size > 0 || current.size > 0 ? preserved : new Set(availableIds);
       });
     } catch (caught) {
-      setFatalError(caught instanceof Error ? caught.message : "The workspace could not be loaded.");
+      const message = caught instanceof Error ? caught.message : "The workspace could not be loaded.";
+      if (options.silent) {
+        setToastKind("error");
+        setToast(`The change was handled, but the workspace could not refresh: ${message}`);
+      } else {
+        setFatalError(message);
+      }
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
   }, [supabase]);
+
+  const refreshWorkspaceSilently = useCallback(() => loadWorkspace({ silent: true }), [loadWorkspace]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadWorkspace(), 0);
@@ -1360,7 +1370,7 @@ export default function PlanningWorkspace() {
         pageContext={assistantPageContext}
         preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reviewMode: settings.ai_review_mode, approvedAt: settings.ai_connection_approved_at, testedAt: settings.ai_setup_tested_at }}
         onClose={() => setAssistantOpen(false)}
-        onDataChanged={loadWorkspace}
+        onDataChanged={refreshWorkspaceSilently}
         onPreferencesChanged={async () => {
           const { data, error } = await supabase.from("student_settings").select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
           if (error) throw error;
