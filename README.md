@@ -43,12 +43,12 @@ New accounts are auto-confirmed in the linked MVP project because custom SMTP is
 ## Verification
 
 ```sh
-pnpm verify:fast       # implementation loop
-pnpm verify:milestone  # meaningful Git milestone
-pnpm verify:release    # release candidate
+pnpm check          # normal work: typecheck plus 18 critical-path tests
+pnpm test:full      # opt-in exhaustive unit suite
+pnpm check:release  # opt-in release gate
 ```
 
-Specialized SMCCD, theme, browser, and linked Supabase checks run only when that system changes or for a release. See [TEST_CHECKLIST.md](./TEST_CHECKLIST.md) for the trigger matrix and [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for current evidence and gaps.
+Use focused tests while debugging. Run browser, SMCCD, migration, RLS, storage, or linked-Supabase checks only when that system changes. The default command intentionally avoids the old 148-test milestone loop.
 
 ## Data refreshes
 
@@ -105,4 +105,4 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 4. Run the full checklist against the deployed origin.
 5. Confirm institutional trademark use and current counseling approval for dated equivalencies.
 
-Durable references are [product and design](./docs/PRODUCT_DESIGN.md), [academic rules](./docs/ACADEMIC_RULES.md), and [Codex transparency](./docs/AI_TRANSPARENCY.md). Current gaps and owner decisions stay in [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md).
+Durable references are [product and design](./docs/PRODUCT_DESIGN.md), [academic rules](./docs/ACADEMIC_RULES.md), and [Codex transparency](./docs/AI_TRANSPARENCY.md). Do not add task-completion or implementation-status documents.
