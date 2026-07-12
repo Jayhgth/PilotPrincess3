@@ -1,0 +1,38 @@
+.panel { display: grid; max-width: 980px; gap: 18px; }
+
+.heading {
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 13px;
+}
+
+.heading h2 { margin: 0; font-size: var(--type-section); letter-spacing: -0.015em; }
+.heading p { max-width: 68ch; margin: 4px 0 0; color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+
+.identity { display: flex; min-height: 44px; align-items: center; gap: 9px; color: var(--success); }
+.identity > span { display: grid; gap: 2px; }
+.identity strong { color: var(--ink); font-size: var(--type-body); }
+.identity small { color: var(--ink-faint); font-size: var(--type-supporting); }
+
+.toolRows { display: grid; }
+.toolRow { display: flex; min-height: 62px; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid var(--line); padding: 10px 0; }
+.toolRow:first-child { border-top: 0; padding-top: 0; }
+.toolRow:last-child { padding-bottom: 0; }
+.toolRow > span { display: grid; min-width: 0; gap: 3px; }
+.toolRow strong { font-size: var(--type-body); }
+.toolRow small { color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+
+.dangerSection { border-color: color-mix(in srgb, var(--danger) 28%, var(--line)); }
+.confirmation { display: grid; max-width: 480px; gap: 9px; }
+.confirmation label { color: var(--ink-soft); font-size: var(--type-supporting); }
+.confirmation label strong { color: var(--ink); }
+.confirmation input { min-height: 40px; border: 1px solid var(--control-line); border-radius: 7px; background: var(--surface); color: var(--ink); padding: 0 11px; font-size: var(--type-body); }
+.confirmation > div { display: flex; justify-content: flex-end; gap: 8px; }
+.error { display: flex; align-items: flex-start; gap: 8px; margin-top: 13px; color: var(--danger); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+
+@media (max-width: 620px) {
+  .toolRow { align-items: stretch; flex-direction: column; gap: 10px; }
+  .toolRow button { align-self: flex-start; }
+  .confirmation > div { display: grid; }
+  .confirmation > div button { width: 100%; }
+}

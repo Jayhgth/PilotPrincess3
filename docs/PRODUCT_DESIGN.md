@@ -1,6 +1,6 @@
 # Product and design reference
 
-Last reviewed: 2026-07-11
+Last reviewed: 2026-07-12
 
 Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a d.tech student understand what is finished, what is happening now, what decisions come next, and how concurrent enrollment changes the path.
 
@@ -11,6 +11,7 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 3. **Graduation** owns d.tech diploma evidence and the complete associate-degree workspace: finding, comparing, tracking, prioritizing, and auditing AA or AS programs. Missing degree courses link into the College Courses selector without moving degree controls there.
 4. **GPA planner** compares grade assumptions for the saved schedule. College-unit policy warnings belong with Courses, where the schedule changes.
 5. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
+6. **Settings** is an account-level destination in the sidebar footer, beside Sign out. Opening it replaces the planning navigation with General, Planning, Pilot, and account-gated Admin sections. Appearance and student details live in General; plan scope, college enrollment type, and next steps live in Planning; all assistant configuration lives in Pilot; administrator previews and reset controls live in Admin.
 
 Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
 

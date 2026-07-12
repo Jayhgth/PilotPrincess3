@@ -2,6 +2,7 @@ import {
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
   ChartLineUpIcon as ChartLineUp,
+  ChatCircleDotsIcon as ChatCircleDots,
   CheckIcon as Check,
   FileArrowUpIcon as FileArrowUp,
   FloppyDiskIcon as FloppyDisk,
@@ -9,6 +10,7 @@ import {
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
   PlusIcon as Plus,
+  ShieldCheckIcon as ShieldCheck,
   TrashIcon as Trash,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
@@ -46,7 +48,7 @@ import {
   visibleTranscriptUncertaintyNotes,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
-import AdminSettingsDialog from "@/components/AdminSettingsDialog";
+import AdminSettingsPanel from "@/components/AdminSettingsPanel";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseKanban from "@/components/CourseKanban";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
@@ -99,27 +101,37 @@ const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
   { id: "courses", label: "Courses", icon: BookOpen },
   { id: "graduation", label: "Graduation", icon: GraduationCap },
-  { id: "gpa", label: "GPA planner", icon: ChartLineUp },
-  { id: "settings", label: "Settings", icon: GearSix }
+  { id: "gpa", label: "GPA planner", icon: ChartLineUp }
 ];
 
-const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
+const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "settings" as const, label: "Settings", icon: GearSix }, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
 
 type CourseArea = "mine" | "dtech" | "smccd";
+type SettingsArea = "general" | "planning" | "pilot" | "admin";
 type SourceAiTransparency = TranscriptAiTransparency;
+
+const SETTINGS_NAV_ITEMS: Array<{ id: SettingsArea; label: string; icon: Icon }> = [
+  { id: "general", label: "General", icon: GearSix },
+  { id: "planning", label: "Planning", icon: GraduationCap },
+  { id: "pilot", label: "Pilot", icon: ChatCircleDots },
+  { id: "admin", label: "Admin", icon: ShieldCheck }
+];
 
 const VIEW_IDS = new Set<ViewId>(["dashboard", "courses", "sources", "graduation", "gpa", "settings"]);
 const COURSE_AREAS = new Set<CourseArea>(["mine", "dtech", "smccd"]);
+const SETTINGS_AREAS = new Set<SettingsArea>(["general", "planning", "pilot", "admin"]);
 
 function locationState() {
-  if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea };
+  if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea, settingsArea: "general" as SettingsArea };
   const params = new URLSearchParams(window.location.search);
   const requestedView = params.get("view") as ViewId | null;
   const requestedArea = params.get("course") as CourseArea | null;
+  const requestedSettingsArea = params.get("settings") as SettingsArea | null;
   const legacyDegreeLink = params.get("college") === "degree";
   return {
     view: legacyDegreeLink ? "graduation" : requestedView && VIEW_IDS.has(requestedView) ? requestedView : "dashboard",
-    courseArea: requestedArea && COURSE_AREAS.has(requestedArea) ? requestedArea : "mine"
+    courseArea: requestedArea && COURSE_AREAS.has(requestedArea) ? requestedArea : "mine",
+    settingsArea: requestedSettingsArea && SETTINGS_AREAS.has(requestedSettingsArea) ? requestedSettingsArea : "general"
   };
 }
 
@@ -204,12 +216,12 @@ export default function PlanningWorkspace() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminSettingsOpen, setAdminSettingsOpen] = useState(false);
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
+  const [settingsArea, setSettingsArea] = useState<SettingsArea>(() => locationState().settingsArea);
   const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
   const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
@@ -459,6 +471,7 @@ export default function PlanningWorkspace() {
       const next = locationState();
       setView(next.view);
       setCourseArea(next.courseArea);
+      setSettingsArea(next.settingsArea);
       setEditingCourseId(null);
     };
     window.addEventListener("popstate", handlePopState);
@@ -549,7 +562,7 @@ export default function PlanningWorkspace() {
     return payload;
   }
 
-  function syncLocation(nextView: ViewId, nextCourseArea = courseArea) {
+  function syncLocation(nextView: ViewId, nextCourseArea = courseArea, nextSettingsArea = settingsArea) {
     const url = new URL(window.location.href);
     if (nextView === "dashboard") url.searchParams.delete("view");
     else url.searchParams.set("view", nextView);
@@ -561,6 +574,8 @@ export default function PlanningWorkspace() {
       url.searchParams.delete("course");
       url.searchParams.delete("college");
     }
+    if (nextView === "settings" && nextSettingsArea !== "general") url.searchParams.set("settings", nextSettingsArea);
+    else url.searchParams.delete("settings");
     if (nextView !== "graduation") url.searchParams.delete("graduation");
     window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
@@ -570,6 +585,14 @@ export default function PlanningWorkspace() {
     setMobileNavOpen(false);
     syncLocation(nextView);
     void logEvent("view_opened", { view: nextView });
+  }
+
+  function openSettings(area: SettingsArea = "general") {
+    setSettingsArea(area);
+    setView("settings");
+    setMobileNavOpen(false);
+    syncLocation("settings", courseArea, area);
+    void logEvent("view_opened", { view: "settings", settings_area: area });
   }
 
   function openCourses(area: CourseArea = "mine") {
@@ -598,11 +621,14 @@ export default function PlanningWorkspace() {
     openCourses("dtech");
   }
 
-  function toggleTheme() {
-    const nextTheme = theme === "light" ? "dark" : "light";
+  function applyTheme(nextTheme: "light" | "dark") {
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
     localStorage.setItem("pilot-princess-theme", nextTheme);
+  }
+
+  function toggleTheme() {
+    applyTheme(theme === "light" ? "dark" : "light");
   }
 
   async function signOut() {
@@ -1172,12 +1198,14 @@ export default function PlanningWorkspace() {
             if (replayingOnboarding) {
               setReplayingOnboarding(false);
               setView("dashboard");
+              syncLocation("dashboard");
               notify("Onboarding changes saved.", "success");
             }
           }}
           onExit={replayingOnboarding ? () => {
             setReplayingOnboarding(false);
             setView("dashboard");
+            syncLocation("dashboard");
             notify("Onboarding exited without saving changes.");
           } : undefined}
           onSignOut={signOut}
@@ -1515,23 +1543,40 @@ export default function PlanningWorkspace() {
 
   function renderSettings() {
     if (!settings || !session) return null;
+    const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
+    const descriptions: Record<SettingsArea, string> = {
+      general: "Account, appearance, and student details.",
+      planning: "Planning scope, college policy, and saved next steps.",
+      pilot: "Pilot connection, model, review, and conversation settings.",
+      admin: "Account-specific testing and workspace reset controls."
+    };
     return <div className="settings-page page-frame">
-      <PageHeader title="Settings" description="Student details, planning scope, Pilot consent, and saved next steps." />
-      <StudentSettingsPanel
+      <PageHeader title="Settings" description={descriptions[activeSettingsArea]} />
+      {activeSettingsArea === "admin" ? <AdminSettingsPanel
+        accessToken={session.access_token}
+        email={session.user.email ?? "Administrator account"}
+        onReplayOnboarding={() => { setMobileNavOpen(false); setReplayingOnboarding(true); }}
+        onViewLogin={() => { setMobileNavOpen(false); window.location.assign("/?demo=login"); }}
+        onResetComplete={() => window.location.assign("/app?reset=1")}
+      /> : <StudentSettingsPanel
+        key={activeSettingsArea}
+        section={activeSettingsArea}
         session={session}
         settings={settings}
+        theme={theme}
         requirements={requirements}
         tasks={timelineTasks}
         enrollmentPolicies={enrollmentPolicies}
         enrollmentPreference={enrollmentPreference}
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
+        onThemeChange={applyTheme}
         onSaveEnrollmentProgram={saveEnrollmentProgramType}
         onAiPreferencesChanged={refreshAiPreferences}
         onAddTask={addTimelineTask}
         onUpdateTask={updateTimelineTask}
         onDeleteTask={deleteTimelineTask}
-      />
+      />}
     </div>;
   }
 
@@ -1661,6 +1706,8 @@ export default function PlanningWorkspace() {
   }
 
   const activeView = NAV_ITEMS.find((item) => item.id === view);
+  const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
+  const visibleSettingsNavItems = isAdmin ? SETTINGS_NAV_ITEMS : SETTINGS_NAV_ITEMS.filter((item) => item.id !== "admin");
   const assistantPageContext = {
     view,
     label: activeView?.label ?? "workspace",
@@ -1679,13 +1726,16 @@ export default function PlanningWorkspace() {
         aiEnabled={settings.ai_enabled}
         assistantOpen={assistantOpen}
         mobileNavOpen={mobileNavOpen}
-        isAdmin={isAdmin}
+        settingsNavigation={view === "settings" ? {
+          activeId: activeSettingsArea,
+          items: visibleSettingsNavItems,
+          onNavigate: (id) => openSettings(id as SettingsArea),
+          onBack: () => navigate("dashboard")
+        } : undefined}
         onNavigate={navigate}
+        onSettings={() => openSettings("general")}
         onMobileNavChange={setMobileNavOpen}
-        onAssistantToggle={() => settings.ai_enabled ? setAssistantOpen((current) => !current) : navigate("settings")}
-        onAdmin={() => { setMobileNavOpen(false); setAdminSettingsOpen(true); }}
-        onReplayOnboarding={() => { setMobileNavOpen(false); setReplayingOnboarding(true); }}
-        onViewLogin={() => { setMobileNavOpen(false); window.location.assign("/?demo=login"); }}
+        onAssistantToggle={() => settings.ai_enabled ? setAssistantOpen((current) => !current) : openSettings("pilot")}
         onThemeToggle={toggleTheme}
         onSignOut={() => void signOut()}
       >
@@ -1700,12 +1750,6 @@ export default function PlanningWorkspace() {
         onClose={() => setAssistantOpen(false)}
         onDataChanged={refreshAfterAssistantChange}
       /></Suspense>
-      {isAdmin && adminSettingsOpen && <AdminSettingsDialog
-        accessToken={session.access_token}
-        email={session.user.email ?? "Administrator account"}
-        onClose={() => setAdminSettingsOpen(false)}
-        onResetComplete={() => window.location.assign("/app?reset=1")}
-      />}
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}<span>{toast}</span>{toastAction && <button type="button" onClick={() => void (async () => { const action = toastAction; setToastAction(null); try { await action.run(); setToastKind("success"); setToast("Change undone."); } catch (caught) { setToastKind("error"); setToast(caught instanceof Error ? caught.message : "The change could not be undone."); } })()}>{toastAction.label}</button>}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
       </div>

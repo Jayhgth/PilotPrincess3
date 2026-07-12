@@ -1,9 +1,8 @@
 import { Button as BaseButton } from "@base-ui/react/button";
 import {
-  ArrowClockwiseIcon as ArrowClockwise,
+  ArrowLeftIcon as ArrowLeft,
   ChatCircleDotsIcon as ChatCircleDots,
   GearSixIcon as GearSix,
-  HouseIcon as House,
   MoonIcon as Moon,
   SignOutIcon as SignOut,
   SunIcon as Sun,
@@ -48,13 +47,16 @@ interface Props<ViewId extends string> {
   aiEnabled: boolean;
   assistantOpen: boolean;
   mobileNavOpen: boolean;
-  isAdmin: boolean;
+  settingsNavigation?: {
+    activeId: string;
+    items: WorkspaceNavItem<string>[];
+    onNavigate: (id: string) => void;
+    onBack: () => void;
+  };
   onNavigate: (view: ViewId) => void;
+  onSettings: () => void;
   onMobileNavChange: (open: boolean) => void;
   onAssistantToggle: () => void;
-  onAdmin: () => void;
-  onReplayOnboarding: () => void;
-  onViewLogin: () => void;
   onThemeToggle: () => void;
   onSignOut: () => void;
   children: ReactNode;
@@ -69,13 +71,11 @@ export default function AppChrome<ViewId extends string>({
   aiEnabled,
   assistantOpen,
   mobileNavOpen,
-  isAdmin,
+  settingsNavigation,
   onNavigate,
+  onSettings,
   onMobileNavChange,
   onAssistantToggle,
-  onAdmin,
-  onReplayOnboarding,
-  onViewLogin,
   onThemeToggle,
   onSignOut,
   children
@@ -145,15 +145,16 @@ export default function AppChrome<ViewId extends string>({
         <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <button className="mobile-close icon-button" onClick={() => onMobileNavChange(false)} aria-label="Close navigation"><X size={18} /></button>
       </div>
-      <nav className="sidebar-nav" aria-label="Planning workspace">
-        {navItems.map((item) => {
+      <nav className="sidebar-nav" aria-label={settingsNavigation ? "Settings" : "Planning workspace"}>
+        {(settingsNavigation?.items ?? navItems).map((item) => {
           const NavIcon = item.icon;
-          const active = view === item.id;
+          const active = settingsNavigation ? settingsNavigation.activeId === item.id : view === item.id;
           return <BaseButton
             key={item.id}
             className={active ? "active" : ""}
             onClick={() => {
-              onNavigate(item.id);
+              if (settingsNavigation) settingsNavigation.onNavigate(item.id);
+              else onNavigate(item.id as ViewId);
               onMobileNavChange(false);
             }}
             type="button"
@@ -171,12 +172,9 @@ export default function AppChrome<ViewId extends string>({
           <span><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
         </div>
         <div className="sidebar-account-actions">
-          {isAdmin && <>
-            <button className="sidebar-utility" onClick={onAdmin} type="button" title="Admin settings"><GearSix size={17} /><span>Admin settings</span></button>
-            <button className="sidebar-utility" data-demo-only="true" data-admin-only="true" onClick={onReplayOnboarding} type="button" title="Replay onboarding"><ArrowClockwise size={17} /><span>Replay onboarding</span></button>
-            <button className="sidebar-utility" data-demo-only="true" data-admin-only="true" onClick={onViewLogin} type="button" title="View login page"><House size={17} /><span>View login page</span></button>
-          </>}
-          <button className="sidebar-utility" onClick={onThemeToggle} type="button" title={theme === "light" ? "Dark mode" : "Light mode"}>{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}<span>{theme === "light" ? "Dark mode" : "Light mode"}</span></button>
+          {settingsNavigation
+            ? <button className="sidebar-utility" onClick={settingsNavigation.onBack} type="button" title="Back to workspace"><ArrowLeft size={17} /><span>Back</span></button>
+            : <button className="sidebar-utility" onClick={onSettings} type="button" title="Settings"><GearSix size={17} /><span>Settings</span></button>}
           <button className="sidebar-utility" onClick={onSignOut} type="button" title="Sign out"><SignOut size={17} /><span>Sign out</span></button>
         </div>
       </div>

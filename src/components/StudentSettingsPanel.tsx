@@ -47,15 +47,20 @@ export interface NextStepDraft {
   dueDate: string;
 }
 
+export type StudentSettingsSection = "general" | "planning" | "pilot";
+
 interface StudentSettingsPanelProps {
+  section: StudentSettingsSection;
   session: Session;
   settings: StudentSettings;
+  theme: "light" | "dark";
   requirements: GraduationRequirement[];
   tasks: TimelineTask[];
   enrollmentPolicies: EnrollmentPolicy[];
   enrollmentPreference: StudentEnrollmentPreference | null;
   busy?: boolean;
   onSave: (patch: StudentSettingsPatch) => void | Promise<void>;
+  onThemeChange: (theme: "light" | "dark") => void;
   onSaveEnrollmentProgram: (programType: StudentEnrollmentPreference["program_type"]) => void | Promise<void>;
   onAiPreferencesChanged: () => void | Promise<void>;
   onAddTask: (draft: NextStepDraft) => boolean | void | Promise<boolean | void>;
@@ -314,14 +319,17 @@ function NextStepsManager({
 }
 
 export default function StudentSettingsPanel({
+  section,
   session,
   settings,
+  theme,
   requirements,
   tasks,
   enrollmentPolicies,
   enrollmentPreference,
   busy = false,
   onSave,
+  onThemeChange,
   onSaveEnrollmentProgram,
   onAiPreferencesChanged,
   onAddTask,
@@ -336,14 +344,15 @@ export default function StudentSettingsPanel({
   const [enrollmentProgram, setEnrollmentProgram] = useState<StudentEnrollmentPreference["program_type"]>(enrollmentPreference?.program_type ?? "concurrent");
 
   const allAreas = useMemo(() => requirements.map((requirement) => requirement.area), [requirements]);
-  const dirty = draft.preferredName !== settings.preferred_name
-    || draft.age !== settings.age
-    || draft.gradeLevel !== settings.grade_level
-    || draft.graduationYear !== settings.graduation_year
-    || draft.planStartGrade !== settings.plan_start_grade
-    || draft.planEndGrade !== settings.plan_end_grade
-    || draft.trackerMode !== settings.tracker_mode
-    || !sameAreas(draft.trackedAreas, settings.tracked_requirement_areas);
+  const dirty = section === "general"
+    ? draft.preferredName !== settings.preferred_name
+      || draft.age !== settings.age
+      || draft.gradeLevel !== settings.grade_level
+      || draft.graduationYear !== settings.graduation_year
+    : draft.planStartGrade !== settings.plan_start_grade
+      || draft.planEndGrade !== settings.plan_end_grade
+      || draft.trackerMode !== settings.tracker_mode
+      || !sameAreas(draft.trackedAreas, settings.tracked_requirement_areas);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -371,15 +380,15 @@ export default function StudentSettingsPanel({
     setError(null);
     setSaved(false);
     const preferredName = draft.preferredName.trim();
-    if (!preferredName) {
+    if (section === "general" && !preferredName) {
       setError("Enter a preferred name.");
       return;
     }
-    if (draft.planStartGrade && draft.planEndGrade && draft.planStartGrade > draft.planEndGrade) {
+    if (section === "planning" && draft.planStartGrade && draft.planEndGrade && draft.planStartGrade > draft.planEndGrade) {
       setError("The planning window must end at or after its starting grade.");
       return;
     }
-    if (draft.trackerMode === "selected" && draft.trackedAreas.length === 0) {
+    if (section === "planning" && draft.trackerMode === "selected" && draft.trackedAreas.length === 0) {
       setError("Choose at least one requirement area for a focused tracker.");
       return;
     }
@@ -388,19 +397,26 @@ export default function StudentSettingsPanel({
       ? (allAreas.length > 0 ? allAreas : settings.tracked_requirement_areas)
       : draft.trackedAreas;
     const patch: StudentSettingsPatch = {};
-    if (preferredName !== settings.preferred_name) patch.preferred_name = preferredName;
-    if (draft.age !== settings.age) patch.age = draft.age;
-    if (draft.gradeLevel !== settings.grade_level) patch.grade_level = draft.gradeLevel;
-    if (draft.graduationYear !== settings.graduation_year) patch.graduation_year = draft.graduationYear;
-    if (draft.planStartGrade !== settings.plan_start_grade) patch.plan_start_grade = draft.planStartGrade;
-    if (draft.planEndGrade !== settings.plan_end_grade) patch.plan_end_grade = draft.planEndGrade;
-    if (draft.trackerMode !== settings.tracker_mode) patch.tracker_mode = draft.trackerMode;
-    if (!sameAreas(normalizedAreas, settings.tracked_requirement_areas)) patch.tracked_requirement_areas = normalizedAreas;
+    if (section === "general") {
+      if (preferredName !== settings.preferred_name) patch.preferred_name = preferredName;
+      if (draft.age !== settings.age) patch.age = draft.age;
+      if (draft.gradeLevel !== settings.grade_level) patch.grade_level = draft.gradeLevel;
+      if (draft.graduationYear !== settings.graduation_year) patch.graduation_year = draft.graduationYear;
+    } else {
+      if (draft.planStartGrade !== settings.plan_start_grade) patch.plan_start_grade = draft.planStartGrade;
+      if (draft.planEndGrade !== settings.plan_end_grade) patch.plan_end_grade = draft.planEndGrade;
+      if (draft.trackerMode !== settings.tracker_mode) patch.tracker_mode = draft.trackerMode;
+      if (!sameAreas(normalizedAreas, settings.tracked_requirement_areas)) patch.tracked_requirement_areas = normalizedAreas;
+    }
 
     setSaving(true);
     try {
       await onSave(patch);
-      setDraft((current) => ({ ...current, preferredName, trackedAreas: normalizedAreas }));
+      setDraft((current) => ({
+        ...current,
+        preferredName: section === "general" ? preferredName : current.preferredName,
+        trackedAreas: section === "planning" ? normalizedAreas : current.trackedAreas
+      }));
       setSaved(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Settings could not be saved.");
@@ -412,78 +428,76 @@ export default function StudentSettingsPanel({
   const controlsDisabled = busy || saving;
   const currentYear = new Date().getFullYear();
 
+  if (section === "pilot") {
+    return <div className={styles.settingsPanel}><PilotSettingsSection session={session} settings={settings} onChanged={onAiPreferencesChanged} /></div>;
+  }
+
   return (
     <div className={styles.settingsPanel}>
-      <PilotSettingsSection session={session} settings={settings} onChanged={onAiPreferencesChanged} />
-      <section className={`content-section ${styles.section}`} aria-labelledby="student-settings-heading">
-        <header className={styles.sectionHeading}>
-          <div>
-            <h2 id="student-settings-heading">Student and plan</h2>
-            <p>These values set school years, the planning window, and progress shown on the overview.</p>
-          </div>
-        </header>
-        <form onSubmit={save}>
-          <div className={`form-grid two ${styles.settingsGrid}`}>
-            <label className="form-field"><span>Preferred name</span><input value={draft.preferredName} onChange={(event) => setDraft({ ...draft, preferredName: event.target.value })} required /></label>
-            <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={draft.age ?? ""} onChange={(event) => setDraft({ ...draft, age: event.target.value ? Number(event.target.value) : null })} /></label>
-            <label className="form-field"><span>Current grade</span><select value={draft.gradeLevel ?? ""} onChange={(event) => setDraft({ ...draft, gradeLevel: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-            <label className="form-field"><span>Expected graduation year</span><input type="number" min={currentYear} max={currentYear + 12} value={draft.graduationYear ?? ""} onChange={(event) => setDraft({ ...draft, graduationYear: event.target.value ? Number(event.target.value) : null })} /></label>
-            <label className="form-field"><span>Plan starts</span><select value={draft.planStartGrade ?? ""} onChange={(event) => setDraft({ ...draft, planStartGrade: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-            <label className="form-field"><span>Plan ends</span><select value={draft.planEndGrade ?? ""} onChange={(event) => setDraft({ ...draft, planEndGrade: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-          </div>
-
+      {section === "general" ? <>
+        <section className={`content-section ${styles.section}`} aria-labelledby="account-settings-heading">
+          <header className={styles.sectionHeading}>
+            <div><h2 id="account-settings-heading">Account and appearance</h2><p>Your signed-in account and this device's display preference.</p></div>
+          </header>
+          <div className={styles.accountIdentity}><span><strong>Signed in</strong><small>{session.user.email ?? "Student account"}</small></span></div>
           <fieldset className={styles.fieldset}>
-            <legend>Graduation tracker</legend>
+            <legend>Theme</legend>
             <div className={styles.radioRows}>
-              <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "full"} onChange={() => setDraft({ ...draft, trackerMode: "full", trackedAreas: allAreas.length > 0 ? allAreas : draft.trackedAreas })} /><span><strong>Full diploma</strong><small>Keep all official d.tech requirement areas in the graduation view.</small></span></label>
-              <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "selected"} onChange={() => setDraft({ ...draft, trackerMode: "selected" })} /><span><strong>Focused overview</strong><small>Show selected areas in the overview while the graduation view keeps the full diploma audit.</small></span></label>
+              <label><input type="radio" name="theme" checked={theme === "light"} onChange={() => onThemeChange("light")} /><span><strong>Light</strong><small>Use the light Pilot Princess interface.</small></span></label>
+              <label><input type="radio" name="theme" checked={theme === "dark"} onChange={() => onThemeChange("dark")} /><span><strong>Dark</strong><small>Use the graphite interface with rose accents.</small></span></label>
             </div>
           </fieldset>
+        </section>
 
-          {draft.trackerMode === "selected" && (
+        <section className={`content-section ${styles.section}`} aria-labelledby="student-settings-heading">
+          <header className={styles.sectionHeading}>
+            <div><h2 id="student-settings-heading">Student profile</h2><p>Used for grade-aware planning, school years, and graduation timing.</p></div>
+          </header>
+          <form onSubmit={save}>
+            <div className={`form-grid two ${styles.settingsGrid}`}>
+              <label className="form-field"><span>Preferred name</span><input value={draft.preferredName} onChange={(event) => setDraft({ ...draft, preferredName: event.target.value })} required /></label>
+              <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={draft.age ?? ""} onChange={(event) => setDraft({ ...draft, age: event.target.value ? Number(event.target.value) : null })} /></label>
+              <label className="form-field"><span>Current grade</span><select value={draft.gradeLevel ?? ""} onChange={(event) => setDraft({ ...draft, gradeLevel: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+              <label className="form-field"><span>Expected graduation year</span><input type="number" min={currentYear} max={currentYear + 12} value={draft.graduationYear ?? ""} onChange={(event) => setDraft({ ...draft, graduationYear: event.target.value ? Number(event.target.value) : null })} /></label>
+            </div>
+            {error && <p className={styles.error} role="alert">{error}</p>}
+            <div className={styles.saveRow}>{saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Profile saved</span>}<button className="primary-button" type="submit" disabled={controlsDisabled || !dirty}>{saving ? "Saving" : "Save profile"}</button></div>
+          </form>
+        </section>
+      </> : <>
+        <section className={`content-section ${styles.section}`} aria-labelledby="plan-settings-heading">
+          <header className={styles.sectionHeading}>
+            <div><h2 id="plan-settings-heading">Plan scope</h2><p>Set the planning window and what the Overview emphasizes.</p></div>
+          </header>
+          <form onSubmit={save}>
+            <div className={`form-grid two ${styles.settingsGrid}`}>
+              <label className="form-field"><span>Plan starts</span><select value={draft.planStartGrade ?? ""} onChange={(event) => setDraft({ ...draft, planStartGrade: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+              <label className="form-field"><span>Plan ends</span><select value={draft.planEndGrade ?? ""} onChange={(event) => setDraft({ ...draft, planEndGrade: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+            </div>
             <fieldset className={styles.fieldset}>
-              <legend>Overview requirement areas</legend>
-              <div className={styles.requirementOptions}>
-                {requirements.map((requirement) => (
-                  <label key={requirement.id}>
-                    <input type="checkbox" checked={draft.trackedAreas.includes(requirement.area)} onChange={() => toggleArea(requirement.area)} />
-                    <span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span>
-                  </label>
-                ))}
+              <legend>Graduation tracker</legend>
+              <div className={styles.radioRows}>
+                <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "full"} onChange={() => setDraft({ ...draft, trackerMode: "full", trackedAreas: allAreas.length > 0 ? allAreas : draft.trackedAreas })} /><span><strong>Full diploma</strong><small>Keep all official d.tech requirement areas in the graduation view.</small></span></label>
+                <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "selected"} onChange={() => setDraft({ ...draft, trackerMode: "selected" })} /><span><strong>Focused overview</strong><small>Show selected areas in Overview while Graduation keeps the full diploma audit.</small></span></label>
               </div>
             </fieldset>
-          )}
+            {draft.trackerMode === "selected" && <fieldset className={styles.fieldset}><legend>Overview requirement areas</legend><div className={styles.requirementOptions}>{requirements.map((requirement) => <label key={requirement.id}><input type="checkbox" checked={draft.trackedAreas.includes(requirement.area)} onChange={() => toggleArea(requirement.area)} /><span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span></label>)}</div></fieldset>}
+            {error && <p className={styles.error} role="alert">{error}</p>}
+            <div className={styles.saveRow}>{saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Plan settings saved</span>}<button className="primary-button" type="submit" disabled={controlsDisabled || !dirty}>{saving ? "Saving" : "Save plan settings"}</button></div>
+          </form>
+        </section>
 
-          {error && <p className={styles.error} role="alert">{error}</p>}
-          <div className={styles.saveRow}>
-            {saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Settings saved</span>}
-            <button className="primary-button" type="submit" disabled={controlsDisabled || !dirty}>{saving ? "Saving" : "Save settings"}</button>
-          </div>
-        </form>
-      </section>
+        <section className={`content-section ${styles.section}`} aria-labelledby="college-planning-heading">
+          <header className={styles.sectionHeading}><div><h2 id="college-planning-heading">College planning</h2><p>This tells course suggestions and Pilot which district policy applies. Unit limits come from the district.</p></div></header>
+          <fieldset className={styles.fieldsetPlain}><legend>SMCCD enrollment type</legend><div className={styles.radioRows}>{(["concurrent", "dual"] as const).map((programType) => {
+            const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
+            return <label key={programType}><input type="radio" name="smccd-program-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current district planning threshold.` : "District policy is not loaded."}</small></span></label>;
+          })}</div></fieldset>
+          <div className={styles.saveRow}><button className="primary-button" type="button" disabled={busy || savingEnrollment || !enrollmentPreference || enrollmentProgram === enrollmentPreference.program_type} onClick={() => void (async () => { setSavingEnrollment(true); try { await onSaveEnrollmentProgram(enrollmentProgram); } finally { setSavingEnrollment(false); } })()}>{savingEnrollment ? "Saving" : "Save college planning"}</button></div>
+        </section>
 
-      <section className={`content-section ${styles.section}`} aria-labelledby="college-planning-heading">
-        <header className={styles.sectionHeading}>
-          <div>
-            <h2 id="college-planning-heading">College planning</h2>
-            <p>This tells course suggestions and Pilot which district policy applies. Unit limits come from the district, not from a user-set guardrail.</p>
-          </div>
-        </header>
-        <fieldset className={styles.fieldsetPlain}>
-          <legend>SMCCD enrollment type</legend>
-          <div className={styles.radioRows}>
-            {(["concurrent", "dual"] as const).map((programType) => {
-              const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
-              return <label key={programType}><input type="radio" name="smccd-program-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current district planning threshold.` : "District policy is not loaded."}</small></span></label>;
-            })}
-          </div>
-        </fieldset>
-        <div className={styles.saveRow}>
-          <button className="primary-button" type="button" disabled={busy || savingEnrollment || !enrollmentPreference || enrollmentProgram === enrollmentPreference.program_type} onClick={() => void (async () => { setSavingEnrollment(true); try { await onSaveEnrollmentProgram(enrollmentProgram); } finally { setSavingEnrollment(false); } })()}>{savingEnrollment ? "Saving" : "Save college planning"}</button>
-        </div>
-      </section>
-
-      <NextStepsManager tasks={tasks} busy={busy} onAddTask={onAddTask} onUpdateTask={onUpdateTask} onDeleteTask={onDeleteTask} />
+        <NextStepsManager tasks={tasks} busy={busy} onAddTask={onAddTask} onUpdateTask={onUpdateTask} onDeleteTask={onDeleteTask} />
+      </>}
     </div>
   );
 }

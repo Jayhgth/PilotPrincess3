@@ -36,6 +36,20 @@
   max-width: 720px;
 }
 
+.accountIdentity {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+}
+
+.accountIdentity > span {
+  display: grid;
+  gap: 2px;
+}
+
+.accountIdentity strong { font-size: var(--type-body); }
+.accountIdentity small { color: var(--ink-faint); font-size: var(--type-supporting); }
+
 .fieldset {
   display: grid;
   gap: 12px;

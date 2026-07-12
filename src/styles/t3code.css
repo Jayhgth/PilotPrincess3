@@ -44,8 +44,9 @@
 .t3code-app .sidebar-nav { gap: 1px; padding: 9px 8px; }
 .t3code-app .sidebar-nav button,
 .t3code-app .sidebar-utility { min-height: 34px; border-radius: 7px; padding: 0 9px; font-size: 13px; font-weight: 520; box-shadow: none; }
+.t3code-app .sidebar-account-actions .sidebar-utility { gap: 5px; padding-inline: 5px; font-size: 12px; }
 .t3code-app .sidebar-nav button.active { background: var(--surface-muted); box-shadow: inset 2px 0 var(--accent); }
-.t3code-app .sidebar-footer { padding: 8px 8px 66px; }
+.t3code-app .sidebar-footer { padding: 8px; }
 .t3code-app .school-chip { border-radius: 8px; background: var(--surface-muted); }
 .t3code-app .app-sidebar,
 .t3code-app .app-main { transition-duration: 180ms; transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
@@ -62,6 +63,7 @@
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-nav button,
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-utility,
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip { justify-content: center; padding-inline: 0; }
+  :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-account-actions { grid-template-columns: 1fr; }
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip { min-height: 34px; margin-bottom: 6px; }
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-nav button.active { box-shadow: inset 2px 0 var(--accent); }
 }
