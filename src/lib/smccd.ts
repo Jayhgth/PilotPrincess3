@@ -223,6 +223,10 @@ export function calculateSmccdProgramProgressWithContext(
   };
 }
 
+export function calculateSmccdGeEvidence(context: SmccdProgramProgressContext): SmccdGeEvidence[] {
+  return collectGeEvidence(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById);
+}
+
 export function calculateSmccdProgramProgress(
   program: SmccdProgram,
   requirements: SmccdProgramRequirement[],

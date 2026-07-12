@@ -14,6 +14,7 @@ import InstitutionMark from "@/components/InstitutionMark";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import FadeContent from "@/components/reactbits/FadeContent";
 import {
+  calculateSmccdGeEvidence,
   calculateSmccdProgramProgressWithContext,
   createSmccdProgramProgressContext,
   normalizeSmccdCourseCode,
@@ -55,8 +56,6 @@ interface Props {
 
 type CourseStatus = "completed" | "current" | "planned";
 type CollegeFilter = "all" | SmccdCollege["code"];
-type ProgramMode = "coursework" | "all";
-type ProgramAwardFilter = "all" | SmccdProgram["award_type"];
 type SmccdSection = "courses" | "degree";
 
 interface SmccdCourseCatalog {
@@ -165,9 +164,6 @@ export default function SmccdPlanner({
   const [transferFilter, setTransferFilter] = useState("all");
   const [goalProgramId, setGoalProgramId] = useState("");
   const [programSearch, setProgramSearch] = useState("");
-  const [programCollegeFilter, setProgramCollegeFilter] = useState<CollegeFilter>("all");
-  const [programAwardFilter, setProgramAwardFilter] = useState<ProgramAwardFilter>("all");
-  const [programMode, setProgramMode] = useState<ProgramMode>("coursework");
   const [selectedCourse, setSelectedCourse] = useState<SmccdCourse | null>(null);
   const availablePlanGrades = selectedPlanGrades(settings);
   const [targetGrade, setTargetGrade] = useState<GradeLevel>(availablePlanGrades[0] ?? (settings.grade_level ?? 11) as GradeLevel);
@@ -334,6 +330,7 @@ export default function SmccdPlanner({
     program.id,
     calculateSmccdProgramProgressWithContext(program, progressContext)
   ])), [programs, progressContext]);
+  const generalEducationEvidence = useMemo(() => calculateSmccdGeEvidence(progressContext), [progressContext]);
   const selectedProgram = programs.find((program) => program.id === goalProgramId) ?? null;
   const selectedGoal = goals.find((goal) => goal.program_id === goalProgramId) ?? null;
   const selectedProgramProgress = selectedProgram ? programProgress.get(selectedProgram.id) ?? null : null;
@@ -343,13 +340,10 @@ export default function SmccdPlanner({
     return programs
       .map((program) => ({ program, progress: programProgress.get(program.id)! }))
       .filter((row) => !query || `${row.program.title} ${row.program.award_type} ${SMCCD_COLLEGE_NAMES[row.program.college_code]}`.toLowerCase().includes(query))
-      .filter((row) => programCollegeFilter === "all" || row.program.college_code === programCollegeFilter)
-      .filter((row) => programAwardFilter === "all" || row.program.award_type === programAwardFilter)
-      .filter((row) => programMode === "all" || row.progress.projectedMajorUnits > 0)
       .sort((a, b) => b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
         || a.program.title.localeCompare(b.program.title))
       .slice(0, 60);
-  }, [deferredProgramSearch, programAwardFilter, programCollegeFilter, programMode, programProgress, programs]);
+  }, [deferredProgramSearch, programProgress, programs]);
   const nextDegreeOptions = useMemo(() => {
     if (!selectedProgramProgress) return [];
     const seen = new Set<string>();
@@ -618,27 +612,24 @@ export default function SmccdPlanner({
 
       {surface === "degree" && degreeCatalogReady && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
         <header className="section-heading"><div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div></header>
-        {goals.length > 0 && <div className="smccd-tracked-degrees" aria-label="Tracked degrees"><strong>Tracked degrees</strong><div>{goals.map((goal) => {
+        {goals.length > 0 && <label className="smccd-tracked-degrees"><span>Tracked degree</span><select aria-label="Tracked degree" value={selectedGoal?.program_id ?? ""} onChange={(event) => setGoalProgramId(event.target.value)}><option value="">Choose a tracked degree</option>{goals.map((goal) => {
           const trackedProgram = programs.find((program) => program.id === goal.program_id);
           if (!trackedProgram) return null;
-          return <button className={goalProgramId === goal.program_id ? "active" : ""} type="button" onClick={() => setGoalProgramId(goal.program_id)} key={goal.id}><InstitutionMark institution={trackedProgram.college_code} decorative /><span>{trackedProgram.title}<small>{trackedProgram.award_type}{goal.is_primary ? " · Primary" : ""}</small></span></button>;
-        })}</div></div>}
+          return <option value={goal.program_id} key={goal.id}>{trackedProgram.title} ({trackedProgram.award_type}{goal.is_primary ? ", primary" : ""})</option>;
+        })}</select></label>}
 
         <div className="smccd-program-filters">
-          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Search program, award, or college" /></label>
-          <label className="form-field"><span>Start with</span><select value={programMode} onChange={(event) => setProgramMode(event.target.value as ProgramMode)}><option value="coursework">Programs my courses advance</option><option value="all">All programs</option></select></label>
-          <label className="form-field"><span>Award</span><select value={programAwardFilter} onChange={(event) => setProgramAwardFilter(event.target.value as ProgramAwardFilter)}><option value="all">AA and AS</option><option value="AA">Associate in Arts</option><option value="AS">Associate in Science</option></select></label>
+          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Search degrees by program, award, or college" /></label>
         </div>
-        <fieldset className="catalog-college-filter smccd-program-colleges"><legend>College</legend><div><button className={programCollegeFilter === "all" ? "active" : ""} type="button" onClick={() => setProgramCollegeFilter("all")}><InstitutionMark institution="smccd" decorative /><span>All three</span></button>{colleges.map((college) => <button className={`${programCollegeFilter === college.code ? "active" : ""} institution-${college.code.toLowerCase()}`} type="button" onClick={() => setProgramCollegeFilter(college.code)} key={college.code}><InstitutionMark institution={college.code} decorative /><span>{college.name.replace("College of ", "")}</span></button>)}</div></fieldset>
 
         <div className="smccd-degree-browser">
           <nav className="smccd-program-list" aria-label="Associate degree results">
-            <div className="smccd-program-list-heading"><strong>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs`}</strong><span>Completed and planned units are kept separate</span></div>
+            <div className="smccd-program-list-heading"><strong>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} ${visiblePrograms.length === 1 ? "program" : "programs"}`}</strong><span>Completed and planned units are kept separate</span></div>
             {visiblePrograms.length ? visiblePrograms.map(({ program, progress: programResult }) => <button className={`${goalProgramId === program.id ? "selected" : ""} ${goals.some((goal) => goal.program_id === program.id) ? "tracked" : ""} institution-${program.college_code.toLowerCase()}`} type="button" onClick={() => setGoalProgramId(program.id)} key={program.id}>
               <span className="smccd-program-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{program.award_type} · {SMCCD_COLLEGE_NAMES[program.college_code]}</small></span></span>
               <span className="smccd-program-row-progress"><strong>{programResult.requiredMajorUnits ? Math.min(programResult.completedMajorUnits, programResult.requiredMajorUnits) : programResult.completedMajorUnits} covered</strong><small>{programResult.requiredMajorUnits ? Math.min(programResult.projectedMajorUnits, programResult.requiredMajorUnits) : programResult.projectedMajorUnits} projected of {programResult.requiredMajorUnits || "review"} units</small></span>
               <CaretRight size={15} aria-hidden />
-            </button>) : <div className="smccd-program-empty"><strong>No programs in this view</strong><p>{programMode === "coursework" ? "No listed program uses a course in the active plan. Switch to all programs." : "Change the search or filters."}</p></div>}
+            </button>) : <div className="smccd-program-empty"><strong>No matching degrees</strong><p>Try another program name, award, or college.</p></div>}
           </nav>
 
           <article className="smccd-degree-detail" aria-live="polite">
@@ -658,7 +649,6 @@ export default function SmccdPlanner({
                 <div><dt>Major requirement units</dt><dd>{selectedProgramProgress.requiredMajorUnits ? Math.min(selectedProgramProgress.completedMajorUnits, selectedProgramProgress.requiredMajorUnits) : selectedProgramProgress.completedMajorUnits} covered</dd><small>{selectedProgramProgress.requiredMajorUnits ? Math.min(selectedProgramProgress.projectedMajorUnits, selectedProgramProgress.requiredMajorUnits) : selectedProgramProgress.projectedMajorUnits} projected of {selectedProgramProgress.requiredMajorUnits || "manual review"}{selectedProgramProgress.completedMajorUnits > selectedProgramProgress.requiredMajorUnits ? ` · ${selectedProgramProgress.completedMajorUnits} relevant` : ""}</small></div>
                 <div><dt>Degree-applicable units</dt><dd>{selectedProgramProgress.completedDegreeApplicableUnits} completed</dd><small>{selectedProgramProgress.projectedDegreeApplicableUnits} projected of {selectedProgramProgress.totalDegreeUnits}</small></div>
                 <div><dt>Parsed requirement groups</dt><dd>{selectedProgramProgress.completedRequirements} completed</dd><small>{selectedProgramProgress.satisfiedRequirements} projected of {selectedProgramProgress.totalRequirements}</small></div>
-                <div><dt>Catalog-tagged GE evidence</dt><dd>{selectedProgramProgress.geEvidence.length} areas</dd><small>Evidence only, not a full GE audit</small></div>
               </dl>
 
               <section className="smccd-degree-section">
@@ -679,12 +669,18 @@ export default function SmccdPlanner({
 
               {nextDegreeOptions.length > 0 && <section className="smccd-degree-section smccd-next-options"><header><div><h4>Useful next course options</h4><p>Unplanned catalog courses that appear in unresolved major groups.</p></div></header><div>{nextDegreeOptions.map(({ course, requirement }) => <button type="button" onClick={() => findDegreeCourse(course.courseCode, course.collegeCode)} key={`${course.collegeCode}-${course.courseCode}`}><InstitutionMark institution={course.collegeCode} decorative /><span><strong>{course.courseCode}</strong><small>{course.title}</small><small>{requirement}</small></span><CaretRight size={14} /></button>)}</div></section>}
 
-              {selectedProgramProgress.geEvidence.length > 0 && <section className="smccd-degree-section smccd-ge-evidence"><header><div><h4>General education evidence</h4><p>Areas attached to courses by the official catalog. Completion rules still require college review.</p></div></header><dl>{selectedProgramProgress.geEvidence.map((area) => <div key={area.area}><dt>{area.label}</dt><dd>{area.completedCourseCodes.length ? `${area.completedCourseCodes.join(", ")} completed` : `${area.projectedCourseCodes.join(", ")} planned`}</dd></div>)}</dl></section>}
-
-              <footer className="smccd-degree-source"><Warning size={16} /><p>This audit does not verify residency, catalog rights, grades, substitutions, or every GE rule. Confirm the final petition with an SMCCD counselor.</p><a href={selectedProgram.catalog_url} target="_blank" rel="noreferrer">Official requirements <ArrowSquareOut size={14} /></a></footer>
+              <footer className="smccd-degree-source"><Warning size={16} /><p>This major audit does not verify residency, catalog rights, grades, or substitutions. Confirm the final degree petition with an SMCCD counselor.</p><a href={selectedProgram.catalog_url} target="_blank" rel="noreferrer">Official requirements <ArrowSquareOut size={14} /></a></footer>
             </FadeContent> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select an associate degree</strong><p>See completed work, projected coverage, missing requirement options, and official source links.</p></div>}
           </article>
         </div>
+        <section className="smccd-general-education" aria-labelledby="smccd-general-education-title">
+          <header><div><h3 id="smccd-general-education-title">General education requirements</h3><p>Every AA and AS includes general education. The exact pattern can vary by college and catalog year.</p></div><span>{generalEducationEvidence.length} catalog-tagged {generalEducationEvidence.length === 1 ? "area" : "areas"}</span></header>
+          {generalEducationEvidence.length ? <dl>{generalEducationEvidence.map((area) => {
+            const planned = area.projectedCourseCodes.filter((code) => !area.completedCourseCodes.includes(code));
+            return <div key={area.area}><dt>{area.label}</dt><dd>{area.completedCourseCodes.length > 0 && <span><strong>{area.completedCourseCodes.join(", ")}</strong> completed</span>}{planned.length > 0 && <span><strong>{planned.join(", ")}</strong> planned</span>}</dd></div>;
+          })}</dl> : <p className="smccd-general-education-empty">No planned course currently has a catalog-tagged general education area.</p>}
+          <footer><Warning size={15} /><p>This is course evidence, not a complete general education audit. Confirm the required pattern and residency rules with the awarding college.</p></footer>
+        </section>
       </section></FadeContent>}
 
       {surface === "courses" && <details className="smccd-manual-entry">

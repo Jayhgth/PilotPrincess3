@@ -14,6 +14,8 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 
 Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
 
+Associate-degree discovery uses one search field rather than stacked mode, award, and college filters. Tracked degrees use a compact switcher. Major requirements stay attached to the selected degree, while general education is one shared section because every AA and AS includes a general education pattern. Catalog-tagged course evidence is not presented as a complete GE audit.
+
 ## Focused product surfaces
 
 | Tool | Student job | Standout capability |

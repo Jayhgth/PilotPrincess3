@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSmccdProgramProgress, normalizeSmccdCourseCode } from "@/lib/smccd";
+import { calculateSmccdGeEvidence, calculateSmccdProgramProgress, createSmccdProgramProgressContext, normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { PlanCourse, SmccdCourse, SmccdProgram, SmccdProgramRequirement, SmccdRequirementCourse } from "@/lib/models";
 
 describe("SMCCD curriculum planning", () => {
@@ -84,6 +84,9 @@ describe("SMCCD curriculum planning", () => {
       status: "satisfied",
       missingSummary: "Requirement covered"
     });
+    expect(calculateSmccdGeEvidence(createSmccdProgramProgressContext([], [], planRows, courses))).toEqual([
+      { area: "5A", label: "Area 5A", completedCourseCodes: ["BIOL 100"], projectedCourseCodes: ["BIOL 100", "CHEM 110"] }
+    ]);
   });
 
   it("enforces a discipline condition alongside the unit total", () => {
