@@ -1358,22 +1358,14 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
   gap: 12px;
   padding: 14px 0 16px;
 }
+.source-smccd .catalog-filter-bar { grid-template-columns: minmax(0, 1fr) minmax(190px, 260px); }
 .catalog-filter-bar > label { display: grid; gap: 6px; }
-.catalog-filter-bar > label > span,
-.catalog-college-filter legend { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+.catalog-filter-bar > label > span { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
 .catalog-filter-bar input, .catalog-filter-bar select { min-height: 44px; padding-block: 8px; font-size: 13px; }
 .catalog-search-input { display: flex; min-height: 44px; align-items: center; gap: 9px; border: 1px solid var(--control-line); border-radius: 9px; background: var(--surface-raised); padding: 0 11px; transition: border-color 140ms ease, box-shadow 140ms ease; }
 .catalog-search-input:focus-within { border-color: color-mix(in srgb, var(--catalog-brand) 66%, var(--control-line)); box-shadow: 0 0 0 3px var(--catalog-brand-soft); }
 .catalog-search-input svg { flex: 0 0 auto; color: var(--ink-faint); }
 .catalog-search-input input { min-height: 40px; border: 0; background: transparent; padding: 0; box-shadow: none; }
-.catalog-college-filter { grid-column: 1 / -1; min-width: 0; margin: 0; border: 0; padding: 0; }
-.catalog-college-filter legend { margin-bottom: 6px; padding: 0; }
-.catalog-college-filter > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
-.catalog-college-filter button { display: flex; min-width: 0; min-height: 44px; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-soft); padding: 7px 10px; text-align: left; transition: background-color 140ms ease, border-color 140ms ease; }
-.catalog-college-filter button:hover { background: var(--surface-muted); }
-.catalog-college-filter button.active { border-color: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 48%, var(--line)); background: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 9%, var(--surface-raised)); color: var(--ink); }
-.catalog-college-filter button .institution-mark { width: 48px; }
-.catalog-college-filter button span { overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .catalog-browser-layout { display: grid; min-height: 460px; grid-template-columns: minmax(0, 1fr) minmax(340px, 390px); gap: 20px; align-items: start; }
 .catalog-results-column { min-width: 0; }
 .catalog-results-heading { display: flex; min-height: 42px; align-items: center; justify-content: space-between; gap: 16px; color: var(--ink-faint); }
@@ -1461,8 +1453,6 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .catalog-existing-state { display: grid; gap: 2px; border-top: 1px solid var(--line); padding-top: 10px; }
 .catalog-existing-state strong { color: var(--ink); font-size: 12px; }
 .catalog-existing-state span { color: var(--ink-faint); font-size: 11px; }
-.smccd-catalog-notice { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; color: var(--ink-soft); font-size: 11px; }
-.smccd-catalog-notice svg { flex: 0 0 auto; color: var(--warning); }
 .prerequisite-followups { margin: -8px 0 20px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
 .prerequisite-followups > header { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 18px; }
 .prerequisite-followups h2 { margin: 0; font-size: 14px; }
@@ -2268,8 +2258,6 @@ textarea,
   .catalog-source-header { align-items: flex-start; }
   .catalog-source-identity p { max-width: 48ch; }
   .catalog-filter-bar { grid-template-columns: 1fr; }
-  .catalog-college-filter { grid-column: 1; }
-  .catalog-college-filter > div { grid-template-columns: 1fr 1fr; }
   .catalog-result-row { grid-template-columns: minmax(0, 1fr) 108px 14px; gap: 8px; padding-inline: 7px; }
   .catalog-result-title strong { white-space: normal; }
   .catalog-result-state > span { line-height: 1.25; }
@@ -2308,7 +2296,6 @@ textarea,
   .catalog-source-header { align-items: stretch; flex-direction: column; gap: 9px; }
   .catalog-source-header > .secondary-button { align-self: flex-start; }
   .catalog-context-line { align-items: flex-start; flex-direction: column; gap: 3px; }
-  .catalog-college-filter > div { grid-template-columns: 1fr; }
   .catalog-result-row { grid-template-columns: minmax(0, 1fr) 14px; min-height: 72px; }
   .catalog-result-state { grid-column: 1; grid-row: 2; grid-auto-flow: column; justify-content: start; justify-items: start; gap: 10px; text-align: left; }
   .catalog-result-row > svg { grid-column: 2; grid-row: 1 / span 2; }

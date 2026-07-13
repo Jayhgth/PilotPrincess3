@@ -180,7 +180,6 @@ export default function SmccdPlanner({
   const [geCollegeCode, setGeCollegeCode] = useState<SmccdCourse["college_code"]>("CSM");
   const [search, setSearch] = useState("");
   const [collegeFilter, setCollegeFilter] = useState<CollegeFilter>("all");
-  const [transferFilter, setTransferFilter] = useState("all");
   const [goalProgramId, setGoalProgramId] = useState("");
   const [programSearch, setProgramSearch] = useState("");
   const [programRenderLimit, setProgramRenderLimit] = useState(24);
@@ -283,7 +282,6 @@ export default function SmccdPlanner({
     const tokens = query.split(/\s+/).filter(Boolean);
     return courseSearchIndex
       .filter(({ course }) => collegeFilter === "all" || course.college_code === collegeFilter)
-      .filter(({ course }) => transferFilter === "all" || (transferFilter === "uc" ? course.transfer_credit?.includes("UC") : Boolean(course.transfer_credit)))
       .filter(({ text }) => tokens.length === 0 || tokens.every((token) => text.includes(token)))
       .sort((left, right) => {
         if (!query) return left.course.course_code.localeCompare(right.course.course_code);
@@ -293,7 +291,7 @@ export default function SmccdPlanner({
       })
       .slice(0, query ? 140 : 90)
       .map(({ course }) => course);
-  }, [collegeFilter, courseSearchIndex, deferredSearch, transferFilter]);
+  }, [collegeFilter, courseSearchIndex, deferredSearch]);
   const prerequisiteEvaluator = useMemo(
     () => createSmccdPlannerPrerequisiteEvaluator(courses, planCourses, []),
     [courses, planCourses]
@@ -302,16 +300,10 @@ export default function SmccdPlanner({
     () => createSmccdPlanCourseIndex(planCourses, courses),
     [courses, planCourses]
   );
-  const smccdUnavailable = useMemo(() => searchedCourses.reduce((counts, course) => {
-    if (smccdCourseAlreadyInPlanIndex(course, planCourseIndex)) {
-      counts.already += 1;
-      return counts;
-    }
-    const evaluation = prerequisiteEvaluator(course, { gradeLevel: targetGrade, term: "fall" });
-    counts.visible.push({ course, evaluation });
-    return counts;
-  }, { already: 0, visible: [] as Array<{ course: SmccdCourse; evaluation: ReturnType<typeof prerequisiteEvaluator> }> }), [planCourseIndex, prerequisiteEvaluator, searchedCourses, targetGrade]);
-  const visibleCourses = smccdUnavailable.visible.slice(0, 80);
+  const visibleCourses = useMemo(() => searchedCourses.flatMap((course) => {
+    if (smccdCourseAlreadyInPlanIndex(course, planCourseIndex)) return [];
+    return [{ course, evaluation: prerequisiteEvaluator(course, { gradeLevel: targetGrade, term: "fall" }) }];
+  }).slice(0, 80), [planCourseIndex, prerequisiteEvaluator, searchedCourses, targetGrade]);
   const equivalencyMap = useMemo(
     () => new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency])),
     [equivalencies]
@@ -610,29 +602,22 @@ export default function SmccdPlanner({
         <a className="secondary-button" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">Official K-12 steps <ArrowSquareOut size={16} /></a>
       </header>}
 
-      {surface === "courses" && <div className="smccd-catalog-notice"><Warning size={17} /><span>Catalog entry does not confirm enrollment, schedule, or high school credit.</span></div>}
       {error && <div className="inline-alert error" role="alert">{error}</div>}
       {notice && <div className="inline-alert success smccd-notice" role="status"><span>{notice}</span>{embedded && onOpenMyCourses && <button className="quiet-button" type="button" onClick={onOpenMyCourses}>View My courses</button>}</div>}
 
       {surface === "courses" && <CourseCatalogBrowser
         source="smccd"
-        title="College course catalog"
-        description="College courses you can still add to this planning year."
+        title="Full college catalog"
         countLabel={search !== deferredSearch ? "Updating results" : !search.trim() ? `${visibleCourses.length} courses` : visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} ${visibleCourses.length === 1 ? "course" : "courses"}`}
-        planningContext={`Planning Grade ${targetGrade}`}
-        hiddenSummary={search.trim() ? `${smccdUnavailable.already} already-added matches hidden` : "Courses already in your plan stay out of results"}
         filters={<>
           <label className="catalog-search-field"><span>Search college courses</span><div className="catalog-search-input"><MagnifyingGlass size={17} aria-hidden /><input aria-label="Search college courses" value={search} onChange={(event) => { setSearch(event.target.value); setSelectedCourse(null); }} placeholder="Try ENGL C1000, statistics, or biology" /></div></label>
-          <label><span>Planning year</span><select value={targetGrade} onChange={(event) => { selectTargetGrade(Number(event.target.value) as GradeLevel); setSelectedCourse(null); }}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-          <label><span>Transfer credit</span><select value={transferFilter} onChange={(event) => { setTransferFilter(event.target.value); setSelectedCourse(null); }}><option value="all">Any status</option><option value="transferable">CSU or UC</option><option value="uc">UC transferable</option></select></label>
-          <fieldset className="catalog-college-filter"><legend>College</legend><div><button className={collegeFilter === "all" ? "active" : ""} type="button" onClick={() => { setCollegeFilter("all"); setSelectedCourse(null); }}><InstitutionMark institution="smccd" decorative /><span>All</span></button>{colleges.map((college) => <button className={`${collegeFilter === college.code ? "active" : ""} institution-${college.code.toLowerCase()}`} type="button" onClick={() => { setCollegeFilter(college.code); setSelectedCourse(null); }} key={college.code}><InstitutionMark institution={college.code} decorative /><span>{college.name.replace("College of ", "")}</span></button>)}</div></fieldset>
+          <label className="catalog-college-select"><span>College</span><select value={collegeFilter} onChange={(event) => { setCollegeFilter(event.target.value as CollegeFilter); setSelectedCourse(null); }}><option value="all">All colleges</option>{colleges.map((college) => <option value={college.code} key={college.code}>{college.name}</option>)}</select></label>
         </>}
         results={visibleCourseResults}
         selectedId={selectedCourse?.id ?? null}
         onSelect={(id) => { const course = courses.find((candidate) => candidate.id === id); if (course) chooseCourse(course); }}
         emptyTitle={search.trim() ? "No matching courses" : "No eligible courses in this view"}
-        emptyBody={search.trim() ? "Try another code or title. Courses already in your plan stay hidden." : "Change the college, transfer, or planning-year filters."}
-        sourceAction={<a className="secondary-button small" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">K-12 enrollment <ArrowSquareOut size={14} /></a>}
+        emptyBody={search.trim() ? "Try another code or title. Courses already in your plan stay hidden." : "Choose another college."}
         footer={visibleCourses.length === 80 ? <p className="catalog-limit-note">Refine the search to narrow these results.</p> : undefined}
         detail={selectedCourse && selectedPrerequisiteEvaluation ? <CourseDetailLayout
           identity={<span className="catalog-detail-institution"><InstitutionMark institution={selectedCourse.college_code} decorative />{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span>}

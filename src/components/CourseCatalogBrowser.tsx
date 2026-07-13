@@ -30,7 +30,7 @@ export interface CatalogResultRow {
 interface Props {
   source: CatalogSourceKind;
   title: string;
-  description: string;
+  description?: string;
   countLabel: string;
   filters: ReactNode;
   results: CatalogResultRow[];
@@ -88,7 +88,7 @@ export default function CourseCatalogBrowser({
           <InstitutionMark institution={source} size="header" decorative />
           <div>
             <h2>{title}</h2>
-            <p>{description}</p>
+            {description && <p>{description}</p>}
           </div>
         </div>
         {sourceAction}
