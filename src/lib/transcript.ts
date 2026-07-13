@@ -7,8 +7,11 @@ import type {
   StudentSettings
 } from "@/lib/models";
 import { courseEquivalenceKeys, courseNameAliases, normalizeCourseName } from "@/lib/course-names";
+import { normalizeCollegeCourseCode, resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
 import { institutionKeyFromName } from "@/lib/institutions";
 import { schoolYearForGrade } from "@/lib/planning";
+
+export { normalizeCollegeCourseCode } from "@/lib/college-credits";
 
 const DTECH_INSTITUTION_PATTERN = /Design Tech High School|\bd\.?tech\b/i;
 const DTECH_CATALOG_MISS = "No exact d.tech catalog match was found.";
@@ -51,25 +54,6 @@ export function isDtechIntersessionCourse(payload: TranscriptCoursePayload) {
   if (grade === "P" && institutionIsDtech) return true;
   return (institutionIsDtech && (quarterPrefix || personalDevelopment))
     || (payload.transcript_classification === "dtech_intersession" && personalDevelopment);
-}
-
-export function normalizeCollegeCourseCode(value: string | null | undefined) {
-  if (!value) return null;
-  const normalized = value
-    .trim()
-    .toUpperCase()
-    .replace(/^CHINESE\b/, "CHIN")
-    .replace(/^SPANISH\b/, "SPAN")
-    .replace(/^BIOLOGY\b/, "BIOL")
-    .replace(/^CHEM\.\s*/, "CHEM ")
-    .replace(/^PHYSICS\b/, "PHYS")
-    .replace(/^ECONOMICS\b/, "ECON")
-    .replace(/^HISTORY\b/, "HIST")
-    .replace(/^POLITICAL SCIENCE\b/, "PLSC")
-    .replace(/^MUS\.\s*/, "MUS ")
-    .replace(/\s+/g, " ");
-  const match = normalized.match(/^([A-Z]{2,5})\.?\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)/);
-  return match ? `${match[1]} ${match[2]}` : null;
 }
 
 export function findHighSchoolEquivalency(
@@ -191,11 +175,20 @@ export function transcriptPlanCourseDraft(
   const fallbackGrade = Math.max(9, Math.min(12, (settings.grade_level ?? 9) - 1)) as GradeLevel;
   const grade = Math.max(9, Math.min(12, Number(payload.grade_level ?? fallbackGrade))) as GradeLevel;
   const equivalency = findHighSchoolEquivalency(payload, equivalencies);
-  const reportedCredits = equivalency?.high_school_credits ?? payload.credits ?? matched?.credits ?? null;
+  const isSmccdCourse = resolution.classification === "smccd_catalog" || resolution.classification === "smccd_unmatched";
+  const collegeUnits = payload.college_units ?? matched?.college_units ?? null;
+  const creditResolution = isSmccdCourse
+    ? resolveCollegeHighSchoolCredits({
+        collegeUnits,
+        storedHighSchoolCredits: payload.credits ?? matched?.credits,
+        equivalencyHighSchoolCredits: equivalency?.high_school_credits,
+        normalizedCourseCode: equivalency?.normalized_course_code ?? normalizeCollegeCourseCode(payload.course_code ?? payload.course_name)
+      })
+    : null;
+  const reportedCredits = creditResolution?.credits ?? payload.credits ?? matched?.credits ?? null;
   const isIntersession = resolution.classification === "dtech_intersession";
   const passedIntersession = isIntersession && payload.letter_grade?.trim().toUpperCase() === "P";
   const credits = isIntersession && !passedIntersession ? 0 : reportedCredits;
-  const isSmccdCourse = resolution.classification === "smccd_catalog" || resolution.classification === "smccd_unmatched";
   const weighting = resolveTranscriptWeighting(payload, courses);
   const verifiedMapping = Boolean(equivalency) || passedIntersession || Boolean(
     matched && mappings.some((mapping) => mapping.course_id === matched.id && mapping.confidence === "verified")
@@ -209,7 +202,7 @@ export function transcriptPlanCourseDraft(
     term: payload.term ?? (matched?.term_type === "semester" ? "fall" : "full_year"),
     status: "completed",
     credits,
-    college_units: payload.college_units ?? matched?.college_units ?? null,
+    college_units: collegeUnits,
     letter_grade: payload.letter_grade?.trim().toUpperCase() || null,
     is_weighted: weighting.weighted,
     mapping_verified: verifiedMapping,
@@ -223,6 +216,9 @@ export function transcriptPlanCourseDraft(
         : null,
       equivalency
         ? `The official d.tech equivalency chart (updated 2021) applies ${equivalency.high_school_credits} high-school credits to ${equivalency.high_school_equivalent}. Confirm current approval with a counselor.`
+        : null,
+      creditResolution?.basis === "district_unit_conversion"
+        ? `${creditResolution.collegeUnits} college units are represented as ${creditResolution.credits} high-school credits for GPA calculations; confirm transcript credit with d.tech.`
         : null,
       isIntersession
         ? `Recognized from the transcript as a d.tech intersession pass/fail course${passedIntersession ? " with Personal Development credit" : "; no Personal Development credit is earned for an F"}.`

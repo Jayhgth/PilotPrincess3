@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createSmccdPlanCourseIndex, dtechCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
+import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import type {
   CatalogReviewItem,
   Course,
@@ -349,7 +350,7 @@ function calculatedWorkspace(workspace: AssistantWorkspace) {
   return {
     overviewProgress,
     graduationProgress,
-    gpa: calculateGpa(workspace.planCourses)
+    gpa: calculateGpa(workspace.planCourses, workspace.equivalencies)
   };
 }
 
@@ -813,7 +814,8 @@ export async function executeAssistantReadTool(
       .filter((row) => args.scope === "projected" || row.status !== "planned")
       .map((row) => {
         const grade = row.letter_grade?.trim().toUpperCase() ?? "";
-        const credits = Number(row.credits ?? 0);
+        const creditResolution = resolvePlanCourseHighSchoolCredits(row, workspace.equivalencies);
+        const credits = creditResolution.credits;
         const points = dtechGradePoint(grade);
         const weighted = row.is_weighted || Boolean(row.smccd_course_id) || Number(row.college_units ?? 0) > 0;
         const included = points !== null && credits > 0;
@@ -824,6 +826,10 @@ export async function executeAssistantReadTool(
           status: row.status,
           final_grade: row.letter_grade,
           credits,
+          high_school_gpa_credits: credits,
+          stored_high_school_credits: row.credits,
+          college_units: row.college_units,
+          credit_basis: creditResolution.basis,
           weighted,
           included_in_gpa: included,
           unweighted_points: included ? points : null,
@@ -837,7 +843,7 @@ export async function executeAssistantReadTool(
       data: {
         scope: args.scope,
         calculation: calculated.gpa,
-        policy: "A- and other plus/minus variants use the base letter value. SMCCD and other college rows are weighted. Pass grades earn credit but no GPA points.",
+        policy: `A- and other plus/minus variants use the base letter value. College rows are weighted using high-school credit equivalents. ${COLLEGE_HIGH_SCHOOL_CREDIT_POLICY} Pass grades earn credit but no GPA points.`,
         rows
       }
     };
@@ -851,7 +857,8 @@ export async function executeAssistantReadTool(
     const result = evaluateGpaScenario(
       workspace.planCourses,
       args.choices.map((choice) => ({ planCourseId: choice.plan_course_id, included: choice.included, expectedGrade: choice.expected_grade })),
-      args.target_weighted_gpa
+      args.target_weighted_gpa,
+      workspace.equivalencies
     );
     return {
       summary: "Evaluated the selected current-plan GPA assumptions without changing student data.",
@@ -1159,6 +1166,13 @@ export async function executeAssistantMutationTool(
     if (prerequisite.result.status === "blocked") throw new Error("The listed SMCCD prerequisite is not satisfied for that placement.");
     const normalizedCode = normalizeCollegeCourseCode(course.course_code);
     const equivalency = workspace.equivalencies.find((row) => row.normalized_course_code === normalizedCode);
+    const collegeUnits = Number(course.units_max ?? course.units_min);
+    const creditResolution = resolveCollegeHighSchoolCredits({
+      collegeUnits,
+      storedHighSchoolCredits: null,
+      equivalencyHighSchoolCredits: equivalency?.high_school_credits,
+      normalizedCourseCode: normalizedCode
+    });
     const { data, error } = await supabase.from("plan_courses").insert({
       plan_version_id: workspace.activeVersion.id,
       user_id: userId,
@@ -1169,21 +1183,29 @@ export async function executeAssistantMutationTool(
       school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, args.grade_level),
       term: args.term,
       status: args.status,
-      credits: equivalency?.high_school_credits ?? 0,
-      college_units: Number(course.units_max ?? course.units_min),
+      credits: creditResolution.credits,
+      college_units: collegeUnits,
       is_weighted: true,
       mapping_verified: Boolean(equivalency),
       user_edited: true,
       notes: equivalency
         ? `${course.college_code} ${course.source_year} catalog. The reviewed d.tech equivalency chart lists ${equivalency.high_school_credits} high-school credits as ${equivalency.high_school_equivalent}. Confirm current approval, prerequisites, schedule, and transcript delivery.`
-        : `${course.college_code} ${course.source_year} catalog. Verify schedule availability, prerequisites, d.tech approval, and transcript delivery.`,
+        : `${course.college_code} ${course.source_year} catalog. ${creditResolution.credits > 0 ? `${collegeUnits} college units are provisionally represented as ${creditResolution.credits} high-school credits for GPA calculations. ` : "High-school credit is unresolved. "}Verify schedule availability, prerequisites, d.tech approval, and transcript delivery.`,
       requirement_area_override: equivalency?.requirement_area ?? null,
       sort_order: workspace.planCourses.length
     }).select("id").single();
     if (error) throw new Error(error.message);
     return {
       summary: `${course.course_code} ${course.title} was added to ${args.status === "current" ? "In progress" : "Planned"}.`,
-      data: { course_code: course.course_code, status: args.status, grade_level: args.grade_level, equivalency_verified: Boolean(equivalency) },
+      data: {
+        course_code: course.course_code,
+        status: args.status,
+        grade_level: args.grade_level,
+        college_units: collegeUnits,
+        high_school_gpa_credits: creditResolution.credits,
+        credit_basis: creditResolution.basis,
+        equivalency_verified: Boolean(equivalency)
+      },
       changed: { entity: "plan_course", id: data.id },
       undo: { kind: "delete_rows", table: "plan_courses", ids: [data.id], summary: `${course.course_code} ${course.title} was removed from the plan.` }
     };

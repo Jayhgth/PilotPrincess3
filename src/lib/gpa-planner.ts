@@ -1,4 +1,4 @@
-import type { PlanCourse } from "@/lib/models";
+import type { PlanCourse, SmccdHighSchoolEquivalency } from "@/lib/models";
 import { calculateGpa } from "@/lib/planning";
 
 export interface GpaScenarioChoice {
@@ -42,16 +42,17 @@ function withUniformOpenGrade(rows: readonly PlanCourse[], choices: readonly Gpa
 
 export function calculateGpaScenario(
   rows: readonly PlanCourse[],
-  choices: readonly GpaScenarioChoice[]
+  choices: readonly GpaScenarioChoice[],
+  equivalencies: readonly SmccdHighSchoolEquivalency[] = []
 ): GpaScenarioSummary {
   const baselineRows = rows.filter((row) => row.status === "completed");
   const projectedRows = scenarioRows(rows, choices);
   const openRows = projectedRows.filter((row) => row.status !== "completed");
   const bestCaseRows = projectedRows.map((row) => row.status === "completed" ? row : { ...row, letter_grade: "A" });
   return {
-    baseline: calculateGpa(baselineRows),
-    scenario: calculateGpa(projectedRows),
-    bestCase: calculateGpa(bestCaseRows),
+    baseline: calculateGpa(baselineRows, equivalencies),
+    scenario: calculateGpa(projectedRows, equivalencies),
+    bestCase: calculateGpa(bestCaseRows, equivalencies),
     missingExpectedGrades: openRows.filter((row) => !row.letter_grade || ["IP", "P"].includes(row.letter_grade.toUpperCase())).length
   };
 }
@@ -59,13 +60,14 @@ export function calculateGpaScenario(
 export function evaluateGpaScenario(
   rows: readonly PlanCourse[],
   choices: readonly GpaScenarioChoice[],
-  targetWeighted: number
+  targetWeighted: number,
+  equivalencies: readonly SmccdHighSchoolEquivalency[] = []
 ): GpaScenarioResult {
-  const summary = calculateGpaScenario(rows, choices);
+  const summary = calculateGpaScenario(rows, choices, equivalencies);
   const baseline = summary.baseline;
   const targetAlreadyReached = baseline.projectedWeighted !== null && baseline.projectedWeighted >= targetWeighted;
   const targetGrade = targetAlreadyReached ? null : TARGET_GRADES.find((grade) => {
-    const result = calculateGpa(withUniformOpenGrade(rows, choices, grade));
+    const result = calculateGpa(withUniformOpenGrade(rows, choices, grade), equivalencies);
     return result.projectedWeighted !== null && result.projectedWeighted >= targetWeighted;
   }) ?? null;
 

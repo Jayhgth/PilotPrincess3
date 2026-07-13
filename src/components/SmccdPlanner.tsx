@@ -28,6 +28,7 @@ import { schoolYearForGrade, selectedPlanGrades } from "@/lib/planning";
 import { createSmccdPlannerPrerequisiteEvaluator } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import { createSmccdPlanCourseIndex, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
+import { resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
 import { cachedStudentSmccdGoals, cacheStudentSmccdGoals, loadStudentSmccdGoals } from "@/lib/smccd-goals";
 import type {
   GradeLevel,
@@ -497,6 +498,13 @@ export default function SmccdPlanner({
     setBusy(true);
     setError(null);
     try {
+      const collegeUnits = Number(selectedCourse.units_max ?? selectedCourse.units_min);
+      const creditResolution = resolveCollegeHighSchoolCredits({
+        collegeUnits,
+        storedHighSchoolCredits: null,
+        equivalencyHighSchoolCredits: selectedEquivalency?.high_school_credits,
+        normalizedCourseCode: normalizeCollegeCourseCode(selectedCourse.course_code)
+      });
       const { data, error: insertError } = await supabase.from("plan_courses").insert({
         plan_version_id: activeVersion.id,
         user_id: session.user.id,
@@ -507,14 +515,14 @@ export default function SmccdPlanner({
         school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, targetGrade),
         term: courseDraft.term,
         status: "planned",
-        credits: selectedEquivalency?.high_school_credits ?? 0,
-        college_units: Number(selectedCourse.units_max ?? selectedCourse.units_min),
+        credits: creditResolution.credits,
+        college_units: collegeUnits,
         is_weighted: true,
         mapping_verified: Boolean(selectedEquivalency),
         user_edited: true,
         notes: selectedEquivalency
           ? `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. The official d.tech equivalency chart (updated 2021) lists ${selectedEquivalency.high_school_credits} high-school credits as ${selectedEquivalency.high_school_equivalent}. Confirm current approval, prerequisites, schedule, and transcript delivery.`
-          : `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. Verify schedule availability, prerequisites, high school approval, and transcript delivery.`,
+          : `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. ${creditResolution.credits > 0 ? `${collegeUnits} college units are provisionally represented as ${creditResolution.credits} high-school credits for GPA calculations. ` : "High-school credit is unresolved. "}Verify schedule availability, prerequisites, high school approval, and transcript delivery.`,
         requirement_area_override: selectedEquivalency?.requirement_area ?? null,
         sort_order: planCourses.length
       }).select("*").single();

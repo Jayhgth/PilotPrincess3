@@ -278,7 +278,7 @@ export default function PlanningWorkspace() {
     () => calculateRequirementProgress(requirements, planCourses, mappings, courses, equivalencies),
     [requirements, planCourses, mappings, courses, equivalencies]
   );
-  const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
+  const gpa = useMemo(() => calculateGpa(planCourses, equivalencies), [planCourses, equivalencies]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(fullProgress), [fullProgress]);
   const availableCatalogGrades = useMemo(() => settings ? selectedPlanGrades(settings) : [], [settings]);
   const activeCatalogGrade = (catalogGrade !== "all" && availableCatalogGrades.includes(catalogGrade)
@@ -1221,11 +1221,12 @@ export default function PlanningWorkspace() {
       .sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
     const overviewCourse = (row: PlanCourse) => {
       const collegeCode = row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id)?.college_code : null;
+      const isCollegeCourse = Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0);
       return {
         id: row.id,
         name: courseDisplayName(row, courseMap),
-        source: collegeCode ?? (row.smccd_course_id ? "College" : "High school"),
-        institution: collegeCode ?? (row.smccd_course_id ? "smccd" : "dtech")
+        source: collegeCode ?? (isCollegeCourse ? "College" : "d.tech"),
+        institution: collegeCode ?? (isCollegeCourse ? "smccd" : "dtech")
       };
     };
     const currentPeriod = academicPeriodForDate();
@@ -1455,6 +1456,7 @@ export default function PlanningWorkspace() {
       rows={planCourses}
       courses={courses}
       smccdCourses={plannedSmccdCourses}
+      equivalencies={equivalencies}
       onOpenCourses={() => openCourses("mine")}
       onScenarioChange={setGpaScenarioContext}
     /></div>;

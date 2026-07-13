@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import AnimatedList from "@/components/reactbits/AnimatedList";
 import InstitutionMark from "@/components/InstitutionMark";
+import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import { calculateGpaScenario, initialGpaScenarioChoices, setAllGpaScenarioGrades, type GpaScenarioChoice } from "@/lib/gpa-planner";
 import type { InstitutionKey } from "@/lib/institutions";
 import { courseDisplayName, LETTER_GRADES } from "@/lib/planning";
@@ -15,6 +16,7 @@ import type {
   Course,
   PlanCourse,
   SmccdCourse,
+  SmccdHighSchoolEquivalency,
 } from "@/lib/models";
 import styles from "./gpa-planning-lab.module.css";
 
@@ -22,6 +24,7 @@ interface Props {
   rows: PlanCourse[];
   courses: Course[];
   smccdCourses: SmccdCourse[];
+  equivalencies: SmccdHighSchoolEquivalency[];
   onOpenCourses: () => void;
   onScenarioChange: (context: Record<string, unknown>) => void;
 }
@@ -34,9 +37,13 @@ function termLabel(term: PlanCourse["term"]) {
   return term === "full_year" ? "Full year" : `${term[0].toUpperCase()}${term.slice(1)}`;
 }
 
+function displayNumber(value: number) {
+  return value.toFixed(Number.isInteger(value) ? 0 : 1);
+}
+
 function institutionFor(row: PlanCourse, smccdMap: Map<string, SmccdCourse>): { code: InstitutionKey; label: string } {
-  if (!row.smccd_course_id) return { code: "dtech", label: "High school" };
-  const code = smccdMap.get(row.smccd_course_id)?.college_code ?? "smccd";
+  if (!row.smccd_course_id && !row.college_provider_code && Number(row.college_units ?? 0) <= 0) return { code: "dtech", label: "High school" };
+  const code = (row.smccd_course_id ? smccdMap.get(row.smccd_course_id)?.college_code : null) ?? "smccd";
   return { code: code as InstitutionKey, label: code === "smccd" ? "College" : code };
 }
 
@@ -44,6 +51,7 @@ export default function GpaPlanningLab({
   rows,
   courses,
   smccdCourses,
+  equivalencies,
   onOpenCourses,
   onScenarioChange
 }: Props) {
@@ -55,11 +63,20 @@ export default function GpaPlanningLab({
     const currentMap = new Map(choices.map((choice) => [choice.planCourseId, choice]));
     return initialGpaScenarioChoices(rows).map((choice) => currentMap.get(choice.planCourseId) ?? choice);
   }, [rows, choices]);
-  const result = useMemo(() => calculateGpaScenario(rows, effectiveChoices), [rows, effectiveChoices]);
+  const result = useMemo(() => calculateGpaScenario(rows, effectiveChoices, equivalencies), [rows, effectiveChoices, equivalencies]);
   const openRows = rows.filter((row) => row.status !== "completed");
+  const collegeCreditContext = useMemo(() => rows.filter((row) => row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0).map((row) => {
+    const resolution = resolvePlanCourseHighSchoolCredits(row, equivalencies);
+    return {
+      plan_course_id: row.id,
+      college_units: resolution.collegeUnits,
+      high_school_gpa_credits: resolution.credits,
+      credit_basis: resolution.basis
+    };
+  }), [rows, equivalencies]);
   const courseGroups = [
-    { id: "high-school", label: "High school", rows: openRows.filter((row) => !row.smccd_course_id) },
-    { id: "college", label: "College", rows: openRows.filter((row) => Boolean(row.smccd_course_id)) }
+    { id: "high-school", label: "High school", rows: openRows.filter((row) => !row.smccd_course_id && !row.college_provider_code && Number(row.college_units ?? 0) <= 0) },
+    { id: "college", label: "College", rows: openRows.filter((row) => Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0)) }
   ];
 
   useEffect(() => {
@@ -67,9 +84,11 @@ export default function GpaPlanningLab({
       current_weighted_gpa: result.baseline.projectedWeighted,
       scenario_weighted_gpa: result.scenario.projectedWeighted,
       all_a_schedule_ceiling: result.bestCase.projectedWeighted,
-      missing_grade_assumptions: result.missingExpectedGrades
+      missing_grade_assumptions: result.missingExpectedGrades,
+      college_credit_policy: COLLEGE_HIGH_SCHOOL_CREDIT_POLICY,
+      college_credit_conversions: collegeCreditContext
     });
-  }, [result, onScenarioChange]);
+  }, [collegeCreditContext, result, onScenarioChange]);
 
   function updateChoice(id: string, patch: Partial<GpaScenarioChoice>) {
     setChoices((current) => {
@@ -128,12 +147,13 @@ export default function GpaPlanningLab({
               const choice = effectiveChoices.find((candidate) => candidate.planCourseId === row.id);
               const institution = institutionFor(row, smccdMap);
               const displayName = courseDisplayName(row, courseMap);
+              const highSchoolCredits = resolvePlanCourseHighSchoolCredits(row, equivalencies);
               return <article className={styles.courseRow} data-excluded={choice?.included === false}>
               <div className={styles.courseIdentity}>
                 <InstitutionMark institution={institution.code} decorative />
                 <div>
                   <strong>{displayName}</strong>
-                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{row.smccd_course_id ? ` · ${institution.label}` : ""}</span>
+                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{highSchoolCredits.collegeUnits > 0 ? ` · ${institution.label} · ${displayNumber(highSchoolCredits.collegeUnits)} units → ${displayNumber(highSchoolCredits.credits)} GPA cr` : ""}</span>
                 </div>
               </div>
               <div className={styles.courseControls}>

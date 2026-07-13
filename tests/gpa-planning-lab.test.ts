@@ -15,7 +15,7 @@ function row(id: string, college = false): PlanCourse {
     school_year: "2026-2027",
     term: "full_year",
     status: "planned",
-    credits: 10,
+    credits: college ? 0 : 10,
     college_units: college ? 3 : null,
     letter_grade: null,
     is_weighted: college,
@@ -36,6 +36,7 @@ describe("GPA planning lab", () => {
       rows: [row("high-school"), row("college", true)],
       courses: [],
       smccdCourses: [],
+      equivalencies: [],
       onOpenCourses: () => undefined,
       onScenarioChange: () => undefined
     }));
@@ -46,6 +47,7 @@ describe("GPA planning lab", () => {
     expect(html).toContain("College");
     expect(html.match(/data-react-bits="animated-list"/g)).toHaveLength(2);
     expect(html).toContain("Expected grade for English 4");
+    expect(html).toContain("3 units → 5 GPA cr");
     expect(html.match(/type="checkbox"/g)).toHaveLength(2);
     expect(html).not.toContain(">Include<");
     expect(html).not.toContain("Choose grade");

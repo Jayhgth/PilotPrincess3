@@ -139,13 +139,14 @@
 .dashboard-course-periods { display: grid; grid-template-columns: 1fr 1fr; flex: 1; }
 .dashboard-course-periods > section { min-width: 0; padding: 14px; }
 .dashboard-course-periods > section + section { border-left: 1px solid var(--line); }
-.dashboard-course-periods header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.dashboard-course-periods header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .dashboard-course-periods h3 { margin: 0; color: var(--ink-soft); font-size: var(--type-supporting); }
 .dashboard-course-periods header span { color: var(--ink-faint); font-size: var(--type-supporting); font-weight: 650; }
 .dashboard-course-periods .overview-course-name-list { gap: 0; }
-.dashboard-course-periods .overview-course-name-list > span { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 0; }
+.dashboard-course-periods .overview-course-name-list > span { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 7px 0; }
 .dashboard-course-periods .overview-course-name-list strong { overflow: hidden; font-size: var(--type-supporting); text-overflow: ellipsis; white-space: nowrap; }
-.dashboard-course-periods .overview-course-name-list small { flex: 0 0 auto; font-size: 10px; }
+.dashboard-course-periods .overview-course-name-list small { font-size: 10px; line-height: 1.35; text-align: right; white-space: nowrap; }
+.dashboard-course-periods .overview-course-name-list > b { display: block; padding-top: 9px; line-height: 1.35; }
 .dashboard-course-periods .overview-course-empty { border-radius: 0; background: transparent; padding: 7px 0; color: var(--ink-faint); }
 
 .overview-bento-degrees .magic-bento-body { padding: 12px 14px 14px; }

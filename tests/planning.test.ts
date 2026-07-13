@@ -446,6 +446,21 @@ describe("GPA calculations", () => {
     expect(summary.weightedCredits).toBe(10);
   });
 
+  it("uses d.tech equivalents before the district college-unit fallback", () => {
+    const equivalencies: SmccdHighSchoolEquivalency[] = [
+      { normalized_course_code: "MATH 251", college_course_code: "Math 251", description: "Calculus I", college_units: 5, high_school_credits: 10, high_school_equivalent: "College level Calculus 1", requirement_area: "math", pairing_note: null, source_id: "equivalency-source", confidence: "verified" },
+      { normalized_course_code: "MATH 130", college_course_code: "Math 130", description: "Trigonometry", college_units: 5, high_school_credits: 5, high_school_equivalent: "Precalculus (fall)", requirement_area: "math", pairing_note: null, source_id: "equivalency-source", confidence: "verified" }
+    ];
+    const summary = calculateGpa([
+      planCourse({ id: "math-251", smccd_course_id: "CSM:MATH 251", course_id: null, college_units: 5, credits: 5 }),
+      planCourse({ id: "math-130", smccd_course_id: "CSM:MATH 130", course_id: null, college_units: 5, credits: 5 }),
+      planCourse({ id: "accounting", smccd_course_id: "CSM:ACTG 100", course_id: null, college_units: 3, credits: 0 })
+    ], equivalencies);
+
+    expect(summary.gradedCredits).toBe(20);
+    expect(summary.weightedCredits).toBe(20);
+  });
+
 });
 
 describe("planning", () => {
@@ -692,6 +707,27 @@ describe("transcript import", () => {
 
     expect(draft.is_weighted).toBe(true);
     expect(draft.mapping_verified).toBe(false);
+  });
+
+  it("converts raw college units into high-school GPA credits on import", () => {
+    const draft = transcriptPlanCourseDraft(
+      {
+        course_name: "ACTG 100 Accounting Procedures",
+        course_code: "ACTG 100",
+        institution_name: "College of San Mateo",
+        college_units: 3,
+        credits: 3,
+        letter_grade: "A"
+      },
+      settings,
+      [],
+      [],
+      "review-college-credit"
+    );
+
+    expect(draft.college_units).toBe(3);
+    expect(draft.credits).toBe(5);
+    expect(draft.notes).toContain("3 college units are represented as 5 high-school credits");
   });
 
   it("applies the official Chinese equivalency to world-language credit", () => {

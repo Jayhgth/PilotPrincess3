@@ -11,6 +11,7 @@ import type {
   StudentSettings
 } from "@/lib/models";
 import { courseEquivalenceKeys } from "@/lib/course-names";
+import { resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 
 const GRADE_POINTS: Record<string, number> = {
   "A+": 4,
@@ -206,7 +207,7 @@ export function calculateRequirementProgress(
         : null;
       if (!overrideMatches && !mapping) continue;
 
-      const credits = Number(planCourse.credits ?? 0);
+      const credits = resolvePlanCourseHighSchoolCredits(planCourse, equivalencies).credits;
       if ((!overrideMatches && mapping?.confidence === "uncertain") || !planCourse.mapping_verified) {
         unverifiedCredits += credits;
         unverifiedRows.push({
@@ -459,7 +460,7 @@ function requirementEvidence(
   };
 }
 
-function gpaForRows(rows: PlanCourse[], includePlanned: boolean) {
+function gpaForRows(rows: PlanCourse[], includePlanned: boolean, equivalencies: readonly SmccdHighSchoolEquivalency[]) {
   let unweightedPoints = 0;
   let weightedPoints = 0;
   let credits = 0;
@@ -469,7 +470,7 @@ function gpaForRows(rows: PlanCourse[], includePlanned: boolean) {
   for (const row of rows) {
     if (!includePlanned && row.status === "planned") continue;
     const grade = row.letter_grade?.toUpperCase() ?? "";
-    const rowCredits = Number(row.credits ?? 0);
+    const rowCredits = resolvePlanCourseHighSchoolCredits(row, equivalencies).credits;
     if (grade === "P" && rowCredits > 0) {
       passCredits += rowCredits;
       continue;
@@ -493,9 +494,9 @@ function gpaForRows(rows: PlanCourse[], includePlanned: boolean) {
   };
 }
 
-export function calculateGpa(rows: PlanCourse[]): GpaSummary {
-  const current = gpaForRows(rows, false);
-  const projected = gpaForRows(rows, true);
+export function calculateGpa(rows: PlanCourse[], equivalencies: readonly SmccdHighSchoolEquivalency[] = []): GpaSummary {
+  const current = gpaForRows(rows, false, equivalencies);
+  const projected = gpaForRows(rows, true, equivalencies);
   return {
     currentUnweighted: current.unweighted,
     currentWeighted: current.weighted,
