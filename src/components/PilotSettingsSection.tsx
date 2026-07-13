@@ -3,11 +3,11 @@ import {
   CheckIcon as Check,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
-import type { Session } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState } from "react";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import type { AiReviewMode } from "@/lib/ai-preferences";
 import type { AiConversation, StudentSettings } from "@/lib/models";
+import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
 import styles from "./StudentSettingsPanel.module.css";
 
 function archiveExpiryLabel(archivedAt: string | null) {
@@ -18,11 +18,9 @@ function archiveExpiryLabel(archivedAt: string | null) {
 }
 
 export default function PilotSettingsSection({
-  session,
   settings,
   onChanged
 }: {
-  session: Session;
   settings: StudentSettings;
   onChanged: () => void | Promise<void>;
 }) {
@@ -40,10 +38,7 @@ export default function PilotSettingsSection({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const authorizedFetch = useCallback((url: string, init?: RequestInit) => fetch(url, {
-    ...init,
-    headers: { authorization: `Bearer ${session.access_token}`, ...(init?.headers ?? {}) }
-  }), [session.access_token]);
+  const authorizedFetch = useCallback((url: string, init?: RequestInit) => authenticatedFetch(url, init), []);
 
   useEffect(() => {
     setSetup({
@@ -130,7 +125,7 @@ export default function PilotSettingsSection({
         <p>Connection, model access, change review, and conversation retention live here.</p>
       </div>
     </header>
-    <CodexConnectionSetup compact session={session} value={setup} onChange={(next) => { setSetup(next); setSaved(false); }} />
+    <CodexConnectionSetup compact value={setup} onChange={(next) => { setSetup(next); setSaved(false); }} />
     <label className={`form-field ${styles.reviewField}`}>
       <span>Change review</span>
       <select disabled={!setup.enabled} value={reviewMode} onChange={(event) => { setReviewMode(event.target.value as AiReviewMode); setSaved(false); }}>

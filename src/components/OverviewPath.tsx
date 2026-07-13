@@ -149,7 +149,7 @@ export default function OverviewPath({ data, onOpenCourses, onOpenGraduation, on
           <div><dt><GraduationCap size={16} weight="duotone" /> Completed college units</dt><dd>{data.completedCollegeUnits}</dd></div>
           <div><dt><BookOpen size={16} weight="duotone" /> Completed course records</dt><dd>{data.courseCounts.completed}</dd></div>
         </dl>
-        <p>d.tech credits and SMCCD units stay separate so each number matches its official source.</p>
+        <p>High school credits and college units stay separate so each number matches its official source.</p>
       </section>
     </div>
   </div>;

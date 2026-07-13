@@ -31,6 +31,7 @@ import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-atta
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
 import { assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
+import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
 import styles from "./GlobalAssistant.module.css";
 
 interface GlobalAssistantProps {
@@ -198,9 +199,9 @@ const TOOL_LABELS: Record<string, string> = {
   get_plan_versions: "Plan versions",
   get_degree_progress: "Degree progress",
   get_college_goal: "Degree bookmarks",
-  search_smccd_programs: "SMCCD programs",
+  search_smccd_programs: "College programs",
   save_plan_snapshot: "Save plan snapshot",
-  add_dtech_course: "Add d.tech course",
+  add_dtech_course: "Add high school course",
   add_smccd_course: "Add college course",
   move_plan_course: "Move course",
   move_plan_courses: "Move courses",
@@ -391,10 +392,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
   const activeId = data.activeConversation?.id ?? null;
 
-  const authorizedFetch = useCallback((url: string, init?: RequestInit) => fetch(url, {
-    ...init,
-    headers: { authorization: `Bearer ${session.access_token}`, ...(init?.headers ?? {}) }
-  }), [session.access_token]);
+  const authorizedFetch = useCallback((url: string, init?: RequestInit) => authenticatedFetch(url, init), []);
 
   const loadConversation = useCallback(async (conversationId?: string) => {
     setLoading(true);

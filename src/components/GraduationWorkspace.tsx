@@ -62,7 +62,7 @@ export default function GraduationWorkspace({
       <WorkspaceTabs
         className="graduation-workspace-tabs"
         items={[
-          { id: "diploma", label: "d.tech diploma", count: diplomaMissing },
+          { id: "diploma", label: "High school diploma", count: diplomaMissing },
           { id: "degree", label: "Associate degree" },
           { id: "general_education", label: "College gen-ed" }
         ]}
@@ -108,7 +108,7 @@ function DiplomaView({
   return <>
     <EligibilitySummary
       identity={<InstitutionMark institution="dtech" size="header" decorative />}
-      label="d.tech diploma"
+      label="High school diploma"
       answer={open === 0 ? "The saved plan covers the diploma." : `${formatValue(open)} credits still need a course.`}
       body={`${formatValue(completed)} of ${formatValue(required)} required credits are earned. Scheduled work is shown separately.`}
       tone="dtech"

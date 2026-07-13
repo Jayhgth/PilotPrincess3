@@ -35,9 +35,9 @@ function termLabel(term: PlanCourse["term"]) {
 }
 
 function institutionFor(row: PlanCourse, smccdMap: Map<string, SmccdCourse>): { code: InstitutionKey; label: string } {
-  if (!row.smccd_course_id) return { code: "dtech", label: "d.tech" };
+  if (!row.smccd_course_id) return { code: "dtech", label: "High school" };
   const code = smccdMap.get(row.smccd_course_id)?.college_code ?? "smccd";
-  return { code: code as InstitutionKey, label: code === "smccd" ? "SMCCD" : code };
+  return { code: code as InstitutionKey, label: code === "smccd" ? "College" : code };
 }
 
 export default function GpaPlanningLab({

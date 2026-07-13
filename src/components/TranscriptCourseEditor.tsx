@@ -85,10 +85,10 @@ export default function TranscriptCourseEditor({ value, onChange, onIgnore, disa
         <span>Record type</span>
         <select value={value.transcript_classification ?? ""} onChange={(event) => update({ transcript_classification: event.target.value ? event.target.value as TranscriptCoursePayload["transcript_classification"] : undefined })}>
           <option value="">Detect automatically</option>
-          <option value="dtech_catalog">d.tech catalog course</option>
-          <option value="dtech_intersession">d.tech intersession</option>
-          <option value="smccd_catalog">SMCCD catalog course</option>
-          <option value="smccd_unmatched">Unmatched SMCCD course</option>
+          <option value="dtech_catalog">High school catalog course</option>
+          <option value="dtech_intersession">High school intersession</option>
+          <option value="smccd_catalog">College catalog course</option>
+          <option value="smccd_unmatched">Unmatched college course</option>
           <option value="custom">Custom course</option>
         </select>
       </label>

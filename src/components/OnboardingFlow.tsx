@@ -491,7 +491,7 @@ export default function OnboardingFlow({
               <legend>College enrollment type</legend>
               {(["concurrent", "dual"] as const).map((programType) => {
                 const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
-                return <label key={programType} className={enrollmentProgram === programType ? "selected" : ""}><input type="radio" name="onboarding-enrollment-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current SMCCD planning threshold.` : "District policy is not loaded."}</small></span></label>;
+                return <label key={programType} className={enrollmentProgram === programType ? "selected" : ""}><input type="radio" name="onboarding-enrollment-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current district planning threshold.` : "District policy is not loaded."}</small></span></label>;
               })}
             </fieldset>
           </>}
@@ -499,7 +499,7 @@ export default function OnboardingFlow({
           {stage === "requirements" && <>
             <header><GraduationCap size={25} weight="duotone" /><h1>Choose your graduation tracker</h1><p>The full diploma view is recommended. A focused view keeps only selected areas in daily progress totals.</p></header>
             <div className="tracker-mode-switch">
-              <label className={settings.tracker_mode === "full" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "full"} onChange={() => setSettings({ ...settings, tracker_mode: "full", tracked_requirement_areas: ALL_REQUIREMENT_AREAS })} /><span><strong>Full d.tech diploma</strong><small>Track all {requirements.length} official requirement areas.</small></span></label>
+              <label className={settings.tracker_mode === "full" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "full"} onChange={() => setSettings({ ...settings, tracker_mode: "full", tracked_requirement_areas: ALL_REQUIREMENT_AREAS })} /><span><strong>Full high school diploma</strong><small>Track all {requirements.length} official requirement areas.</small></span></label>
               <label className={settings.tracker_mode === "selected" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "selected"} onChange={() => setSettings({ ...settings, tracker_mode: "selected", tracked_requirement_areas: [] })} /><span><strong>Focused tracker</strong><small>Choose the areas you want on your overview.</small></span></label>
             </div>
             {settings.tracker_mode === "selected" && <fieldset className="requirement-picker"><legend>Visible requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id} className={settings.tracked_requirement_areas.includes(requirement.area) ? "selected" : ""}><input type="checkbox" checked={settings.tracked_requirement_areas.includes(requirement.area)} onChange={() => toggleRequirement(requirement.area)} /><span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span></label>)}</fieldset>}
@@ -507,7 +507,7 @@ export default function OnboardingFlow({
 
           {stage === "assistant" && <>
             <header><Cpu size={25} weight="duotone" /><h1>Connect Pilot Assistant</h1><p>Choose the model, approve the data boundary, and verify the real server connection. This choice saves when you continue.</p></header>
-            <CodexConnectionSetup session={session} value={aiSetup} onChange={setAiSetup} />
+            <CodexConnectionSetup value={aiSetup} onChange={setAiSetup} />
           </>}
 
           {stage === "transcript" && <>
@@ -532,9 +532,9 @@ export default function OnboardingFlow({
                 const identityLabel = resolution.classification === "dtech_catalog"
                   ? "Catalog match"
                   : resolution.classification === "smccd_catalog"
-                    ? "SMCCD match"
+                    ? "College match"
                     : resolution.classification === "smccd_unmatched"
-                      ? "SMCCD review"
+                      ? "College review"
                       : "Custom course";
                 return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{identityLabel}, {resolution.identityResolved ? "resolved" : item.confidence}</em></label>;
               })}</div>

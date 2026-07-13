@@ -137,10 +137,10 @@ export default function AuthExperience() {
           <span>Pilot Princess</span>
         </a>
         <div className="auth-story-copy">
-          <p className="auth-kicker">Built for d.tech</p>
+          <p className="auth-kicker">High school planning</p>
           <h1 id="auth-title">See the whole path.</h1>
           <p>
-            Build a source-backed four-year plan before choosing classes and SMCCD options.
+            Build a source-backed four-year plan before choosing classes and college options.
           </p>
         </div>
         <div className="auth-story-footer">
@@ -150,7 +150,7 @@ export default function AuthExperience() {
             <div><strong>2025-26</strong><span>source year</span></div>
           </div>
           <p className="auth-source-note">
-            Planning guidance stays tied to official sources. Confirm final decisions with d.tech counseling.
+            Planning guidance stays tied to official sources. Confirm final decisions with your high school counseling team.
           </p>
         </div>
       </section>

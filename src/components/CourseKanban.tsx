@@ -143,7 +143,7 @@ function CourseCardBody({
         <label><span>Grade level</span>{locked
           ? <input value={`Grade ${row.grade_level}`} readOnly />
           : <select value={row.grade_level} onChange={(event) => { const grade = Number(event.target.value) as GradeLevel; onUpdate(row.id, { grade_level: grade, school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, grade) }); }}>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select>}</label>
-        <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => onUpdate(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "SMCCD courses are weighted" : "Weighted or honors"}</span></label>
+        <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => onUpdate(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "College courses are weighted" : "Weighted or honors"}</span></label>
         <button className="danger-button small" type="button" onClick={() => onRemove(row.id)}><Trash size={15} /> Remove</button>
       </div>}
     </div>

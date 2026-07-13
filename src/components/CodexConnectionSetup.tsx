@@ -4,11 +4,11 @@ import {
   ShieldCheckIcon as ShieldCheck,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
-import type { Session } from "@supabase/supabase-js";
 import { useState } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import { AI_MODEL_OPTIONS, AI_REASONING_EFFORT, type AiModel } from "@/lib/ai-preferences";
+import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
 import styles from "./CodexConnectionSetup.module.css";
 
 export interface CodexSetupValue {
@@ -19,12 +19,10 @@ export interface CodexSetupValue {
 }
 
 export default function CodexConnectionSetup({
-  session,
   value,
   onChange,
   compact = false
 }: {
-  session: Session;
   value: CodexSetupValue;
   onChange: (next: CodexSetupValue) => void;
   compact?: boolean;
@@ -49,11 +47,10 @@ export default function CodexConnectionSetup({
     setTestError(null);
     update({ testedAt: null });
     try {
-      const response = await fetch("/api/ai/health", {
+      const response = await authenticatedFetch("/api/ai/health", {
         method: "POST",
         headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${session.access_token}`
+          "content-type": "application/json"
         },
         body: JSON.stringify({ model: value.model, approved: value.approved })
       });

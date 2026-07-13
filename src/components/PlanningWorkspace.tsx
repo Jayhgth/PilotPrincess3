@@ -263,6 +263,19 @@ export default function PlanningWorkspace() {
   const [compareLoading, setCompareLoading] = useState(false);
   const compareRequestRef = useRef(0);
 
+  useEffect(() => {
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "SIGNED_OUT") {
+        setSession(null);
+        window.location.assign("/");
+        return;
+      }
+      if (nextSession) setSession(nextSession);
+    });
+    return () => subscription.unsubscribe();
+  }, [supabase]);
+
   const activeVersion = versions.find((candidate) => candidate.kind === "active") ?? null;
   const courseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const trackedRequirements = useMemo(
@@ -850,7 +863,7 @@ export default function PlanningWorkspace() {
     const enrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
     const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy);
     if (generated.length === 0) {
-      notify("The current plan already contains the available d.tech flow courses.");
+      notify("The current plan already contains the available high school flow courses.");
       return;
     }
     setSuggestedPlan(generated);
@@ -875,7 +888,7 @@ export default function PlanningWorkspace() {
         const inserted = (data ?? []) as unknown as PlanCourse[];
         setPlanCourses((current) => [...current, ...inserted]);
         setSuggestedPlan([]);
-        const explanation = "Suggested courses were added from the official d.tech flow. Verify each placement and prerequisite before registration.";
+        const explanation = "Suggested courses were added from the official high school flow. Verify each placement and prerequisite before registration.";
         setPlanExplanation(explanation);
         await supabase.from("plan_versions").update({ ai_summary: null }).eq("id", activeVersion.id);
         await logEvent("plan_generated", { course_count: inserted.length, ai_used: false });
@@ -1299,7 +1312,7 @@ export default function PlanningWorkspace() {
       return {
         id: row.id,
         name: courseDisplayName(row, courseMap),
-        source: collegeCode ?? (row.smccd_course_id ? "SMCCD" : "d.tech"),
+        source: collegeCode ?? (row.smccd_course_id ? "College" : "High school"),
         institution: collegeCode ?? (row.smccd_course_id ? "smccd" : "dtech")
       };
     };
@@ -1427,7 +1440,7 @@ export default function PlanningWorkspace() {
             const classificationDetail = resolution.classification === "dtech_intersession"
               ? "Intersession · Pass/fail · Personal Development"
               : resolution.classification === "dtech_catalog" && !displayPayload.matched_course_id
-                ? `Catalog match: ${resolution.matchedCourse?.name ?? "d.tech course"}`
+                ? `Catalog match: ${resolution.matchedCourse?.name ?? "high school course"}`
                 : "";
             const courseDetail = [institution, classificationDetail].filter(Boolean).join(" · ");
             const grade = String(displayPayload.letter_grade ?? "Review");
@@ -1495,7 +1508,7 @@ export default function PlanningWorkspace() {
         sourceAction={<strong className="catalog-source-count">Official 2025-26</strong>}
         footer={<PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />}
         detail={selectedDtechCourse && selectedDtechEvaluation ? <div className="catalog-course-detail">
-          <header className="catalog-detail-heading"><span>d.tech</span><h3>{selectedDtechCourse.name}</h3></header>
+          <header className="catalog-detail-heading"><span>High school</span><h3>{selectedDtechCourse.name}</h3></header>
           <dl className="catalog-fact-grid">
             <div><dt>Subject</dt><dd>{selectedDtechCourse.subject}</dd></div>
             <div><dt>Credits</dt><dd>{selectedDtechCourse.credits ? formatCredits(selectedDtechCourse.credits) : "Verify"}</dd></div>
@@ -1509,7 +1522,7 @@ export default function PlanningWorkspace() {
             <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })} disabled={selectedDtechCourse.term_type !== "semester"}>{selectedDtechCourse.term_type === "semester" ? <><option value="fall">Fall</option><option value="spring">Spring</option></> : <option value="full_year">Full year</option>}</select></label>
             <button className="primary-button" type="submit"><Plus size={16} /> Add to plan</button>
           </form>
-        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a d.tech course</strong><p>Review description, prerequisite evidence, and placement before adding it.</p></div>}
+        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a high school course</strong><p>Review description, prerequisite evidence, and placement before adding it.</p></div>}
       />
     );
   }
@@ -1518,7 +1531,7 @@ export default function PlanningWorkspace() {
     if (!settings || !supabase || !session || !activeVersion) return null;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress, associate-degree plans, and college gen-ed." />
+        <PageHeader title="Graduation" description="Source-backed high school diploma progress, associate-degree plans, and college gen-ed." />
         <GraduationWorkspace
           progress={fullProgress}
           onFindDtechCourses={openRequirementCourses}
@@ -1676,7 +1689,7 @@ export default function PlanningWorkspace() {
       : [];
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "High school courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
       {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && <aside className="enrollment-policy-callout" role="status">
         <Warning size={18} weight="fill" aria-hidden />
         <div>

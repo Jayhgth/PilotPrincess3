@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-test("renders the d.tech authentication experience", async ({ page }) => {
+test("renders the high school authentication experience", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page).toHaveTitle("Pilot Princess | d.tech planning");
+  await expect(page).toHaveTitle("Pilot Princess | High school planning");
   await expect(page.getByRole("heading", { name: "See the whole path." })).toBeVisible();
   await expect(page.locator(".auth-page-background")).toHaveAttribute("data-renderer", /webgl|fallback/);
   await expect(page.locator(".auth-page-background")).toHaveAttribute("data-motion", "animated");

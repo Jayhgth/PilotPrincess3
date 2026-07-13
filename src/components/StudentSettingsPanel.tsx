@@ -429,7 +429,7 @@ export default function StudentSettingsPanel({
   const currentYear = new Date().getFullYear();
 
   if (section === "pilot") {
-    return <div className={styles.settingsPanel}><PilotSettingsSection session={session} settings={settings} onChanged={onAiPreferencesChanged} /></div>;
+    return <div className={styles.settingsPanel}><PilotSettingsSection settings={settings} onChanged={onAiPreferencesChanged} /></div>;
   }
 
   return (
@@ -477,7 +477,7 @@ export default function StudentSettingsPanel({
             <fieldset className={styles.fieldset}>
               <legend>Graduation tracker</legend>
               <div className={styles.radioRows}>
-                <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "full"} onChange={() => setDraft({ ...draft, trackerMode: "full", trackedAreas: allAreas.length > 0 ? allAreas : draft.trackedAreas })} /><span><strong>Full diploma</strong><small>Keep all official d.tech requirement areas in the graduation view.</small></span></label>
+                <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "full"} onChange={() => setDraft({ ...draft, trackerMode: "full", trackedAreas: allAreas.length > 0 ? allAreas : draft.trackedAreas })} /><span><strong>Full diploma</strong><small>Keep all official high school requirement areas in the graduation view.</small></span></label>
                 <label><input type="radio" name="tracker-mode" checked={draft.trackerMode === "selected"} onChange={() => setDraft({ ...draft, trackerMode: "selected" })} /><span><strong>Focused overview</strong><small>Show selected areas in Overview while Graduation keeps the full diploma audit.</small></span></label>
               </div>
             </fieldset>
@@ -489,7 +489,7 @@ export default function StudentSettingsPanel({
 
         <section className={`content-section ${styles.section}`} aria-labelledby="college-planning-heading">
           <header className={styles.sectionHeading}><div><h2 id="college-planning-heading">College planning</h2><p>This tells course suggestions and Pilot which district policy applies. Unit limits come from the district.</p></div></header>
-          <fieldset className={styles.fieldsetPlain}><legend>SMCCD enrollment type</legend><div className={styles.radioRows}>{(["concurrent", "dual"] as const).map((programType) => {
+          <fieldset className={styles.fieldsetPlain}><legend>College enrollment type</legend><div className={styles.radioRows}>{(["concurrent", "dual"] as const).map((programType) => {
             const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
             return <label key={programType}><input type="radio" name="smccd-program-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current district planning threshold.` : "District policy is not loaded."}</small></span></label>;
           })}</div></fieldset>
