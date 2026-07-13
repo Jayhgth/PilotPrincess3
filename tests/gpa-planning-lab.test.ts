@@ -31,7 +31,7 @@ function row(id: string, college = false): PlanCourse {
 }
 
 describe("GPA planning lab", () => {
-  it("uses compact school groups and a bulk-grade action without target framing", () => {
+  it("uses animated school lists and a bulk-grade action without target framing", () => {
     const html = renderToStaticMarkup(createElement(GpaPlanningLab, {
       rows: [row("high-school"), row("college", true)],
       courses: [],
@@ -44,6 +44,11 @@ describe("GPA planning lab", () => {
     expect(html).toContain("Set all");
     expect(html).toContain("High school");
     expect(html).toContain("College");
+    expect(html.match(/data-react-bits="animated-list"/g)).toHaveLength(2);
+    expect(html).toContain("Expected grade for English 4");
+    expect(html.match(/type="checkbox"/g)).toHaveLength(2);
+    expect(html).not.toContain(">Include<");
+    expect(html).not.toContain("Choose grade");
     expect(html).not.toContain("Target weighted GPA");
     expect(html).not.toContain("Pilot can compare this calculator");
     expect(html).not.toContain("completed transcript already meets");

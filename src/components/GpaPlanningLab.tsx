@@ -4,6 +4,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useState } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
+import AnimatedList from "@/components/reactbits/AnimatedList";
 import InstitutionMark from "@/components/InstitutionMark";
 import { calculateGpaScenario, initialGpaScenarioChoices, setAllGpaScenarioGrades, type GpaScenarioChoice } from "@/lib/gpa-planner";
 import type { InstitutionKey } from "@/lib/institutions";
@@ -57,7 +58,7 @@ export default function GpaPlanningLab({
   const courseGroups = [
     { id: "high-school", label: "High school", rows: openRows.filter((row) => !row.smccd_course_id) },
     { id: "college", label: "College", rows: openRows.filter((row) => Boolean(row.smccd_course_id)) }
-  ].filter((group) => group.rows.length > 0);
+  ];
 
   useEffect(() => {
     onScenarioChange({
@@ -114,21 +115,32 @@ export default function GpaPlanningLab({
             <button className="secondary-button small" type="button" onClick={setAllExpectedGrades}>Set all</button>
           </div>}
         </div>
-        {openRows.length ? <div className={`${styles.courseGroups} ${courseGroups.length === 1 ? styles.singleGroup : ""}`}>{courseGroups.map((group) => <section className={styles.courseGroup} aria-labelledby={`gpa-${group.id}-heading`} key={group.id}>
+        {openRows.length ? <div className={styles.courseGroups}>{courseGroups.map((group) => <section className={styles.courseGroup} aria-labelledby={`gpa-${group.id}-heading`} key={group.id}>
           <header><h3 id={`gpa-${group.id}-heading`}>{group.label}</h3><span>{group.rows.length} {group.rows.length === 1 ? "course" : "courses"}</span></header>
-          <div className={styles.courseList}>{group.rows.map((row) => {
-            const choice = effectiveChoices.find((candidate) => candidate.planCourseId === row.id);
-            const institution = institutionFor(row, smccdMap);
-            return <article className={styles.courseRow} key={row.id} data-excluded={row.status === "planned" && choice?.included === false}>
-              <InstitutionMark institution={institution.code} decorative />
+          <AnimatedList
+            ariaLabel={`${group.label} GPA assumptions`}
+            className={styles.courseList}
+            items={group.rows}
+            itemKey={(row) => row.id}
+            renderItem={(row) => {
+              const choice = effectiveChoices.find((candidate) => candidate.planCourseId === row.id);
+              const institution = institutionFor(row, smccdMap);
+              const displayName = courseDisplayName(row, courseMap);
+              return <article className={styles.courseRow} data-excluded={choice?.included === false}>
               <div className={styles.courseIdentity}>
-                <strong>{courseDisplayName(row, courseMap)}</strong>
-                <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{row.smccd_course_id ? ` · ${institution.label}` : ""}</span>
+                <InstitutionMark institution={institution.code} decorative />
+                <div>
+                  <strong>{displayName}</strong>
+                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{row.smccd_course_id ? ` · ${institution.label}` : ""}</span>
+                </div>
               </div>
-              {row.status === "planned" && <label className={styles.includeControl}><input type="checkbox" checked={choice?.included ?? true} onChange={(event) => updateChoice(row.id, { included: event.target.checked })} /><span>Include</span></label>}
-              <label className={styles.gradeControl}><span>Expected grade</span><select value={choice?.expectedGrade ?? ""} disabled={choice?.included === false} onChange={(event) => updateChoice(row.id, { expectedGrade: event.target.value || null })}>{LETTER_GRADES.filter((grade) => !["IP", "P"].includes(grade)).map((grade) => <option value={grade} key={grade || "unset"}>{grade || "Choose"}</option>)}</select></label>
+              <div className={styles.courseControls}>
+                <label className={styles.includeControl} title={choice?.included === false ? "Include in GPA scenario" : "Exclude from GPA scenario"}><span className="sr-only">Include {displayName} in GPA scenario</span><input aria-label={`Include ${displayName} in GPA scenario`} type="checkbox" checked={choice?.included ?? true} onChange={(event) => updateChoice(row.id, { included: event.target.checked })} /></label>
+                <label className={styles.gradeControl}><span className="sr-only">Expected grade for {displayName}</span><select aria-label={`Expected grade for ${displayName}`} value={choice?.expectedGrade ?? ""} disabled={choice?.included === false} onChange={(event) => updateChoice(row.id, { expectedGrade: event.target.value || null })}>{LETTER_GRADES.filter((grade) => !["IP", "P"].includes(grade)).map((grade) => <option value={grade} key={grade || "unset"}>{grade || "Grade"}</option>)}</select></label>
+              </div>
             </article>;
-          })}</div>
+            }}
+          />
         </section>)}</div> : <div className={styles.empty}><Info size={19} /><span><strong>No current or planned courses</strong><small>Add courses before comparing a schedule.</small></span></div>}
       </section>
     </div>

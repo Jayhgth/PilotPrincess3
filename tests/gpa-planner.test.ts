@@ -64,4 +64,11 @@ describe("GPA scenario planning", () => {
     expect(choices.map((choice) => choice.expectedGrade)).toEqual(["B+", "B+"]);
     expect(calculateGpaScenario(rows, choices).missingExpectedGrades).toBe(0);
   });
+
+  it("excludes current and planned courses from a scenario when unchecked", () => {
+    const rows = [row("done", "completed", "B"), row("current", "current", null), row("plan", "planned", null)];
+    const choices = initialGpaScenarioChoices(rows).map((choice) => ({ ...choice, included: false, expectedGrade: "A" }));
+    expect(scenarioRows(rows, choices).map((course) => course.id)).toEqual(["done"]);
+    expect(calculateGpaScenario(rows, choices).missingExpectedGrades).toBe(0);
+  });
 });

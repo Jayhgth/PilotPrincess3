@@ -31,7 +31,7 @@ export function scenarioRows(rows: readonly PlanCourse[], choices: readonly GpaS
   return rows.flatMap((row) => {
     if (row.status === "completed") return [row];
     const choice = choiceMap.get(row.id);
-    if (row.status === "planned" && choice?.included === false) return [];
+    if (choice?.included === false) return [];
     return [{ ...row, letter_grade: choice?.expectedGrade?.trim() || row.letter_grade }];
   });
 }
