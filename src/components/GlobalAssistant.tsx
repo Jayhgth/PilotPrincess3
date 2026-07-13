@@ -572,6 +572,22 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     return payload.conversation;
   }
 
+  function startNewConversation() {
+    if (runningRef.current) return;
+    setData((current) => ({
+      ...current,
+      activeConversation: null,
+      messages: [],
+      events: [],
+      toolCalls: []
+    }));
+    setLiveEvents([]);
+    setError(null);
+    setHistoryOpen(false);
+    setRenamingConversationId(null);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
   function handleDockResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !drawerRef.current) return;
     dockResizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: drawerRef.current.getBoundingClientRect().width };
@@ -970,10 +986,10 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         <header className={styles.header}>
           <div className={styles.conversationPicker}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
-              <ChatCircleDots size={15} weight="fill" /><span>{data.activeConversation?.title ?? "Pilot Assistant"}</span><CaretDown size={11} />
+              <ChatCircleDots size={15} weight="fill" /><span>{data.activeConversation?.title ?? "New conversation"}</span><CaretDown size={11} />
             </button>
             {historyOpen && <div className={styles.historyMenu}>
-              <button className={styles.newConversation} type="button" onClick={() => void createConversation()}><Plus size={14} /> New conversation</button>
+              <button className={styles.newConversation} type="button" onClick={startNewConversation}><Plus size={14} /> New conversation</button>
               <div className={styles.historyList}>{data.conversations.map((conversation) => <div className={`${styles.historyRow} ${conversation.id === activeId ? styles.activeConversation : ""}`} key={conversation.id}>
                 {renamingConversationId === conversation.id ? <form className={styles.renameConversation} onSubmit={(event) => { event.preventDefault(); void renameConversation(conversation.id); }}>
                   <input autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} maxLength={120} aria-label="Conversation title" />
@@ -988,7 +1004,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             </div>}
           </div>
           <div className={styles.headerActions}>
-            <button type="button" onClick={() => void createConversation()} aria-label="New conversation" title="New conversation"><Plus size={15} /></button>
+            <button type="button" onClick={startNewConversation} aria-label="New conversation" title="New conversation"><Plus size={15} /></button>
             <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant" title="Close"><X size={16} /></button>
           </div>
         </header>
