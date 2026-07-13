@@ -1318,9 +1318,6 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .catalog-status.current { color: var(--accent); }
 .catalog-status.completed { color: var(--success); }
 .catalog-status.planned { color: var(--warning); }
-.pagination-controls { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; }
-.pagination-controls > span { color: var(--ink-soft); font-size: 12px; }
-
 /* Shared d.tech and SMCCD course browser */
 .unified-catalog {
   --catalog-brand: var(--dtech-ui);
@@ -1383,6 +1380,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .catalog-results-heading strong { color: var(--ink); font-size: 13px; }
 .catalog-results-heading span { font-size: 12px; }
 .catalog-result-list { max-height: 580px; border-top: 1px solid var(--line); overflow-y: auto; padding-right: 4px; }
+.animated-list-item { position: relative; }
 .catalog-result-row {
   display: grid;
   width: 100%;

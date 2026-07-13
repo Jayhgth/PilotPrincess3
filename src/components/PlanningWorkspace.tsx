@@ -171,27 +171,6 @@ function PageHeader({
   );
 }
 
-function PaginationControls({
-  page,
-  pageCount,
-  onChange,
-  label
-}: {
-  page: number;
-  pageCount: number;
-  onChange: (page: number) => void;
-  label: string;
-}) {
-  if (pageCount <= 1) return null;
-  return (
-    <nav className="pagination-controls" aria-label={label}>
-      <button className="secondary-button small" type="button" onClick={() => onChange(page - 1)} disabled={page === 0}>Previous</button>
-      <span>Page {page + 1} of {pageCount}</span>
-      <button className="secondary-button small" type="button" onClick={() => onChange(page + 1)} disabled={page >= pageCount - 1}>Next</button>
-    </nav>
-  );
-}
-
 function LoadingWorkspace() {
   return (
     <main className="workspace-loading" aria-live="polite">
@@ -251,7 +230,6 @@ export default function PlanningWorkspace() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
   const [catalogGrade, setCatalogGrade] = useState<GradeLevel | "all">("all");
-  const [catalogPage, setCatalogPage] = useState(0);
   const [sourceForm, setSourceForm] = useState({ file: null as File | null });
   const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
@@ -693,7 +671,6 @@ export default function PlanningWorkspace() {
     };
     setCatalogSubject(subjectByArea[area]);
     setCatalogSearch("");
-    setCatalogPage(0);
     openCourses("dtech");
   }
 
@@ -1309,9 +1286,6 @@ export default function PlanningWorkspace() {
     );
   }
 
-  const catalogPageSize = 12;
-  const catalogPageCount = Math.max(1, Math.ceil(filteredCourses.length / catalogPageSize));
-  const visibleCatalogCourses = filteredCourses.slice(catalogPage * catalogPageSize, (catalogPage + 1) * catalogPageSize);
   function renderDashboard() {
     if (!settings || !supabase || !session) return null;
     const requirementSnapshot = overviewProgress.map((item) => {
@@ -1478,7 +1452,7 @@ export default function PlanningWorkspace() {
   }
 
   function renderDtechCatalog() {
-    const results = visibleCatalogCourses.map((course) => {
+    const results = filteredCourses.map((course) => {
       const placement = course.id === selectedDtechCourse?.id ? dtechDraft : defaultDtechPlacement(course, activeCatalogGrade);
       const evaluation = evaluateDtechPlannerPrerequisites(
         course,
@@ -1505,13 +1479,13 @@ export default function PlanningWorkspace() {
         source="dtech"
         title="Course catalog"
         description="Courses you can still add in the selected school year."
-        countLabel={filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length}` : "No courses"}
+        countLabel={filteredCourses.length ? `${filteredCourses.length} ${filteredCourses.length === 1 ? "course" : "courses"}` : "No courses"}
         planningContext={`Planning Grade ${activeCatalogGrade}`}
         hiddenSummary={`${catalogAvailability.hiddenTotal} unavailable courses hidden from this view`}
         filters={<>
-          <label className="catalog-search-field"><span>Search courses</span><div className="catalog-search-input"><BookOpen size={16} aria-hidden /><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Name, subject, or prerequisite" /></div></label>
-          <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{catalogAvailability.subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
-          <label><span>Planning year</span><select value={activeCatalogGrade} onChange={(event) => { setCatalogGrade(Number(event.target.value) as GradeLevel); setSelectedDtechCourseId(null); setCatalogPage(0); }}>{availableCatalogGrades.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+          <label className="catalog-search-field"><span>Search courses</span><div className="catalog-search-input"><BookOpen size={16} aria-hidden /><input value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Name, subject, or prerequisite" /></div></label>
+          <label><span>Subject</span><select value={catalogSubject} onChange={(event) => setCatalogSubject(event.target.value)}><option value="all">All subjects</option>{catalogAvailability.subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
+          <label><span>Planning year</span><select value={activeCatalogGrade} onChange={(event) => { setCatalogGrade(Number(event.target.value) as GradeLevel); setSelectedDtechCourseId(null); }}>{availableCatalogGrades.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
         </>}
         results={results}
         selectedId={selectedDtechCourseId}
@@ -1519,7 +1493,6 @@ export default function PlanningWorkspace() {
         emptyTitle="No matching courses"
         emptyBody="Try another search or subject. Courses already taken, below your demonstrated math level, or outside this grade stay hidden."
         sourceAction={<strong className="catalog-source-count">Official 2025-26</strong>}
-        footer={<PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />}
         detail={selectedDtechCourse && selectedDtechEvaluation ? <CourseDetailLayout
           identity={<span>High school</span>}
           title={selectedDtechCourse.name}

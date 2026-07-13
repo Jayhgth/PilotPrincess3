@@ -9,6 +9,7 @@ import {
 import { useRef, type ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
+import AnimatedList from "@/components/reactbits/AnimatedList";
 import FadeContent from "@/components/reactbits/FadeContent";
 import type { InstitutionKey } from "@/lib/institutions";
 
@@ -103,12 +104,15 @@ export default function CourseCatalogBrowser({
         <div className="catalog-results-column">
           <div className="catalog-results-heading"><AnimatedContent distance={4} duration={0.18} key={countLabel}><strong>{countLabel}</strong></AnimatedContent><span>{resultsHint}</span></div>
           {results.length > 0 ? (
-            <div className="catalog-result-list" aria-label={`${title} results`}>
-              {results.map((result) => (
+            <AnimatedList
+              ariaLabel={`${title} results`}
+              className="catalog-result-list"
+              items={results}
+              itemKey={(result) => result.id}
+              renderItem={(result) => (
                 <button
                   aria-pressed={selectedId === result.id}
                   className={`catalog-result-row ${selectedId === result.id ? "selected" : ""} ${result.institution ? `institution-${result.institution.toLowerCase()}` : ""}`}
-                  key={result.id}
                   onClick={() => selectResult(result.id)}
                   type="button"
                 >
@@ -125,8 +129,8 @@ export default function CourseCatalogBrowser({
                   </span>
                   <CaretRight size={15} aria-hidden />
                 </button>
-              ))}
-            </div>
+              )}
+            />
           ) : (
             <div className="catalog-results-empty">
               <BookOpen size={19} aria-hidden />
