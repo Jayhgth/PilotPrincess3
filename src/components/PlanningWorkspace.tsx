@@ -30,12 +30,15 @@ import {
 } from "react";
 import {
   appliedCreditBreakdown,
+  academicPeriodForDate,
   calculateGpa,
   calculateRequirementProgress,
+  courseOccursInAcademicPeriod,
   courseDisplayName,
   generateSuggestedPlan,
   overallCompletedPercent,
   overallGraduationPercent,
+  nextAcademicPeriod,
   selectedPlanGrades,
   schoolYearForGrade
 } from "@/lib/planning";
@@ -51,6 +54,7 @@ import AdminSettingsPanel from "@/components/AdminSettingsPanel";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseDetailLayout from "@/components/CourseDetailLayout";
 import CourseKanban, { type CoursePlacement } from "@/components/CourseKanban";
+import DashboardDegreeProgress from "@/components/DashboardDegreeProgress";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
@@ -153,14 +157,14 @@ function PageHeader({
   actions
 }: {
   title: string;
-  description: string;
+  description?: string;
   actions?: ReactNode;
 }) {
   return (
     <header className="page-header">
       <div>
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description && <p>{description}</p>}
       </div>
       {actions && <div className="page-actions">{actions}</div>}
     </header>
@@ -318,11 +322,6 @@ export default function PlanningWorkspace() {
       (catalogSubject === "all" || course.subject === catalogSubject)
     )).sort((a, b) => a.name.localeCompare(b.name));
   }, [catalogAvailability.eligibleCourses, catalogSearch, catalogSubject]);
-  const courseCounts = useMemo(() => ({
-    completed: planCourses.filter((row) => row.status === "completed").length,
-    current: planCourses.filter((row) => row.status === "current").length,
-    planned: planCourses.filter((row) => row.status === "planned").length
-  }), [planCourses]);
   const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
   const selectedDtechEvaluation = useMemo(() => selectedDtechCourse
     ? evaluateDtechPlannerPrerequisites(
@@ -665,6 +664,20 @@ export default function PlanningWorkspace() {
     setMobileNavOpen(false);
     syncLocation("courses", area);
     void logEvent("view_opened", { view: "courses", course_area: area });
+  }
+
+  function openGraduationView(area: "diploma" | "degree" = "diploma") {
+    setView("graduation");
+    setMobileNavOpen(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "graduation");
+    if (area === "degree") url.searchParams.set("graduation", "degree");
+    else url.searchParams.delete("graduation");
+    url.searchParams.delete("course");
+    url.searchParams.delete("college");
+    url.searchParams.delete("settings");
+    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    void logEvent("view_opened", { view: "graduation", graduation_area: area });
   }
 
   function openRequirementCourses(area: GraduationRequirement["area"]) {
@@ -1300,7 +1313,7 @@ export default function PlanningWorkspace() {
   const catalogPageCount = Math.max(1, Math.ceil(filteredCourses.length / catalogPageSize));
   const visibleCatalogCourses = filteredCourses.slice(catalogPage * catalogPageSize, (catalogPage + 1) * catalogPageSize);
   function renderDashboard() {
-    if (!settings) return null;
+    if (!settings || !supabase || !session) return null;
     const requirementSnapshot = overviewProgress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
@@ -1324,33 +1337,43 @@ export default function PlanningWorkspace() {
         institution: collegeCode ?? (row.smccd_course_id ? "smccd" : "dtech")
       };
     };
+    const currentPeriod = academicPeriodForDate();
+    const upcomingPeriod = nextAcademicPeriod(currentPeriod);
+    const periodCourses = (period: typeof currentPeriod) => planCourses
+      .filter((row) => row.status !== "completed" && courseOccursInAcademicPeriod(row, period))
+      .sort((left, right) => Number(Boolean(right.smccd_course_id)) - Number(Boolean(left.smccd_course_id)) || left.sort_order - right.sort_order)
+      .map(overviewCourse);
     const overviewData: OverviewPathData = {
       earnedPercent: graduationEarnedPercent,
       completedCredits: dashboardCredits.completed,
       scheduledCredits: dashboardCredits.scheduled,
       remainingCredits: dashboardCredits.remaining,
-      projectedWeightedGpa: formatGpa(gpa.projectedWeighted),
+      currentWeightedGpa: formatGpa(gpa.currentWeighted),
       currentUnweightedGpa: formatGpa(gpa.currentUnweighted),
-      gradedCredits: gpa.gradedCredits,
-      weightedCredits: gpa.weightedCredits,
-      transcriptBackedCourseCount: planCourses.filter((row) => row.status === "completed" && row.source_review_item_id).length,
-      completedCollegeUnits: Number(planCourses
-        .filter((row) => row.status === "completed")
-        .reduce((sum, row) => sum + Number(row.college_units ?? 0), 0)
-        .toFixed(1)),
+      currentGradedCredits: gpa.currentGradedCredits,
+      currentWeightedCredits: gpa.currentWeightedCredits,
       requirements: overviewRequirements,
-      currentCourses: planCourses.filter((row) => row.status === "current").map(overviewCourse),
-      plannedCourses: planCourses.filter((row) => row.status === "planned").map(overviewCourse),
-      courseCounts
+      currentPeriodLabel: currentPeriod.label,
+      nextPeriodLabel: upcomingPeriod.label,
+      currentCourses: periodCourses(currentPeriod),
+      plannedCourses: periodCourses(upcomingPeriod)
     };
     return (
       <div className="dashboard-page page-frame">
-        <PageHeader title={settings.preferred_name ? `Good to see you, ${settings.preferred_name}` : "Planning overview"} description="What is done, what needs attention, and how the current plan fits." />
+        <PageHeader title={settings.preferred_name ? `Good to see you, ${settings.preferred_name}` : "Planning overview"} />
         <OverviewPath
           data={overviewData}
-          onOpenGraduation={() => navigate("graduation")}
+          degreeProgress={<DashboardDegreeProgress
+            supabase={supabase}
+            userId={session.user.id}
+            planCourses={planCourses}
+            plannedSmccdCourses={plannedSmccdCourses}
+            onOpen={() => openGraduationView("degree")}
+          />}
+          onOpenGraduation={() => openGraduationView("diploma")}
           onOpenCourses={() => openCourses("mine")}
           onOpenGpa={() => navigate("gpa")}
+          onOpenDegrees={() => openGraduationView("degree")}
         />
       </div>
     );

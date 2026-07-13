@@ -388,6 +388,8 @@ export interface RequirementCourseEvidence {
 export interface GpaSummary {
   currentUnweighted: number | null;
   currentWeighted: number | null;
+  currentGradedCredits: number;
+  currentWeightedCredits: number;
   projectedUnweighted: number | null;
   projectedWeighted: number | null;
   gradedCredits: number;

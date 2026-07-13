@@ -2,11 +2,10 @@ import {
   ArrowRightIcon as ArrowRight,
   BookOpenIcon as BookOpen,
   ChartLineUpIcon as ChartLineUp,
-  CheckCircleIcon as CheckCircle,
-  FileTextIcon as FileText,
   GraduationCapIcon as GraduationCap
 } from "@phosphor-icons/react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { BentoCard, BentoGrid } from "@/components/magicui/BentoGrid";
 
 export interface OverviewRequirementItem {
   id: string;
@@ -26,138 +25,103 @@ export interface OverviewPathData {
   completedCredits: number;
   scheduledCredits: number;
   remainingCredits: number;
-  projectedWeightedGpa: string;
+  currentWeightedGpa: string;
   currentUnweightedGpa: string;
-  gradedCredits: number;
-  weightedCredits: number;
-  transcriptBackedCourseCount: number;
-  completedCollegeUnits: number;
+  currentGradedCredits: number;
+  currentWeightedCredits: number;
   requirements: OverviewRequirementItem[];
+  currentPeriodLabel: string;
+  nextPeriodLabel: string;
   currentCourses: OverviewCourseItem[];
   plannedCourses: OverviewCourseItem[];
-  courseCounts: { completed: number; current: number; planned: number };
 }
 
 interface Props {
   data: OverviewPathData;
+  degreeProgress: ReactNode;
   onOpenGraduation: () => void;
   onOpenCourses: () => void;
   onOpenGpa: () => void;
+  onOpenDegrees: () => void;
 }
 
-export default function OverviewPath({ data, onOpenCourses, onOpenGraduation, onOpenGpa }: Props) {
+export default function OverviewPath({ data, degreeProgress, onOpenCourses, onOpenGraduation, onOpenGpa, onOpenDegrees }: Props) {
   const completedAreas = data.requirements.filter((item) => item.remaining === 0);
   const openAreas = data.requirements.filter((item) => item.remaining > 0);
   const nextRequirement = openAreas[0] ?? null;
   const totalCredits = data.completedCredits + data.scheduledCredits + data.remainingCredits;
-  const completedAngle = totalCredits > 0 ? (data.completedCredits / totalCredits) * 360 : 0;
-  const scheduledAngle = totalCredits > 0 ? ((data.completedCredits + data.scheduledCredits) / totalCredits) * 360 : 0;
-  const chartStyle = {
-    "--completed-angle": `${completedAngle}deg`,
-    "--scheduled-angle": `${scheduledAngle}deg`
+  const completedPercent = totalCredits > 0 ? (data.completedCredits / totalCredits) * 100 : 0;
+  const scheduledPercent = totalCredits > 0 ? (data.scheduledCredits / totalCredits) * 100 : 0;
+  const creditStyle = {
+    "--earned-width": `${completedPercent}%`,
+    "--scheduled-width": `${scheduledPercent}%`
   } as CSSProperties;
 
-  return <div className="overview-t3-workbench">
-    <div className="t3-overview-primary">
-      <section className="t3-credit-composition">
-        <header className="t3-panel-heading">
-          <div>
-            <span className="t3-eyebrow"><GraduationCap size={14} weight="duotone" /> Diploma progress</span>
-            <h2>Credit composition</h2>
-          </div>
-          <span className="t3-coverage-count">{completedAreas.length} of {data.requirements.length} areas covered</span>
-        </header>
-
-        <div className="t3-credit-body">
-          <div
-            className="t3-credit-donut"
-            style={chartStyle}
-            role="img"
-            aria-label={`${data.completedCredits} credits earned, ${data.scheduledCredits} scheduled, and ${data.remainingCredits} remaining`}
-          >
-            <div><strong>{data.earnedPercent}%</strong><span>earned</span></div>
-          </div>
-          <dl className="t3-credit-legend">
-            <div className="earned"><dt>Earned</dt><dd>{data.completedCredits}<span> cr</span></dd></div>
-            <div className="scheduled"><dt>Scheduled</dt><dd>{data.scheduledCredits}<span> cr</span></dd></div>
-            <div className="remaining"><dt>Remaining</dt><dd>{data.remainingCredits}<span> cr</span></dd></div>
-          </dl>
-        </div>
-
-        <button className="t3-next-requirement" type="button" onClick={onOpenGraduation}>
-          <span>
-            <small>{nextRequirement ? "Next requirement to solve" : "Requirements covered"}</small>
-            <strong>{nextRequirement?.name ?? "Review graduation evidence"}</strong>
-          </span>
-          <span className="t3-next-requirement-meta">{nextRequirement ? `${nextRequirement.remaining} credits` : "Open review"}<ArrowRight size={15} /></span>
-        </button>
-      </section>
-
-      <section className="t3-gpa-focus">
-        <header className="t3-panel-heading">
-          <div>
-            <span className="t3-eyebrow"><ChartLineUp size={14} weight="duotone" /> GPA outlook</span>
-            <h2>GPA from entered grades</h2>
-          </div>
-          <button className="t3-text-action" type="button" onClick={onOpenGpa}>Open planner <ArrowRight size={14} /></button>
-        </header>
-        <div className="t3-gpa-primary">
-          <span>Weighted GPA from saved grades</span>
-          <strong>{data.projectedWeightedGpa}</strong>
-          <p>Includes only saved courses that have a letter grade. Use the planner to test assumptions for ungraded courses.</p>
-        </div>
-        <dl className="t3-gpa-details">
-          <div><dt>Current unweighted</dt><dd>{data.currentUnweightedGpa}</dd></div>
-          <div><dt>Graded credits</dt><dd>{data.gradedCredits}</dd></div>
-          <div><dt>Weighted credits</dt><dd>{data.weightedCredits}</dd></div>
-        </dl>
-      </section>
-    </div>
-
-    <div className="t3-overview-secondary">
-      <section className="t3-course-horizon">
-        <header className="t3-panel-heading">
-          <div>
-            <span className="t3-eyebrow"><BookOpen size={14} weight="duotone" /> Course horizon</span>
-            <h2>What you are taking and what comes next</h2>
-          </div>
-          <button className="t3-text-action" type="button" onClick={onOpenCourses}>Open courses <ArrowRight size={14} /></button>
-        </header>
-        <div className="t3-course-columns">
-          <div className="t3-course-column current">
-            <div className="t3-course-column-heading"><span>Now</span><strong>{data.courseCounts.current}</strong></div>
-            <CourseNameList rows={data.currentCourses} empty="No courses are marked In progress." />
-          </div>
-          <div className="t3-course-column planned">
-            <div className="t3-course-column-heading"><span>Planned</span><strong>{data.courseCounts.planned}</strong></div>
-            {data.plannedCourses.length
-              ? <CourseNameList rows={data.plannedCourses} empty="" />
-              : <NextRequirementList openAreas={openAreas} onOpenGraduation={onOpenGraduation} />}
-          </div>
-        </div>
-      </section>
-
-      <section className="t3-plan-evidence">
-        <header className="t3-panel-heading">
-          <div>
-            <span className="t3-eyebrow"><FileText size={14} weight="duotone" /> Plan evidence</span>
-            <h2>What supports this view</h2>
-          </div>
-        </header>
+  return <BentoGrid className="overview-bento-grid">
+    <BentoCard
+      className="overview-bento-diploma"
+      title="High school diploma"
+      Icon={GraduationCap}
+      action={<button className="bento-card-action" type="button" onClick={onOpenGraduation}>Open graduation <ArrowRight size={14} /></button>}
+    >
+      <div className="dashboard-credit-summary">
+        <div className="dashboard-credit-total"><strong>{data.earnedPercent}%</strong><span>{completedAreas.length} of {data.requirements.length} areas complete</span></div>
         <dl>
-          <div><dt><CheckCircle size={16} weight="fill" /> Transcript-backed records</dt><dd>{data.transcriptBackedCourseCount}</dd></div>
-          <div><dt><GraduationCap size={16} weight="duotone" /> Completed college units</dt><dd>{data.completedCollegeUnits}</dd></div>
-          <div><dt><BookOpen size={16} weight="duotone" /> Completed course records</dt><dd>{data.courseCounts.completed}</dd></div>
+          <div><dt>Earned</dt><dd>{data.completedCredits}<span> cr</span></dd></div>
+          <div><dt>Scheduled</dt><dd>{data.scheduledCredits}<span> cr</span></dd></div>
+          <div><dt>Open</dt><dd>{data.remainingCredits}<span> cr</span></dd></div>
         </dl>
-        <p>High school credits and college units stay separate so each number matches its official source.</p>
-      </section>
-    </div>
-  </div>;
-}
+      </div>
+      <div className="dashboard-credit-chart" style={creditStyle} role="img" aria-label={`${data.completedCredits} credits earned, ${data.scheduledCredits} scheduled, and ${data.remainingCredits} remaining`}>
+        <span className="earned" /><span className="scheduled" />
+      </div>
+      <button className="dashboard-next-requirement" type="button" onClick={onOpenGraduation}>
+        <span><small>{nextRequirement ? "Next requirement" : "Requirements"}</small><strong>{nextRequirement?.name ?? "All covered"}</strong></span>
+        <span>{nextRequirement ? `${nextRequirement.remaining} credits open` : "Review"}<ArrowRight size={14} /></span>
+      </button>
+    </BentoCard>
 
-function NextRequirementList({ openAreas, onOpenGraduation }: { openAreas: OverviewRequirementItem[]; onOpenGraduation: () => void }) {
-  if (!openAreas.length) return <p className="overview-course-empty">Your saved plan covers every tracked requirement.</p>;
-  return <div className="overview-path-gaps">{openAreas.slice(0, 3).map((item) => <button type="button" onClick={onOpenGraduation} key={item.id}><span>{item.name}</span><b>{item.remaining} cr</b></button>)}</div>;
+    <BentoCard
+      className="overview-bento-gpa"
+      title="Current GPA"
+      Icon={ChartLineUp}
+      action={<button className="bento-card-action" type="button" onClick={onOpenGpa}>Open GPA <ArrowRight size={14} /></button>}
+    >
+      <div className="dashboard-gpa-primary"><span>Weighted</span><strong>{data.currentWeightedGpa}</strong></div>
+      <dl className="dashboard-gpa-stats">
+        <div><dt>Unweighted</dt><dd>{data.currentUnweightedGpa}</dd></div>
+        <div><dt>Graded credits</dt><dd>{data.currentGradedCredits}</dd></div>
+        <div><dt>Weighted credits</dt><dd>{data.currentWeightedCredits}</dd></div>
+      </dl>
+    </BentoCard>
+
+    <BentoCard
+      className="overview-bento-courses"
+      title="Courses"
+      Icon={BookOpen}
+      action={<button className="bento-card-action" type="button" onClick={onOpenCourses}>Open courses <ArrowRight size={14} /></button>}
+    >
+      <div className="dashboard-course-periods">
+        <section>
+          <header><h3>{data.currentPeriodLabel}</h3><span>{data.currentCourses.length}</span></header>
+          <CourseNameList rows={data.currentCourses} empty={`No courses placed in ${data.currentPeriodLabel}.`} />
+        </section>
+        <section>
+          <header><h3>{data.nextPeriodLabel}</h3><span>{data.plannedCourses.length}</span></header>
+          <CourseNameList rows={data.plannedCourses} empty={`No courses placed in ${data.nextPeriodLabel}.`} />
+        </section>
+      </div>
+    </BentoCard>
+
+    <BentoCard
+      className="overview-bento-degrees"
+      title="Associate degrees"
+      Icon={GraduationCap}
+      action={<button className="bento-card-action" type="button" onClick={onOpenDegrees}>Open degrees <ArrowRight size={14} /></button>}
+    >
+      {degreeProgress}
+    </BentoCard>
+  </BentoGrid>;
 }
 
 function CourseNameList({ rows, empty }: { rows: OverviewCourseItem[]; empty: string }) {

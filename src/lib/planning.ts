@@ -62,6 +62,46 @@ export function schoolYearForGrade(graduationYear: number, grade: GradeLevel) {
   return `${endYear - 1}-${endYear}`;
 }
 
+export type AcademicTerm = "fall" | "spring" | "summer";
+
+export interface AcademicPeriod {
+  term: AcademicTerm;
+  schoolYear: string;
+  label: string;
+}
+
+export function academicPeriodForDate(date = new Date()): AcademicPeriod {
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+  const term: AcademicTerm = month <= 5 ? "spring" : month <= 7 ? "summer" : "fall";
+  const startYear = term === "fall" ? year : year - 1;
+  return {
+    term,
+    schoolYear: `${startYear}-${startYear + 1}`,
+    label: `${term[0].toUpperCase()}${term.slice(1)} ${year}`
+  };
+}
+
+export function nextAcademicPeriod(period: AcademicPeriod): AcademicPeriod {
+  const [startYearValue] = period.schoolYear.split("-");
+  const startYear = Number(startYearValue);
+  if (period.term === "fall") {
+    return { term: "spring", schoolYear: period.schoolYear, label: `Spring ${startYear + 1}` };
+  }
+  if (period.term === "spring") {
+    return { term: "summer", schoolYear: period.schoolYear, label: `Summer ${startYear + 1}` };
+  }
+  return { term: "fall", schoolYear: `${startYear + 1}-${startYear + 2}`, label: `Fall ${startYear + 1}` };
+}
+
+export function courseOccursInAcademicPeriod(row: PlanCourse, period: AcademicPeriod) {
+  const rowStartYear = Number(row.school_year.match(/\d{4}/)?.[0] ?? 0);
+  const periodStartYear = Number(period.schoolYear.slice(0, 4));
+  if (!rowStartYear || rowStartYear !== periodStartYear) return false;
+  if (row.term === period.term) return true;
+  return row.term === "full_year" && (period.term === "fall" || period.term === "spring");
+}
+
 export function planCourseMovePatch(
   settings: StudentSettings,
   row: PlanCourse,
@@ -406,6 +446,8 @@ export function calculateGpa(rows: PlanCourse[]): GpaSummary {
   return {
     currentUnweighted: current.unweighted,
     currentWeighted: current.weighted,
+    currentGradedCredits: current.credits,
+    currentWeightedCredits: current.weightedCredits,
     projectedUnweighted: projected.unweighted,
     projectedWeighted: projected.weighted,
     gradedCredits: projected.credits,

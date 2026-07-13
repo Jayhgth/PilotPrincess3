@@ -306,6 +306,8 @@ describe("GPA calculations", () => {
     expect(summary.projectedUnweighted).toBe(3.5);
     expect(summary.projectedWeighted).toBe(4);
     expect(summary.gradedCredits).toBe(20);
+    expect(summary.currentGradedCredits).toBe(10);
+    expect(summary.currentWeightedCredits).toBe(0);
   });
 
   it("reproduces the d.tech transcript GPA method", () => {
