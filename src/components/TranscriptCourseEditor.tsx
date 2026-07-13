@@ -92,10 +92,7 @@ export default function TranscriptCourseEditor({ value, onChange, onIgnore, disa
           <option value="custom">Custom course</option>
         </select>
       </label>
-      <label className="transcript-weight-control full">
-        <input type="checkbox" checked={value.weighted ?? false} onChange={(event) => update({ weighted: event.target.checked })} />
-        <span>Count as a weighted course</span>
-      </label>
+      <p className="form-hint full">GPA weighting is derived from the institution and exact printed course title. A d.tech title must explicitly include Honors to receive weighted credit.</p>
     </div>
     <p className="form-hint">Changes are saved when this row is imported.</p>
     <button className="quiet-button small" type="button" onClick={onIgnore} disabled={disabled}><X size={15} /> Ignore row</button>

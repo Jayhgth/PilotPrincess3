@@ -4,6 +4,7 @@ import {
   findTranscriptCatalogMatch,
   isDtechIntersessionCourse,
   normalizeCollegeCourseCode,
+  resolveTranscriptWeighting,
   stripTranscriptQuarterPrefix,
   type TranscriptCourseClassification
 } from "@/lib/transcript";
@@ -62,6 +63,16 @@ export function transcriptReviewRows(
     const transcriptClassification: TranscriptCourseClassification = isCollegeCourse
       ? smccdMatch ? "smccd_catalog" : "smccd_unmatched"
       : isIntersession ? "dtech_intersession" : match ? "dtech_catalog" : "custom";
+    const institutionConflict = transcriptClassification === "dtech_catalog" && districtInstitution;
+    const reconciledCourse = institutionConflict
+      ? { ...normalizedCourse, institution_name: "Design Tech High School" }
+      : normalizedCourse;
+    const weighting = resolveTranscriptWeighting({
+      ...reconciledCourse,
+      matched_course_id: match?.id ?? null,
+      matched_smccd_course_id: smccdMatch?.id ?? null,
+      transcript_classification: transcriptClassification
+    }, courses);
     const uncertaintyNotes = [
       ...(transcriptClassification === "custom" ? ["No exact d.tech catalog match was found. This course will remain custom until reviewed."] : []),
       ...(isCollegeCourse && !smccdMatch ? ["No exact SMCCD catalog match was found for this college course code."] : []),
@@ -73,7 +84,9 @@ export function transcriptReviewRows(
       source_id: sourceId,
       entity_type: "transcript_course",
       proposed_payload: {
-        ...normalizedCourse,
+        ...reconciledCourse,
+        reported_institution_name: institutionConflict ? normalizedCourse.institution_name : null,
+        institution_resolution: institutionConflict ? "dtech_catalog_identity" : "reported",
         matched_course_id: match?.id ?? null,
         matched_course_name: match?.name ?? null,
         matched_smccd_course_id: smccdMatch?.id ?? null,
@@ -81,6 +94,9 @@ export function transcriptReviewRows(
         college_units: smccdMatch ? Number(smccdMatch.units_max ?? smccdMatch.units_min) : normalizedCourse.college_units,
         transcript_classification: transcriptClassification,
         grading_basis: isIntersession ? "pass_fail" : "letter",
+        weighted: weighting.weighted,
+        weighting_basis: weighting.basis,
+        weighting_source_id: weighting.sourceId,
         import_status: "completed"
       },
       confidence: uncertaintyNotes.length > 0 ? "uncertain" : normalizedCourse.confidence,

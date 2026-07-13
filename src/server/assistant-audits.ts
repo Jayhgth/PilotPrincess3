@@ -4,6 +4,7 @@ import { courseDisplayName } from "@/lib/planning";
 import {
   normalizeCollegeCourseCode,
   resolveTranscriptCourse,
+  resolveTranscriptWeighting,
   visibleTranscriptUncertaintyNotes,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
@@ -44,7 +45,7 @@ function transcriptReportedMetrics(rawText: string | null) {
   };
 }
 
-function metricsForRows(rows: Array<{ payload: TranscriptCoursePayload; imported: PlanCourse | null }>) {
+function metricsForRows(rows: Array<{ payload: TranscriptCoursePayload; imported: PlanCourse | null }>, courses: Course[]) {
   let earnedCredits = 0;
   let gradedCredits = 0;
   let unweightedPoints = 0;
@@ -57,8 +58,7 @@ function metricsForRows(rows: Array<{ payload: TranscriptCoursePayload; imported
     const band = grade.charAt(0);
     const points = band === "A" ? 4 : band === "B" ? 3 : band === "C" ? 2 : band === "D" ? 1 : band === "F" ? 0 : null;
     if (points === null) continue;
-    const college = /College of San Mateo|Skyline College|Cañada College|Canada College/i.test(payload.institution_name ?? "");
-    const weighted = imported ? (imported.is_weighted || Boolean(imported.smccd_course_id) || Number(imported.college_units ?? 0) > 0) : college || payload.weighted === true;
+    const weighted = resolveTranscriptWeighting(payload, courses).weighted;
     gradedCredits += credits;
     unweightedPoints += points * credits;
     weightedPoints += Math.min(5, points + (weighted ? 1 : 0)) * credits;
@@ -97,6 +97,7 @@ function importedMismatch(
   if (payload.college_units != null && !sameNumber(payload.college_units, row.college_units)) mismatches.push("college units");
   if (payload.matched_course_id && payload.matched_course_id !== row.course_id) mismatches.push("d.tech catalog link");
   if (payload.matched_smccd_course_id && payload.matched_smccd_course_id !== row.smccd_course_id) mismatches.push("SMCCD catalog link");
+  if (resolveTranscriptWeighting(payload, courses).weighted !== row.is_weighted) mismatches.push("GPA weighting");
   return mismatches;
 }
 
@@ -119,7 +120,7 @@ export function buildTranscriptAudit(input: {
     const rows = courseRows.filter((item) => item.source_id === source.id);
     const metricRows = rows.map((item) => ({ payload: effectivePayload(item), imported: importedByReview.get(item.id) ?? null }));
     const reportedMetrics = transcriptReportedMetrics(source.raw_text);
-    const calculatedMetrics = metricsForRows(metricRows);
+    const calculatedMetrics = metricsForRows(metricRows, input.courses);
     const comparable = rows.length > 0 && rows.every((item) => item.status === "approved" && importedByReview.has(item.id));
     const metricMismatches = comparable ? [
       reportedMetrics.unweighted_gpa !== null && !sameNumber(reportedMetrics.unweighted_gpa, calculatedMetrics.unweighted_gpa) ? "unweighted GPA" : null,
@@ -154,6 +155,7 @@ export function buildTranscriptAudit(input: {
     const payload = effectivePayload(item);
     const imported = importedByReview.get(item.id) ?? null;
     const resolution = resolveTranscriptCourse(payload, input.courses);
+    const weighting = resolveTranscriptWeighting(payload, input.courses);
     const visibleNotes = visibleTranscriptUncertaintyNotes(payload, item.uncertainty_notes, input.courses);
     const parserIssues: string[] = [];
     const reviewItems: string[] = [];
@@ -198,7 +200,9 @@ export function buildTranscriptAudit(input: {
         final_grade: payload.letter_grade ?? null,
         credits: payload.credits ?? null,
         college_units: payload.college_units ?? null,
-        weighted: payload.weighted ?? null,
+        weighted: weighting.weighted,
+        weighting_basis: weighting.basis,
+        weighting_source_id: weighting.sourceId,
         classification: resolution.classification,
         matched_dtech_course: resolution.matchedCourse?.name ?? payload.matched_course_name ?? null,
         matched_smccd_course: payload.matched_smccd_course_name ?? null

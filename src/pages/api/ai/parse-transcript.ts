@@ -6,7 +6,7 @@ import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { CatalogReviewItem, Course, PlanCourse, SmccdCourse } from "@/lib/models";
-import type { TranscriptCoursePayload } from "@/lib/transcript";
+import { resolveTranscriptWeighting, type TranscriptCoursePayload } from "@/lib/transcript";
 import {
   parsedTranscriptJsonSchema,
   parsedTranscriptSchema,
@@ -116,6 +116,7 @@ export const POST: APIRoute = async ({ request }) => {
       const prompt = [
         "This transcript has no usable text layer and is provided as images. Extract only courses explicitly shown as completed or carrying a final grade.",
         "For every course, preserve the printed course name, institution, grade level, school year, term, final letter grade, high-school credits, college units, and weighting when present.",
+        "On d.tech transcripts, an asterisk marks UC A-G approval and does not mean weighted. Never infer weighting from an asterisk. A d.tech course is weighted only when the printed course title explicitly includes Honors.",
         "Read the transcript's semester columns directly: S0 is summer, S1 is fall, and S2 is spring. A row graded in both S1 and S2 is full_year; a row graded in only one column belongs to that specific term. Never turn a single semester grade into full_year.",
         "On d.tech transcripts, Q1 through Q4 rows graded P or F are intersession pass/fail courses. Preserve the Q prefix and use Personal Development as the subject; they are not expected to have an annual d.tech catalog match.",
         "Do not treat in-progress, requested, or planned courses as completed. Omit them from courses and mention them in conflicts when relevant.",
@@ -243,7 +244,7 @@ export const POST: APIRoute = async ({ request }) => {
         grade_level: payload.grade_level ?? planRow.grade_level,
         school_year: payload.school_year ?? planRow.school_year,
         letter_grade: payload.letter_grade,
-        is_weighted: payload.weighted ?? planRow.is_weighted
+        is_weighted: resolveTranscriptWeighting(payload, (catalogData ?? []) as unknown as Course[]).weighted
       }];
     });
     if (refreshedPlanRows.length > 0) {

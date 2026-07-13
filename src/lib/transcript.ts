@@ -94,6 +94,8 @@ export interface TranscriptCoursePayload {
   credits?: number | null;
   weighted?: boolean | null;
   institution_name?: string | null;
+  reported_institution_name?: string | null;
+  institution_resolution?: "reported" | "dtech_catalog_identity";
   college_units?: number | null;
   matched_course_id?: string | null;
   matched_course_name?: string | null;
@@ -101,6 +103,8 @@ export interface TranscriptCoursePayload {
   matched_smccd_course_name?: string | null;
   transcript_classification?: TranscriptCourseClassification;
   grading_basis?: "letter" | "pass_fail";
+  weighting_basis?: "college_course" | "dtech_printed_honors" | "dtech_printed_standard" | "reported" | "catalog_default";
+  weighting_source_id?: string | null;
 }
 
 export function resolveTranscriptCourse(payload: TranscriptCoursePayload, courses: Course[]) {
@@ -112,18 +116,49 @@ export function resolveTranscriptCourse(payload: TranscriptCoursePayload, course
       : findTranscriptCatalogMatch(payload.course_name, courses);
   const institutionKey = institutionKeyFromName(payload.institution_name);
   const isSmccd = Boolean(payload.matched_smccd_course_id)
-    || institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
+    || (!matchedCourse && (institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd"));
   const classification: TranscriptCourseClassification = isIntersession
     ? "dtech_intersession"
-    : isSmccd
-      ? payload.matched_smccd_course_id ? "smccd_catalog" : "smccd_unmatched"
-      : matchedCourse ? "dtech_catalog" : "custom";
+    : matchedCourse
+      ? "dtech_catalog"
+      : isSmccd ? payload.matched_smccd_course_id ? "smccd_catalog" : "smccd_unmatched" : "custom";
 
   return {
     classification,
     gradingBasis: isIntersession ? "pass_fail" as const : "letter" as const,
     matchedCourse,
     identityResolved: classification === "dtech_intersession" || classification === "dtech_catalog" || classification === "smccd_catalog"
+  };
+}
+
+export function resolveTranscriptWeighting(payload: TranscriptCoursePayload, courses: Course[]) {
+  const resolution = resolveTranscriptCourse(payload, courses);
+  const institutionKey = institutionKeyFromName(payload.institution_name);
+  const isDtechCourse = DTECH_INSTITUTION_PATTERN.test(payload.institution_name ?? "")
+    || resolution.classification === "dtech_catalog"
+    || resolution.classification === "dtech_intersession";
+  if (isDtechCourse) {
+    const explicitHonors = resolution.classification !== "dtech_intersession" && /\bhonors?\b/i.test(payload.course_name);
+    return {
+      weighted: explicitHonors,
+      basis: explicitHonors ? "dtech_printed_honors" as const : "dtech_printed_standard" as const,
+      sourceId: resolution.matchedCourse?.source_id ?? null
+    };
+  }
+
+  const isCollegeCourse = Boolean(payload.matched_smccd_course_id)
+    || institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
+  if (isCollegeCourse) {
+    return { weighted: true, basis: "college_course" as const, sourceId: null };
+  }
+
+  if (payload.weighted !== null && payload.weighted !== undefined) {
+    return { weighted: payload.weighted, basis: "reported" as const, sourceId: null };
+  }
+  return {
+    weighted: resolution.matchedCourse?.is_weighted ?? false,
+    basis: "catalog_default" as const,
+    sourceId: resolution.matchedCourse?.source_id ?? null
   };
 }
 
@@ -157,9 +192,8 @@ export function transcriptPlanCourseDraft(
   const isIntersession = resolution.classification === "dtech_intersession";
   const passedIntersession = isIntersession && payload.letter_grade?.trim().toUpperCase() === "P";
   const credits = isIntersession && !passedIntersession ? 0 : reportedCredits;
-  const institutionKey = institutionKeyFromName(payload.institution_name);
-  const isSmccdCourse = Boolean(payload.matched_smccd_course_id)
-    || institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
+  const isSmccdCourse = resolution.classification === "smccd_catalog" || resolution.classification === "smccd_unmatched";
+  const weighting = resolveTranscriptWeighting(payload, courses);
   const verifiedMapping = Boolean(equivalency) || passedIntersession || Boolean(
     matched && mappings.some((mapping) => mapping.course_id === matched.id && mapping.confidence === "verified")
   );
@@ -174,13 +208,16 @@ export function transcriptPlanCourseDraft(
     credits,
     college_units: payload.college_units ?? matched?.college_units ?? null,
     letter_grade: payload.letter_grade?.trim().toUpperCase() || null,
-    is_weighted: isSmccdCourse ? true : payload.weighted ?? matched?.is_weighted ?? false,
+    is_weighted: weighting.weighted,
     mapping_verified: verifiedMapping,
     user_edited: true,
     notes: [
       payload.institution_name
         ? `Imported from a reviewed transcript (${payload.institution_name}).`
         : "Imported from a reviewed transcript.",
+      matched && weighting.sourceId
+        ? `Matched to the official d.tech catalog record "${matched.name}". GPA weighting follows the exact printed transcript title; only an explicit Honors label is weighted.`
+        : null,
       equivalency
         ? `The official d.tech equivalency chart (updated 2021) applies ${equivalency.high_school_credits} high-school credits to ${equivalency.high_school_equivalent}. Confirm current approval with a counselor.`
         : null,

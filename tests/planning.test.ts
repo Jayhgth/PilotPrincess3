@@ -28,6 +28,7 @@ import {
   findExistingTranscriptPlanCourse,
   findTranscriptCatalogMatch,
   resolveTranscriptCourse,
+  resolveTranscriptWeighting,
   transcriptPlanCourseDraft,
   visibleTranscriptUncertaintyNotes
 } from "@/lib/transcript";
@@ -684,7 +685,7 @@ describe("transcript import", () => {
         institution_name: "Design Tech High School",
         credits: 10,
         letter_grade: "A",
-        weighted: false,
+        weighted: true,
         matched_course_id: chemistry.id
       },
       settings,
@@ -693,6 +694,52 @@ describe("transcript import", () => {
       "review-chemistry"
     );
     expect(draft.is_weighted).toBe(false);
+    expect(draft.notes).toContain('official d.tech catalog record "Chemistry / Chemistry Honors"');
+  });
+
+  it("ignores inferred weighting for standard d.tech courses and requires printed Honors wording", () => {
+    const environmentalScience = course({
+      id: "environmental-science",
+      name: "Environmental Science",
+      subject: "Laboratory Science",
+      is_honors: false,
+      is_weighted: false
+    });
+    const standard = {
+      course_name: "Environmental Science",
+      institution_name: "Design Tech High School",
+      matched_course_id: environmentalScience.id,
+      weighted: true
+    };
+    const honors = { ...standard, course_name: "Environmental Science Honors" };
+
+    expect(resolveTranscriptWeighting(standard, [environmentalScience])).toEqual({
+      weighted: false,
+      basis: "dtech_printed_standard",
+      sourceId: environmentalScience.source_id
+    });
+    expect(resolveTranscriptWeighting(honors, [environmentalScience])).toEqual({
+      weighted: true,
+      basis: "dtech_printed_honors",
+      sourceId: environmentalScience.source_id
+    });
+
+    const reconciledDraft = transcriptPlanCourseDraft(
+      {
+        ...standard,
+        institution_name: "College of San Mateo",
+        transcript_classification: "dtech_catalog",
+        credits: 10,
+        letter_grade: "A"
+      },
+      settings,
+      [environmentalScience],
+      [],
+      "review-environmental"
+    );
+    expect(reconciledDraft.course_id).toBe(environmentalScience.id);
+    expect(reconciledDraft.college_provider_code).toBeNull();
+    expect(reconciledDraft.is_weighted).toBe(false);
   });
 
   it("imports an intersession pass as Personal Development outside GPA", () => {

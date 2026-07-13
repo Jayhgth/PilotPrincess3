@@ -83,6 +83,41 @@ describe("transcript review reconciliation", () => {
     });
   });
 
+  it("replaces inferred d.tech weighting with exact title and official catalog evidence", () => {
+    const environmentalScience = catalogCourse({
+      id: "environmental-science",
+      source_id: "official-dtech-catalog",
+      name: "Environmental Science",
+      subject: "Laboratory Science",
+      is_honors: false,
+      is_weighted: false
+    });
+    const [row] = transcriptReviewRows(
+      "user-1",
+      "source-1",
+      parsedResult([{
+        ...baseCourse,
+        course_name: "Environmental Science",
+        subject: "Laboratory Science",
+        institution_name: "College of San Mateo",
+        letter_grade: "A",
+        weighted: true
+      }]),
+      [environmentalScience],
+      []
+    );
+
+    expect(row.proposed_payload).toMatchObject({
+      matched_course_id: environmentalScience.id,
+      institution_name: "Design Tech High School",
+      reported_institution_name: "College of San Mateo",
+      institution_resolution: "dtech_catalog_identity",
+      weighted: false,
+      weighting_basis: "dtech_printed_standard",
+      weighting_source_id: "official-dtech-catalog"
+    });
+  });
+
   it("preserves review identities when a replacement transcript corrects the term", () => {
     const existing = {
       id: "review-1",
