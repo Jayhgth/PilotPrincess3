@@ -8,11 +8,11 @@ import { promisify } from "node:util";
 import type { ZodType } from "zod";
 import { assistantTurnJsonSchema, assistantTurnSchema, type AssistantQuestion } from "@/server/ai-schemas";
 import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
-import { DEFAULT_AI_MODEL, type AiModel, type AiReviewMode } from "@/lib/ai-preferences";
+import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiReasoningEffort, type AiReviewMode } from "@/lib/ai-preferences";
 
 const DEFAULT_TIMEOUT_MS = 9000;
 const DEFAULT_MODEL = DEFAULT_AI_MODEL;
-const DEFAULT_REASONING_EFFORT = "low" satisfies ModelReasoningEffort;
+const DEFAULT_REASONING_EFFORT = DEFAULT_AI_REASONING_EFFORT satisfies ModelReasoningEffort;
 const MAX_CONCURRENT_TURNS = 2;
 const MAX_WAITING_TURNS = 4;
 const PROVIDER_PROBE_TTL_MS = 60_000;
@@ -516,6 +516,7 @@ export interface AssistantChatOptions {
   imageNames?: string[];
   pageContext: Record<string, unknown>;
   model: AiModel;
+  reasoningEffort?: AiReasoningEffort;
   reviewMode: AiReviewMode;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -643,7 +644,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     const model = options.model;
     const thread = codex.startThread({
       model,
-      modelReasoningEffort: DEFAULT_REASONING_EFFORT,
+      modelReasoningEffort: options.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
       sandboxMode: "read-only",
       approvalPolicy: "never",
       networkAccessEnabled: false,

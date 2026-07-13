@@ -1,9 +1,23 @@
 import { z } from "zod";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna" as const;
-export const AI_REASONING_EFFORT = "low" as const;
+export const DEFAULT_AI_REASONING_EFFORT = "low" as const;
+export const AI_REASONING_EFFORT = DEFAULT_AI_REASONING_EFFORT;
 export const aiReviewModeSchema = z.enum(["manual", "auto_review"]);
 export type AiReviewMode = z.infer<typeof aiReviewModeSchema>;
+
+export const AI_REASONING_OPTIONS = [
+  { value: "low", label: "Light", description: "Fast, concise answers for routine planning." },
+  { value: "medium", label: "Standard", description: "More analysis for comparisons and schedule questions." },
+  { value: "high", label: "Deep", description: "Most thorough for complex, multi-part planning." }
+] as const;
+
+export const aiReasoningEffortSchema = z.enum(AI_REASONING_OPTIONS.map((option) => option.value) as [
+  (typeof AI_REASONING_OPTIONS)[number]["value"],
+  ...(typeof AI_REASONING_OPTIONS)[number]["value"][]
+]);
+
+export type AiReasoningEffort = z.infer<typeof aiReasoningEffortSchema>;
 
 export const AI_MODEL_OPTIONS = [
   {
@@ -38,5 +52,6 @@ export function aiModelLabel(model: string) {
 }
 
 export function formatAiReasoning(value: string) {
-  return value === "low" ? "Light" : value.charAt(0).toUpperCase() + value.slice(1);
+  return AI_REASONING_OPTIONS.find((option) => option.value === value)?.label
+    ?? value.charAt(0).toUpperCase() + value.slice(1);
 }

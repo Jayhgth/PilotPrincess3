@@ -173,6 +173,7 @@ export const POST: APIRoute = async ({ request }) => {
           imageNames: attachmentRows.map((attachment) => attachment.name),
           pageContext: parsed.data.pageContext,
           model: preferences.model,
+          reasoningEffort: preferences.reasoningEffort,
           reviewMode: preferences.reviewMode,
           signal,
           executeReadTool: (name, argumentsValue) => executeAssistantReadTool(auth.supabase, auth.user.id, name, argumentsValue),

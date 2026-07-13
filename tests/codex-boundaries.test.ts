@@ -4,7 +4,7 @@ import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
-import { AI_MODEL_OPTIONS, aiModelSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
+import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -105,6 +105,9 @@ describe("Codex feature boundaries", () => {
     expect(AI_MODEL_OPTIONS[0]).toMatchObject({ value: "gpt-5.6-luna", recommended: true });
     expect(aiModelSchema.parse("gpt-5.5")).toBe("gpt-5.5");
     expect(() => aiModelSchema.parse("arbitrary-model")).toThrow();
+    expect(AI_REASONING_OPTIONS.map((option) => option.value)).toEqual(["low", "medium", "high"]);
+    expect(aiReasoningEffortSchema.parse("high")).toBe("high");
+    expect(() => aiReasoningEffortSchema.parse("unbounded")).toThrow();
     expect(aiReviewModeSchema.parse("auto_review")).toBe("auto_review");
     expect(() => aiReviewModeSchema.parse("full_access")).toThrow();
   });

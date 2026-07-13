@@ -28,7 +28,7 @@ PUBLIC_SUPABASE_ANON_KEY=your-publishable-or-anon-key
 CODEX_TIMEOUT_MS=9000
 ```
 
-Never expose an AI credential through a `PUBLIC_` variable. A production host needs `OPENAI_API_KEY` or `CODEX_API_KEY`; local development may use an authenticated Codex installation. Local-login fallback is blocked in production unless `CODEX_ALLOW_LOCAL_AUTH=true` is deliberately set. Students select an allowlisted model during onboarding; GPT-5.6 Luna with Light reasoning is recommended. `CODEX_MODEL` remains an optional server fallback for non-student calls.
+Never expose an AI credential through a `PUBLIC_` variable. A production host needs `OPENAI_API_KEY` or `CODEX_API_KEY`; local development may use an authenticated Codex installation. Local-login fallback is blocked in production unless `CODEX_ALLOW_LOCAL_AUTH=true` is deliberately set. Students select an allowlisted model during onboarding or from the Pilot composer and can choose Light, Standard, or Deep reasoning in Settings; GPT-5.6 Luna with Light reasoning is recommended. `CODEX_MODEL` remains an optional server fallback for non-student calls.
 
 ```sh
 supabase login
@@ -74,7 +74,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/OnboardingFlow.tsx`: guided student, tracker, and optional Codex consent/setup.
 - `src/components/PlanningWorkspace.tsx`: authenticated navigation, data loading, and mutations.
 - `src/components/AdminSettingsPanel.tsx` and `src/pages/api/admin/reset.ts`: administrator-only QA controls inside Settings, with a server- and database-enforced self-reset that preserves auth and role membership.
-- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired docked conversation rail with concise sanitized GFM answers, timed and folded reasoning summaries, student-data tool activity, reversible conversation archiving, Manual/Auto-review, and centered connection settings.
+- `src/components/GlobalAssistant.tsx`: persistent t3code-inspired docked conversation rail with a compact model picker, concise sanitized GFM answers, timed and folded reasoning summaries, student-data tool activity, reversible conversation archiving, and Supervised/Auto-review access.
 - `src/components/AppChrome.tsx`, `src/components/OverviewPath.tsx`, and `src/styles/t3code.css`: the retained t3code-inspired workspace shell and planning overview.
 - `src/components/GraduationWorkspace.tsx`: d.tech diploma and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.

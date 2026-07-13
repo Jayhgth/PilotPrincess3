@@ -1,14 +1,47 @@
 import {
   ArchiveIcon as Archive,
+  CheckCircleIcon as CheckCircle,
   CheckIcon as Check,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
-import { useCallback, useEffect, useState } from "react";
-import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
-import type { AiReviewMode } from "@/lib/ai-preferences";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import AiModelPicker from "@/components/AiModelPicker";
+import {
+  AI_REASONING_OPTIONS,
+  type AiModel,
+  type AiReasoningEffort,
+  type AiReviewMode
+} from "@/lib/ai-preferences";
 import type { AiConversation, StudentSettings } from "@/lib/models";
 import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
-import styles from "./StudentSettingsPanel.module.css";
+import styles from "./PilotSettingsSection.module.css";
+
+interface PilotDraft {
+  enabled: boolean;
+  model: AiModel;
+  reasoningEffort: AiReasoningEffort;
+  approved: boolean;
+  testedAt: string | null;
+  reviewMode: AiReviewMode;
+}
+
+function settingsDraft(settings: StudentSettings): PilotDraft {
+  return {
+    enabled: settings.ai_enabled,
+    model: settings.ai_model,
+    reasoningEffort: settings.ai_reasoning_effort,
+    approved: Boolean(settings.ai_connection_approved_at),
+    testedAt: settings.ai_setup_tested_at,
+    reviewMode: settings.ai_review_mode
+  };
+}
+
+function SettingRow({ title, description, control }: { title: string; description: string; control: ReactNode }) {
+  return <div className={styles.settingRow}>
+    <span><strong>{title}</strong><small>{description}</small></span>
+    <div className={styles.control}>{control}</div>
+  </div>;
+}
 
 function archiveExpiryLabel(archivedAt: string | null) {
   const archivedDate = new Date(archivedAt ?? "");
@@ -24,30 +57,20 @@ export default function PilotSettingsSection({
   settings: StudentSettings;
   onChanged: () => void | Promise<void>;
 }) {
-  const [setup, setSetup] = useState<CodexSetupValue>({
-    enabled: settings.ai_enabled,
-    model: settings.ai_model,
-    approved: Boolean(settings.ai_connection_approved_at),
-    testedAt: settings.ai_setup_tested_at
-  });
-  const [reviewMode, setReviewMode] = useState<AiReviewMode>(settings.ai_review_mode);
+  const [draft, setDraft] = useState<PilotDraft>(() => settingsDraft(settings));
   const [archives, setArchives] = useState<AiConversation[]>([]);
   const [loadingArchives, setLoadingArchives] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [testMessage, setTestMessage] = useState<string | null>(draft.testedAt ? "Connection verified." : null);
 
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => authenticatedFetch(url, init), []);
 
   useEffect(() => {
-    setSetup({
-      enabled: settings.ai_enabled,
-      model: settings.ai_model,
-      approved: Boolean(settings.ai_connection_approved_at),
-      testedAt: settings.ai_setup_tested_at
-    });
-    setReviewMode(settings.ai_review_mode);
+    setDraft(settingsDraft(settings));
   }, [settings]);
 
   useEffect(() => {
@@ -63,6 +86,11 @@ export default function PilotSettingsSection({
     return () => { cancelled = true; };
   }, [authorizedFetch]);
 
+  function update(patch: Partial<PilotDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+    setSaved(false);
+  }
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -71,18 +99,18 @@ export default function PilotSettingsSection({
       const preferenceResponse = await authorizedFetch("/api/ai/preferences", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: setup.enabled, model: setup.model, approved: setup.approved })
+        body: JSON.stringify({ enabled: draft.enabled, model: draft.model, reasoningEffort: draft.reasoningEffort, approved: draft.approved })
       });
       const preferencePayload = await preferenceResponse.json() as { error?: string };
       if (!preferenceResponse.ok) throw new Error(preferencePayload.error ?? "Pilot settings could not be saved.");
-      if (setup.enabled && reviewMode !== settings.ai_review_mode) {
+      if (draft.enabled && draft.reviewMode !== settings.ai_review_mode) {
         const reviewResponse = await authorizedFetch("/api/ai/review-mode", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ mode: reviewMode })
+          body: JSON.stringify({ mode: draft.reviewMode })
         });
         const reviewPayload = await reviewResponse.json() as { error?: string };
-        if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Review mode could not be saved.");
+        if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Change access could not be saved.");
       }
       await onChanged();
       setSaved(true);
@@ -90,6 +118,27 @@ export default function PilotSettingsSection({
       setError(caught instanceof Error ? caught.message : "Pilot settings could not be saved.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testConnection() {
+    setTesting(true);
+    setError(null);
+    setTestMessage(null);
+    try {
+      const response = await authorizedFetch("/api/ai/health", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: draft.model, reasoningEffort: draft.reasoningEffort, approved: true })
+      });
+      const payload = await response.json() as { error?: string; testedAt?: string; message?: string };
+      if (!response.ok || !payload.testedAt) throw new Error(payload.error ?? "Codex did not respond.");
+      update({ testedAt: payload.testedAt });
+      setTestMessage(payload.message ?? "Connection verified.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Codex did not respond.");
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -112,37 +161,65 @@ export default function PilotSettingsSection({
     }
   }
 
-  const connectionDirty = setup.enabled !== settings.ai_enabled
-    || setup.model !== settings.ai_model
-    || setup.approved !== Boolean(settings.ai_connection_approved_at)
-    || setup.testedAt !== settings.ai_setup_tested_at
-    || reviewMode !== settings.ai_review_mode;
+  const dirty = draft.enabled !== settings.ai_enabled
+    || draft.model !== settings.ai_model
+    || draft.reasoningEffort !== settings.ai_reasoning_effort
+    || draft.approved !== Boolean(settings.ai_connection_approved_at)
+    || draft.reviewMode !== settings.ai_review_mode;
 
-  return <section className={`content-section ${styles.section}`} aria-labelledby="pilot-settings-heading">
-    <header className={styles.sectionHeading}>
-      <div>
-        <h2 id="pilot-settings-heading">Pilot Assistant</h2>
-        <p>Connection, model access, change review, and conversation retention live here.</p>
+  return <div className={styles.pilotSettings}>
+    <section className={styles.settingsSection} aria-labelledby="pilot-settings-heading">
+      <header><h2 id="pilot-settings-heading">Pilot Assistant</h2></header>
+      <div className={styles.rows}>
+        <SettingRow
+          title="Pilot Assistant"
+          description="Use Pilot chat and AI-assisted planning."
+          control={<label className={styles.switch}><input type="checkbox" role="switch" checked={draft.enabled} onChange={(event) => update({ enabled: event.target.checked, approved: event.target.checked ? draft.approved : false })} /><span /></label>}
+        />
+        <SettingRow
+          title="Model"
+          description="Default model for new Pilot turns."
+          control={<AiModelPicker value={draft.model} disabled={!draft.enabled} onChange={(model) => { update({ model, testedAt: null }); setTestMessage(null); }} />}
+        />
+        <SettingRow
+          title="Reasoning"
+          description="How much analysis Pilot uses before answering."
+          control={<select className={styles.select} disabled={!draft.enabled} value={draft.reasoningEffort} onChange={(event) => { update({ reasoningEffort: event.target.value as AiReasoningEffort, testedAt: null }); setTestMessage(null); }}>{AI_REASONING_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>}
+        />
+        <SettingRow
+          title="Change access"
+          description="Supervised asks before every write; Auto-review uses an independent reviewer."
+          control={<select className={styles.select} disabled={!draft.enabled} value={draft.reviewMode} onChange={(event) => update({ reviewMode: event.target.value as AiReviewMode })}><option value="manual">Supervised</option><option value="auto_review">Auto-review</option></select>}
+        />
       </div>
-    </header>
-    <CodexConnectionSetup compact value={setup} onChange={(next) => { setSetup(next); setSaved(false); }} />
-    <label className={`form-field ${styles.reviewField}`}>
-      <span>Change review</span>
-      <select disabled={!setup.enabled} value={reviewMode} onChange={(event) => { setReviewMode(event.target.value as AiReviewMode); setSaved(false); }}>
-        <option value="manual">Manual approval</option>
-        <option value="auto_review">Independent auto-review</option>
-      </select>
-      <small>{reviewMode === "auto_review" ? "A separate reviewer applies supported changes and declines unsafe ones." : "You approve every proposed change before it is applied."}</small>
-    </label>
+    </section>
+
+    <section className={styles.settingsSection} aria-labelledby="pilot-privacy-heading">
+      <header><h2 id="pilot-privacy-heading">Connection and privacy</h2></header>
+      <div className={styles.rows}>
+        <SettingRow
+          title="Share requested context"
+          description="Allow messages and the academic records needed for a request to be sent to OpenAI Codex."
+          control={<label className={styles.switch}><input type="checkbox" role="switch" disabled={!draft.enabled} checked={draft.approved} onChange={(event) => update({ approved: event.target.checked, testedAt: event.target.checked ? draft.testedAt : null })} /><span /></label>}
+        />
+        <SettingRow
+          title="Connection test"
+          description={testMessage ?? "Verify the selected model and reasoning level. No API key is needed."}
+          control={<button className="secondary-button small" type="button" disabled={!draft.enabled || !draft.approved || testing} onClick={() => void testConnection()}>{testing ? "Testing" : draft.testedAt ? "Test again" : "Test"}</button>}
+        />
+      </div>
+    </section>
+
     {error && <p className={styles.error} role="alert"><Warning size={15} /> {error}</p>}
     <div className={styles.saveRow}>
-      {saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Pilot settings saved</span>}
-      <button className="primary-button" type="button" onClick={() => void save()} disabled={saving || !connectionDirty || (setup.enabled && (!setup.approved || !setup.testedAt))}>{saving ? "Saving" : "Save Pilot settings"}</button>
+      {saved && <span role="status"><Check size={15} weight="bold" /> Saved</span>}
+      <button className="primary-button" type="button" onClick={() => void save()} disabled={saving || !dirty || (draft.enabled && !draft.approved)}>{saving ? "Saving" : "Save Pilot settings"}</button>
     </div>
-    <details className={styles.archiveSection}>
+
+    <details className={styles.archives}>
       <summary><Archive size={15} /> Archived conversations <span>{archives.length}</span></summary>
       <p>Restore a conversation within 14 days. After that, its messages and attachments are deleted.</p>
-      {loadingArchives ? <small>Loading archived conversations</small> : archives.length ? <div className={styles.archiveList}>{archives.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{archiveExpiryLabel(conversation.archived_at)}</small></span><button className="secondary-button small" type="button" onClick={() => void restore(conversation)} disabled={restoringId === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}>No archived conversations.</div>}
+      {loadingArchives ? <small>Loading archived conversations</small> : archives.length ? <div className={styles.archiveList}>{archives.map((conversation) => <div className={styles.archiveRow} key={conversation.id}><span><strong>{conversation.title}</strong><small>{archiveExpiryLabel(conversation.archived_at)}</small></span><button className="secondary-button small" type="button" onClick={() => void restore(conversation)} disabled={restoringId === conversation.id}>Restore</button></div>)}</div> : <div className={styles.archiveEmpty}><CheckCircle size={16} /> No archived conversations</div>}
     </details>
-  </section>;
+  </div>;
 }

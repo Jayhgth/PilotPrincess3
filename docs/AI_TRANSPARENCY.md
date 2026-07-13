@@ -1,6 +1,6 @@
 # Codex transparency contract
 
-Last reviewed: 2026-07-12
+Last reviewed: 2026-07-13
 
 Pilot Princess uses Codex as an optional conversational layer over deterministic academic records. GPA, graduation, prerequisite, catalog eligibility, and text-layer transcript extraction remain deterministic and usable without AI.
 
@@ -16,13 +16,13 @@ Pilot Assistant is one global, persistent rail available from the authenticated 
 - running work shows live elapsed time, while settled work folds automatically behind a persisted **Worked for …** duration label;
 - older tool calls fold behind a readable **Show more** control while pending approvals remain visible;
 - conversational messages have one compact timestamp and copy action, while an adjacent applied-change receipt does not repeat the same turn time; assistant replies can be retried as a preserved new turn, and unfinished text drafts remain local to that browser and conversation;
-- the docked rail contains one prompt surface with attachments, page context, review mode, stop, and send controls; submitted text clears immediately so the next message can be written while Pilot works;
+- the docked rail contains one prompt surface with model selection, attachments, page context, review mode, stop, and send controls; submitted text clears immediately so the next message can be written while Pilot works;
 - submitted follow-ups enter a visible five-message in-memory queue, run automatically in order, and can be removed or promoted to **Steer** next; stopping or steering records a readable cancelled-turn event before the next prompt runs;
 - when a missing academic fact blocks useful progress, Pilot can ask one to three bounded multiple-choice questions with an optional written answer instead of returning a vague paragraph;
 - conversations reload from Supabase, can be renamed, continued from any workspace page, and reversibly archived; and
 - page context helps answer the current question but never silently changes saved records.
 
-Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. Connection, model, review mode, and archived conversations live in the universal Settings page.
+Onboarding presents Codex as optional. Connecting requires a student-owned consent checkbox, a successful live test, and an allowlisted model selection. GPT-5.6 Luna with Light reasoning is recommended; the student may choose GPT-5.5 or GPT-5.4 Mini or continue without AI. The universal Settings page owns the current opt-in, allowlisted model, Light/Standard/Deep reasoning level, review mode, connection test, consent, and archived conversations. The same compact allowlisted model picker is available in the chat composer. Changing a model or reasoning level does not expand tool access or bypass the normal review boundary.
 
 Raw JSON, validation internals, event names, model protocol fields, and hidden chain-of-thought are not the primary interface. Errors are translated into a useful student-facing message. Sanitized technical evidence remains available to developers through server logs and tests rather than being presented as the answer.
 
@@ -57,7 +57,7 @@ Write tools may prepare these changes:
 
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
 
-- **Manual** is the default. Every proposal appears as an approval card and nothing changes until the student chooses **Apply change**.
+- **Supervised** (stored as `manual`) is the default. Every proposal appears as an approval card and nothing changes until the student chooses **Apply change**.
 - **Auto-review** routes each proposal to a separate isolated Codex reviewer. The reviewer sees the student's request, action name, exact arguments, and explanation, then returns `approve` or `deny` with a bounded risk label and student-readable summary. An approval executes automatically; a denial is recorded as not applied. Auto-review never turns into a student confirmation card.
 
 Risk labels describe impact but do not create a second approval step. Explicit removals, grade edits, and moves to Done can be approved when the request and exact arguments match. Ambiguous, broader-than-requested, unsupported, or unverifiable proposals are denied automatically. A reviewer failure also declines the proposal instead of leaving it pending. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
@@ -109,7 +109,7 @@ Selected conversation history, page context, tool results, and images explicitly
 
 ## Review gate
 
-- AI starts only after explicit connection approval, a successful model test, and a student message, except an explicitly requested image-only transcript interpretation by an already-connected student.
+- Initial AI setup starts only after explicit connection approval, a successful model test, and a student message, except an explicitly requested image-only transcript interpretation by an already-connected student. Later allowlisted model or reasoning changes can be made directly from Settings or the composer; the next turn is the operational check, and failures remain non-mutating.
 - A read tool may run automatically. Every write begins as an exact visible proposal.
 - Manual waits for the student. Auto-review independently applies an approved exact proposal or declines it without asking for confirmation.
 - Deterministic results stay available and clearly labeled.
@@ -117,4 +117,4 @@ Selected conversation history, page context, tool results, and images explicitly
 - Reasoning and tool labels must be human-readable; raw transport metadata is not a substitute for transparency.
 - Default answers must remain decision-focused and brief; a live representative answer should fit in one to three short sentences without ratings or repeated dashboard data.
 - A live read must persist across reload, and a rejected write proposal must produce no product mutation.
-- Onboarding and rail settings own connection approval and health testing. The student Settings page owns the current opt-in, model, and review mode; the global rail owns conversation history.
+- Onboarding and the Pilot Settings section own connection approval and health testing. Pilot Settings owns the current opt-in, model, reasoning level, and review mode; the global rail owns conversation history and exposes the current model picker.

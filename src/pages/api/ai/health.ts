@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { AI_MODEL_OPTIONS, AI_REASONING_EFFORT, aiModelSchema } from "@/lib/ai-preferences";
+import { AI_MODEL_OPTIONS, aiModelSchema, aiReasoningEffortSchema, DEFAULT_AI_REASONING_EFFORT } from "@/lib/ai-preferences";
 import { probeCodexRuntimeStatus, runCodexStructured } from "@/server/codex";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 
@@ -19,7 +19,7 @@ export const GET: APIRoute = async ({ request, url }) => {
   });
 };
 
-const testRequestSchema = z.object({ model: aiModelSchema, approved: z.literal(true) });
+const testRequestSchema = z.object({ model: aiModelSchema, reasoningEffort: aiReasoningEffortSchema.default(DEFAULT_AI_REASONING_EFFORT), approved: z.literal(true) });
 const testResultSchema = z.object({ status: z.literal("ready"), message: z.string().min(1).max(160) });
 const testResultJsonSchema = {
   type: "object",
@@ -43,21 +43,21 @@ export const POST: APIRoute = async ({ request }) => {
       schema: testResultSchema,
       outputSchema: testResultJsonSchema,
       model: parsed.data.model,
-      reasoningEffort: AI_REASONING_EFFORT,
+      reasoningEffort: parsed.data.reasoningEffort,
       timeoutMs: 45_000,
       signal: request.signal
     });
     const testedAt = new Date().toISOString();
     const { error: preferenceError } = await auth.supabase.from("student_settings").update({
       ai_model: parsed.data.model,
-      ai_reasoning_effort: AI_REASONING_EFFORT,
+      ai_reasoning_effort: parsed.data.reasoningEffort,
       ai_setup_tested_at: testedAt
     }).eq("id", auth.user.id);
     if (preferenceError) return jsonError("The successful connection test could not be recorded.", 500);
     return new Response(JSON.stringify({
       connected: true,
       model: result.model,
-      reasoningEffort: AI_REASONING_EFFORT,
+      reasoningEffort: parsed.data.reasoningEffort,
       latencyMs: result.latencyMs,
       testedAt,
       message: "Codex responded successfully."

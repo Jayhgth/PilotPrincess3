@@ -56,7 +56,7 @@ import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 import TranscriptCourseEditor from "@/components/TranscriptCourseEditor";
-import StudentSettingsPanel, { type NextStepDraft, type StudentSettingsPatch } from "@/components/StudentSettingsPanel";
+import StudentSettingsPanel, { type StudentSettingsPatch } from "@/components/StudentSettingsPanel";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   CatalogReviewItem,
@@ -73,8 +73,7 @@ import type {
   SmccdCourse,
   SmccdHighSchoolEquivalency,
   StudentEnrollmentPreference,
-  StudentSettings,
-  TimelineTask
+  StudentSettings
 } from "@/lib/workspace-types";
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
@@ -222,7 +221,6 @@ export default function PlanningWorkspace() {
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
   const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
   const [enrollmentPreference, setEnrollmentPreference] = useState<StudentEnrollmentPreference | null>(null);
-  const [timelineTasks, setTimelineTasks] = useState<TimelineTask[]>([]);
 
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
@@ -336,7 +334,6 @@ export default function PlanningWorkspace() {
         reviewResult,
         enrollmentPolicyResult,
         enrollmentPreferenceResult,
-        timelineResult,
         adminResult
       ] = await Promise.all([
         supabase.from("schools").select("*").eq("slug", "design-tech-high-school").single(),
@@ -350,7 +347,6 @@ export default function PlanningWorkspace() {
         supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
         supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
         supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
-        supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
         supabase.rpc("is_app_admin")
       ]);
       const firstError = [
@@ -362,8 +358,7 @@ export default function PlanningWorkspace() {
         equivalencyResult.error,
         planResult.error,
         enrollmentPolicyResult.error,
-        enrollmentPreferenceResult.error,
-        timelineResult.error
+        enrollmentPreferenceResult.error
       ].find(Boolean);
       if (firstError) throw firstError;
 
@@ -428,7 +423,6 @@ export default function PlanningWorkspace() {
             }
           : defaultEnrollmentPreference(userId)
       );
-      setTimelineTasks((timelineResult.data ?? []) as unknown as TimelineTask[]);
       setIsAdmin(adminResult.data === true && !adminResult.error);
       setSelectedTranscriptIds((current) => {
         const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
@@ -635,32 +629,6 @@ export default function PlanningWorkspace() {
     if (!supabase) return;
     await supabase.auth.signOut();
     window.location.assign("/");
-  }
-
-  async function saveEnrollmentProgramType(programType: StudentEnrollmentPreference["program_type"]) {
-    if (!supabase || !session || !enrollmentPreference) return;
-    await runAction(
-      "Saving college enrollment type",
-      async () => {
-        const { data, error } = await supabase.from("student_enrollment_preferences").upsert({
-          user_id: session.user.id,
-          provider_code: enrollmentPreference.provider_code,
-          program_type: programType,
-          limit_mode: "recommended",
-          custom_unit_limit: null,
-          respect_recommended_limit: enrollmentPreference.respect_recommended_limit
-        }, { onConflict: "user_id,provider_code" }).select("*").single();
-        if (error) throw error;
-        setEnrollmentPreference({
-          ...data as unknown as StudentEnrollmentPreference,
-          limit_mode: "recommended",
-          custom_unit_limit: null,
-          respect_recommended_limit: data.respect_recommended_limit !== false
-        });
-        await logEvent("enrollment_program_updated", { provider_code: enrollmentPreference.provider_code, program_type: programType });
-      },
-      "College enrollment type saved."
-    );
   }
 
   function defaultDtechPlacement(course: Course, preferredGrade?: GradeLevel) {
@@ -1077,42 +1045,11 @@ export default function PlanningWorkspace() {
       ...current,
       ai_enabled: data.ai_enabled,
       ai_model: data.ai_model as StudentSettings["ai_model"],
-      ai_reasoning_effort: data.ai_reasoning_effort as "low",
+      ai_reasoning_effort: data.ai_reasoning_effort as StudentSettings["ai_reasoning_effort"],
       ai_review_mode: data.ai_review_mode as StudentSettings["ai_review_mode"],
       ai_connection_approved_at: data.ai_connection_approved_at,
       ai_setup_tested_at: data.ai_setup_tested_at
     } : current);
-  }
-
-  async function addTimelineTask(draft: NextStepDraft) {
-    if (!supabase || !session) return false;
-    const { data, error } = await supabase.from("timeline_tasks").insert({
-      user_id: session.user.id,
-      plan_version_id: activeVersion?.id ?? null,
-      title: draft.title,
-      category: draft.category,
-      due_label: draft.dueLabel || null,
-      due_date: draft.dueDate || null,
-      is_completed: false,
-      is_generated: false
-    }).select("*").single();
-    if (error) throw error;
-    setTimelineTasks((current) => [...current, data as unknown as TimelineTask]);
-    return true;
-  }
-
-  async function updateTimelineTask(id: string, patch: Partial<TimelineTask>) {
-    if (!supabase) return;
-    const { error } = await supabase.from("timeline_tasks").update(patch).eq("id", id);
-    if (error) throw error;
-    setTimelineTasks((current) => current.map((task) => task.id === id ? { ...task, ...patch } : task));
-  }
-
-  async function deleteTimelineTask(id: string) {
-    if (!supabase) return;
-    const { error } = await supabase.from("timeline_tasks").delete().eq("id", id);
-    if (error) throw error;
-    setTimelineTasks((current) => current.filter((task) => task.id !== id));
   }
 
   if (!configured) {
@@ -1458,9 +1395,9 @@ export default function PlanningWorkspace() {
     if (!settings || !session) return null;
     const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
     const descriptions: Record<SettingsArea, string> = {
-      general: "Account, appearance, and student details.",
-      planning: "Planning scope, college policy, and saved next steps.",
-      pilot: "Pilot connection, model, review, and conversation settings.",
+      general: "Account and student details.",
+      planning: "Choose the high-school years included in the plan.",
+      pilot: "Model, reasoning, change access, and conversation settings.",
       admin: "Account-specific testing and workspace reset controls."
     };
     return <div className="settings-page page-frame">
@@ -1476,19 +1413,9 @@ export default function PlanningWorkspace() {
         section={activeSettingsArea}
         session={session}
         settings={settings}
-        theme={theme}
-        requirements={requirements}
-        tasks={timelineTasks}
-        enrollmentPolicies={enrollmentPolicies}
-        enrollmentPreference={enrollmentPreference}
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
-        onThemeChange={applyTheme}
-        onSaveEnrollmentProgram={saveEnrollmentProgramType}
         onAiPreferencesChanged={refreshAiPreferences}
-        onAddTask={addTimelineTask}
-        onUpdateTask={updateTimelineTask}
-        onDeleteTask={deleteTimelineTask}
       />}
     </div>;
   }
@@ -1618,11 +1545,12 @@ export default function PlanningWorkspace() {
         <Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense>
       </AppChrome>
       {assistantOpen && <Suspense fallback={null}><GlobalAssistant
-        key={`${settings.ai_enabled}:${settings.ai_model}:${settings.ai_connection_approved_at ?? "off"}`}
+        key={`${settings.ai_enabled}:${settings.ai_connection_approved_at ?? "off"}`}
         session={session}
         open={assistantOpen}
         pageContext={assistantPageContext}
-        preferences={{ enabled: settings.ai_enabled, reviewMode: settings.ai_review_mode }}
+        preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reasoningEffort: settings.ai_reasoning_effort, reviewMode: settings.ai_review_mode }}
+        onPreferencesChanged={refreshAiPreferences}
         onClose={() => setAssistantOpen(false)}
         onDataChanged={refreshAfterAssistantChange}
       /></Suspense>}

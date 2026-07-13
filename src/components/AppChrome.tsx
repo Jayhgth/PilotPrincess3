@@ -175,6 +175,10 @@ export default function AppChrome<ViewId extends string>({
           {settingsNavigation
             ? <button className="sidebar-utility" onClick={settingsNavigation.onBack} type="button" title="Back to workspace"><ArrowLeft size={17} /><span>Back</span></button>
             : <button className="sidebar-utility" onClick={onSettings} type="button" title="Settings"><GearSix size={17} /><span>Settings</span></button>}
+          <button className="sidebar-utility" onClick={onThemeToggle} type="button" title={`Use ${theme === "light" ? "dark" : "light"} theme`} aria-label={`Use ${theme === "light" ? "dark" : "light"} theme`}>
+            {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
+            <span>{theme === "light" ? "Dark" : "Light"}</span>
+          </button>
           <button className="sidebar-utility" onClick={onSignOut} type="button" title="Sign out"><SignOut size={17} /><span>Sign out</span></button>
         </div>
       </div>

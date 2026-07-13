@@ -26,7 +26,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent,
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import AssistantMarkdown from "@/components/AssistantMarkdown";
-import type { AiReviewMode } from "@/lib/ai-preferences";
+import AiModelPicker from "@/components/AiModelPicker";
+import type { AiModel, AiReasoningEffort, AiReviewMode } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
 import { assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
@@ -40,8 +41,11 @@ interface GlobalAssistantProps {
   pageContext: Record<string, unknown>;
   preferences: {
     enabled: boolean;
+    model: AiModel;
+    reasoningEffort: AiReasoningEffort;
     reviewMode: AiReviewMode;
   };
+  onPreferencesChanged: () => void | Promise<void>;
   onClose: () => void;
   onDataChanged: () => void | Promise<void>;
 }
@@ -360,7 +364,7 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   );
 }
 
-export default function GlobalAssistant({ session, open, pageContext, preferences, onClose, onDataChanged }: GlobalAssistantProps) {
+export default function GlobalAssistant({ session, open, pageContext, preferences, onPreferencesChanged, onClose, onDataChanged }: GlobalAssistantProps) {
   const [data, setData] = useState<ConversationPayload>(EMPTY_PAYLOAD);
   const [liveEvents, setLiveEvents] = useState<LiveActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -372,6 +376,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [busyUndo, setBusyUndo] = useState<string | null>(null);
   const [autoReviewing, setAutoReviewing] = useState(false);
   const reviewMode = preferences.reviewMode;
+  const [selectedModel, setSelectedModel] = useState(preferences.model);
+  const [savingModel, setSavingModel] = useState(false);
   const [images, setImages] = useState<ComposerImage[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [draggingImage, setDraggingImage] = useState(false);
@@ -396,6 +402,36 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const activeId = data.activeConversation?.id ?? null;
 
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => authenticatedFetch(url, init), []);
+
+  useEffect(() => setSelectedModel(preferences.model), [preferences.model]);
+
+  async function changeModel(model: AiModel) {
+    if (model === selectedModel || savingModel || running) return;
+    const previousModel = selectedModel;
+    setSelectedModel(model);
+    setSavingModel(true);
+    setError(null);
+    try {
+      const response = await authorizedFetch("/api/ai/preferences", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          enabled: true,
+          model,
+          reasoningEffort: preferences.reasoningEffort,
+          approved: true
+        })
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The model could not be changed.");
+      await onPreferencesChanged();
+    } catch (caught) {
+      setSelectedModel(previousModel);
+      setError(caught instanceof Error ? caught.message : "The model could not be changed.");
+    } finally {
+      setSavingModel(false);
+    }
+  }
 
   const loadConversation = useCallback(async (conversationId?: string) => {
     setLoading(true);
@@ -1012,6 +1048,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             <div className={styles.composerToolbar}>
               <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
               <div className={styles.composerTools}>
+                <AiModelPicker compact side="top" value={selectedModel} disabled={savingModel || running} onChange={(model) => void changeModel(model)} />
                 <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images" title="Attach images"><Paperclip size={16} /></button>
                 <span className={styles.contextChip} title={`Using ${String(pageContext.label ?? "this page")} context`}>{String(pageContext.label ?? "Page")}</span>
               </div>
