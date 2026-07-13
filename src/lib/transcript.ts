@@ -95,7 +95,7 @@ export interface TranscriptCoursePayload {
   weighted?: boolean | null;
   institution_name?: string | null;
   reported_institution_name?: string | null;
-  institution_resolution?: "reported" | "dtech_catalog_identity";
+  institution_resolution?: "reported" | "dtech_catalog_identity" | "dtech_quarter_identity";
   college_units?: number | null;
   matched_course_id?: string | null;
   matched_course_name?: string | null;

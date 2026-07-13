@@ -58,7 +58,7 @@ describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.5.0");
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.6.0");
     expect(result.courses).toHaveLength(6);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
@@ -207,5 +207,35 @@ Comments
       institution_name: "College of San Mateo",
       term: "fall"
     });
+  });
+
+  it("uses flattened text for institution identity when positioned columns reorder sections", () => {
+    const flattened = `
+23-24 College of San Mateo
+9 * CIS 110 Introduction to CIS A 5.0
+23-24 Design Tech High School
+9 Q1 Oracle Education: Neural Networks P 2.5
+Comments
+`;
+    const misleadingLayout = `
+GR Course S0 CR S1 CR S2 CR
+23-24 College of San Mateo
+9 Q1 Oracle Education: Neural Networks P 2.5
+23-24 Design Tech High School
+9 * CIS 110 Introduction to CIS A 5.0
+Comments
+`;
+
+    const result = parseDtechTranscriptText(flattened, misleadingLayout);
+    const intersession = result.courses.find((course) => course.course_name === "Oracle Education: Neural Networks");
+
+    expect(intersession).toMatchObject({
+      institution_name: "Design Tech High School",
+      subject: "Personal Development",
+      term: "fall",
+      weighted: false,
+      letter_grade: "P"
+    });
+    expect(result.summary).toContain("1 SMCCD course row");
   });
 });

@@ -8,7 +8,7 @@ const DISTRICT_COLLEGES = ["College of San Mateo", "Skyline College", "Cañada C
 const PDF_PAGE_MARKER_PATTERN = /^\[\[PILOT_PDF_PAGE:\d+\]\]$/;
 const TRANSCRIPT_COLUMN_MARKER = "[[PILOT_TRANSCRIPT_COLUMN]]";
 
-export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.5.0";
+export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.6.0";
 
 type TranscriptTerm = "fall" | "spring" | "summer" | "full_year";
 
@@ -136,8 +136,7 @@ function linearizeTranscriptColumns(layoutText: string) {
   return output.join("\n");
 }
 
-export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedTranscriptResult {
-  const parserInput = layoutText.trim() ? linearizeTranscriptColumns(layoutText) : text;
+function parseTranscriptRepresentation(parserInput: string): ParsedTranscriptResult {
   const lines = parserInput
     .split(/\r?\n/)
     .map((raw) => ({ raw: raw.replace(/\t/g, "    ").trimEnd(), normalized: raw.replace(/\s+/g, " ").trim() }))
@@ -277,4 +276,61 @@ export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedT
       ? ["Confirm any course with multiple semester grades or an uncertain term before relying on GPA estimates."]
       : []
   };
+}
+
+function normalizedTitle(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function titlesReferToSameCourse(left: string, right: string) {
+  const normalizedLeft = normalizedTitle(left);
+  const normalizedRight = normalizedTitle(right);
+  if (normalizedLeft === normalizedRight) return true;
+  const shorter = normalizedLeft.length <= normalizedRight.length ? normalizedLeft : normalizedRight;
+  const longer = shorter === normalizedLeft ? normalizedRight : normalizedLeft;
+  return shorter.length >= 12 && longer.startsWith(shorter);
+}
+
+function mergeTranscriptRepresentations(
+  flattened: ParsedTranscriptResult,
+  positioned: ParsedTranscriptResult
+): ParsedTranscriptResult {
+  const claimed = new Set<number>();
+  const courses = flattened.courses.map((course) => {
+    const matchIndex = positioned.courses.findIndex((candidate, index) =>
+      !claimed.has(index)
+      && candidate.grade_level === course.grade_level
+      && candidate.school_year === course.school_year
+      && titlesReferToSameCourse(candidate.course_name, course.course_name)
+    );
+    if (matchIndex < 0) return course;
+    claimed.add(matchIndex);
+    const positionedCourse = positioned.courses[matchIndex];
+    return {
+      ...course,
+      term: positionedCourse.term,
+      confidence: positionedCourse.confidence,
+      evidence: `${course.evidence} Semester placement was read from the positioned S0/S1/S2 columns.`
+    };
+  });
+  const collegeCourseCount = courses.filter((course) => course.institution_name && isDistrictCollege(course.institution_name)).length;
+  return {
+    ...flattened,
+    summary: courses.length
+      ? `Deterministically extracted ${courses.length} completed course rows across ${flattened.academic_years.length} school years, including ${collegeCourseCount} SMCCD course rows.`
+      : flattened.summary,
+    courses,
+    conflicts: [...new Set([
+      ...positioned.conflicts,
+      ...flattened.conflicts.filter((conflict) => !conflict.includes("semester column was not available"))
+    ])]
+  };
+}
+
+export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedTranscriptResult {
+  const flattened = parseTranscriptRepresentation(text);
+  if (!layoutText.trim()) return flattened;
+  const positioned = parseTranscriptRepresentation(linearizeTranscriptColumns(layoutText));
+  if (flattened.courses.length === 0) return positioned;
+  return mergeTranscriptRepresentations(flattened, positioned);
 }

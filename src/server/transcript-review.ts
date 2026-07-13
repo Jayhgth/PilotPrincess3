@@ -138,21 +138,47 @@ function transcriptCourseIdentity(payload: Record<string, unknown>) {
   ].join("|");
 }
 
+function transcriptCourseMatchScore(existing: CatalogReviewItem, proposed: ProposedTranscriptReviewRow) {
+  const left = existing.proposed_payload;
+  const right = proposed.proposed_payload;
+  if (String(left.grade_level ?? "") !== String(right.grade_level ?? "")) return -1;
+  if (String(left.school_year ?? "") !== String(right.school_year ?? "")) return -1;
+
+  const leftCode = normalizeCollegeCourseCode(String(left.course_code ?? ""));
+  const rightCode = normalizeCollegeCourseCode(String(right.course_code ?? ""));
+  if ((leftCode || rightCode) && leftCode !== rightCode) return -1;
+
+  const leftName = normalizeCourseName(String(left.course_name ?? ""));
+  const rightName = normalizeCourseName(String(right.course_name ?? ""));
+  const shorter = leftName.length <= rightName.length ? leftName : rightName;
+  const longer = shorter === leftName ? rightName : leftName;
+  const sameName = leftName === rightName;
+  const compatibleTruncation = shorter.length >= 12 && longer.startsWith(shorter);
+  if (!sameName && !compatibleTruncation) return -1;
+
+  return (transcriptCourseIdentity(left) === transcriptCourseIdentity(right) ? 100 : 0)
+    + (leftCode && leftCode === rightCode ? 80 : sameName ? 60 : 40)
+    + (String(left.term ?? "") === String(right.term ?? "") ? 8 : 0)
+    + (String(left.letter_grade ?? "") === String(right.letter_grade ?? "") ? 4 : 0)
+    + (String(left.credits ?? "") === String(right.credits ?? "") ? 2 : 0);
+}
+
 export function reconcileTranscriptReviewRows(
   existingRows: CatalogReviewItem[],
   proposedRows: ProposedTranscriptReviewRow[]
 ) {
-  const available = new Map<string, CatalogReviewItem[]>();
-  for (const row of existingRows.filter((item) => item.entity_type === "transcript_course")) {
-    const key = transcriptCourseIdentity(row.proposed_payload);
-    available.set(key, [...(available.get(key) ?? []), row]);
-  }
-
+  const available = existingRows.filter((item) => item.entity_type === "transcript_course");
+  const claimed = new Set<string>();
   const matched: Array<{ existing: CatalogReviewItem; proposed: ProposedTranscriptReviewRow }> = [];
   const inserts: ProposedTranscriptReviewRow[] = [];
   for (const row of proposedRows.filter((item) => item.entity_type === "transcript_course")) {
-    const queue = available.get(transcriptCourseIdentity(row.proposed_payload));
-    const existing = queue?.shift();
+    const candidates = available
+      .filter((existing) => !claimed.has(existing.id))
+      .map((existing) => ({ existing, score: transcriptCourseMatchScore(existing, row) }))
+      .filter(({ score }) => score >= 0)
+      .sort((left, right) => right.score - left.score || left.existing.id.localeCompare(right.existing.id));
+    const existing = candidates[0]?.existing;
+    if (existing) claimed.add(existing.id);
     if (existing) matched.push({ existing, proposed: row });
     else inserts.push(row);
   }
@@ -160,7 +186,7 @@ export function reconcileTranscriptReviewRows(
   return {
     matched,
     inserts,
-    stale: [...available.values()].flat(),
+    stale: available.filter((row) => !claimed.has(row.id)),
     existingNote: existingRows.find((item) => item.entity_type === "transcript_note") ?? null,
     proposedNote: proposedRows.find((item) => item.entity_type === "transcript_note") ?? null
   };

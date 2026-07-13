@@ -148,6 +148,61 @@ describe("transcript review reconciliation", () => {
     expect(reconciliation.stale).toEqual([]);
   });
 
+  it("preserves review identities when reparsing corrects a leaked institution heading", () => {
+    const existing = {
+      id: "review-1",
+      user_id: "user-1",
+      source_id: "source-1",
+      entity_type: "transcript_course",
+      proposed_payload: {
+        ...baseCourse,
+        institution_name: "College of San Mateo",
+        subject: null,
+        transcript_classification: "custom"
+      },
+      corrected_payload: null,
+      status: "approved",
+      confidence: "verified",
+      uncertainty_notes: [],
+      created_at: "2026-07-12T00:00:00.000Z"
+    } satisfies CatalogReviewItem;
+    const replacementRows = transcriptReviewRows("user-1", "source-1", parsedResult([baseCourse]), [], []);
+
+    const reconciliation = reconcileTranscriptReviewRows([existing], replacementRows);
+
+    expect(reconciliation.matched[0]?.existing.id).toBe("review-1");
+    expect(reconciliation.inserts).toEqual([]);
+    expect(reconciliation.stale).toEqual([]);
+  });
+
+  it("preserves review identities when a replacement expands a truncated title", () => {
+    const existing = {
+      id: "review-1",
+      user_id: "user-1",
+      source_id: "source-1",
+      entity_type: "transcript_course",
+      proposed_payload: { ...baseCourse, course_name: "Physical Therapy & Wellness" },
+      corrected_payload: null,
+      status: "approved",
+      confidence: "verified",
+      uncertainty_notes: [],
+      created_at: "2026-07-12T00:00:00.000Z"
+    } satisfies CatalogReviewItem;
+    const replacementRows = transcriptReviewRows(
+      "user-1",
+      "source-1",
+      parsedResult([{ ...baseCourse, course_name: "Physical Therapy & Wellness Essential" }]),
+      [],
+      []
+    );
+
+    const reconciliation = reconcileTranscriptReviewRows([existing], replacementRows);
+
+    expect(reconciliation.matched[0]?.existing.id).toBe("review-1");
+    expect(reconciliation.inserts).toEqual([]);
+    expect(reconciliation.stale).toEqual([]);
+  });
+
   it("treats a recognized intersession course as resolved without requiring a catalog row", () => {
     const [row] = transcriptReviewRows("user-1", "source-1", parsedResult([baseCourse]), [], []);
 
