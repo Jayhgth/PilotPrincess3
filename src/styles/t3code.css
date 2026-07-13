@@ -82,13 +82,23 @@
 .t3code-app .tracker-mode-switch > label { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 
 .magic-bento-grid { display: grid; width: 100%; gap: 12px; }
-.magic-bento-card { display: flex; min-width: 0; overflow: hidden; flex-direction: column; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
-.magic-bento-heading { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 14px; }
+.magic-bento-card { position: relative; display: flex; min-width: 0; overflow: hidden; isolation: isolate; flex-direction: column; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / 3%); transition: border-color 220ms ease, box-shadow 220ms ease; }
+.magic-bento-card::after { position: absolute; z-index: 0; inset: 0; background: var(--surface-muted); opacity: 0; pointer-events: none; transition: opacity 220ms ease; content: ""; }
+.magic-bento-heading { position: relative; z-index: 1; display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 14px; transition: transform 280ms cubic-bezier(.16, 1, .3, 1); }
 .magic-bento-heading h2 { display: inline-flex; align-items: center; gap: 7px; margin: 0; color: var(--ink); font-size: var(--type-section); font-weight: 650; letter-spacing: -.015em; }
-.magic-bento-heading h2 svg { color: var(--accent); }
-.magic-bento-body { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.magic-bento-heading h2 svg { color: var(--accent); transform-origin: left center; transition: transform 280ms cubic-bezier(.16, 1, .3, 1); }
+.magic-bento-action { display: flex; opacity: .35; transform: translateY(6px); transition: opacity 220ms ease, transform 280ms cubic-bezier(.16, 1, .3, 1); }
+.magic-bento-body { position: relative; z-index: 1; display: flex; min-height: 0; flex: 1; flex-direction: column; transition: transform 280ms cubic-bezier(.16, 1, .3, 1); }
 .bento-card-action { display: inline-flex; min-height: 28px; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--ink-soft); padding: 0; font-size: var(--type-supporting); font-weight: 650; white-space: nowrap; }
+.bento-card-action svg { transition: transform 220ms ease; }
 .bento-card-action:hover { color: var(--accent); }
+.magic-bento-card:is(:hover, :focus-within) { border-color: color-mix(in srgb, var(--accent) 28%, var(--line)); box-shadow: 0 3px 8px rgb(0 0 0 / 7%); }
+.magic-bento-card:is(:hover, :focus-within)::after { opacity: .32; }
+.magic-bento-card:is(:hover, :focus-within) .magic-bento-heading { transform: translateY(-2px); }
+.magic-bento-card:is(:hover, :focus-within) .magic-bento-heading h2 svg { transform: scale(.8); }
+.magic-bento-card:is(:hover, :focus-within) .magic-bento-action { opacity: 1; transform: translateY(0); }
+.magic-bento-card:is(:hover, :focus-within) .magic-bento-body { transform: translateY(-3px); }
+.magic-bento-card:is(:hover, :focus-within) .bento-card-action svg { transform: translateX(2px); }
 
 .overview-bento-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(250px, auto); }
 .overview-bento-diploma { grid-column: span 4; }
@@ -209,4 +219,23 @@
   .degree-chart-row { grid-template-columns: minmax(0, 1fr) 48px; }
   .degree-chart-bars { grid-column: 1 / -1; grid-row: 2; }
   .degree-chart-values { grid-column: 2; grid-row: 1; }
+}
+
+@media (hover: none) {
+  .magic-bento-action { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .magic-bento-card,
+  .magic-bento-card::after,
+  .magic-bento-heading,
+  .magic-bento-heading h2 svg,
+  .magic-bento-action,
+  .magic-bento-body,
+  .bento-card-action svg { transition: none; }
+  .magic-bento-action { opacity: 1; transform: none; }
+  .magic-bento-card:is(:hover, :focus-within) .magic-bento-heading,
+  .magic-bento-card:is(:hover, :focus-within) .magic-bento-heading h2 svg,
+  .magic-bento-card:is(:hover, :focus-within) .magic-bento-body,
+  .magic-bento-card:is(:hover, :focus-within) .bento-card-action svg { transform: none; }
 }
