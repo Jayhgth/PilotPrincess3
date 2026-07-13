@@ -196,6 +196,13 @@ export default function SmccdPlanner({
     gradeLevel: (settings.grade_level ?? 11) as GradeLevel
   });
 
+  function selectTargetGrade(grade: GradeLevel) {
+    setTargetGrade(grade);
+    if (grade === 12) {
+      setCourseDraft((current) => current.term === "summer" ? { ...current, term: "fall" } : current);
+    }
+  }
+
   useEffect(() => {
     let active = true;
     void loadCourseCatalog(supabase).then((catalog) => {
@@ -464,6 +471,10 @@ export default function SmccdPlanner({
   async function addCatalogCourse(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!selectedCourse) return;
+    if (targetGrade === 12 && courseDraft.term === "summer") {
+      setError("Senior year does not include a summer term. Choose fall or spring.");
+      return;
+    }
     if (smccdCourseAlreadyInPlanIndex(selectedCourse, planCourseIndex)) {
       setError("That college course is already represented in the active plan.");
       return;
@@ -612,7 +623,7 @@ export default function SmccdPlanner({
         hiddenSummary={search.trim() ? `${smccdUnavailable.already + smccdUnavailable.prerequisite} unavailable matches hidden` : "Taken and prerequisite-blocked courses stay out of results"}
         filters={<>
           <label className="catalog-search-field"><span>Search college courses</span><div className="catalog-search-input"><MagnifyingGlass size={17} aria-hidden /><input aria-label="Search college courses" value={search} onChange={(event) => { setSearch(event.target.value); setSelectedCourse(null); }} placeholder="Try ENGL C1000, statistics, or biology" /></div></label>
-          <label><span>Planning year</span><select value={targetGrade} onChange={(event) => { setTargetGrade(Number(event.target.value) as GradeLevel); setSelectedCourse(null); }}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+          <label><span>Planning year</span><select value={targetGrade} onChange={(event) => { selectTargetGrade(Number(event.target.value) as GradeLevel); setSelectedCourse(null); }}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
           <label><span>Transfer credit</span><select value={transferFilter} onChange={(event) => { setTransferFilter(event.target.value); setSelectedCourse(null); }}><option value="all">Any status</option><option value="transferable">CSU or UC</option><option value="uc">UC transferable</option></select></label>
           <fieldset className="catalog-college-filter"><legend>College</legend><div><button className={collegeFilter === "all" ? "active" : ""} type="button" onClick={() => { setCollegeFilter("all"); setSelectedCourse(null); }}><InstitutionMark institution="smccd" decorative /><span>All</span></button>{colleges.map((college) => <button className={`${collegeFilter === college.code ? "active" : ""} institution-${college.code.toLowerCase()}`} type="button" onClick={() => { setCollegeFilter(college.code); setSelectedCourse(null); }} key={college.code}><InstitutionMark institution={college.code} decorative /><span>{college.name.replace("College of ", "")}</span></button>)}</div></fieldset>
         </>}
@@ -639,8 +650,8 @@ export default function SmccdPlanner({
           {selectedEquivalency && <dl className="catalog-equivalency-summary"><div><dt>High school credit</dt><dd>{selectedEquivalency.high_school_credits} credits</dd></div><div><dt>Counts as</dt><dd>{selectedEquivalency.high_school_equivalent}</dd></div></dl>}
           <PrerequisiteReadout evaluation={selectedPrerequisiteEvaluation} recommendedPreparation={selectedCourse.recommended_preparation ?? []} />
           <form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
-            <label><span>School year</span><select value={targetGrade} onChange={(event) => setTargetGrade(Number(event.target.value) as GradeLevel)}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-            <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option><option value="summer">Summer</option></select></label>
+            <label><span>School year</span><select value={targetGrade} onChange={(event) => selectTargetGrade(Number(event.target.value) as GradeLevel)}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
+            <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option>{targetGrade < 12 && <option value="summer">Summer</option>}</select></label>
             <button className="primary-button" type="submit" disabled={busy}><Plus size={16} /> Add to plan</button>
           </form>
         </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a college course</strong><p>Review transfer status, college gen-ed, high school credit, and prerequisite evidence.</p></div>}

@@ -2385,6 +2385,7 @@ textarea,
 .course-year { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
 .course-year.completed { background: color-mix(in srgb, var(--surface-muted) 68%, var(--bg)); opacity: .64; }
 .course-year-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.course-year-terms.two-terms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .course-term-lane { min-width: 0; min-height: 126px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--surface-muted) 38%, var(--surface-raised)); transition: background-color 150ms ease, box-shadow 150ms ease; }
 .course-term-lane:first-child { border-left: 0; }
 .course-term-lane.drop-target { background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent); }
@@ -2415,6 +2416,9 @@ textarea,
 .kanban-course.draggable:hover .kanban-drag-affordance { color: var(--accent); }
 .kanban-lock { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); font-size: var(--type-supporting); white-space: nowrap; }
 .kanban-lock span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.kanban-continuation-mark { width: 18px; height: 28px; }
+.kanban-course.continuation { background: color-mix(in srgb, var(--surface-muted) 58%, var(--surface-raised)); }
+.kanban-course.continuation .kanban-course-main { padding-right: 12px; }
 .kanban-course-copy { display: grid; min-width: 0; gap: 5px; }
 .kanban-course-institution { display: flex; min-width: 0; align-items: center; gap: 8px; margin-bottom: 1px; color: var(--institution-color, var(--dual-ui)); }
 .kanban-course-institution > .institution-mark { width: 42px; height: 20px; }

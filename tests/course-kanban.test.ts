@@ -2,9 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import CourseKanban from "@/components/CourseKanban";
+import { compareCourseBoardRows, courseAppearsInBoardTerm, courseBoardTermsForGrade } from "@/lib/course-board";
 import type { PlanCourse, StudentSettings } from "@/lib/models";
 
-function row(id: string, name: string, gradeLevel: PlanCourse["grade_level"], status: PlanCourse["status"], term: PlanCourse["term"]): PlanCourse {
+function row(id: string, name: string, gradeLevel: PlanCourse["grade_level"], status: PlanCourse["status"], term: PlanCourse["term"], overrides: Partial<PlanCourse> = {}): PlanCourse {
   return {
     id,
     plan_version_id: "version-1",
@@ -26,29 +27,34 @@ function row(id: string, name: string, gradeLevel: PlanCourse["grade_level"], st
     source_review_item_id: status === "completed" ? `review-${id}` : null,
     smccd_course_id: null,
     college_provider_code: null,
-    requirement_area_override: null
+    requirement_area_override: null,
+    ...overrides
   };
+}
+
+function renderBoard(rows: PlanCourse[], gradeLevel: PlanCourse["grade_level"] = 11) {
+  return renderToStaticMarkup(createElement(CourseKanban, {
+    rows,
+    courses: [],
+    smccdCourses: [],
+    settings: { grade_level: gradeLevel, graduation_year: 2027 } as StudentSettings,
+    editingCourseId: null,
+    busy: false,
+    onEditingChange: () => undefined,
+    onMove: () => undefined,
+    onUpdate: () => undefined,
+    onRemove: () => undefined,
+    onGeneratePlan: () => undefined
+  }));
 }
 
 describe("four-year course board", () => {
   it("opens the current grade and keeps every school year one click away", () => {
-    const html = renderToStaticMarkup(createElement(CourseKanban, {
-      rows: [
-        row("completed", "Completed Algebra", 11, "completed", "full_year"),
-        row("current", "Current English", 11, "current", "spring"),
-        row("future", "Future Physics", 12, "planned", "fall")
-      ],
-      courses: [],
-      smccdCourses: [],
-      settings: { grade_level: 11, graduation_year: 2027 } as StudentSettings,
-      editingCourseId: null,
-      busy: false,
-      onEditingChange: () => undefined,
-      onMove: () => undefined,
-      onUpdate: () => undefined,
-      onRemove: () => undefined,
-      onGeneratePlan: () => undefined
-    }));
+    const html = renderBoard([
+      row("completed", "Completed Algebra", 11, "completed", "full_year"),
+      row("current", "Current English", 11, "current", "spring"),
+      row("future", "Future Physics", 12, "planned", "fall")
+    ]);
 
     expect(html.match(/role="tab"/g)).toHaveLength(4);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
@@ -61,5 +67,35 @@ describe("four-year course board", () => {
     expect(html).toContain("Move Current English. Drag this card to another school year or term.");
     expect(html).not.toContain("Future Physics");
     expect(html).toContain("Full year");
+    expect(html.match(/Completed Algebra/g)).toHaveLength(4);
+    expect(html).toContain("Completed Algebra, full-year course continuing in spring.");
+  });
+
+  it("omits senior summer and shows one full-year record in both semester lanes", () => {
+    const html = renderBoard([
+      row("full-year", "Senior English", 12, "current", "full_year"),
+      row("spring", "Government", 12, "current", "spring")
+    ], 12);
+
+    expect(courseBoardTermsForGrade(12)).toEqual(["fall", "spring"]);
+    expect(html.match(/class="course-term-lane /g)).toHaveLength(2);
+    expect(html).not.toContain("grade-12-summer");
+    expect(courseAppearsInBoardTerm(row("year", "Year", 12, "current", "full_year"), "fall")).toBe(true);
+    expect(courseAppearsInBoardTerm(row("year", "Year", 12, "current", "full_year"), "spring")).toBe(true);
+  });
+
+  it("orders college first, high school second, and pass/fail last", () => {
+    const college = row("college", "College Course", 11, "current", "fall", { college_provider_code: "SMCCD", college_units: 3 });
+    const highSchool = row("high-school", "High School Course", 11, "current", "fall");
+    const passFail = row("pass-fail", "Pass Fail Course", 11, "completed", "fall", {
+      letter_grade: "P",
+      requirement_area_override: "personal_development"
+    });
+
+    expect([passFail, highSchool, college].sort(compareCourseBoardRows).map((course) => course.id)).toEqual([
+      "college",
+      "high-school",
+      "pass-fail"
+    ]);
   });
 });

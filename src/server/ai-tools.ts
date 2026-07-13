@@ -47,6 +47,12 @@ const gradeSchema = z.union([z.literal(9), z.literal(10), z.literal(11), z.liter
 const timelineCategorySchema = z.enum(["academics", "activities", "college", "summer", "admin"]);
 const optionalText = (maximum: number) => z.string().trim().max(maximum).nullable();
 
+function assertPlanningTermExists(gradeLevel: GradeLevel, term: PlanCourse["term"]) {
+  if (gradeLevel === 12 && term === "summer") {
+    throw new Error("Senior year does not include a summer term. Choose fall or spring.");
+  }
+}
+
 const toolArgumentSchemas = {
   get_student_overview: z.object({}),
   list_plan_courses: z.object({ status: z.enum(["completed", "current", "planned", "all"]).default("all") }),
@@ -882,6 +888,7 @@ export async function executeAssistantMutationTool(
 
   if (name === "add_dtech_course") {
     const args = toolArgumentSchemas.add_dtech_course.parse(argumentsValue);
+    assertPlanningTermExists(args.grade_level, args.term);
     const course = workspace.courses.find((candidate) => candidate.id === args.course_id);
     if (!course) throw new Error("That d.tech catalog course is no longer available.");
     const eligibility = dtechCatalogEligibility(course, args.grade_level, workspace.planCourses, workspace.courses);
@@ -915,6 +922,7 @@ export async function executeAssistantMutationTool(
 
   if (name === "add_smccd_course") {
     const args = toolArgumentSchemas.add_smccd_course.parse(argumentsValue);
+    assertPlanningTermExists(args.grade_level, args.term);
     const [courseResult, catalogResult] = await Promise.all([
       supabase.from("smccd_courses").select("*").eq("id", args.course_id).single(),
       supabase.from("smccd_courses").select("*")
@@ -1049,6 +1057,7 @@ export async function executeAssistantMutationTool(
     if (row.source_review_item_id) throw new Error("Transcript-backed course evidence must be corrected through transcript review.");
     const gradeLevel = args.grade_level ?? row.grade_level;
     const term = args.term ?? row.term;
+    assertPlanningTermExists(gradeLevel, term);
     const dtechCourse = row.course_id ? workspace.courses.find((course) => course.id === row.course_id) : null;
     if (dtechCourse) {
       if (dtechCourse.grade_levels.length && !dtechCourse.grade_levels.includes(gradeLevel)) throw new Error(`That course is not offered in grade ${gradeLevel}.`);

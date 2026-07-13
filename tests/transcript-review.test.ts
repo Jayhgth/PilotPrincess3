@@ -61,6 +61,28 @@ const baseCourse: ParsedTranscriptResult["courses"][number] = {
 };
 
 describe("transcript review reconciliation", () => {
+  it("places an upcoming-grade S0 course in the preceding high-school summer", () => {
+    const [row] = transcriptReviewRows(
+      "user-1",
+      "source-1",
+      parsedResult([{
+        ...baseCourse,
+        course_name: "Summer Seminar",
+        grade_level: 10,
+        school_year: "2024-2025",
+        term: "summer"
+      }]),
+      [],
+      []
+    );
+
+    expect(row.proposed_payload).toMatchObject({
+      grade_level: 9,
+      school_year: "2023-2024",
+      term: "summer"
+    });
+  });
+
   it("preserves review identities when a replacement transcript corrects the term", () => {
     const existing = {
       id: "review-1",

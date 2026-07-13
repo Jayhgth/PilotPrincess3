@@ -21,6 +21,20 @@ export interface ProposedTranscriptReviewRow {
   uncertainty_notes: string[];
 }
 
+function previousSchoolYear(value: string | null | undefined) {
+  const match = value?.match(/^(\d{4})-(\d{4})$/);
+  return match ? `${Number(match[1]) - 1}-${Number(match[2]) - 1}` : value;
+}
+
+function plannerPlacementForTranscriptCourse(course: ParsedTranscriptResult["courses"][number]) {
+  if (course.term !== "summer" || course.grade_level === null || course.grade_level <= 9) return course;
+  return {
+    ...course,
+    grade_level: course.grade_level - 1,
+    school_year: previousSchoolYear(course.school_year)
+  };
+}
+
 export function transcriptReviewRows(
   userId: string,
   sourceId: string,
@@ -29,10 +43,11 @@ export function transcriptReviewRows(
   smccdCourses: SmccdCourse[]
 ): ProposedTranscriptReviewRow[] {
   const courseRows: ProposedTranscriptReviewRow[] = result.courses.map((course) => {
-    const isIntersession = isDtechIntersessionCourse(course);
+    const plannerCourse = plannerPlacementForTranscriptCourse(course);
+    const isIntersession = isDtechIntersessionCourse(plannerCourse);
     const normalizedCourse = isIntersession
-      ? { ...course, course_name: stripTranscriptQuarterPrefix(course.course_name), subject: "Personal Development", weighted: false }
-      : course;
+      ? { ...plannerCourse, course_name: stripTranscriptQuarterPrefix(plannerCourse.course_name), subject: "Personal Development", weighted: false }
+      : plannerCourse;
     const institutionKey = institutionKeyFromName(normalizedCourse.institution_name);
     const districtInstitution = institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
     const isCollegeCourse = Boolean(normalizedCourse.course_code && (districtInstitution || Number(normalizedCourse.college_units ?? 0) > 0));
