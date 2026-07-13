@@ -145,6 +145,36 @@ describe("SMCCD curriculum planning", () => {
     expect(progress.find((area) => area.area === "4")).toMatchObject({ status: "missing", completedCourseCodes: [] });
   });
 
+  it("applies the awarding college GE rules to transcript courses from another SMCCD college", () => {
+    const courses = [
+      {
+        id: "SKY:HIST 201",
+        college_code: "SKY",
+        course_code: "HIST 201",
+        attributes: ["AA/AS Degree Requirements: Area 4"],
+        units_min: 3,
+        units_max: 3
+      },
+      {
+        id: "SKY:BIOL 110",
+        college_code: "SKY",
+        course_code: "BIOL 110",
+        attributes: ["AA/AS Degree Requirements: Area 5"],
+        units_min: 4,
+        units_max: 4
+      }
+    ] as SmccdCourse[];
+    const rows = [
+      { smccd_course_id: "SKY:HIST 201", status: "completed", college_units: 3, letter_grade: "A" },
+      { smccd_course_id: "SKY:BIOL 110", status: "completed", college_units: 4, letter_grade: "A" }
+    ] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "CSM");
+
+    expect(progress.find((area) => area.area === "8")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"] });
+    expect(progress.find((area) => area.area === "5")).toMatchObject({ status: "completed", completedCourseCodes: ["BIOL 110"] });
+  });
+
   it("enforces a discipline condition alongside the unit total", () => {
     const program = { id: "CSM:interdisciplinary", college_code: "CSM", total_degree_units: 60, total_major_units_text: "18 units" } as SmccdProgram;
     const requirements = [{

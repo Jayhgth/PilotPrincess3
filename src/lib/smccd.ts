@@ -100,6 +100,7 @@ export interface SmccdGeProgress extends SmccdGeEvidence {
   projectedUnits: number;
   requiredUnits: number;
   missingSummary: string;
+  eligibleCourseCodes: string[];
 }
 
 export const CSM_LOCAL_GE_WORKSHEET_URL = "https://collegeofsanmateo.edu/forms/docs/counseling/AAAS_DegreeWorksheet_25-26.pdf";
@@ -290,8 +291,8 @@ export function calculateSmccdGeProgress(
   collegeCode: SmccdCourse["college_code"] = "CSM"
 ): SmccdGeProgress[] {
   const definitions = localGeAreas(collegeCode);
-  const completed = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, false), context.courseById, definitions);
-  const projected = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById, definitions);
+  const completed = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, false), context.courseById, definitions, collegeCode);
+  const projected = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById, definitions, collegeCode);
 
   return definitions.map((definition) => {
     const completedArea = completed.get(definition.area) ?? emptyGeArea(definition.requiredUnits);
@@ -325,7 +326,11 @@ export function calculateSmccdGeProgress(
       requiredUnits,
       completedCourseCodes: completedArea.codes,
       projectedCourseCodes: projectedArea.codes,
-      missingSummary
+      missingSummary,
+      eligibleCourseCodes: [...new Set([...context.courseById.values()]
+        .filter((course) => courseGeAreas(course, collegeCode).some((candidate) => geAreaMatches(definition.area, candidate)))
+        .map((course) => normalizeSmccdCourseCode(course.course_code)))]
+        .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
     };
   });
 }
@@ -526,29 +531,30 @@ function emptyGeArea(requiredUnits: number): GeAuditArea {
 function auditLocalGe(
   attemptsByCode: Map<string, PlanCourse>,
   courseById: Map<string, SmccdCourse>,
-  definitions: LocalGeAreaDefinition[]
+  definitions: LocalGeAreaDefinition[],
+  awardingCollegeCode: SmccdCourse["college_code"]
 ) {
   const assigned = new Set<string>();
   const result = new Map<string, GeAuditArea>();
-  const constrainedOrder = ["1A", "1B", "2", "6", "8", "5", "3", "4"];
+  const constrainedOrder = ["1A", "1B", "2", "6", "8", "4", "5", "3"];
 
   for (const area of constrainedOrder) {
     const definition = definitions.find((candidate) => candidate.area === area);
     if (!definition) continue;
-    const candidates = geCandidates(area, attemptsByCode, courseById, assigned, definition.minimumGrade)
+    const candidates = geCandidates(area, attemptsByCode, courseById, assigned, definition.minimumGrade, awardingCollegeCode)
       .sort((left, right) => right.units - left.units || left.code.localeCompare(right.code));
     result.set(area, assignGeCandidates(candidates, definition.requiredUnits, assigned));
   }
 
-  const area7ACandidates = geCandidates("7A", attemptsByCode, courseById, assigned, "degree")
+  const area7ACandidates = geCandidates("7A", attemptsByCode, courseById, assigned, "degree", awardingCollegeCode)
     .sort((left, right) => left.units - right.units || left.code.localeCompare(right.code));
   const area7A = assignGeCandidates(area7ACandidates, 1, assigned);
   result.set("7A", area7A);
 
   const area7BRequired = round(Math.max(0, 3 - area7A.units));
   const area7Candidates = [
-    ...geCandidates("7B", attemptsByCode, courseById, assigned, "degree"),
-    ...geCandidates("7A", attemptsByCode, courseById, assigned, "degree")
+    ...geCandidates("7B", attemptsByCode, courseById, assigned, "degree", awardingCollegeCode),
+    ...geCandidates("7A", attemptsByCode, courseById, assigned, "degree", awardingCollegeCode)
   ].filter((candidate, index, rows) => rows.findIndex((row) => row.code === candidate.code) === index)
     .sort((left, right) => right.units - left.units || left.code.localeCompare(right.code));
   result.set("7B", assignGeCandidates(area7Candidates, area7BRequired, assigned));
@@ -561,13 +567,14 @@ function geCandidates(
   attemptsByCode: Map<string, PlanCourse>,
   courseById: Map<string, SmccdCourse>,
   assigned: Set<string>,
-  minimumGrade: GeGradeMinimum
+  minimumGrade: GeGradeMinimum,
+  awardingCollegeCode: SmccdCourse["college_code"]
 ) {
   const candidates: Array<{ code: string; units: number }> = [];
   for (const [code, row] of attemptsByCode) {
     if (assigned.has(code) || !qualifiesForLocalGe(row, minimumGrade)) continue;
     const course = row.smccd_course_id ? courseById.get(row.smccd_course_id) : null;
-    if (!course || !courseGeAreas(course).some((candidate) => geAreaMatches(area, candidate))) continue;
+    if (!course || !courseGeAreas(course, awardingCollegeCode).some((candidate) => geAreaMatches(area, candidate))) continue;
     candidates.push({ code: course.course_code, units: attemptUnits(row, courseById) });
   }
   return candidates;
@@ -587,13 +594,13 @@ function assignGeCandidates(candidates: Array<{ code: string; units: number }>, 
   return { codes, units: round(units), requiredUnits };
 }
 
-function courseGeAreas(course: SmccdCourse) {
+function courseGeAreas(course: SmccdCourse, awardingCollegeCode: SmccdCourse["college_code"]) {
   const areas = (course.attributes ?? []).flatMap((attribute) => {
     const match = attribute.match(/AA\/AS Degree Requirements:\s*Area\s+(.+)$/i);
     return match ? [match[1].trim().toUpperCase()] : [];
   });
   const normalizedCode = normalizeSmccdCourseCode(course.course_code);
-  for (const [area, courseCodes] of Object.entries(OFFICIAL_LOCAL_GE_OVERRIDES[course.college_code] ?? {})) {
+  for (const [area, courseCodes] of Object.entries(OFFICIAL_LOCAL_GE_OVERRIDES[awardingCollegeCode] ?? {})) {
     if (courseCodes?.has(normalizedCode)) areas.push(area);
   }
   return [...new Set(areas)];
