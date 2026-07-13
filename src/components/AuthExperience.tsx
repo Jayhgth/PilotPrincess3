@@ -122,22 +122,22 @@ export default function AuthExperience() {
 
   return (
     <main className="auth-page">
+      <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
+        <EvilEye
+          backgroundColor="#0c0d0f"
+          className="auth-page-background"
+          eyeColor="#b84d6a"
+          flameSpeed={0.7}
+          glowIntensity={0.3}
+          intensity={1.15}
+          irisWidth={0.28}
+          noiseScale={1}
+          pupilFollow={0.75}
+          pupilSize={0.68}
+          scale={0.74}
+        />
+      </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">
-        <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
-          <EvilEye
-            backgroundColor="#0c0d0f"
-            className="auth-page-background"
-            eyeColor="#b84d6a"
-            flameSpeed={0.7}
-            glowIntensity={0.3}
-            intensity={1.15}
-            irisWidth={0.28}
-            noiseScale={1}
-            pupilFollow={0.75}
-            pupilSize={0.68}
-            scale={0.74}
-          />
-        </Suspense>
         <a className="wordmark" href="/" aria-label="Pilot Princess home">
           <BrandMark />
           <span>Pilot Princess</span>
