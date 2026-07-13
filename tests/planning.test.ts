@@ -387,6 +387,20 @@ describe("planning", () => {
     })];
 
     expect(generateSuggestedPlan(settings, catalog, existing, policy)).toEqual([]);
+    expect(generateSuggestedPlan(settings, catalog, existing, policy, false).map((row) => row.course_id)).toEqual(["english-2"]);
+  });
+
+  it("places semester flow courses into separate fall and spring lanes", () => {
+    const seniorSettings: StudentSettings = { ...settings, grade_level: 12, graduation_year: 2027, plan_start_grade: 12, plan_end_grade: 12 };
+    const catalog = [
+      course({ id: "government", name: "Government", grade_levels: [12], term_type: "semester" }),
+      course({ id: "economics", name: "Economics", grade_levels: [12], term_type: "semester" })
+    ];
+
+    expect(generateSuggestedPlan(seniorSettings, catalog, []).map((row) => [row.course_id, row.term])).toEqual([
+      ["government", "fall"],
+      ["economics", "spring"]
+    ]);
   });
 
   it("does not suggest a completed transcript alias with a missing catalog ID", () => {

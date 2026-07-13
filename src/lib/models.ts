@@ -267,6 +267,7 @@ export interface StudentEnrollmentPreference {
   program_type: EnrollmentPolicy["program_type"];
   limit_mode: "recommended";
   custom_unit_limit: null;
+  respect_recommended_limit: boolean;
   updated_at: string;
 }
 

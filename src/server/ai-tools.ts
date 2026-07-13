@@ -27,6 +27,7 @@ import {
   calculateRequirementProgress,
   courseDisplayName,
   dtechGradePoint,
+  generateSuggestedPlan,
   overallCompletedPercent,
   overallGraduationPercent,
   planCourseMovePatch,
@@ -69,6 +70,7 @@ const toolArgumentSchemas = {
     })).max(40)
   }),
   get_enrollment_constraints: z.object({}),
+  get_course_schedule_options: z.object({ respect_recommended_limit: z.boolean().default(true) }),
   get_plan_versions: z.object({}),
   get_degree_progress: z.object({ program_id: z.string().trim().min(1).max(180).optional() }),
   get_college_goal: z.object({}),
@@ -79,6 +81,11 @@ const toolArgumentSchemas = {
   }),
   save_plan_snapshot: z.object({
     label: z.string().trim().min(1).max(80).optional()
+  }),
+  add_course_schedule: z.object({
+    course_ids: z.array(z.uuid()).min(1).max(24)
+      .refine((ids) => new Set(ids).size === ids.length, "Course IDs must be unique."),
+    respect_recommended_limit: z.boolean().default(true)
   }),
   add_dtech_course: z.object({
     course_id: z.uuid(),
@@ -161,11 +168,13 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_gpa_evidence", mutatesData: false, description: "Read course-level GPA inclusion, weighting, points, and exclusion evidence for the current or projected calculation.", arguments: '{"scope":"current|projected"}' },
   { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the saved schedule, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
   { name: "get_enrollment_constraints", mutatesData: false, description: "Read source-backed concurrent or dual-enrollment limits and evaluate the saved college schedule by term.", arguments: "{}" },
+  { name: "get_course_schedule_options", mutatesData: false, description: "Generate deterministic high-school flow suggestions using the saved plan and provider policy. Call with the student's answer about respecting the recommended unit limit.", arguments: '{"respect_recommended_limit":boolean}' },
   { name: "get_plan_versions", mutatesData: false, description: "Read active and saved plan versions with labels, creation dates, and course counts.", arguments: "{}" },
   { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for one bookmarked SMCCD associate degree. Omit program_id only when one bookmark is sufficient context.", arguments: '{"program_id":"string|optional"}' },
   { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
   { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
   { name: "save_plan_snapshot", mutatesData: true, description: "Propose saving a read-only copy of the active course plan before a larger change.", arguments: '{"label":"optional short label"}' },
+  { name: "add_course_schedule", mutatesData: true, description: "Propose adding an exact batch returned by get_course_schedule_options. Revalidation prevents stale, duplicate, prerequisite-blocked, or over-limit additions.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
@@ -205,11 +214,13 @@ export function assistantToolLabel(name: string) {
     get_gpa_evidence: "Read GPA evidence",
     evaluate_gpa_scenario: "Evaluate GPA scenario",
     get_enrollment_constraints: "Check college-unit limits",
+    get_course_schedule_options: "Build course schedule options",
     get_plan_versions: "Read plan versions",
     get_degree_progress: "Read degree progress",
     get_college_goal: "Read college goal",
     search_smccd_programs: "Search college programs",
     save_plan_snapshot: "Save plan snapshot",
+    add_course_schedule: "Add course schedule",
     add_dtech_course: "Add high school course",
     add_smccd_course: "Add college course",
     move_plan_course: "Move course",
@@ -506,7 +517,11 @@ export async function executeAssistantReadTool(
         },
         next_steps: { count: workspace.tasks.length, open_count: workspace.tasks.filter((task) => !task.is_completed).length },
         college_goal: { selected: workspace.collegeGoals.length > 0 },
-        college_enrollment_preference: { provider: workspace.enrollmentPreference.provider_code, program_type: workspace.enrollmentPreference.program_type },
+        college_enrollment_preference: {
+          provider: workspace.enrollmentPreference.provider_code,
+          program_type: workspace.enrollmentPreference.program_type,
+          respect_recommended_limit: workspace.enrollmentPreference.respect_recommended_limit !== false
+        },
         available_detail_tools: [
           "list_plan_courses",
           "get_graduation_progress",
@@ -611,6 +626,7 @@ export async function executeAssistantReadTool(
       data: {
         provider: policy.provider_name,
         program_type: policy.program_type,
+        respect_recommended_limit: workspace.enrollmentPreference.respect_recommended_limit !== false,
         planning_threshold_units: policy.recommended_max_units,
         recommended_max_units: policy.recommended_max_units,
         fee_free_max_units: policy.fee_free_max_units,
@@ -620,6 +636,40 @@ export async function executeAssistantReadTool(
         terms,
         notes: policy.notes,
         boundary: "Unit count does not prove registration eligibility. Prerequisites, school and college approval, impacted-course restrictions, materials, fees, and seat availability remain separate."
+      }
+    };
+  }
+
+  if (name === "get_course_schedule_options") {
+    const args = toolArgumentSchemas.get_course_schedule_options.parse(argumentsValue);
+    const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
+    const generated = generateSuggestedPlan(
+      workspace.settings,
+      workspace.courses,
+      workspace.planCourses,
+      policy,
+      args.respect_recommended_limit
+    );
+    const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
+    return {
+      summary: generated.length
+        ? `Built ${generated.length} deterministic course suggestions for the open high-school years.`
+        : "No additional flow courses fit the open high-school years and selected college-unit preference.",
+      data: {
+        respect_recommended_limit: args.respect_recommended_limit,
+        provider: policy?.provider_name ?? null,
+        recommended_max_units: policy?.recommended_max_units ?? null,
+        absolute_max_units: policy?.absolute_max_units ?? null,
+        courses: generated.map((row) => ({
+          course_id: row.course_id,
+          name: courseById.get(row.course_id)?.name ?? "Course",
+          grade_level: row.grade_level,
+          school_year: row.school_year,
+          term: row.term,
+          status: row.status,
+          college_units: row.college_units
+        })),
+        boundary: "Suggestions still require catalog, prerequisite, approval, schedule, and seat verification. The unit figures come from the matching provider policy."
       }
     };
   }
@@ -789,6 +839,44 @@ export async function executeAssistantMutationTool(
       data: { label, course_count: workspace.planCourses.length },
       changed: { entity: "plan_version", id: snapshot.id },
       undo: { kind: "delete_rows", table: "plan_versions", ids: [snapshot.id], summary: `${label} was removed.` }
+    };
+  }
+
+  if (name === "add_course_schedule") {
+    const args = toolArgumentSchemas.add_course_schedule.parse(argumentsValue);
+    const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
+    const available = generateSuggestedPlan(
+      workspace.settings,
+      workspace.courses,
+      workspace.planCourses,
+      policy,
+      args.respect_recommended_limit
+    );
+    const availableById = new Map(available.map((row) => [row.course_id, row]));
+    const selected = args.course_ids.map((id) => availableById.get(id));
+    if (selected.some((row) => !row)) throw new Error("One or more schedule suggestions are stale or no longer satisfy the plan rules. Generate the options again.");
+    const selectedRows = selected as typeof available;
+    const insertRows = selectedRows.map((row, index) => ({
+      ...row,
+      plan_version_id: workspace.activeVersion.id,
+      user_id: userId,
+      sort_order: workspace.planCourses.length + index
+    }));
+    const { data, error } = await supabase.from("plan_courses").insert(insertRows).select("id");
+    if (error) throw new Error(error.message);
+    const insertedIds = (data ?? []).map((row) => row.id);
+    const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
+    const courseNames = selectedRows.map((row) => courseById.get(row.course_id)?.name ?? "Course");
+    return {
+      summary: `${courseNames.length} suggested ${courseNames.length === 1 ? "course was" : "courses were"} added to the plan.`,
+      data: {
+        courses: courseNames,
+        respect_recommended_limit: args.respect_recommended_limit,
+        planning_threshold_units: policy?.recommended_max_units ?? null,
+        absolute_max_units: policy?.absolute_max_units ?? null
+      },
+      changed: { entity: "plan_course", id: insertedIds.join(",") },
+      undo: { kind: "delete_rows", table: "plan_courses", ids: insertedIds, summary: "The generated course schedule was removed from the plan." }
     };
   }
 
@@ -1005,7 +1093,8 @@ export async function executeAssistantMutationTool(
       provider_code: "SMCCD",
       program_type: args.program_type,
       limit_mode: "recommended",
-      custom_unit_limit: null
+      custom_unit_limit: null,
+      respect_recommended_limit: workspace.enrollmentPreference.respect_recommended_limit !== false
     }, { onConflict: "user_id,provider_code" }).select("user_id,provider_code").single();
     if (error) throw new Error(error.message);
     return {

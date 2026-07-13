@@ -426,6 +426,7 @@ export interface GeneratedPlanCourse {
   course_id: string;
   grade_level: GradeLevel;
   school_year: string;
+  term: PlanCourse["term"];
   status: "current" | "planned";
   credits: number | null;
   college_units: number | null;
@@ -439,7 +440,8 @@ export function generateSuggestedPlan(
   settings: StudentSettings,
   courses: Course[],
   existing: PlanCourse[],
-  enrollmentPolicy?: EnrollmentPolicy | null
+  enrollmentPolicy?: EnrollmentPolicy | null,
+  respectRecommendedLimit = true
 ): GeneratedPlanCourse[] {
   const graduationYear = settings.graduation_year ?? new Date().getFullYear() + 3;
   const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
@@ -455,6 +457,7 @@ export function generateSuggestedPlan(
   }
   const generated: GeneratedPlanCourse[] = [];
   const collegeUnitsByTerm = new Map<string, number>();
+  const semesterCourseCountByGrade = new Map<GradeLevel, number>();
   for (const row of existing) {
     if (row.status === "completed" || Number(row.college_units ?? 0) <= 0) continue;
     const provider = row.college_provider_code ?? (row.smccd_course_id ? "SMCCD" : null);
@@ -475,10 +478,18 @@ export function generateSuggestedPlan(
       const equivalenceKeys = courseEquivalenceKeys(course.name);
       if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) continue;
       const schoolYear = schoolYearForGrade(graduationYear, grade);
+      const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;
+      const term: PlanCourse["term"] = course.term_type === "semester"
+        ? semesterIndex % 2 === 0 ? "fall" : "spring"
+        : "full_year";
+      const plannedTerms = term === "full_year" ? ["fall", "spring"] : [term];
       const collegeUnits = Number(course.college_units ?? 0);
       if (enrollmentPolicy && collegeUnits > 0) {
-        const wouldExceed = ["fall", "spring"].some((term) =>
-          (collegeUnitsByTerm.get(`${schoolYear}:${term}`) ?? 0) + collegeUnits > Number(enrollmentPolicy.recommended_max_units)
+        const scheduleLimit = respectRecommendedLimit
+          ? Number(enrollmentPolicy.recommended_max_units)
+          : Number(enrollmentPolicy.absolute_max_units);
+        const wouldExceed = plannedTerms.some((plannedTerm) =>
+          (collegeUnitsByTerm.get(`${schoolYear}:${plannedTerm}`) ?? 0) + collegeUnits > scheduleLimit
         );
         if (wouldExceed) continue;
       }
@@ -486,6 +497,7 @@ export function generateSuggestedPlan(
         course_id: course.id,
         grade_level: grade,
         school_year: schoolYear,
+        term,
         status: grade === currentGrade ? "current" : "planned",
         credits: course.credits,
         college_units: course.college_units,
@@ -496,9 +508,10 @@ export function generateSuggestedPlan(
       });
       existingIds.add(course.id);
       for (const key of equivalenceKeys) existingNameKeys.add(key);
+      if (course.term_type === "semester") semesterCourseCountByGrade.set(grade, semesterIndex + 1);
       if (collegeUnits > 0) {
-        for (const term of ["fall", "spring"]) {
-          const key = `${schoolYear}:${term}`;
+        for (const plannedTerm of plannedTerms) {
+          const key = `${schoolYear}:${plannedTerm}`;
           collegeUnitsByTerm.set(key, (collegeUnitsByTerm.get(key) ?? 0) + collegeUnits);
         }
       }

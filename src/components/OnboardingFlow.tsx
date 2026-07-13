@@ -397,7 +397,8 @@ export default function OnboardingFlow({
         provider_code: "SMCCD",
         program_type: enrollmentProgram,
         limit_mode: "recommended",
-        custom_unit_limit: null
+        custom_unit_limit: null,
+        respect_recommended_limit: enrollmentPreference.respect_recommended_limit ?? true
       }, { onConflict: "user_id,provider_code" });
       if (enrollmentError) throw enrollmentError;
       const { error: versionError } = await supabase

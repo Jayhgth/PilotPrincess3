@@ -76,7 +76,8 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   college_code: "College",
   award_type: "Award",
   label: "Snapshot",
-  equivalency_verified: "d.tech equivalency reviewed"
+  equivalency_verified: "d.tech equivalency reviewed",
+  respect_recommended_limit: "Respect district unit limit"
 };
 
 function readableValue(value: unknown): string | null {

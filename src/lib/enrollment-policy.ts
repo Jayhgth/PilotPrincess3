@@ -106,6 +106,7 @@ export function defaultEnrollmentPreference(userId: string): StudentEnrollmentPr
     program_type: "concurrent",
     limit_mode: "recommended",
     custom_unit_limit: null,
+    respect_recommended_limit: true,
     updated_at: new Date(0).toISOString()
   };
 }

@@ -146,7 +146,10 @@ function MessageActions({ message, align = "left", canRetry = false, onRetry }: 
 }
 
 function StructuredQuestions({ questions, answered, willQueue, onSubmit }: { questions: AssistantQuestion[]; answered: boolean; willQueue: boolean; onSubmit: (answers: Record<string, string>) => Promise<boolean> }) {
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(() => Object.fromEntries(questions.flatMap((question) => {
+    const recommended = question.options.find((option) => option.label.includes("(Recommended)"));
+    return recommended ? [[question.id, recommended.label]] : [];
+  })));
   const [submitting, setSubmitting] = useState(false);
   const [queued, setQueued] = useState(false);
   const complete = questions.every((question) => Boolean(answers[question.id]?.trim()));
@@ -196,11 +199,13 @@ const TOOL_LABELS: Record<string, string> = {
   get_gpa_evidence: "GPA evidence",
   evaluate_gpa_scenario: "GPA scenario",
   get_enrollment_constraints: "College unit limits",
+  get_course_schedule_options: "Course schedule options",
   get_plan_versions: "Plan versions",
   get_degree_progress: "Degree progress",
   get_college_goal: "Degree bookmarks",
   search_smccd_programs: "College programs",
   save_plan_snapshot: "Save plan snapshot",
+  add_course_schedule: "Add course schedule",
   add_dtech_course: "Add high school course",
   add_smccd_course: "Add college course",
   move_plan_course: "Move course",

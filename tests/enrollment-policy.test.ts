@@ -26,6 +26,7 @@ const preference: StudentEnrollmentPreference = {
   program_type: "concurrent",
   limit_mode: "recommended",
   custom_unit_limit: null,
+  respect_recommended_limit: true,
   updated_at: "2026-07-11T00:00:00.000Z"
 };
 

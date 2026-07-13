@@ -2381,49 +2381,46 @@ textarea,
   .secondary-summary dl > div:last-child { grid-column: 1 / -1; }
 }
 
-/* Course kanban and rule-aware graduation */
-.kanban-help {
-  margin: 0 0 12px;
-  color: var(--ink-faint);
-  font-size: var(--type-supporting);
-  line-height: var(--leading-supporting);
-}
+/* Four-year course schedule and rule-aware graduation */
+.course-plan-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.course-plan-toolbar p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.course-year-board { display: grid; gap: 14px; }
+.course-year { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
+.course-year.completed { background: color-mix(in srgb, var(--surface-muted) 68%, var(--bg)); opacity: .64; }
+.course-year-header { display: flex; min-height: 56px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 10px 13px; }
+.course-year-header > div { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
+.course-year-header h2 { margin: 0; font-size: var(--type-section); line-height: var(--leading-section); }
+.course-year-header p,
+.course-year-header > strong { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); font-weight: 600; }
+.course-year-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.course-term-lane { min-width: 0; min-height: 126px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--surface-muted) 38%, var(--surface-raised)); transition: background-color 150ms ease, box-shadow 150ms ease; }
+.course-term-lane:first-child { border-left: 0; }
+.course-term-lane.drop-target { background: color-mix(in srgb, var(--accent-soft) 62%, var(--surface)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent); }
+.course-term-lane > header { display: flex; min-height: 54px; align-items: flex-start; justify-content: space-between; gap: 10px; border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent); padding: 9px 10px; }
+.course-term-lane > header h3 { margin: 0; font-size: var(--type-body); line-height: var(--leading-body); }
+.course-term-lane > header p { margin: 1px 0 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.course-term-lane > header > strong { color: var(--ink-faint); font-size: var(--type-supporting); }
+.course-term-lane-body { display: grid; align-content: start; gap: 7px; padding: 8px; }
+.course-term-empty { margin: 0; padding: 12px 2px; color: var(--ink-faint); font-size: var(--type-supporting); }
 
-.course-kanban-viewport { min-width: 0; overflow-x: auto; padding-bottom: 8px; overscroll-behavior-inline: contain; }
-.course-kanban { display: grid; min-width: 880px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
-.kanban-column { display: grid; min-width: 0; grid-template-rows: auto minmax(300px, 1fr) auto; overflow: hidden; border-radius: var(--radius); background: color-mix(in srgb, var(--surface-muted) 58%, var(--bg)); transition: background-color 180ms ease, box-shadow 180ms ease; }
-.kanban-column.drop-target { background: color-mix(in srgb, var(--accent-soft) 64%, var(--bg)); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 48%, transparent); }
-.kanban-column.drop-target .kanban-column-header svg,
-.kanban-column.drop-target .kanban-column-header h2 { color: var(--accent); }
-.kanban-column-header { display: flex; min-height: 70px; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; }
-.kanban-column-header > div { display: flex; min-width: 0; align-items: flex-start; gap: 9px; }
-.kanban-column-header svg { flex: 0 0 auto; margin-top: 1px; color: var(--ink-faint); }
-.kanban-column-header span { display: grid; gap: 2px; }
-.kanban-column-header h2 { margin: 0; font-size: var(--type-section); line-height: var(--leading-section); }
-.kanban-column-header p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.kanban-column-header > strong { min-width: 22px; color: var(--ink-soft); font-size: var(--type-section); text-align: right; }
-.kanban-column-body { display: grid; max-height: min(610px, calc(100dvh - 290px)); align-content: start; gap: 7px; overflow-y: auto; padding: 0 8px 10px; scrollbar-width: thin; }
-.kanban-column-action { display: inline-flex; min-height: 38px; align-items: center; justify-content: flex-start; gap: 7px; border: 0; background: transparent; color: var(--ink-soft); padding: 0 14px; font-size: var(--type-supporting); font-weight: 650; }
-.kanban-column-action:hover { background: var(--surface); color: var(--ink); }
-.kanban-empty { display: grid; min-height: 190px; align-content: center; justify-items: start; gap: 5px; padding: 18px 12px; }
-.kanban-empty strong { font-size: var(--type-body); }
-.kanban-empty p { max-width: 28ch; margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.kanban-empty .quiet-button { margin: 4px 0 0 -10px; }
-
-.kanban-course { position: relative; min-width: 0; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: var(--surface-raised); box-shadow: 0 1px 2px rgb(35 38 43 / 0.035); content-visibility: auto; contain-intrinsic-block-size: auto 108px; transition: transform 170ms cubic-bezier(.2,.8,.2,1), border-color 170ms ease, background-color 170ms ease, opacity 140ms ease, box-shadow 170ms ease; }
-.kanban-course.draggable:hover:not(.editing):not(.dragging) { z-index: 1; border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); box-shadow: 0 5px 14px rgb(35 38 43 / 0.1); transform: translateY(-2px); }
+.kanban-course { position: relative; min-width: 0; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: var(--surface-raised); box-shadow: 0 1px 2px rgb(35 38 43 / 0.035); content-visibility: auto; contain-intrinsic-block-size: auto 108px; transition: border-color 150ms ease, background-color 150ms ease, opacity 140ms ease, box-shadow 150ms ease; }
+.kanban-course.draggable:hover:not(.editing):not(.dragging) { z-index: 1; border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); box-shadow: 0 2px 8px rgb(35 38 43 / 0.08); }
 .kanban-course.dual-enrollment { border-color: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 25%, var(--line)); background: color-mix(in srgb, var(--dual-soft) 32%, var(--surface-raised)); }
 .kanban-course.dual-enrollment.draggable:hover:not(.editing):not(.dragging) { border-color: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 52%, var(--line)); }
-.kanban-course.draggable:active:not(.editing) { cursor: grabbing; transform: translateY(0) scale(.992); }
+.kanban-course.draggable:active:not(.editing) { cursor: grabbing; }
 .kanban-course.dragging { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); box-shadow: none; opacity: .22; }
 .kanban-course.editing { border-color: var(--line-strong); box-shadow: var(--shadow); }
 .kanban-course.locked { background: color-mix(in srgb, var(--surface-raised) 84%, var(--surface-muted)); }
+.kanban-course.completed { opacity: .58; }
+.course-year.completed .kanban-course.completed { opacity: 1; }
 .kanban-course-main { display: grid; min-height: 82px; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 12px 42px 12px 12px; text-align: left; }
+.kanban-course.completed .kanban-course-main { min-height: 68px; padding-top: 9px; padding-bottom: 9px; }
+.kanban-course.completed .kanban-course-institution small { display: none; }
 .kanban-course.draggable .kanban-course-main { cursor: grab; touch-action: pan-y; user-select: none; }
 .kanban-course-main:focus-visible { border-radius: 6px; outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -3px; }
 .kanban-drag-affordance { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); }
 .kanban-drag-affordance > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.kanban-course.draggable:hover .kanban-drag-affordance { color: var(--accent); animation: kanban-grip-nudge 420ms cubic-bezier(.2,.8,.2,1); }
+.kanban-course.draggable:hover .kanban-drag-affordance { color: var(--accent); }
 .kanban-lock { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); font-size: var(--type-supporting); white-space: nowrap; }
 .kanban-lock span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .kanban-course-copy { display: grid; min-width: 0; gap: 5px; }
@@ -2445,22 +2442,24 @@ textarea,
 .kanban-course-editor input,
 .kanban-course-editor select { min-height: 38px; font-size: var(--type-body); }
 .kanban-course-editor .danger-button { justify-self: start; }
-.course-drag-preview { display: flex; width: min(310px, 78vw); align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 7px; background: var(--surface-raised); padding: 13px 14px; box-shadow: 0 14px 30px rgb(35 38 43 / 0.18); animation: kanban-pickup 150ms cubic-bezier(.2,.8,.2,1) both; transform: rotate(-1deg) scale(1.015); cursor: grabbing; }
+.course-drag-preview { display: flex; width: min(310px, 78vw); align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 7px; background: var(--surface-raised); padding: 13px 14px; box-shadow: 0 8px 24px rgb(35 38 43 / 0.16); cursor: grabbing; }
 .course-drag-preview > svg { flex: 0 0 auto; color: var(--accent); }
 .course-drag-preview > span { display: grid; gap: 3px; }
 .course-drag-preview strong { font-size: var(--type-body); }
 .course-drag-preview small { color: var(--ink-faint); font-size: var(--type-supporting); }
 
-@keyframes kanban-grip-nudge {
-  0%, 100% { transform: translateY(0); }
-  45% { transform: translateY(-2px); }
-}
-
-@keyframes kanban-pickup {
-  from { opacity: .55; transform: rotate(0) scale(.97); }
-  to { opacity: 1; transform: rotate(-1deg) scale(1.015); }
-}
 .plan-explanation { max-width: 78ch; margin: 0 0 14px; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
+
+.plan-generation-prompt { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .8fr) auto; align-items: center; gap: 16px; margin-bottom: 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-raised); padding: 13px 14px; }
+.plan-generation-prompt > div:first-child { display: grid; gap: 3px; }
+.plan-generation-prompt h2 { margin: 0; font-size: var(--type-section); }
+.plan-generation-prompt p { margin: 0; color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.plan-generation-prompt > label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; }
+.plan-generation-prompt > label input { margin-top: 2px; }
+.plan-generation-prompt > label span { display: grid; gap: 2px; }
+.plan-generation-prompt > label strong { font-size: var(--type-body); }
+.plan-generation-prompt > label small { color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.plan-generation-prompt > div:last-child { display: flex; gap: 7px; }
 
 .suggested-plan-preview { display: grid; gap: 12px; margin-bottom: 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-raised); padding: 14px; }
 .suggested-plan-preview > div:first-child { display: grid; gap: 3px; }
@@ -2498,18 +2497,18 @@ textarea,
   .smccd-ge-page-heading { align-items: stretch; flex-direction: column; }
   .smccd-program-toolbar { width: 100%; justify-content: space-between; }
   .smccd-ge-page-heading select { width: 100%; }
-  .course-kanban { width: max-content; min-width: 0; grid-template-columns: repeat(3, minmax(292px, 82vw)); scroll-snap-type: x proximity; }
-  .kanban-column { scroll-snap-align: start; }
-  .kanban-column-body { max-height: min(560px, calc(100dvh - 250px)); }
+  .course-plan-toolbar { align-items: stretch; flex-direction: column; }
+  .course-plan-toolbar .secondary-button { align-self: flex-start; }
+  .course-year-terms { grid-template-columns: 1fr; }
+  .course-term-lane { border-top: 1px solid var(--line); border-left: 0; }
+  .course-term-lane:first-child { border-top: 0; }
+  .plan-generation-prompt { grid-template-columns: 1fr; }
+  .plan-generation-prompt > div:last-child { justify-content: flex-end; }
   .suggested-plan-preview ul,
   .transcript-history-list { grid-template-columns: 1fr !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .kanban-course,
-  .kanban-column { transition: none; }
-  .kanban-course.draggable:hover:not(.editing):not(.dragging),
-  .kanban-course.draggable:active:not(.editing),
-  .course-drag-preview { animation: none; transform: none; }
-  .kanban-course.draggable:hover .kanban-drag-affordance { animation: none; }
+  .course-term-lane { transition: none; }
 }

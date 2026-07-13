@@ -92,8 +92,10 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("evaluate_gpa_scenario", { target_weighted_gpa: 4, choices: [] })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_enrollment_constraints", {})).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("get_course_schedule_options", { respect_recommended_limit: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("add_course_schedule", { course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
     expect(() => parseAssistantToolCall("unknown_removed_tool", {})).toThrow();
@@ -117,6 +119,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("separate approval reviewer");
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
+    expect(prompt).toContain("a structured Yes or No answer to Pilot's unit-limit question may approve");
     expect(prompt).toContain('"title":"Meet counselor"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
@@ -150,6 +153,8 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
+    expect(prompt).toContain("Read recommended_max_units from that result; never supply or memorize a district number yourself");
+    expect(prompt).toContain("Put the Yes option first and label it recommended");
   });
 
   it("accepts the expanded student-data tools in structured assistant output", () => {
@@ -171,6 +176,21 @@ describe("Codex feature boundaries", () => {
       arguments: { include_source_text: true }
     });
     expect(requiredAssistantEvidenceRead("What is a transcript?")).toBeNull();
+  });
+
+  it("builds policy-backed schedule options before asking about the default-on unit limit", () => {
+    expect(requiredAssistantEvidenceRead("Generate a four-year course plan for me")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true }
+    });
+    expect(requiredAssistantEvidenceRead("Here are my answers:\n- **Keep college coursework within the 11-unit per-term district planning limit?** Yes (Recommended)")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true }
+    });
+    expect(requiredAssistantEvidenceRead("Here are my answers:\n- **Keep college coursework within the 11-unit per-term district planning limit?** No")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: false }
+    });
   });
 
   it("loads exact plan IDs before bulk course changes", () => {

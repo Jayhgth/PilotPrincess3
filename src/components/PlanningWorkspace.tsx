@@ -37,7 +37,6 @@ import {
   generateSuggestedPlan,
   overallCompletedPercent,
   overallGraduationPercent,
-  planCourseMovePatch,
   selectedPlanGrades,
   schoolYearForGrade
 } from "@/lib/planning";
@@ -50,7 +49,7 @@ import {
 } from "@/lib/transcript";
 import AdminSettingsPanel from "@/components/AdminSettingsPanel";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
-import CourseKanban from "@/components/CourseKanban";
+import CourseKanban, { type CoursePlacement } from "@/components/CourseKanban";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
@@ -258,6 +257,8 @@ export default function PlanningWorkspace() {
   const [selectedTranscriptSourceId, setSelectedTranscriptSourceId] = useState<string | null>(null);
   const [planExplanation, setPlanExplanation] = useState<string | null>(null);
   const [suggestedPlan, setSuggestedPlan] = useState<ReturnType<typeof generateSuggestedPlan>>([]);
+  const [planGenerationPromptOpen, setPlanGenerationPromptOpen] = useState(false);
+  const [respectUnitCapDraft, setRespectUnitCapDraft] = useState(true);
   const [compareVersionId, setCompareVersionId] = useState("");
   const [compareCourses, setCompareCourses] = useState<PlanCourse[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -467,7 +468,12 @@ export default function PlanningWorkspace() {
       setEnrollmentPolicies((enrollmentPolicyResult.data ?? []) as unknown as EnrollmentPolicy[]);
       setEnrollmentPreference(
         enrollmentPreferenceResult.data
-          ? { ...enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference, limit_mode: "recommended", custom_unit_limit: null }
+          ? {
+              ...enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference,
+              limit_mode: "recommended",
+              custom_unit_limit: null,
+              respect_recommended_limit: enrollmentPreferenceResult.data.respect_recommended_limit !== false
+            }
           : defaultEnrollmentPreference(userId)
       );
       setTimelineTasks((timelineResult.data ?? []) as unknown as TimelineTask[]);
@@ -721,10 +727,16 @@ export default function PlanningWorkspace() {
           provider_code: enrollmentPreference.provider_code,
           program_type: programType,
           limit_mode: "recommended",
-          custom_unit_limit: null
+          custom_unit_limit: null,
+          respect_recommended_limit: enrollmentPreference.respect_recommended_limit
         }, { onConflict: "user_id,provider_code" }).select("*").single();
         if (error) throw error;
-        setEnrollmentPreference({ ...data as unknown as StudentEnrollmentPreference, limit_mode: "recommended", custom_unit_limit: null });
+        setEnrollmentPreference({
+          ...data as unknown as StudentEnrollmentPreference,
+          limit_mode: "recommended",
+          custom_unit_limit: null,
+          respect_recommended_limit: data.respect_recommended_limit !== false
+        });
         await logEvent("enrollment_program_updated", { provider_code: enrollmentPreference.provider_code, program_type: programType });
       },
       "College enrollment type saved."
@@ -827,14 +839,21 @@ export default function PlanningWorkspace() {
     });
   }
 
-  function movePlanCourse(row: PlanCourse, status: PlanCourse["status"]) {
+  function movePlanCourse(row: PlanCourse, placement: CoursePlacement) {
     if (!settings) return;
-    if (row.source_review_item_id) {
-      notify("Transcript records stay in Done. Correct the transcript review instead of moving them.");
+    if (row.source_review_item_id || row.status === "completed" || row.grade_level < Number(settings.grade_level ?? 9)) {
+      notify("Completed and transcript-backed courses stay locked in their recorded term.");
       return;
     }
-    const patch = planCourseMovePatch(settings, row, status, planCourses.filter((candidate) => candidate.status === status).length);
-    if (patch) void updatePlanCourse(row.id, patch);
+    const patch: Partial<PlanCourse> = {
+      status: placement.status,
+      grade_level: placement.gradeLevel,
+      school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, placement.gradeLevel),
+      term: placement.term,
+      sort_order: planCourses.filter((candidate) => candidate.grade_level === placement.gradeLevel && candidate.term === placement.term).length,
+      ...(placement.status === "completed" ? {} : { letter_grade: null })
+    };
+    void updatePlanCourse(row.id, patch);
   }
 
   async function removePlanCourse(id: string) {
@@ -858,10 +877,34 @@ export default function PlanningWorkspace() {
     });
   }
 
-  async function generatePlan() {
-    if (!settings) return;
+  function openPlanGenerationPrompt() {
+    setRespectUnitCapDraft(enrollmentPreference?.respect_recommended_limit !== false);
+    setPlanGenerationPromptOpen(true);
+  }
+
+  async function generatePlan(respectRecommendedLimit: boolean) {
+    if (!settings || !supabase || !session || !enrollmentPreference) return;
     const enrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
-    const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy);
+    const { data: savedPreference, error: preferenceError } = await supabase.from("student_enrollment_preferences").upsert({
+      user_id: session.user.id,
+      provider_code: enrollmentPreference.provider_code,
+      program_type: enrollmentPreference.program_type,
+      limit_mode: "recommended",
+      custom_unit_limit: null,
+      respect_recommended_limit: respectRecommendedLimit
+    }, { onConflict: "user_id,provider_code" }).select("*").single();
+    if (preferenceError) {
+      notify(preferenceError.message, "error");
+      return;
+    }
+    setEnrollmentPreference({
+      ...savedPreference as unknown as StudentEnrollmentPreference,
+      limit_mode: "recommended",
+      custom_unit_limit: null,
+      respect_recommended_limit: savedPreference.respect_recommended_limit !== false
+    });
+    setPlanGenerationPromptOpen(false);
+    const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy, respectRecommendedLimit);
     if (generated.length === 0) {
       notify("The current plan already contains the available high school flow courses.");
       return;
@@ -880,7 +923,6 @@ export default function PlanningWorkspace() {
           ...row,
           plan_version_id: activeVersion.id,
           user_id: session.user.id,
-          term: "full_year",
           sort_order: index
         }));
         const { data, error } = await supabase.from("plan_courses").insert(rows).select("*");
@@ -1637,13 +1679,19 @@ export default function PlanningWorkspace() {
     });
     const snapshotGpa = calculateGpa(compareCourses);
     const snapshotProgress = calculateRequirementProgress(requirements, compareCourses, mappings, courses, equivalencies);
+    const generationPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
 
     return (
       <>
         {planExplanation && <p className="plan-explanation">{planExplanation}</p>}
+        {planGenerationPromptOpen && <section className="plan-generation-prompt" aria-labelledby="plan-generation-heading">
+          <div><h2 id="plan-generation-heading">Suggest a course plan</h2><p>Should college coursework stay at or below the district planning limit for each term?</p></div>
+          <label><input type="checkbox" checked={respectUnitCapDraft} onChange={(event) => setRespectUnitCapDraft(event.target.checked)} /><span><strong>Yes, respect the limit</strong><small>{generationPolicy ? `${generationPolicy.recommended_max_units} units per term from the saved ${generationPolicy.provider_name} policy. Recommended.` : "Use the saved district policy. Recommended."}</small></span></label>
+          <div><button className="secondary-button small" type="button" onClick={() => setPlanGenerationPromptOpen(false)}>Cancel</button><button className="primary-button small" type="button" onClick={() => void generatePlan(respectUnitCapDraft)} disabled={Boolean(busyLabel)}>Generate suggestions</button></div>
+        </section>}
         {suggestedPlan.length > 0 && <section className="suggested-plan-preview" aria-label="Suggested plan preview">
           <div><strong>Review suggested courses</strong><p>Nothing has been added yet. Check the placements before applying this set.</p></div>
-          <ul>{suggestedPlan.map((row) => <li key={`${row.course_id}-${row.grade_level}`}><span><strong>{courseMap.get(row.course_id)?.name ?? "Course"}</strong><small>Grade {row.grade_level} · {row.school_year}</small></span></li>)}</ul>
+          <ul>{suggestedPlan.map((row) => <li key={`${row.course_id}-${row.grade_level}`}><span><strong>{courseMap.get(row.course_id)?.name ?? "Course"}</strong><small>Grade {row.grade_level} · {row.term === "full_year" ? "Full year" : row.term[0].toUpperCase() + row.term.slice(1)}</small></span></li>)}</ul>
           <div className="suggested-plan-actions"><button className="secondary-button small" type="button" onClick={() => setSuggestedPlan([])}>Cancel</button><button className="primary-button small" type="button" onClick={() => void confirmSuggestedPlan()} disabled={Boolean(busyLabel)}><Check size={15} /> Add {suggestedPlan.length} courses</button></div>
         </section>}
         <CourseKanban
@@ -1657,9 +1705,7 @@ export default function PlanningWorkspace() {
           onMove={movePlanCourse}
           onUpdate={(id, patch) => void updatePlanCourse(id, patch)}
           onRemove={(id) => void removePlanCourse(id)}
-          onGeneratePlan={() => void generatePlan()}
-          onImportTranscript={() => navigate("sources")}
-          onBrowseCourses={() => setCourseArea("dtech")}
+          onGeneratePlan={openPlanGenerationPrompt}
         />
         <details className="course-version-section">
           <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
@@ -1688,7 +1734,7 @@ export default function PlanningWorkspace() {
       ? evaluateEnrollmentSchedule(planCourses, activeEnrollmentPolicy).filter((term) => term.state !== "within")
       : [];
     return <div className="courses-page page-frame wide">
-      <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
+      <PageHeader title="Courses" description="A four-year schedule for completed, current, and planned classes." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
       <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "High school courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
       {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && <aside className="enrollment-policy-callout" role="status">
         <Warning size={18} weight="fill" aria-hidden />

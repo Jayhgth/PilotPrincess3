@@ -554,6 +554,16 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   const auditIntent = /\b(audit|check|double[ -]?check|error|wrong|mismatch|parse|parsed|accurate|accuracy)\b/.test(normalized);
   if (transcript && auditIntent) return { name: "audit_transcript_data", arguments: { include_source_text: true } };
 
+  const scheduleGenerationIntent = /\b(generate|build|create|make|draft|suggest|plan)\b/.test(normalized)
+    && /\b(course|class|four[ -]?year)\s+(plan|schedule)|\b(plan|schedule)\s+(courses|classes)\b/.test(normalized);
+  if (scheduleGenerationIntent) return { name: "get_course_schedule_options", arguments: { respect_recommended_limit: true } };
+  const structuredScheduleAnswer = normalized.includes("here are my answers:")
+    && /(?:respect|within).*(?:unit|district).*limit/.test(normalized);
+  if (structuredScheduleAnswer) {
+    const declined = /\*\*[^*]*(?:unit|district)[^*]*\*\*\s*no\b/i.test(userMessage);
+    return { name: "get_course_schedule_options", arguments: { respect_recommended_limit: !declined } };
+  }
+
   const bulkCourseTarget = /\b(all|every|each)\b/.test(normalized) && /\b(course|courses|class|classes)\b/.test(normalized);
   const courseChangeIntent = /\b(remove|delete|drop)\b/.test(normalized);
   const hasBulkException = /\b(except|excluding|other than|but\s+keep|not)\b/.test(normalized);
@@ -598,6 +608,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
       ? `The student explicitly attached ${options.images.length} ${options.images.length === 1 ? "image" : "images"}: ${(options.imageNames ?? []).join(", ") || "unnamed image"}. Use visible image content only as context for this turn. Describe uncertainty when text or details are unclear, and do not infer unsupported student records.`
       : "No image was attached to this turn.",
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing data domain; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting any saved-plan change. Treat all-A as the ceiling of the included saved schedule, never a grade prediction or admission guarantee.",
+    "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Read recommended_max_units from that result; never supply or memorize a district number yourself. Before proposing add_course_schedule, ask one structured question: whether the student wants to keep college coursework within that displayed per-term limit. Put the Yes option first and label it recommended. If the student says no, call get_course_schedule_options again with false before proposing the batch. Never exceed absolute_max_units, and do not ask again when the recent conversation already contains the student's answer for this schedule request.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change supported dashboard data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to three exact related changes in one turn.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
@@ -798,6 +809,69 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             message: options.reviewMode === "auto_review"
               ? `I found ${targets.length} open next ${targets.length === 1 ? "step" : "steps"}. Auto-review will apply or decline the exact batch ${removeIntent ? "removal" : "completion"} automatically.`
               : `I found ${targets.length} open next ${targets.length === 1 ? "step" : "steps"} and prepared one exact batch ${removeIntent ? "removal" : "completion"} for your approval.`,
+            questions: [],
+            threadId: thread.id,
+            usage,
+            latencyMs: Date.now() - startedAt,
+            model,
+            proposals: [proposal]
+          };
+        }
+        if (requiredRead.name === "get_course_schedule_options" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+          const data = result.data as Record<string, unknown>;
+          const unitLimit = Number(data.recommended_max_units);
+          const courses = Array.isArray(data.courses)
+            ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+            : [];
+          const isStructuredAnswer = options.userMessage.toLowerCase().includes("here are my answers:");
+          if (!isStructuredAnswer) {
+            return {
+              message: Number.isFinite(unitLimit)
+                ? `The matching district policy's planning limit is ${unitLimit} units per term. Should I keep the generated schedule within it?`
+                : "Should I keep the generated schedule within the district's recommended college-unit limit?",
+              questions: [{
+                id: "respect_unit_limit",
+                prompt: Number.isFinite(unitLimit)
+                  ? `Keep college coursework within the ${unitLimit}-unit per-term district limit in the course plan I asked Pilot to generate?`
+                  : "Keep college coursework within the district's recommended per-term limit in the course plan I asked Pilot to generate?",
+                options: [{ id: "yes", label: "Yes (Recommended)" }, { id: "no", label: "No" }],
+                allow_custom: false
+              }],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          const ids = courses.map((row) => row.course_id).filter((id): id is string => typeof id === "string");
+          if (!courses.length) {
+            return {
+              message: "No additional flow courses fit the open high-school years and that unit-limit choice.",
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          if (ids.length !== courses.length || ids.length > 24) throw new Error("The generated schedule did not return a safe batch of course IDs.");
+          const respectsLimit = requiredRead.arguments.respect_recommended_limit !== false;
+          const proposal: AssistantChatToolActivity = {
+            id: crypto.randomUUID(),
+            name: "add_course_schedule",
+            label: assistantToolLabel("add_course_schedule"),
+            arguments: { course_ids: ids, respect_recommended_limit: respectsLimit },
+            explanation: `Add the ${ids.length} deterministic schedule suggestions using the student's unit-limit choice.`,
+            mutatesData: true,
+            status: "pending_confirmation"
+          };
+          await options.onToolActivity(proposal);
+          return {
+            message: options.reviewMode === "auto_review"
+              ? `I prepared ${ids.length} schedule ${ids.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact batch automatically.`
+              : `I prepared ${ids.length} schedule ${ids.length === 1 ? "course" : "courses"} for your approval.`,
             questions: [],
             threadId: thread.id,
             usage,
