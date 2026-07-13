@@ -14,10 +14,11 @@ import type {
   RequirementProgress
 } from "@/lib/models";
 
-type GraduationView = "diploma" | "degree";
+type GraduationView = "diploma" | "degree" | "general_education";
 
 function graduationViewFromLocation() {
   const params = new URLSearchParams(window.location.search);
+  if (params.get("graduation") === "general-education") return "general_education";
   return params.get("graduation") === "degree" || params.get("college") === "degree" ? "degree" : "diploma";
 }
 
@@ -25,6 +26,7 @@ interface Props {
   progress: RequirementProgress[];
   onFindDtechCourses: (area: RequirementProgress["requirement"]["area"]) => void;
   degreePlanner: ReactNode;
+  generalEducationPlanner: ReactNode;
 }
 
 const DTECH_REQUIREMENTS_URL = "https://docs.google.com/document/d/1N351ZQzwGakGiFf5ax7i7NE1BEA2k_civOL9atMWXJo/edit?usp=sharing";
@@ -32,7 +34,8 @@ const DTECH_REQUIREMENTS_URL = "https://docs.google.com/document/d/1N351ZQzwGakG
 export default function GraduationWorkspace({
   progress,
   onFindDtechCourses,
-  degreePlanner
+  degreePlanner,
+  generalEducationPlanner
 }: Props) {
   const [view, setView] = useState<GraduationView>(() => typeof window !== "undefined" ? graduationViewFromLocation() : "diploma");
   const firstDiplomaGap = progress.find((item) => item.status === "missing") ?? progress[0] ?? null;
@@ -50,6 +53,7 @@ export default function GraduationWorkspace({
     setView(next);
     const url = new URL(window.location.href);
     if (next === "degree") url.searchParams.set("graduation", "degree");
+    else if (next === "general_education") url.searchParams.set("graduation", "general-education");
     else url.searchParams.delete("graduation");
     window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
@@ -60,7 +64,8 @@ export default function GraduationWorkspace({
         className="graduation-workspace-tabs"
         items={[
           { id: "diploma", label: "d.tech diploma", count: diplomaMissing },
-          { id: "degree", label: "Associate degree" }
+          { id: "degree", label: "Associate degree" },
+          { id: "general_education", label: "General education" }
         ]}
         value={view}
         onChange={changeView}
@@ -76,6 +81,7 @@ export default function GraduationWorkspace({
           onFindCourses={onFindDtechCourses}
         />}
         {view === "degree" && degreePlanner}
+        {view === "general_education" && generalEducationPlanner}
       </FadeContent>
     </div>
   );

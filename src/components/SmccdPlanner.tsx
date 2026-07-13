@@ -58,7 +58,14 @@ interface Props {
 }
 
 type CollegeFilter = "all" | SmccdCollege["code"];
-type SmccdSection = "courses" | "degree";
+type SmccdSection = "courses" | "degree" | "general_education";
+
+interface SmccdGeCompletion {
+  user_id: string;
+  college_code: SmccdCourse["college_code"];
+  area: "7A";
+  completion_source: "manual";
+}
 
 interface SmccdCourseCatalog {
   colleges: SmccdCollege[];
@@ -152,6 +159,7 @@ export default function SmccdPlanner({
   const [courseCatalogReady, setCourseCatalogReady] = useState(false);
   const [degreeCatalogReady, setDegreeCatalogReady] = useState(false);
   const [goalsReady, setGoalsReady] = useState(surface === "courses");
+  const [geCompletionsReady, setGeCompletionsReady] = useState(surface === "courses");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -161,6 +169,8 @@ export default function SmccdPlanner({
   const [requirements, setRequirements] = useState<SmccdProgramRequirement[]>([]);
   const [requirementCourses, setRequirementCourses] = useState<SmccdRequirementCourse[]>([]);
   const [goals, setGoals] = useState<StudentSmccdGoal[]>([]);
+  const [geCompletions, setGeCompletions] = useState<SmccdGeCompletion[]>([]);
+  const [geCollegeCode, setGeCollegeCode] = useState<SmccdCourse["college_code"]>("CSM");
   const [search, setSearch] = useState("");
   const [collegeFilter, setCollegeFilter] = useState<CollegeFilter>("all");
   const [transferFilter, setTransferFilter] = useState("all");
@@ -207,6 +217,25 @@ export default function SmccdPlanner({
         if (active) setError(caught instanceof Error ? caught.message : "Saved degree goals could not be loaded.");
       } finally {
         if (active) setGoalsReady(true);
+      }
+    })();
+    return () => { active = false; };
+  }, [session.user.id, supabase, surface]);
+
+  useEffect(() => {
+    if (surface === "courses") return;
+    let active = true;
+    void (async () => {
+      try {
+        const { data, error: completionError } = await supabase.from("student_smccd_ge_completions")
+          .select("user_id,college_code,area,completion_source")
+          .eq("user_id", session.user.id);
+        if (completionError) throw completionError;
+        if (active) setGeCompletions((data ?? []) as unknown as SmccdGeCompletion[]);
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : "Manual general-education completions could not be loaded.");
+      } finally {
+        if (active) setGeCompletionsReady(true);
       }
     })();
     return () => { active = false; };
@@ -322,11 +351,19 @@ export default function SmccdPlanner({
     calculateSmccdProgramProgressWithContext(program, progressContext)
   ])), [programs, progressContext]);
   const geProgressByCollege = useMemo(() => new Map<SmccdCourse["college_code"], SmccdGeProgress[]>(
-    (["CSM", "SKY", "CAN"] as const).map((collegeCode) => [collegeCode, calculateSmccdGeProgress(progressContext, collegeCode)])
-  ), [progressContext]);
+    (["CSM", "SKY", "CAN"] as const).map((collegeCode) => [
+      collegeCode,
+      calculateSmccdGeProgress(
+        progressContext,
+        collegeCode,
+        new Set(geCompletions.filter((completion) => completion.college_code === collegeCode).map((completion) => completion.area))
+      )
+    ])
+  ), [geCompletions, progressContext]);
   const markedProgramIds = useMemo(() => new Set(goals.map((goal) => goal.program_id)), [goals]);
   const selectedProgram = programs.find((program) => program.id === goalProgramId) ?? null;
-  const generalEducationProgress = geProgressByCollege.get(selectedProgram?.college_code ?? "CSM") ?? [];
+  const generalEducationCollege = surface === "general_education" ? geCollegeCode : selectedProgram?.college_code ?? "CSM";
+  const generalEducationProgress = geProgressByCollege.get(generalEducationCollege) ?? [];
   const deferredProgramSearch = useDeferredValue(programSearch);
   const visiblePrograms = useMemo(() => {
     const query = deferredProgramSearch.trim().toLowerCase();
@@ -492,7 +529,40 @@ export default function SmccdPlanner({
     setBusy(false);
   }
 
-  if (!courseCatalogReady || (surface === "degree" && !goalsReady)) return <div className="smccd-loading" role="status">Loading SMCCD courses...</div>;
+  async function toggleManualPeCompletion() {
+    const existing = geCompletions.find((completion) => completion.college_code === geCollegeCode && completion.area === "7A");
+    setBusy(true);
+    setError(null);
+    try {
+      if (existing) {
+        const { error: deleteError } = await supabase.from("student_smccd_ge_completions")
+          .delete()
+          .eq("user_id", session.user.id)
+          .eq("college_code", geCollegeCode)
+          .eq("area", "7A");
+        if (deleteError) throw deleteError;
+        setGeCompletions((current) => current.filter((completion) => completion !== existing));
+        setNotice("Manual PE completion removed.");
+      } else {
+        const completion: SmccdGeCompletion = {
+          user_id: session.user.id,
+          college_code: geCollegeCode,
+          area: "7A",
+          completion_source: "manual"
+        };
+        const { error: insertError } = await supabase.from("student_smccd_ge_completions").upsert(completion, { onConflict: "user_id,college_code,area" });
+        if (insertError) throw insertError;
+        setGeCompletions((current) => [...current.filter((item) => !(item.college_code === geCollegeCode && item.area === "7A")), completion]);
+        setNotice("PE marked complete for this college pattern.");
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "PE completion could not be updated.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!courseCatalogReady || (surface === "degree" && !goalsReady) || (surface !== "courses" && !geCompletionsReady)) return <div className="smccd-loading" role="status">Loading SMCCD courses...</div>;
 
   return (
     <div className="smccd-workspace">
@@ -559,11 +629,13 @@ export default function SmccdPlanner({
       {surface === "degree" && !degreeCatalogReady && <div className="smccd-loading smccd-degree-loading" role="status">Loading degree requirements...</div>}
 
       {surface === "degree" && degreeCatalogReady && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
-        <header className="section-heading"><div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div></header>
-        <div className="smccd-program-filters smccd-program-toolbar">
-          <label className="search-box"><MagnifyingGlass size={17} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Search degrees by program, award, or college" /></label>
-          <span>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs`} · {goals.length} marked</span>
-        </div>
+        <header className="section-heading smccd-degree-section-heading">
+          <div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div>
+          <div className="smccd-program-filters smccd-program-toolbar">
+            <label className="search-box"><MagnifyingGlass size={15} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => setProgramSearch(event.target.value)} placeholder="Search degrees" /></label>
+            <span>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs, ${goals.length} marked`}</span>
+          </div>
+        </header>
 
         <div className="smccd-degree-browser" aria-label="Associate degree progress">
           {visiblePrograms.length ? <table className="smccd-degree-table">
@@ -617,8 +689,15 @@ export default function SmccdPlanner({
             })}</tbody>
           </table> : <div className="smccd-program-empty"><strong>No matching degrees</strong><p>Try another program name, award, or college.</p></div>}
         </div>
+      </section></FadeContent>}
+
+      {surface === "general_education" && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section smccd-ge-page">
+        <header className="section-heading smccd-ge-page-heading">
+          <div><h2>General education</h2><p>Local AA and AS requirements matched against the active plan and transcript.</p></div>
+          <label><span className="sr-only">College pattern</span><select value={geCollegeCode} onChange={(event) => setGeCollegeCode(event.target.value as SmccdCourse["college_code"])}><option value="CSM">College of San Mateo</option><option value="SKY">Skyline College</option><option value="CAN">Cañada College</option></select></label>
+        </header>
         <section className="smccd-general-education" aria-labelledby="smccd-general-education-title">
-          <header><div><h3 id="smccd-general-education-title">{selectedProgram ? `${SMCCD_COLLEGE_NAMES[selectedProgram.college_code]} local general education` : "Local general education"}</h3><p>Every requirement stays visible, including communication and physical activity.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} covered</span></header>
+          <header><div><h3 id="smccd-general-education-title">{SMCCD_COLLEGE_NAMES[generalEducationCollege]} local general education</h3><p>Communication, physical activity, and every other local requirement remain visible.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} covered</span></header>
           <div className="smccd-ge-list">{generalEducationProgress.map((area) => {
             const planned = area.projectedCourseCodes.filter((code) => !area.completedCourseCodes.includes(code));
             const isSatisfied = area.status === "completed" || area.status === "planned";
@@ -626,10 +705,16 @@ export default function SmccdPlanner({
             return <article className="smccd-ge-row" key={area.area}>
               <span className={`smccd-ge-check ${area.status === "completed" ? "completed" : area.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${area.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>
               <div><h4>{area.label}: {area.description}</h4><p>{examples.length ? `Courses include ${examples.join(", ")}${area.eligibleCourseCodes.length > examples.length ? ", and more." : "."}` : area.missingSummary}</p></div>
-              <div className="smccd-ge-courses">{area.completedCourseCodes.map((code) => <span className="completed" key={`completed-${area.area}-${code}`}>{code}</span>)}{planned.map((code) => <span className="planned" key={`planned-${area.area}-${code}`}>{code}</span>)}</div>
+              <div className="smccd-ge-courses">
+                {area.completedCourseCodes.map((code) => <span className="completed" key={`completed-${area.area}-${code}`}>{code}</span>)}
+                {planned.map((code) => <span className="planned" key={`planned-${area.area}-${code}`}>{code}</span>)}
+                {area.manuallyCompleted && <span className="completed">PE confirmed</span>}
+                {area.area === "7A" && area.status === "missing" && <button className="secondary-button small" type="button" disabled={busy} onClick={() => void toggleManualPeCompletion()}>Mark PE complete</button>}
+                {area.area === "7A" && area.manuallyCompleted && <button className="quiet-button" type="button" disabled={busy} onClick={() => void toggleManualPeCompletion()}>Undo</button>}
+              </div>
             </article>;
           })}</div>
-          <footer><Warning size={15} /><p>Courses are assigned to one local GE area at a time. Catalog rights, waivers, substitutions, residency, information literacy, and transfer-pattern rules still need official review.</p>{selectedProgram && <a href={SMCCD_LOCAL_GE_SOURCE_URLS[selectedProgram.college_code]} target="_blank" rel="noreferrer">Official {selectedProgram.source_year} pattern <ArrowSquareOut size={13} /></a>}</footer>
+          <footer><Warning size={15} /><p>Courses are assigned to one local GE area at a time. Manual PE completion is student-confirmed. Catalog rights, waivers, substitutions, residency, and transfer-pattern rules still need official review.</p><a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">Official 2025-2026 pattern <ArrowSquareOut size={13} /></a></footer>
         </section>
       </section></FadeContent>}
 

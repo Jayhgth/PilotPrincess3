@@ -1526,6 +1526,20 @@ export default function PlanningWorkspace() {
               openCourses("smccd");
             }}
           />}
+          generalEducationPlanner={<SmccdPlanner
+            embedded
+            surface="general_education"
+            supabase={supabase}
+            session={session}
+            settings={settings}
+            activeVersion={activeVersion}
+            planCourses={planCourses}
+            equivalencies={equivalencies}
+            onFindCourse={(course) => {
+              setFocusedSmccdCourseId(course.id);
+              openCourses("smccd");
+            }}
+          />}
         />
       </div>
     );

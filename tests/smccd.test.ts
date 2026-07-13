@@ -128,6 +128,26 @@ describe("SMCCD curriculum planning", () => {
     });
   });
 
+  it("supports a student-confirmed PE completion without double-counting Area 7", () => {
+    const progress = calculateSmccdGeProgress(
+      createSmccdProgramProgressContext([], [], [], []),
+      "CSM",
+      new Set(["7A"])
+    );
+
+    expect(progress.find((area) => area.area === "7A")).toMatchObject({
+      status: "completed",
+      requiredUnits: 1,
+      manuallyCompleted: true,
+      completedCourseCodes: []
+    });
+    expect(progress.find((area) => area.area === "7B")).toMatchObject({
+      status: "missing",
+      requiredUnits: 2,
+      manuallyCompleted: false
+    });
+  });
+
   it("restores official secondary GE designations and assigns constrained areas first", () => {
     const courses = [{
       id: "CSM:ETHN 103",
