@@ -142,13 +142,13 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_student_data_inventory", mutatesData: false, description: "Read a compact inventory of the current student's available records so the assistant can choose the correct evidence tool.", arguments: "{}" },
   { name: "audit_transcript_data", mutatesData: false, description: "Compare transcript source text, parsed rows, review decisions, catalog identities, and imported plan rows. Use source text for an actual extraction audit; never treat a graduation gap as a parsing error.", arguments: '{"include_source_text":boolean}' },
   { name: "get_gpa_evidence", mutatesData: false, description: "Read course-level GPA inclusion, weighting, points, and exclusion evidence for the current or projected calculation.", arguments: '{"scope":"current|projected"}' },
-  { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the saved schedule, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
+  { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the current four-year plan, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
   { name: "get_enrollment_constraints", mutatesData: false, description: "Read source-backed concurrent or dual-enrollment limits and evaluate the saved college schedule by term.", arguments: "{}" },
-  { name: "get_course_schedule_options", mutatesData: false, description: "Generate deterministic high-school flow suggestions using the saved plan and provider policy. Call with the student's answer about respecting the recommended unit limit.", arguments: '{"respect_recommended_limit":boolean}' },
+  { name: "get_course_schedule_options", mutatesData: false, description: "Evaluate the current four-year plan, retain its existing courses, and generate deterministic missing flow additions with requirement coverage, rationale, remaining gaps, and provider-policy evidence.", arguments: '{"respect_recommended_limit":boolean}' },
   { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for one bookmarked SMCCD associate degree. Omit program_id only when one bookmark is sufficient context.", arguments: '{"program_id":"string|optional"}' },
   { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
   { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
-  { name: "add_course_schedule", mutatesData: true, description: "Propose adding an exact batch returned by get_course_schedule_options. Revalidation prevents stale, duplicate, prerequisite-blocked, or over-limit additions.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean}' },
+  { name: "add_course_schedule", mutatesData: true, description: "Propose adding the exact missing-course batch returned by get_course_schedule_options to the current four-year plan. Existing courses are retained; revalidation prevents stale, duplicate, prerequisite-blocked, or over-limit additions.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
@@ -289,6 +289,150 @@ function calculatedWorkspace(workspace: AssistantWorkspace) {
     overviewProgress,
     graduationProgress,
     gpa: calculateGpa(workspace.planCourses)
+  };
+}
+
+function generatedPlanCourseRow(
+  workspace: AssistantWorkspace,
+  row: ReturnType<typeof generateSuggestedPlan>[number],
+  index: number
+): PlanCourse {
+  return {
+    id: `generated:${row.course_id}`,
+    plan_version_id: workspace.activeVersion.id,
+    user_id: workspace.settings.id,
+    course_id: row.course_id,
+    custom_course_name: null,
+    grade_level: row.grade_level,
+    school_year: row.school_year,
+    term: row.term,
+    status: row.status,
+    credits: row.credits,
+    college_units: row.college_units,
+    letter_grade: null,
+    is_weighted: row.is_weighted,
+    mapping_verified: row.mapping_verified,
+    user_edited: false,
+    notes: null,
+    sort_order: workspace.planCourses.length + index,
+    source_review_item_id: null,
+    smccd_course_id: null,
+    college_provider_code: row.college_provider_code,
+    requirement_area_override: null
+  };
+}
+
+function generateValidatedSchedule(
+  workspace: AssistantWorkspace,
+  enrollmentPolicy: EnrollmentPolicy | null,
+  respectRecommendedLimit: boolean
+) {
+  const candidates = generateSuggestedPlan(
+    workspace.settings,
+    workspace.courses,
+    workspace.planCourses,
+    enrollmentPolicy,
+    respectRecommendedLimit
+  );
+  const accepted: typeof candidates = [];
+  for (const candidate of candidates) {
+    const course = workspace.courses.find((row) => row.id === candidate.course_id);
+    if (!course) continue;
+    const planWithAccepted = [
+      ...workspace.planCourses,
+      ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))
+    ];
+    if (!dtechCatalogEligibility(course, candidate.grade_level, planWithAccepted, workspace.courses).eligible) continue;
+    const prerequisite = evaluateDtechPlannerPrerequisites(
+      course,
+      { gradeLevel: candidate.grade_level, term: candidate.term },
+      workspace.courses,
+      planWithAccepted,
+      workspace.plannedSmccdCourses,
+      workspace.equivalencies
+    );
+    if (prerequisite.result.status === "blocked") continue;
+    accepted.push({
+      ...candidate,
+      mapping_verified: workspace.mappings.some((mapping) => mapping.course_id === candidate.course_id && mapping.confidence === "verified")
+    });
+  }
+  return accepted;
+}
+
+function analyzeGeneratedSchedule(workspace: AssistantWorkspace, generated: ReturnType<typeof generateSuggestedPlan>) {
+  const before = calculateRequirementProgress(
+    workspace.requirements,
+    workspace.planCourses,
+    workspace.mappings,
+    workspace.courses,
+    workspace.equivalencies
+  );
+  const generatedRows: PlanCourse[] = generated.map((row, index) => generatedPlanCourseRow(workspace, row, index));
+  const after = calculateRequirementProgress(
+    workspace.requirements,
+    [...workspace.planCourses, ...generatedRows],
+    workspace.mappings,
+    workspace.courses,
+    workspace.equivalencies
+  );
+  const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
+  const beforeByRequirement = new Map(before.map((item) => [item.requirement.id, item]));
+  const courses = generated.map((row) => {
+    const generatedId = `generated:${row.course_id}`;
+    const requirementEffects = after.flatMap((item) => {
+      const contribution = item.contributions.find((candidate) => candidate.planCourseId === generatedId);
+      if (!contribution || contribution.creditsApplied <= 0) return [];
+      const previous = beforeByRequirement.get(item.requirement.id);
+      return [{
+        area: item.requirement.area,
+        requirement: item.requirement.name,
+        credits_added: contribution.creditsApplied,
+        remaining_before: Math.max(0, item.requirement.credits_required - Number(previous?.verifiedProjectedCredits ?? 0)),
+        remaining_after: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)
+      }];
+    });
+    const rationale = requirementEffects.length
+      ? requirementEffects.map((effect) => `${effect.credits_added} verified ${effect.requirement} credits`).join("; ")
+      : "Restores the standard d.tech grade-level flow; no additional verified graduation credit is claimed.";
+    return {
+      course_id: row.course_id,
+      name: courseById.get(row.course_id)?.name ?? "Course",
+      grade_level: row.grade_level,
+      school_year: row.school_year,
+      term: row.term,
+      status: row.status,
+      college_units: row.college_units,
+      rationale,
+      requirement_effects: requirementEffects
+    };
+  });
+  const remainingGaps = after
+    .filter((item) => item.status === "missing")
+    .map((item) => ({
+      area: item.requirement.area,
+      requirement: item.requirement.name,
+      credits_remaining: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits),
+      warnings: item.ruleWarnings
+    }));
+  const existingByGrade = ([9, 10, 11, 12] as GradeLevel[]).map((grade) => ({
+    grade_level: grade,
+    course_count: workspace.planCourses.filter((row) => row.grade_level === grade).length
+  }));
+  return {
+    terminology: "Current four-year plan means the active Done, In progress, and Planned courses shown in Courses.",
+    existing_course_count: workspace.planCourses.length,
+    existing_courses_retained: workspace.planCourses.length,
+    existing_by_grade: existingByGrade,
+    proposed_addition_count: courses.length,
+    courses,
+    graduation_coverage: {
+      requirement_count: after.length,
+      covered_before: before.filter((item) => item.status !== "missing").length,
+      covered_after: after.filter((item) => item.status !== "missing").length,
+      all_requirements_covered_after: remainingGaps.length === 0,
+      remaining_gaps: remainingGaps
+    }
   };
 }
 
@@ -534,7 +678,7 @@ export async function executeAssistantReadTool(
       args.target_weighted_gpa
     );
     return {
-      summary: "Evaluated the selected saved-schedule GPA assumptions without changing student data.",
+      summary: "Evaluated the selected current-plan GPA assumptions without changing student data.",
       data: {
         transcript_weighted_gpa: result.baseline.projectedWeighted,
         scenario_complete: result.missingExpectedGrades === 0,
@@ -577,33 +721,19 @@ export async function executeAssistantReadTool(
   if (name === "get_course_schedule_options") {
     const args = toolArgumentSchemas.get_course_schedule_options.parse(argumentsValue);
     const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
-    const generated = generateSuggestedPlan(
-      workspace.settings,
-      workspace.courses,
-      workspace.planCourses,
-      policy,
-      args.respect_recommended_limit
-    );
-    const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
+    const generated = generateValidatedSchedule(workspace, policy, args.respect_recommended_limit);
+    const analysis = analyzeGeneratedSchedule(workspace, generated);
     return {
       summary: generated.length
-        ? `Built ${generated.length} deterministic course suggestions for the open high-school years.`
-        : "No additional flow courses fit the open high-school years and selected college-unit preference.",
+        ? `Kept ${analysis.existing_courses_retained} existing courses and found ${generated.length} deterministic ${generated.length === 1 ? "addition" : "additions"} for the current four-year plan.`
+        : `Evaluated the current four-year plan and found no additional flow courses that fit the open high-school years and selected college-unit preference.`,
       data: {
         respect_recommended_limit: args.respect_recommended_limit,
         provider: policy?.provider_name ?? null,
         recommended_max_units: policy?.recommended_max_units ?? null,
         absolute_max_units: policy?.absolute_max_units ?? null,
-        courses: generated.map((row) => ({
-          course_id: row.course_id,
-          name: courseById.get(row.course_id)?.name ?? "Course",
-          grade_level: row.grade_level,
-          school_year: row.school_year,
-          term: row.term,
-          status: row.status,
-          college_units: row.college_units
-        })),
-        boundary: "Suggestions still require catalog, prerequisite, approval, schedule, and seat verification. The unit figures come from the matching provider policy."
+        ...analysis,
+        boundary: "This completes the catalog-backed standard flow within the active planning years; it does not invent electives or prove section availability. Catalog, prerequisite, school approval, schedule, and seat verification still apply."
       }
     };
   }
@@ -723,17 +853,12 @@ export async function executeAssistantMutationTool(
   if (name === "add_course_schedule") {
     const args = toolArgumentSchemas.add_course_schedule.parse(argumentsValue);
     const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
-    const available = generateSuggestedPlan(
-      workspace.settings,
-      workspace.courses,
-      workspace.planCourses,
-      policy,
-      args.respect_recommended_limit
-    );
+    const available = generateValidatedSchedule(workspace, policy, args.respect_recommended_limit);
     const availableById = new Map(available.map((row) => [row.course_id, row]));
     const selected = args.course_ids.map((id) => availableById.get(id));
     if (selected.some((row) => !row)) throw new Error("One or more schedule suggestions are stale or no longer satisfy the plan rules. Generate the options again.");
     const selectedRows = selected as typeof available;
+    const analysis = analyzeGeneratedSchedule(workspace, selectedRows);
     const insertRows = selectedRows.map((row, index) => ({
       ...row,
       plan_version_id: workspace.activeVersion.id,
@@ -746,9 +871,15 @@ export async function executeAssistantMutationTool(
     const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
     const courseNames = selectedRows.map((row) => courseById.get(row.course_id)?.name ?? "Course");
     return {
-      summary: `${courseNames.length} suggested ${courseNames.length === 1 ? "course was" : "courses were"} added to the plan.`,
+      summary: `Added ${courseNames.length} ${courseNames.length === 1 ? "course" : "courses"} to the current four-year plan; kept ${analysis.existing_courses_retained} existing ${analysis.existing_courses_retained === 1 ? "course" : "courses"}.`,
       data: {
         courses: courseNames,
+        course_details: analysis.courses,
+        existing_courses_retained: analysis.existing_courses_retained,
+        graduation_coverage: analysis.graduation_coverage,
+        graduation_coverage_after: analysis.graduation_coverage.all_requirements_covered_after
+          ? `All ${analysis.graduation_coverage.requirement_count} tracked areas covered`
+          : `${analysis.graduation_coverage.remaining_gaps.length} ${analysis.graduation_coverage.remaining_gaps.length === 1 ? "area" : "areas"} still open: ${analysis.graduation_coverage.remaining_gaps.map((gap) => gap.requirement).join(", ")}`,
         respect_recommended_limit: args.respect_recommended_limit,
         planning_threshold_units: policy?.recommended_max_units ?? null,
         absolute_max_units: policy?.absolute_max_units ?? null

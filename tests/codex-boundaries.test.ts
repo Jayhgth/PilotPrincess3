@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, scheduleProposalAction } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, schedulePreview, scheduleProposalAction, scheduleResultIsComplete } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
+import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -138,6 +139,15 @@ describe("Codex feature boundaries", () => {
       pageContext: { view: "courses" },
       model: "gpt-5.6-luna",
       reviewMode: "manual",
+      knowledge: [{
+        id: "schedule-generation-evidence",
+        title: "Schedule generation evidence contract",
+        content: "Retain existing courses and explain every addition.",
+        sourcePath: "docs/AI_TRANSPARENCY.md",
+        tags: ["schedule"],
+        score: 2,
+        matchReason: "text_and_context"
+      }],
       executeReadTool: async () => ({ summary: "ok", data: {} }),
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
@@ -157,8 +167,57 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
     expect(prompt).toContain("Show the exact returned courses before any proposal");
+    expect(prompt).toContain("current four-year plan");
+    expect(prompt).toContain("Never call a partial result complete");
+    expect(prompt).toContain("Schedule generation evidence contract");
+    expect(prompt).toContain("authoritative product context, not student-record evidence");
     expect(prompt).toContain("never claim workload personalization unless the student supplied workload information");
     expect(prompt).toContain("Never end with a promise such as 'I'll check'");
+  });
+
+  it("routes schedule questions to bounded application guidance tags", () => {
+    expect(assistantKnowledgeTags("Create a schedule with SMCCD classes", { view: "courses" })).toEqual([
+      "assistant",
+      "courses",
+      "schedule",
+      "college",
+      "smccd"
+    ]);
+    expect(assistantKnowledgeTags("Audit my transcript GPA", { view: "sources" })).toEqual([
+      "assistant",
+      "gpa",
+      "transcript"
+    ]);
+  });
+
+  it("explains schedule additions relative to the existing current plan", () => {
+    const result = {
+      existing_course_count: 50,
+      courses: [{
+        course_id: crypto.randomUUID(),
+        name: "English 4 / English 4 Honors",
+        grade_level: 12,
+        term: "full_year",
+        rationale: "10 verified English credits"
+      }],
+      graduation_coverage: {
+        requirement_count: 8,
+        all_requirements_covered_after: true,
+        remaining_gaps: []
+      }
+    };
+    const preview = schedulePreview(result);
+    expect(preview).toContain("current four-year plan already has 50 courses");
+    expect(preview).toContain("keep all of them and add 1");
+    expect(preview).toContain("10 verified English credits");
+    expect(preview).toContain("all 8 tracked graduation areas");
+    expect(preview).toContain("Only one new course is proposed because the other 50 courses are already in your current plan.");
+    expect(preview).not.toContain("saved plan");
+    expect(scheduleResultIsComplete(result)).toBe(true);
+    expect(scheduleResultIsComplete({
+      ...result,
+      graduation_coverage: { ...result.graduation_coverage, all_requirements_covered_after: false, remaining_gaps: [{ requirement: "Social Science" }] }
+    })).toBe(false);
   });
 
   it("accepts the expanded student-data tools in structured assistant output", () => {
@@ -202,6 +261,7 @@ describe("Codex feature boundaries", () => {
     expect(requiredAssistantEvidenceRead("Suggest a study schedule for finals")).toBeNull();
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "add_schedule", accepted: false });
+    expect(parseScheduleAnswer("Here are my answers:\n- **Add these proposed courses to your current four-year plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
     expect(scheduleProposalAction("auto_review", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
     expect(scheduleProposalAction("manual", "Suggest a schedule for me.")).toEqual({ kind: "ask" });
     expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "decline" });

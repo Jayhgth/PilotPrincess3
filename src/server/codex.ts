@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import type { ZodType } from "zod";
 import { assistantTurnJsonSchema, assistantTurnSchema, type AssistantQuestion } from "@/server/ai-schemas";
 import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
+import type { AssistantKnowledgeChunk } from "@/server/ai-knowledge";
 import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiReasoningEffort, type AiReviewMode } from "@/lib/ai-preferences";
 
 const DEFAULT_TIMEOUT_MS = 9000;
@@ -518,6 +519,7 @@ export interface AssistantChatOptions {
   model: AiModel;
   reasoningEffort?: AiReasoningEffort;
   reviewMode: AiReviewMode;
+  knowledge?: AssistantKnowledgeChunk[];
   signal?: AbortSignal;
   timeoutMs?: number;
   executeReadTool: (name: AssistantToolName, argumentsValue: Record<string, unknown>) => Promise<AssistantToolResult>;
@@ -601,7 +603,7 @@ export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null 
   const prompt = match[1].toLowerCase();
   const accepted = match[2].toLowerCase() === "yes";
   if (/(?:unit|district).*limit|college coursework within/.test(prompt)) return { kind: "unit_limit", accepted };
-  if (/\badd\b.*\bschedule\b.*\bplan\b/.test(prompt)) return { kind: "add_schedule", accepted };
+  if (/\badd\b.*\b(?:schedule|proposed courses|course additions)\b.*\bplan\b/.test(prompt)) return { kind: "add_schedule", accepted };
   return null;
 }
 
@@ -624,19 +626,43 @@ export function assistantMessagePromisesFutureWork(message: string) {
   return /\b(?:i(?:['’]ll| will)|i(?:['’]m| am) going to|let me)\s+(?:first\s+)?(?:check|review|read|look up|inspect|analyze|search|find|build|generate|prepare)\b/i.test(message);
 }
 
-function schedulePreview(courses: Record<string, unknown>[]) {
+export function schedulePreview(data: Record<string, unknown>) {
+  const courses = Array.isArray(data.courses)
+    ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const existingCount = Number(data.existing_course_count ?? data.existing_courses_retained ?? 0);
+  const coverage = data.graduation_coverage && typeof data.graduation_coverage === "object" && !Array.isArray(data.graduation_coverage)
+    ? data.graduation_coverage as Record<string, unknown>
+    : {};
+  const remainingGaps = Array.isArray(coverage.remaining_gaps)
+    ? coverage.remaining_gaps.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
   const visible = courses.slice(0, 6).map((course) => {
     const grade = Number(course.grade_level);
     const term = String(course.term ?? "").replaceAll("_", " ");
     const name = String(course.name ?? "Course").slice(0, 64);
-    return `- Grade ${Number.isFinite(grade) ? grade : "?"}, ${term || "term not set"}: ${name}`;
+    const rationale = String(course.rationale ?? "Standard grade-level flow addition.").slice(0, 140);
+    return `- Grade ${Number.isFinite(grade) ? grade : "?"}, ${term || "term not set"}: ${name} — ${rationale}`;
   });
   const remainder = courses.length - visible.length;
-  return [
-    `I found ${courses.length} course ${courses.length === 1 ? "option" : "options"} from your saved plan and current catalog:`,
-    ...visible,
-    ...(remainder > 0 ? [`- Plus ${remainder} more`] : [])
-  ].join("\n");
+  const opening = courses.length
+    ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them and add ${courses.length}:`
+    : `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I found no additional catalog-backed flow courses that safely fit the open years.`;
+  const coverageLine = remainingGaps.length
+    ? `${courses.length ? `After this ${courses.length === 1 ? "addition" : "batch"}` : "The current plan"}, ${remainingGaps.length} graduation ${remainingGaps.length === 1 ? "area remains" : "areas remain"} open: ${remainingGaps.slice(0, 3).map((gap) => `${String(gap.requirement ?? gap.area)} (${Number(gap.credits_remaining ?? 0)} credits)`).join(", ")}${remainingGaps.length > 3 ? `, plus ${remainingGaps.length - 3} more` : ""}. This is a partial completion, not a complete schedule.`
+    : `${courses.length ? `After this ${courses.length === 1 ? "addition" : "batch"}` : "The current plan"}, all ${Number(coverage.requirement_count ?? 0)} tracked graduation areas have verified completed, in-progress, or planned coverage.`;
+  const whyOne = courses.length === 1 && existingCount > 0
+    ? `Only one new course is proposed because the other ${existingCount} courses are already in your current plan.`
+    : null;
+  return [opening, ...visible, ...(remainder > 0 ? [`- Plus ${remainder} more`] : []), coverageLine, whyOne].filter(Boolean).join("\n\n");
+}
+
+export function scheduleResultIsComplete(data: Record<string, unknown>) {
+  if (!data.graduation_coverage || typeof data.graduation_coverage !== "object" || Array.isArray(data.graduation_coverage)) return false;
+  const coverage = data.graduation_coverage as Record<string, unknown>;
+  return coverage.all_requirements_covered_after === true
+    && Array.isArray(coverage.remaining_gaps)
+    && coverage.remaining_gaps.length === 0;
 }
 
 function addUsage(current: Usage | null, next: Usage): Usage {
@@ -650,6 +676,13 @@ function addUsage(current: Usage | null, next: Usage): Usage {
 
 export function assistantConversationPrompt(options: AssistantChatOptions) {
   const history = options.history.slice(-24).map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
+  const knowledge = (options.knowledge ?? []).map((chunk) => ({
+    id: chunk.id,
+    title: chunk.title,
+    guidance: chunk.content,
+    source: chunk.sourcePath,
+    match: chunk.matchReason
+  }));
   return [
     "You are Pilot, the conversational planning assistant for a d.tech student using Pilot Princess.",
     "Write for a busy high-school student. Lead with the answer. Default to one to three short sentences; use at most three bullets only when they scan faster. Keep assistant_message under 900 characters, usually under 500. Do not repeat the question, narrate your process, restate page data, add generic encouragement, score the student, or create a dashboard-style report or table.",
@@ -658,8 +691,8 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     options.images?.length
       ? `The student explicitly attached ${options.images.length} ${options.images.length === 1 ? "image" : "images"}: ${(options.imageNames ?? []).join(", ") || "unnamed image"}. Use visible image content only as context for this turn. Describe uncertainty when text or details are unclear, and do not infer unsupported student records.`
       : "No image was attached to this turn.",
-    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover the supported academic-planning domains listed below; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting any saved-plan change. Treat all-A as the ceiling of the included saved schedule, never a grade prediction or admission guarantee.",
-    "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Show the exact returned courses before any proposal. Ask about the displayed per-term unit limit only when the returned schedule includes college coursework; otherwise ask whether to add the shown schedule. Put the safe Yes option first and label it recommended. Never exceed absolute_max_units, and never claim workload personalization unless the student supplied workload information in this conversation.",
+    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover the supported academic-planning domains listed below; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting a change to the current four-year plan. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
+    "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Show the exact returned courses before any proposal. Treat the active course rows as the student's current four-year plan: say how many existing courses are retained, separate them from new additions, explain why each addition was selected, and name any graduation gaps that remain afterward. One addition may be sufficient only when the existing plan supplies the rest; explain that instead of presenting one class as the whole schedule. Never call a partial result complete. Ask about the displayed per-term unit limit only when the returned additions include college coursework; otherwise ask whether to add the shown additions. Put the safe Yes option first and label it recommended. Never exceed absolute_max_units, and never claim workload personalization unless the student supplied workload information in this conversation.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change supported dashboard data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to three exact related changes in one turn.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
@@ -670,6 +703,9 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Never end with a promise such as 'I'll check' or 'let me look' without actually calling the relevant read tool in the same turn. If no tool can perform the promised work, state that limitation directly.",
     "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Available tools:\n" + assistantToolCatalogPrompt(),
+    knowledge.length
+      ? `Retrieved application guidance (authoritative product context, not student-record evidence):\n${JSON.stringify(knowledge)}`
+      : "No additional application-guidance chunks were retrieved. Follow the built-in safety and tool rules above.",
     `Current page context: ${JSON.stringify(options.pageContext)}`,
     history ? `Recent conversation:\n${history}` : "This is the first message in the conversation.",
     `USER: ${options.userMessage || "Please review the attached image context."}`
@@ -815,7 +851,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           const ids = courses.map((row) => row.course_id).filter((id): id is string => typeof id === "string");
           if (!courses.length) {
             return {
-              message: "No additional flow courses fit the open high-school years and that unit-limit choice.",
+              message: schedulePreview(data),
               questions: [],
               threadId: thread.id,
               usage,
@@ -825,8 +861,19 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
           }
           if (ids.length !== courses.length || ids.length > 24) throw new Error("The generated schedule did not return a safe batch of course IDs.");
+          const preview = schedulePreview(data);
+          if (!scheduleResultIsComplete(data)) {
+            return {
+              message: `${preview}\n\nI left your current four-year plan unchanged because this deterministic batch does not complete every tracked graduation area.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
           const scheduleAction = scheduleProposalAction(options.reviewMode, options.userMessage);
-          const preview = schedulePreview(courses);
           if (scheduleAction.kind === "ask") {
             const includesCollegeCourses = courses.some((course) => Number(course.college_units ?? 0) > 0);
             return {
@@ -840,7 +887,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
                 allow_custom: false
               }] : [{
                 id: "add_schedule",
-                prompt: "Add this suggested schedule to your plan?",
+                prompt: "Add these proposed courses to your current four-year plan?",
                 options: [{ id: "yes", label: "Yes (Recommended)" }, { id: "no", label: "No" }],
                 allow_custom: false
               }],
@@ -868,7 +915,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             name: "add_course_schedule",
             label: assistantToolLabel("add_course_schedule"),
             arguments: { course_ids: ids, respect_recommended_limit: respectsLimit },
-            explanation: `Add the ${ids.length} deterministic schedule suggestions using the student's unit-limit choice.`,
+            explanation: `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
             mutatesData: true,
             status: "pending_confirmation"
           };

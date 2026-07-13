@@ -8,6 +8,7 @@ import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import type { AiMessage } from "@/lib/models";
 import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat } from "@/server/codex";
 import { executeAssistantReadTool } from "@/server/ai-tools";
+import { retrieveAssistantKnowledge, type AssistantKnowledgeChunk } from "@/server/ai-knowledge";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 
@@ -151,6 +152,18 @@ export const POST: APIRoute = async ({ request }) => {
       const startedAt = Date.now();
       record("turn.started", { turnId, capabilities: CODEX_RUNTIME_CAPABILITIES, attachmentCount: attachmentRows.length });
       try {
+        let knowledge: AssistantKnowledgeChunk[] = [];
+        try {
+          knowledge = await retrieveAssistantKnowledge(auth.supabase, parsed.data.message, parsed.data.pageContext);
+          record("knowledge.retrieved", {
+            chunks: knowledge.map((chunk) => ({ id: chunk.id, title: chunk.title, sourcePath: chunk.sourcePath, score: chunk.score, matchReason: chunk.matchReason })),
+            summary: `Retrieved ${knowledge.length} application-guidance ${knowledge.length === 1 ? "chunk" : "chunks"}.`
+          });
+        } catch (error) {
+          record("knowledge.failed", {
+            summary: error instanceof Error ? error.message : "Pilot application guidance could not be retrieved."
+          });
+        }
         const localImages: Array<{ type: "local_image"; path: string }> = [];
         if (attachmentRows.length) {
           attachmentDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-images-"));
@@ -175,6 +188,7 @@ export const POST: APIRoute = async ({ request }) => {
           model: preferences.model,
           reasoningEffort: preferences.reasoningEffort,
           reviewMode: preferences.reviewMode,
+          knowledge,
           signal,
           executeReadTool: (name, argumentsValue) => executeAssistantReadTool(auth.supabase, auth.user.id, name, argumentsValue),
           onSdkEvent: (event, iteration) => {

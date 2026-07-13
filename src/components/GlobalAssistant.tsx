@@ -278,6 +278,8 @@ function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boole
 
 function activityItem(event: LiveActivity) {
   if (event.type === "attachments.received") return { kind: "image", label: "Image context", detail: String(event.summary ?? "Student-provided images were added to this turn") };
+  if (event.type === "knowledge.retrieved") return { kind: "tool", label: "Planning guidance", detail: String(event.summary ?? "Retrieved relevant application guidance") };
+  if (event.type === "knowledge.failed") return { kind: "tool", label: "Planning guidance", detail: "Built-in guidance used because retrieved guidance was unavailable" };
   if (event.type === "auto_review.started") return { kind: "review", label: "Auto-review", detail: String(event.summary ?? "Checking the proposed change") };
   if (event.type === "auto_review.completed") {
     const review = event.review as Record<string, unknown> | undefined;

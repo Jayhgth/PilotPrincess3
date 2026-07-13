@@ -77,6 +77,8 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   award_type: "Award",
   label: "Snapshot",
   equivalency_verified: "d.tech equivalency reviewed",
+  existing_courses_retained: "Existing courses kept",
+  graduation_coverage_after: "Graduation coverage after",
   respect_recommended_limit: "Respect district unit limit"
 };
 
