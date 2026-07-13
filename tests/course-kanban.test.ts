@@ -53,8 +53,10 @@ describe("four-year course board", () => {
     expect(html.match(/role="tab"/g)).toHaveLength(4);
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(html).toContain('id="course-grade-11"');
+    expect(html).toContain("2025-2026 · 2 courses");
     expect(html.match(/class="course-year /g)).toHaveLength(1);
     expect(html.match(/class="course-term-lane /g)).toHaveLength(3);
+    expect(html).not.toContain("course-year-header");
     expect(html).toContain("Completed courses cannot move");
     expect(html).toContain("Move Current English. Drag this card to another school year or term.");
     expect(html).not.toContain("Future Physics");

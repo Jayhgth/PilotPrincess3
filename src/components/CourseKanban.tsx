@@ -259,13 +259,12 @@ export default function CourseKanban(props: CourseKanbanProps) {
             key={grade}
           >
             <span>Grade {grade}</span>
-            <small>{courseCount} {courseCount === 1 ? "course" : "courses"}</small>
+            <small>{schoolYearForGrade(graduationYear, grade)} · {courseCount} {courseCount === 1 ? "course" : "courses"}</small>
           </button>;
         })}
       </div>
       <section className="course-year-board" aria-label="Four-year course plan">
         <section className={`course-year ${selectedYearState}`} id={`course-year-${selectedGrade}`} role="tabpanel" aria-labelledby={`course-grade-${selectedGrade}`}>
-          <header className="course-year-header"><div><h2>Grade {selectedGrade}</h2><p>{schoolYearForGrade(graduationYear, selectedGrade)}</p></div><strong>{selectedRows.length} {selectedRows.length === 1 ? "course" : "courses"}</strong></header>
           <div className="course-year-terms">{BOARD_TERMS.map((term) => {
             const termRows = selectedRows.filter((row) => boardTerm(row) === term);
             return <TermLane grade={selectedGrade} term={term} rows={termRows} locked={selectedYearLocked} key={term}>

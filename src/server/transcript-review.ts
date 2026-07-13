@@ -1,7 +1,9 @@
-import type { Course, SmccdCourse } from "@/lib/models";
+import type { CatalogReviewItem, Confidence, Course, SmccdCourse } from "@/lib/models";
+import { normalizeCourseName } from "@/lib/course-names";
 import {
   findTranscriptCatalogMatch,
   isDtechIntersessionCourse,
+  normalizeCollegeCourseCode,
   stripTranscriptQuarterPrefix,
   type TranscriptCourseClassification
 } from "@/lib/transcript";
@@ -9,14 +11,24 @@ import { institutionKeyFromName } from "@/lib/institutions";
 import { findSmccdCourseMatch } from "@/lib/smccd";
 import type { ParsedTranscriptResult } from "@/server/ai-schemas";
 
+export interface ProposedTranscriptReviewRow {
+  user_id: string;
+  source_id: string;
+  entity_type: "transcript_course" | "transcript_note";
+  proposed_payload: Record<string, unknown>;
+  confidence: Confidence;
+  status: "pending" | "approved";
+  uncertainty_notes: string[];
+}
+
 export function transcriptReviewRows(
   userId: string,
   sourceId: string,
   result: ParsedTranscriptResult,
   courses: Course[],
   smccdCourses: SmccdCourse[]
-) {
-  const courseRows = result.courses.map((course) => {
+): ProposedTranscriptReviewRow[] {
+  const courseRows: ProposedTranscriptReviewRow[] = result.courses.map((course) => {
     const isIntersession = isDtechIntersessionCourse(course);
     const normalizedCourse = isIntersession
       ? { ...course, course_name: stripTranscriptQuarterPrefix(course.course_name), subject: "Personal Development", weighted: false }
@@ -61,7 +73,7 @@ export function transcriptReviewRows(
       uncertainty_notes: uncertaintyNotes
     };
   });
-  const noteRow = {
+  const noteRow: ProposedTranscriptReviewRow = {
     user_id: userId,
     source_id: sourceId,
     entity_type: "transcript_note",
@@ -78,4 +90,47 @@ export function transcriptReviewRows(
     uncertainty_notes: result.conflicts
   };
   return [...courseRows, noteRow];
+}
+
+function transcriptCourseIdentity(payload: Record<string, unknown>) {
+  const courseName = String(payload.course_name ?? "");
+  const courseCode = normalizeCollegeCourseCode(String(payload.course_code ?? ""))
+    ?? normalizeCollegeCourseCode(courseName);
+  const institutionName = String(payload.institution_name ?? "");
+  const institution = institutionKeyFromName(institutionName)
+    ?? normalizeCourseName(institutionName);
+  return [
+    courseCode ?? normalizeCourseName(courseName),
+    institution,
+    String(payload.grade_level ?? ""),
+    String(payload.school_year ?? "")
+  ].join("|");
+}
+
+export function reconcileTranscriptReviewRows(
+  existingRows: CatalogReviewItem[],
+  proposedRows: ProposedTranscriptReviewRow[]
+) {
+  const available = new Map<string, CatalogReviewItem[]>();
+  for (const row of existingRows.filter((item) => item.entity_type === "transcript_course")) {
+    const key = transcriptCourseIdentity(row.proposed_payload);
+    available.set(key, [...(available.get(key) ?? []), row]);
+  }
+
+  const matched: Array<{ existing: CatalogReviewItem; proposed: ProposedTranscriptReviewRow }> = [];
+  const inserts: ProposedTranscriptReviewRow[] = [];
+  for (const row of proposedRows.filter((item) => item.entity_type === "transcript_course")) {
+    const queue = available.get(transcriptCourseIdentity(row.proposed_payload));
+    const existing = queue?.shift();
+    if (existing) matched.push({ existing, proposed: row });
+    else inserts.push(row);
+  }
+
+  return {
+    matched,
+    inserts,
+    stale: [...available.values()].flat(),
+    existingNote: existingRows.find((item) => item.entity_type === "transcript_note") ?? null,
+    proposedNote: proposedRows.find((item) => item.entity_type === "transcript_note") ?? null
+  };
 }

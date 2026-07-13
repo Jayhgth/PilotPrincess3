@@ -11,7 +11,6 @@ import {
   HouseIcon as House,
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
-  TrashIcon as Trash,
   WarningIcon as Warning
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
@@ -247,14 +246,10 @@ export default function PlanningWorkspace() {
   const [catalogSubject, setCatalogSubject] = useState("all");
   const [catalogGrade, setCatalogGrade] = useState<GradeLevel | "all">("all");
   const [catalogPage, setCatalogPage] = useState(0);
-  const [sourceForm, setSourceForm] = useState({
-    rawText: "",
-    file: null as File | null
-  });
+  const [sourceForm, setSourceForm] = useState({ file: null as File | null });
   const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
-  const [selectedTranscriptSourceId, setSelectedTranscriptSourceId] = useState<string | null>(null);
   const [planExplanation, setPlanExplanation] = useState<string | null>(null);
   const [suggestedPlan, setSuggestedPlan] = useState<ReturnType<typeof generateSuggestedPlan>>([]);
   const [planGenerationPromptOpen, setPlanGenerationPromptOpen] = useState(false);
@@ -445,10 +440,6 @@ export default function PlanningWorkspace() {
       setSettings(loadedSettings);
       const loadedSources = (sourceResult.data ?? []) as unknown as OfficialSource[];
       setSources(loadedSources);
-      setSelectedTranscriptSourceId((current) => {
-        const transcripts = loadedSources.filter((source) => !source.is_official && source.document_type === "transcript");
-        return current && transcripts.some((source) => source.id === current) ? current : transcripts[0]?.id ?? null;
-      });
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
@@ -1002,55 +993,61 @@ export default function PlanningWorkspace() {
   async function submitTranscript(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!supabase || !session || !school) return;
-    if (!sourceForm.file && !sourceForm.rawText.trim()) {
-      notify("Choose a transcript file or paste its text.", "error");
+    const file = sourceForm.file;
+    if (!file) {
+      notify("Choose a transcript file.", "error");
       return;
     }
+    const existingTranscript = sources.find((source) => !source.is_official && source.document_type === "transcript") ?? null;
     const form = event.currentTarget;
     await runAction(
-      "Reading transcript",
+      existingTranscript ? "Replacing transcript" : "Reading transcript",
       async () => {
-        let storagePath: string | null = null;
-        let mimeType: string | null = null;
-        let kind: "upload" | "screenshot" | "pasted_text" = "pasted_text";
-        if (sourceForm.file) {
-          const safeName = sourceForm.file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-          storagePath = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
-          mimeType = sourceForm.file.type || "application/octet-stream";
-          kind = mimeType.startsWith("image/") ? "screenshot" : "upload";
-          const { error: uploadError } = await supabase.storage
-            .from("source-uploads")
-            .upload(storagePath, sourceForm.file, { contentType: mimeType, upsert: false });
-          if (uploadError) throw uploadError;
-        }
-        const { data, error } = await supabase
-          .from("official_sources")
-          .insert({
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+        const storagePath = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
+        const mimeType = file.type || "application/octet-stream";
+        const kind: "upload" | "screenshot" = mimeType.startsWith("image/") ? "screenshot" : "upload";
+        const { error: uploadError } = await supabase.storage
+          .from("source-uploads")
+          .upload(storagePath, file, { contentType: mimeType, upsert: false });
+        if (uploadError) throw uploadError;
+
+        const sourceValues = {
             school_id: school.id,
             user_id: session.user.id,
-            title: sourceForm.file?.name || "Pasted transcript",
+            title: file.name,
             kind,
             storage_path: storagePath,
-            raw_text: sourceForm.rawText.trim() || null,
+            raw_text: null,
             mime_type: mimeType,
             source_year: new Date().getFullYear().toString(),
             is_official: false,
             parse_status: "pending",
             confidence: "uncertain",
-            document_type: "transcript"
-          })
+            document_type: "transcript" as const,
+            error_message: null
+        };
+        const sourceMutation = existingTranscript
+          ? supabase.from("official_sources").update(sourceValues).eq("id", existingTranscript.id)
+          : supabase.from("official_sources").insert(sourceValues);
+        const { data, error } = await sourceMutation
           .select("*")
           .single();
-        if (error) throw error;
-        setSelectedTranscriptSourceId(data.id);
-        setSourceForm({ rawText: "", file: null });
+        if (error) {
+          await supabase.storage.from("source-uploads").remove([storagePath]);
+          throw error;
+        }
+        setSourceForm({ file: null });
         form.reset();
-        await logEvent("source_added", { kind });
+        await logEvent(existingTranscript ? "transcript_replaced" : "source_added", { kind });
         let payload: Record<string, unknown>;
         try {
           payload = await authorizedPost("/api/ai/parse-transcript", { sourceId: data.id });
         } finally {
           await loadWorkspace();
+        }
+        if (existingTranscript?.storage_path && existingTranscript.storage_path !== storagePath) {
+          await supabase.storage.from("source-uploads").remove([existingTranscript.storage_path]);
         }
         const parsedItems = ((payload.reviewItems ?? []) as CatalogReviewItem[])
           .filter((item) => item.entity_type === "transcript_course");
@@ -1058,7 +1055,7 @@ export default function PlanningWorkspace() {
         const parserNote = payload.aiUsed === true
           ? " Codex vision was used because the file had no readable text layer."
           : " Parsed from document text without Codex.";
-        notify(`${String(payload.summary ?? "Transcript review ready.")}${parserNote}`, "success");
+        notify(`${String(payload.summary ?? "Transcript review ready.")}${parserNote}${existingTranscript ? " Existing imported courses were refreshed without creating a second transcript." : ""}`, "success");
         setSourceAiTransparency(payload.aiUsed === true ? payload.aiTransparency as SourceAiTransparency : null);
       },
     );
@@ -1193,26 +1190,6 @@ export default function PlanningWorkspace() {
       },
       `${prepared.length} ${prepared.length === 1 ? "course" : "courses"} imported to Done.`
     );
-  }
-
-  async function removeTranscriptSource(source: OfficialSource) {
-    if (!supabase) return;
-    const sourceReviewIds = new Set(reviewItems.filter((item) => item.source_id === source.id).map((item) => item.id));
-    const isEvidence = planCourses.some((row) => row.source_review_item_id && sourceReviewIds.has(row.source_review_item_id));
-    if (isEvidence) {
-      notify("This transcript supports imported course records. Remove those courses first so their evidence is not orphaned.", "error");
-      return;
-    }
-    await runAction("Removing transcript", async () => {
-      const { error } = await supabase.from("official_sources").delete().eq("id", source.id);
-      if (error) throw error;
-      if (source.storage_path) await supabase.storage.from("source-uploads").remove([source.storage_path]);
-      setSources((current) => current.filter((candidate) => candidate.id !== source.id));
-      setReviewItems((current) => current.filter((item) => item.source_id !== source.id));
-      setSelectedTranscriptSourceId((current) => current === source.id
-        ? sources.find((candidate) => candidate.id !== source.id && !candidate.is_official && candidate.document_type === "transcript")?.id ?? null
-        : current);
-    }, "Transcript removed.");
   }
 
   async function saveStudentSettings(patch: StudentSettingsPatch) {
@@ -1391,8 +1368,7 @@ export default function PlanningWorkspace() {
   }
 
   function renderSources() {
-    const transcriptSources = sources.filter((source) => !source.is_official && source.document_type === "transcript");
-    const selectedTranscript = transcriptSources.find((source) => source.id === selectedTranscriptSourceId) ?? transcriptSources[0] ?? null;
+    const selectedTranscript = sources.find((source) => !source.is_official && source.document_type === "transcript") ?? null;
     const importedIds = new Set(planCourses.map((row) => row.source_review_item_id).filter(Boolean));
     const transcriptItems = reviewItems.filter(
       (item) => item.entity_type === "transcript_course"
@@ -1418,32 +1394,16 @@ export default function PlanningWorkspace() {
         <form className="transcript-upload" onSubmit={submitTranscript}>
           <div className="transcript-upload-row">
             <label className="transcript-upload-control" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); setSourceForm((current) => ({ ...current, file: event.dataTransfer.files.item(0) })); }}>
-              <span className="transcript-file-name">{sourceForm.file?.name ?? "Drop transcript here"}</span>
+              <span className="transcript-file-name">{sourceForm.file?.name ?? (selectedTranscript ? "Choose an updated transcript" : "Drop transcript here")}</span>
               <span className="transcript-file-action">Choose file</span>
               <input aria-label="Transcript file" type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setSourceForm((current) => ({ ...current, file: event.target.files?.[0] ?? null }))} />
             </label>
-            <button className="primary-button transcript-read-button" type="submit" disabled={Boolean(busyLabel) || (!sourceForm.file && !sourceForm.rawText.trim())}>
-              <FileArrowUp size={17} /> {busyLabel === "Reading transcript" ? "Reading" : "Read transcript"}
+            <button className="primary-button transcript-read-button" type="submit" disabled={Boolean(busyLabel) || !sourceForm.file}>
+              <FileArrowUp size={17} /> {busyLabel === "Reading transcript" || busyLabel === "Replacing transcript" ? "Reading" : selectedTranscript ? "Replace transcript" : "Read transcript"}
             </button>
           </div>
-          <details className="transcript-paste">
-            <summary>Paste transcript text instead</summary>
-            <label className="form-field"><span>Transcript text</span><textarea value={sourceForm.rawText} onChange={(event) => setSourceForm((current) => ({ ...current, rawText: event.target.value }))} placeholder="Paste completed course rows, grades, credits, and school years." /></label>
-          </details>
-          <p className="transcript-parser-note">Readable document text is parsed locally. Codex is only used for image-only files after you approve the connection. <button type="button" onClick={() => setAssistantOpen(true)}>Open Pilot setup</button></p>
+          <p className="transcript-parser-note">{selectedTranscript ? "Replacing the file refreshes this transcript and preserves links to imported courses. " : "Readable document text is parsed locally. "}Codex is only used for image-only files after you approve the connection. <button type="button" onClick={() => setAssistantOpen(true)}>Open Pilot setup</button></p>
         </form>
-
-        {transcriptSources.length > 0 && <section className="transcript-history" aria-label="Transcript history">
-          <div className="transcript-history-heading"><strong>Transcript history</strong><span>{transcriptSources.length} {transcriptSources.length === 1 ? "source" : "sources"}</span></div>
-          <div className="transcript-history-list">{transcriptSources.map((source) => {
-            const evidenceIds = new Set(reviewItems.filter((item) => item.source_id === source.id).map((item) => item.id));
-            const importedCount = planCourses.filter((row) => row.source_review_item_id && evidenceIds.has(row.source_review_item_id)).length;
-            return <div className={source.id === selectedTranscript?.id ? "selected" : ""} key={source.id}>
-              <button type="button" onClick={() => setSelectedTranscriptSourceId(source.id)} aria-pressed={source.id === selectedTranscript?.id}><span><strong>{source.title}</strong><small>{new Date(source.created_at).toLocaleDateString()} · {titleCase(source.parse_status)}{importedCount ? ` · ${importedCount} imported` : ""}</small></span></button>
-              <button className="icon-button danger" type="button" onClick={() => void removeTranscriptSource(source)} disabled={Boolean(busyLabel) || importedCount > 0} aria-label={`Remove ${source.title}`} title={importedCount > 0 ? "Remove imported courses first to preserve evidence" : "Remove transcript"}><Trash size={15} /></button>
-            </div>;
-          })}</div>
-        </section>}
         {selectedTranscript && <div className={`transcript-source-status ${selectedTranscript.error_message ? "error" : ""}`}>
           <span><strong>{selectedTranscript.title}</strong><small>{selectedTranscript.parse_status === "processing" ? "Reading transcript" : selectedTranscript.parse_status === "needs_review" || selectedTranscript.parse_status === "complete" ? "Ready to review" : titleCase(selectedTranscript.parse_status)}</small></span>
           {selectedTranscript.error_message && <small>{selectedTranscript.error_message}</small>}

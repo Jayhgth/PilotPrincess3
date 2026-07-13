@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Course, SmccdCourse } from "@/lib/models";
+import type { CatalogReviewItem, Course, SmccdCourse } from "@/lib/models";
 import type { ParsedTranscriptResult } from "@/server/ai-schemas";
-import { transcriptReviewRows } from "@/server/transcript-review";
+import {
+  reconcileTranscriptReviewRows,
+  transcriptReviewRows,
+  type ProposedTranscriptReviewRow
+} from "@/server/transcript-review";
 
 function catalogCourse(overrides: Partial<Course> = {}): Course {
   return {
@@ -57,6 +61,36 @@ const baseCourse: ParsedTranscriptResult["courses"][number] = {
 };
 
 describe("transcript review reconciliation", () => {
+  it("preserves review identities when a replacement transcript corrects the term", () => {
+    const existing = {
+      id: "review-1",
+      user_id: "user-1",
+      source_id: "source-1",
+      entity_type: "transcript_course",
+      proposed_payload: { ...baseCourse, term: "full_year" },
+      corrected_payload: null,
+      status: "approved",
+      confidence: "verified",
+      uncertainty_notes: [],
+      created_at: "2026-07-12T00:00:00.000Z"
+    } satisfies CatalogReviewItem;
+    const replacementRows = transcriptReviewRows(
+      "user-1",
+      "source-1",
+      parsedResult([{ ...baseCourse, term: "spring" }]),
+      [],
+      []
+    ) as ProposedTranscriptReviewRow[];
+
+    const reconciliation = reconcileTranscriptReviewRows([existing], replacementRows);
+
+    expect(reconciliation.matched).toHaveLength(1);
+    expect(reconciliation.matched[0].existing.id).toBe("review-1");
+    expect(reconciliation.matched[0].proposed.proposed_payload.term).toBe("spring");
+    expect(reconciliation.inserts).toEqual([]);
+    expect(reconciliation.stale).toEqual([]);
+  });
+
   it("treats a recognized intersession course as resolved without requiring a catalog row", () => {
     const [row] = transcriptReviewRows("user-1", "source-1", parsedResult([baseCourse]), [], []);
 

@@ -5,7 +5,8 @@ import { basename, join } from "node:path";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { normalizeSmccdCourseCode } from "@/lib/smccd";
-import type { Course, SmccdCourse } from "@/lib/models";
+import type { CatalogReviewItem, Course, PlanCourse, SmccdCourse } from "@/lib/models";
+import type { TranscriptCoursePayload } from "@/lib/transcript";
 import {
   parsedTranscriptJsonSchema,
   parsedTranscriptSchema,
@@ -15,7 +16,10 @@ import { CODEX_RUNTIME_CAPABILITIES, runCodexStructuredStream } from "@/server/c
 import { codexTraceSummary } from "@/server/codex-events";
 import { extractSource } from "@/server/source-extraction";
 import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
-import { transcriptReviewRows } from "@/server/transcript-review";
+import {
+  reconcileTranscriptReviewRows,
+  transcriptReviewRows
+} from "@/server/transcript-review";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 
 export const prerender = false;
@@ -159,16 +163,100 @@ export const POST: APIRoute = async ({ request }) => {
       (catalogData ?? []) as unknown as Course[],
       (smccdResult.data ?? []) as unknown as SmccdCourse[]
     );
-    await auth.supabase
+    const { data: existingData, error: existingError } = await auth.supabase
       .from("catalog_review_items")
-      .delete()
+      .select("*")
       .eq("source_id", source.id)
       .in("entity_type", ["transcript_course", "transcript_note"]);
-    const { data: insertedRows, error: reviewError } = await auth.supabase
+    if (existingError) throw existingError;
+    const existingRows = (existingData ?? []) as unknown as CatalogReviewItem[];
+    const reconciliation = reconcileTranscriptReviewRows(existingRows, rows);
+    const existingCourseIds = existingRows
+      .filter((row) => row.entity_type === "transcript_course")
+      .map((row) => row.id);
+    const linkedPlanResult = existingCourseIds.length > 0
+      ? await auth.supabase.from("plan_courses").select("*").in("source_review_item_id", existingCourseIds)
+      : { data: [], error: null };
+    if (linkedPlanResult.error) throw linkedPlanResult.error;
+    const linkedPlanRows = (linkedPlanResult.data ?? []) as unknown as PlanCourse[];
+    const linkedReviewIds = new Set(linkedPlanRows.map((row) => row.source_review_item_id).filter(Boolean));
+
+    const reviewUpdates = reconciliation.matched.map(({ existing, proposed }) => ({
+      id: existing.id,
+      user_id: existing.user_id,
+      source_id: existing.source_id,
+      entity_type: existing.entity_type,
+      proposed_payload: proposed.proposed_payload,
+      corrected_payload: existing.corrected_payload
+        ? {
+            ...existing.corrected_payload,
+            term: proposed.proposed_payload.term,
+            evidence: proposed.proposed_payload.evidence
+          }
+        : null,
+      status: existing.status,
+      confidence: proposed.confidence,
+      uncertainty_notes: proposed.uncertainty_notes
+    }));
+    if (reconciliation.existingNote && reconciliation.proposedNote) {
+      reviewUpdates.push({
+        id: reconciliation.existingNote.id,
+        user_id: reconciliation.existingNote.user_id,
+        source_id: reconciliation.existingNote.source_id,
+        entity_type: reconciliation.existingNote.entity_type,
+        proposed_payload: reconciliation.proposedNote.proposed_payload,
+        corrected_payload: null,
+        status: "approved",
+        confidence: reconciliation.proposedNote.confidence,
+        uncertainty_notes: reconciliation.proposedNote.uncertainty_notes
+      });
+    }
+    if (reviewUpdates.length > 0) {
+      const { error: updateError } = await auth.supabase.from("catalog_review_items").upsert(reviewUpdates);
+      if (updateError) throw updateError;
+    }
+
+    const reviewInserts = [
+      ...reconciliation.inserts,
+      ...(!reconciliation.existingNote && reconciliation.proposedNote ? [reconciliation.proposedNote] : [])
+    ];
+    if (reviewInserts.length > 0) {
+      const { error: insertError } = await auth.supabase.from("catalog_review_items").insert(reviewInserts);
+      if (insertError) throw insertError;
+    }
+
+    const staleUnlinkedIds = reconciliation.stale
+      .filter((row) => !linkedReviewIds.has(row.id))
+      .map((row) => row.id);
+    if (staleUnlinkedIds.length > 0) {
+      const { error: staleError } = await auth.supabase.from("catalog_review_items").delete().in("id", staleUnlinkedIds);
+      if (staleError) throw staleError;
+    }
+
+    const proposedByReviewId = new Map(reconciliation.matched.map(({ existing, proposed }) => [existing.id, proposed.proposed_payload]));
+    const refreshedPlanRows = linkedPlanRows.flatMap((planRow) => {
+      const payload = (planRow.source_review_item_id ? proposedByReviewId.get(planRow.source_review_item_id) : null) as TranscriptCoursePayload | null;
+      if (!payload) return [];
+      return [{
+        ...planRow,
+        term: payload.term ?? planRow.term,
+        grade_level: payload.grade_level ?? planRow.grade_level,
+        school_year: payload.school_year ?? planRow.school_year,
+        letter_grade: payload.letter_grade,
+        is_weighted: payload.weighted ?? planRow.is_weighted
+      }];
+    });
+    if (refreshedPlanRows.length > 0) {
+      const { error: planRefreshError } = await auth.supabase.from("plan_courses").upsert(refreshedPlanRows);
+      if (planRefreshError) throw planRefreshError;
+    }
+
+    const { data: savedRows, error: savedRowsError } = await auth.supabase
       .from("catalog_review_items")
-      .insert(rows)
-      .select("*");
-    if (reviewError) throw reviewError;
+      .select("*")
+      .eq("source_id", source.id)
+      .in("entity_type", ["transcript_course", "transcript_note"]);
+    if (savedRowsError) throw savedRowsError;
 
     const uncertaintyInvolved = rows.some((row) => row.confidence === "uncertain");
     await auth.supabase
@@ -207,7 +295,7 @@ export const POST: APIRoute = async ({ request }) => {
       JSON.stringify({
         summary: parsedResult.summary,
         courseCount: parsedResult.courses.length,
-        reviewItems: insertedRows ?? [],
+        reviewItems: savedRows ?? [],
         fallbackUsed: parserMethod === "codex_vision",
         parserMethod,
         parserVersion: TRANSCRIPT_PARSER_VERSION,
@@ -240,14 +328,23 @@ export const POST: APIRoute = async ({ request }) => {
       raw_excerpt: (source.raw_text ?? "").slice(0, 2500),
       manual_entry_required: true
     };
-    await auth.supabase.from("catalog_review_items").insert({
+    const fallbackRow = {
       user_id: auth.user.id,
       source_id: source.id,
       entity_type: "transcript_note",
       proposed_payload: fallbackPayload,
       confidence: "uncertain",
+      status: "approved",
       uncertainty_notes: ["Automatic parsing failed. No course was imported as completed."]
-    });
+    };
+    const { data: existingNote } = await auth.supabase
+      .from("catalog_review_items")
+      .select("id")
+      .eq("source_id", source.id)
+      .eq("entity_type", "transcript_note")
+      .maybeSingle();
+    if (existingNote) await auth.supabase.from("catalog_review_items").update(fallbackRow).eq("id", existingNote.id);
+    else await auth.supabase.from("catalog_review_items").insert(fallbackRow);
     await auth.supabase
       .from("official_sources")
       .update({ parse_status: "needs_review", confidence: "uncertain", error_message: message })

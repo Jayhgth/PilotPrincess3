@@ -117,8 +117,6 @@ export default function OnboardingFlow({
     const end = initialSettings.plan_end_grade;
     return start && end ? end - start + 1 : start ? 13 - start : 4;
   });
-  const [transcriptTitle, setTranscriptTitle] = useState("My transcript");
-  const [transcriptText, setTranscriptText] = useState("");
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptItems, setTranscriptItems] = useState<CatalogReviewItem[]>([]);
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
@@ -259,46 +257,58 @@ export default function OnboardingFlow({
 
   async function parseTranscript() {
     setError(null);
-    if (!transcriptFile && !transcriptText.trim()) {
-      setError("Choose a transcript file or paste transcript text first.");
+    if (!transcriptFile) {
+      setError("Choose a transcript file first.");
       return;
     }
     setBusyLabel("Reading transcript");
     try {
-      let storagePath: string | null = null;
-      let mimeType: string | null = null;
-      let kind: "upload" | "screenshot" | "pasted_text" = "pasted_text";
-      if (transcriptFile) {
-        const safeName = transcriptFile.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-        storagePath = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
-        mimeType = transcriptFile.type || "application/octet-stream";
-        kind = mimeType.startsWith("image/") ? "screenshot" : "upload";
-        const { error: uploadError } = await supabase.storage
-          .from("source-uploads")
-          .upload(storagePath, transcriptFile, { contentType: mimeType, upsert: false });
-        if (uploadError) throw uploadError;
-      }
-      const { data: source, error: sourceError } = await supabase
+      const safeName = transcriptFile.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const storagePath = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
+      const mimeType = transcriptFile.type || "application/octet-stream";
+      const kind: "upload" | "screenshot" = mimeType.startsWith("image/") ? "screenshot" : "upload";
+      const { error: uploadError } = await supabase.storage
+        .from("source-uploads")
+        .upload(storagePath, transcriptFile, { contentType: mimeType, upsert: false });
+      if (uploadError) throw uploadError;
+      const { data: existingTranscript } = await supabase
         .from("official_sources")
-        .insert({
+        .select("*")
+        .eq("user_id", session.user.id)
+        .eq("document_type", "transcript")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const sourceValues = {
           school_id: school.id,
           user_id: session.user.id,
-          title: transcriptTitle.trim() || transcriptFile?.name || "My transcript",
+          title: transcriptFile.name,
           kind,
           storage_path: storagePath,
-          raw_text: transcriptText.trim() || null,
+          raw_text: null,
           mime_type: mimeType,
           source_year: new Date().getFullYear().toString(),
           is_official: false,
           parse_status: "pending",
           confidence: "uncertain",
-          document_type: "transcript"
-        })
+          document_type: "transcript" as const,
+          error_message: null
+      };
+      const sourceMutation = existingTranscript
+        ? supabase.from("official_sources").update(sourceValues).eq("id", existingTranscript.id)
+        : supabase.from("official_sources").insert(sourceValues);
+      const { data: source, error: sourceError } = await sourceMutation
         .select("id")
         .single();
-      if (sourceError || !source) throw sourceError ?? new Error("The transcript source could not be saved.");
+      if (sourceError || !source) {
+        await supabase.storage.from("source-uploads").remove([storagePath]);
+        throw sourceError ?? new Error("The transcript source could not be saved.");
+      }
 
       const result = await authorizedPost("/api/ai/parse-transcript", { sourceId: source.id });
+      if (existingTranscript?.storage_path && existingTranscript.storage_path !== storagePath) {
+        await supabase.storage.from("source-uploads").remove([existingTranscript.storage_path]);
+      }
       const items = ((result.reviewItems ?? []) as CatalogReviewItem[]).filter(
         (item) => item.entity_type === "transcript_course"
       );
@@ -512,16 +522,13 @@ export default function OnboardingFlow({
           </>}
 
           {stage === "transcript" && <>
-            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates setup choices without changing saved courses." : "Upload a transcript or paste its text. Nothing counts until you review and import it."}</p></header>
+            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates setup choices without changing saved courses." : "Upload your transcript. Nothing counts until you review and import it."}</p></header>
             {isReplay ? <div className="onboarding-replay-summary">
               <CheckCircle size={20} weight="duotone" />
               <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save the plan window and tracker choices from this walkthrough. Exit onboarding to discard them all.</p></div>
             </div> : transcriptItems.length === 0 ? <div className="transcript-entry">
-              <label className="form-field"><span>Transcript label</span><input value={transcriptTitle} onChange={(event) => setTranscriptTitle(event.target.value)} /></label>
               <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setTranscriptFile(event.target.files?.[0] ?? null)} /></label>
-              <div className="or-divider"><span>or paste text</span></div>
-              <label className="form-field"><span>Transcript text</span><textarea value={transcriptText} onChange={(event) => setTranscriptText(event.target.value)} placeholder="Paste completed course rows, grades, credits, and school years." /></label>
-              <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel)}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>
+              <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel) || !transcriptFile}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>
             </div> : <div className="transcript-review">
               {transcriptSummary && <p className="transcript-summary">{transcriptSummary}</p>}
               {transcriptAiTransparency && <TranscriptAiRunDetails run={transcriptAiTransparency} summary="Inspect Codex vision run" />}
@@ -540,7 +547,7 @@ export default function OnboardingFlow({
                 return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{identityLabel}, {resolution.identityResolved ? "resolved" : item.confidence}</em></label>;
               })}</div>
               {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass/fail courses</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA. Passed classes count toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); const passed = payload.letter_grade?.toUpperCase() === "P"; return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{passed ? `Pass, grade ${payload.grade_level}, ${payload.credits ?? 0} Personal Development credits` : `F, grade ${payload.grade_level}, no Personal Development credit`}</small></span><em>Pass/fail · Not in GPA</em></label>; })}</div></details>}
-              <button className="quiet-button" type="button" onClick={() => { setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); setTranscriptAiTransparency(null); }}>Use a different transcript</button>
+              <button className="quiet-button" type="button" onClick={() => { setTranscriptFile(null); setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); setTranscriptAiTransparency(null); }}>Use a different transcript</button>
             </div>}
           </>}
 
