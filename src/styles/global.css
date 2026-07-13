@@ -813,8 +813,8 @@ input:focus, select:focus, textarea:focus {
   border-top: 1px solid var(--line);
   padding: 13px 10px;
 }
-.sidebar-account-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; }
-.sidebar-account-actions .sidebar-utility { min-width: 0; justify-content: center; padding-inline: 7px; }
+.sidebar-account-actions { display: grid; grid-template-columns: 1fr; gap: 2px; }
+.sidebar-account-actions .sidebar-utility { min-width: 0; justify-content: flex-start; padding-inline: 7px; }
 .sidebar-more-toggle svg { transition: transform 140ms ease; }
 .sidebar-more-toggle.open svg { transform: rotate(180deg); }
 .sidebar-secondary { display: grid; gap: 2px; margin: 2px 0 6px 17px; padding-left: 9px; border-left: 1px solid var(--line); }
