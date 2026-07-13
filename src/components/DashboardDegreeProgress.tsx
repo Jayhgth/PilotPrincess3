@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import { createSmccdProgramProgressContext, calculateSmccdProgramProgressWithContext, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
+import { cachedStudentSmccdGoals, loadStudentSmccdGoals } from "@/lib/smccd-goals";
 import type {
   PlanCourse,
   SmccdCourse,
@@ -63,7 +64,7 @@ async function loadDegreeSlice(supabase: SupabaseClient, programIds: string[]) {
 }
 
 export default function DashboardDegreeProgress({ supabase, userId, planCourses, plannedSmccdCourses, onOpen }: Props) {
-  const [goals, setGoals] = useState<StudentSmccdGoal[] | null>(null);
+  const [goals, setGoals] = useState<StudentSmccdGoal[] | null>(() => cachedStudentSmccdGoals(userId));
   const [catalog, setCatalog] = useState<DegreeCatalogSlice | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,9 +72,7 @@ export default function DashboardDegreeProgress({ supabase, userId, planCourses,
     let active = true;
     void (async () => {
       try {
-        const goalResult = await supabase.from("student_smccd_goals").select("*").eq("user_id", userId);
-        if (goalResult.error) throw goalResult.error;
-        const loadedGoals = (goalResult.data ?? []) as unknown as StudentSmccdGoal[];
+        const loadedGoals = await loadStudentSmccdGoals(supabase, userId);
         if (!active) return;
         setGoals(loadedGoals);
         if (!loadedGoals.length) {

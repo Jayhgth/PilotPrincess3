@@ -40,6 +40,7 @@
 .t3code-app .app-sidebar { border-right-color: var(--line); }
 .t3code-app .sidebar-top { min-height: 52px; border-bottom-color: var(--line); padding: 0 14px; }
 .t3code-app .wordmark { font-size: 13px; font-weight: 600; }
+.t3code-app button.wordmark { border: 0; background: transparent; padding: 0; text-align: left; }
 .t3code-app .wordmark-mark { width: 28px; height: 28px; flex-basis: 28px; }
 .t3code-app .sidebar-nav { gap: 1px; padding: 9px 8px; }
 .t3code-app .sidebar-nav button,
@@ -170,6 +171,10 @@
 .degree-dashboard-loading span { display: block; height: 9px; border-radius: 3px; background: var(--surface-muted); }
 .degree-dashboard-loading span:nth-child(2) { width: 78%; }
 .degree-dashboard-loading span:nth-child(3) { width: 58%; }
+.workspace-view-loading { display: grid; min-height: 240px; align-content: center; gap: 12px; padding: 24px; }
+.workspace-view-loading span { display: block; height: 10px; border-radius: 3px; background: var(--surface-muted); }
+.workspace-view-loading span:nth-child(2) { width: 74%; }
+.workspace-view-loading span:nth-child(3) { width: 46%; }
 
 @media (max-width: 1100px) {
   .overview-bento-diploma { grid-column: span 4; }

@@ -142,8 +142,8 @@ export default function AppChrome<ViewId extends string>({
   return <>
     <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
       <div className="sidebar-top">
-        <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
-        <button className="mobile-close icon-button" onClick={() => onMobileNavChange(false)} aria-label="Close navigation"><X size={18} /></button>
+        <button className="wordmark" type="button" onClick={() => onNavigate(navItems[0].id)}><BrandMark /><span>Pilot Princess</span></button>
+        <button className="mobile-close icon-button" type="button" onClick={() => onMobileNavChange(false)} aria-label="Close navigation"><X size={18} /></button>
       </div>
       <nav className="sidebar-nav" aria-label={settingsNavigation ? "Settings" : "Planning workspace"}>
         {(settingsNavigation?.items ?? navItems).map((item) => {
@@ -199,15 +199,15 @@ export default function AppChrome<ViewId extends string>({
         onKeyDown={resizeSidebarWithKeyboard}
       />
     </aside>
-    {mobileNavOpen && <button className="nav-backdrop" onClick={() => onMobileNavChange(false)} aria-label="Close navigation overlay" />}
+    {mobileNavOpen && <button className="nav-backdrop" type="button" onClick={() => onMobileNavChange(false)} aria-label="Close navigation overlay" />}
 
     <main className="app-main">
       <div className="mobile-bar">
-        <button className="icon-button" onClick={() => onMobileNavChange(true)} aria-label="Open navigation"><BrandMark /></button>
+        <button className="icon-button" type="button" onClick={() => onMobileNavChange(true)} aria-label="Open navigation"><BrandMark /></button>
         <span>{activeLabel}</span>
         <div className="mobile-bar-actions">
-          <button className="icon-button" onClick={onAssistantToggle} aria-label="Open Pilot Assistant"><ChatCircleDots size={18} /></button>
-          <button className="icon-button" onClick={onThemeToggle} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
+          <button className="icon-button" type="button" onClick={onAssistantToggle} aria-label="Open Pilot Assistant"><ChatCircleDots size={18} /></button>
+          <button className="icon-button" type="button" onClick={onThemeToggle} aria-label="Toggle theme">{theme === "light" ? <Moon size={18} /> : <Sun size={18} />}</button>
         </div>
       </div>
       <div className="app-toolbar">

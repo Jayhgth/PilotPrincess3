@@ -28,12 +28,10 @@ function AnimatedListItem({
       ref={itemRef}
       role="listitem"
       className="animated-list-item"
-      layout={reduceMotion ? false : "position"}
       initial={reduceMotion ? false : { opacity: 0, y: 7 }}
       animate={reduceMotion || inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 7 }}
       exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
       transition={{
-        layout: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
         opacity: { duration: 0.16, delay: reduceMotion ? 0 : Math.min(index, 5) * 0.012 },
         y: { duration: 0.2, delay: reduceMotion ? 0 : Math.min(index, 5) * 0.012, ease: [0.16, 1, 0.3, 1] }
       }}

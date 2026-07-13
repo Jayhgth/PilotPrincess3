@@ -83,11 +83,17 @@ import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import AppChrome from "@/components/AppChrome";
 
-const OnboardingFlow = lazy(() => import("@/components/OnboardingFlow"));
-const GlobalAssistant = lazy(() => import("@/components/GlobalAssistant"));
-const GraduationWorkspace = lazy(() => import("@/components/GraduationWorkspace"));
-const SmccdPlanner = lazy(() => import("@/components/SmccdPlanner"));
-const GpaPlanningLab = lazy(() => import("@/components/GpaPlanningLab"));
+const loadOnboardingFlow = () => import("@/components/OnboardingFlow");
+const loadGlobalAssistant = () => import("@/components/GlobalAssistant");
+const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace");
+const loadSmccdPlanner = () => import("@/components/SmccdPlanner");
+const loadGpaPlanningLab = () => import("@/components/GpaPlanningLab");
+
+const OnboardingFlow = lazy(loadOnboardingFlow);
+const GlobalAssistant = lazy(loadGlobalAssistant);
+const GraduationWorkspace = lazy(loadGraduationWorkspace);
+const SmccdPlanner = lazy(loadSmccdPlanner);
+const GpaPlanningLab = lazy(loadGpaPlanningLab);
 
 type ViewId =
   | "dashboard"
@@ -179,6 +185,19 @@ function LoadingWorkspace() {
       <span>Preparing your planning workspace</span>
     </main>
   );
+}
+
+function LoadingView() {
+  return <div className="workspace-view-loading" role="status" aria-label="Loading section"><span /><span /><span /></div>;
+}
+
+function mergeRowsById<T extends { id: string }>(current: T[], incoming: T[]) {
+  const incomingById = new Map(incoming.map((row) => [row.id, row]));
+  const currentIds = new Set(current.map((row) => row.id));
+  return [
+    ...current.map((row) => incomingById.get(row.id) ?? row),
+    ...incoming.filter((row) => !currentIds.has(row.id))
+  ];
 }
 
 export default function PlanningWorkspace() {
@@ -289,6 +308,12 @@ export default function PlanningWorkspace() {
       (catalogSubject === "all" || course.subject === catalogSubject)
     )).sort((a, b) => a.name.localeCompare(b.name));
   }, [catalogAvailability.eligibleCourses, catalogSearch, catalogSubject]);
+  const defaultDtechPlacement = useCallback((course: Course, preferredGrade?: GradeLevel) => {
+    const allowedGrades = course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12);
+    const currentGrade = preferredGrade ?? (catalogGrade === "all" ? undefined : catalogGrade) ?? (settings?.grade_level ?? 9) as GradeLevel;
+    const gradeLevel = allowedGrades.find((grade) => grade >= currentGrade) ?? allowedGrades.at(-1) ?? currentGrade;
+    return { gradeLevel, term: (course.term_type === "semester" ? "fall" : "full_year") as PlanCourse["term"] };
+  }, [catalogGrade, settings?.grade_level]);
   const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
   const selectedDtechEvaluation = useMemo(() => selectedDtechCourse
     ? evaluateDtechPlannerPrerequisites(
@@ -300,6 +325,27 @@ export default function PlanningWorkspace() {
         equivalencies
       )
     : null, [courses, dtechDraft, equivalencies, planCourses, plannedSmccdCourses, selectedDtechCourse]);
+  const dtechCatalogResults = useMemo(() => filteredCourses.map((course) => {
+    const evaluation = evaluateDtechPlannerPrerequisites(
+      course,
+      defaultDtechPlacement(course, activeCatalogGrade),
+      courses,
+      planCourses,
+      plannedSmccdCourses,
+      equivalencies
+    );
+    const readiness = prerequisiteDisplay(evaluation);
+    return {
+      id: course.id,
+      title: course.name,
+      metadata: [
+        course.subject,
+        course.credits ? formatCredits(course.credits) : "Credits to verify"
+      ],
+      readinessLabel: readiness.label,
+      readinessTone: readiness.tone
+    };
+  }), [activeCatalogGrade, courses, defaultDtechPlacement, equivalencies, filteredCourses, planCourses, plannedSmccdCourses]);
   const plannedSmccdMap = useMemo(() => new Map(plannedSmccdCourses.map((course) => [course.id, course])), [plannedSmccdCourses]);
   const assistantPageContext = useMemo(() => ({
     view,
@@ -458,6 +504,24 @@ export default function PlanningWorkspace() {
   }, [loadWorkspace]);
 
   useEffect(() => {
+    if (loading || !supabase || !session) return;
+    const warmNavigation = () => {
+      void Promise.all([loadGraduationWorkspace(), loadSmccdPlanner(), loadGpaPlanningLab()]).catch(() => undefined);
+      void loadSmccdPlanner().then((module) => module.preloadSmccdPlannerData(supabase)).catch(() => undefined);
+    };
+    const idleWindow = window as unknown as {
+      requestIdleCallback?: Window["requestIdleCallback"];
+      cancelIdleCallback?: Window["cancelIdleCallback"];
+    };
+    if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(warmNavigation, { timeout: 1800 });
+      return () => idleWindow.cancelIdleCallback?.(idleId);
+    }
+    const timeout = globalThis.setTimeout(warmNavigation, 700);
+    return () => globalThis.clearTimeout(timeout);
+  }, [loading, session, supabase]);
+
+  useEffect(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.get("college") === "degree") {
       url.searchParams.set("view", "graduation");
@@ -541,6 +605,27 @@ export default function PlanningWorkspace() {
     const payload = (await response.json()) as Record<string, unknown>;
     if (!response.ok) throw new Error(String(payload.error ?? "Request failed."));
     return payload;
+  }
+
+  async function refreshTranscriptState(sourceId: string) {
+    if (!supabase || !activeVersion) return;
+    const [sourceResult, reviewResult, planCourseResult] = await Promise.all([
+      supabase.from("official_sources").select("*").eq("id", sourceId).single(),
+      supabase.from("catalog_review_items").select("*").eq("source_id", sourceId).order("created_at", { ascending: false }),
+      supabase.from("plan_courses").select("*").eq("plan_version_id", activeVersion.id).order("grade_level").order("sort_order")
+    ]);
+    const error = sourceResult.error ?? reviewResult.error ?? planCourseResult.error;
+    if (error) throw error;
+    const refreshedSource = sourceResult.data as unknown as OfficialSource;
+    const refreshedReviewItems = (reviewResult.data ?? []) as unknown as CatalogReviewItem[];
+    setSources((current) => current.some((source) => source.id === sourceId)
+      ? current.map((source) => source.id === sourceId ? refreshedSource : source)
+      : [...current, refreshedSource]);
+    setReviewItems((current) => [
+      ...current.filter((item) => item.source_id !== sourceId),
+      ...refreshedReviewItems
+    ]);
+    setPlanCourses((planCourseResult.data ?? []) as unknown as PlanCourse[]);
   }
 
   function syncLocation(nextView: ViewId, nextCourseArea = courseArea, nextSettingsArea = settingsArea) {
@@ -629,13 +714,6 @@ export default function PlanningWorkspace() {
     if (!supabase) return;
     await supabase.auth.signOut();
     window.location.assign("/");
-  }
-
-  function defaultDtechPlacement(course: Course, preferredGrade?: GradeLevel) {
-    const allowedGrades = course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12);
-    const currentGrade = preferredGrade ?? (catalogGrade === "all" ? undefined : catalogGrade) ?? (settings?.grade_level ?? 9) as GradeLevel;
-    const gradeLevel = allowedGrades.find((grade) => grade >= currentGrade) ?? allowedGrades.at(-1) ?? currentGrade;
-    return { gradeLevel, term: (course.term_type === "semester" ? "fall" : "full_year") as PlanCourse["term"] };
   }
 
   function chooseDtechCourse(course: Course) {
@@ -887,7 +965,7 @@ export default function PlanningWorkspace() {
         try {
           payload = await authorizedPost("/api/ai/parse-transcript", { sourceId: data.id });
         } finally {
-          await loadWorkspace();
+          await refreshTranscriptState(data.id);
         }
         if (existingTranscript?.storage_path && existingTranscript.storage_path !== storagePath) {
           await supabase.storage.from("source-uploads").remove([existingTranscript.storage_path]);
@@ -912,7 +990,7 @@ export default function PlanningWorkspace() {
           source.document_type === "transcript" ? "/api/ai/parse-transcript" : "/api/ai/parse-source",
           { sourceId: source.id }
         );
-        await loadWorkspace();
+        await refreshTranscriptState(source.id);
         const parserNote = source.document_type === "transcript"
           ? payload.aiUsed === true ? " Codex vision was used because no text layer was available." : " Parsed from text without Codex."
           : "";
@@ -1016,12 +1094,24 @@ export default function PlanningWorkspace() {
             sort_order: existing?.sort_order ?? nextSortOrder++
           });
         }
+        let savedPlanRows: PlanCourse[] = [];
         if (planUpserts.length > 0) {
-          const { error: upsertError } = await supabase.from("plan_courses").upsert(planUpserts);
+          const { data: upsertedRows, error: upsertError } = await supabase.from("plan_courses").upsert(planUpserts).select("*");
           if (upsertError) throw upsertError;
+          savedPlanRows = (upsertedRows ?? []) as unknown as PlanCourse[];
         }
         await logEvent("transcript_courses_imported", { review_item_ids: ids, course_count: prepared.length });
-        await loadWorkspace();
+        setPlanCourses((current) => mergeRowsById(current, savedPlanRows));
+        setReviewItems((current) => current.map((item) => {
+          const preparedItem = prepared.find((candidate) => candidate.item.id === item.id);
+          return preparedItem ? { ...item, corrected_payload: preparedItem.payload, status: "approved" } : item;
+        }));
+        const smccdIds = [...new Set(savedPlanRows.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
+        if (smccdIds.length > 0) {
+          const { data: smccdRows, error: smccdError } = await supabase.from("smccd_courses").select("*").in("id", smccdIds);
+          if (smccdError) throw smccdError;
+          setPlannedSmccdCourses((current) => mergeRowsById(current, (smccdRows ?? []) as unknown as SmccdCourse[]));
+        }
         setSelectedTranscriptIds(new Set());
       },
       `${prepared.length} ${prepared.length === 1 ? "course" : "courses"} imported to Done.`
@@ -1092,7 +1182,7 @@ export default function PlanningWorkspace() {
           enrollmentPreference={enrollmentPreference ?? defaultEnrollmentPreference(session.user.id)}
           mode={replayingOnboarding ? "replay" : "initial"}
           onComplete={async () => {
-            await loadWorkspace();
+            await refreshWorkspaceSilently();
             if (replayingOnboarding) {
               setReplayingOnboarding(false);
               setView("dashboard");
@@ -1278,28 +1368,6 @@ export default function PlanningWorkspace() {
   }
 
   function renderDtechCatalog() {
-    const results = filteredCourses.map((course) => {
-      const placement = course.id === selectedDtechCourse?.id ? dtechDraft : defaultDtechPlacement(course, activeCatalogGrade);
-      const evaluation = evaluateDtechPlannerPrerequisites(
-        course,
-        placement,
-        courses,
-        planCourses,
-        plannedSmccdCourses,
-        equivalencies
-      );
-      const readiness = prerequisiteDisplay(evaluation);
-      return {
-        id: course.id,
-        title: course.name,
-        metadata: [
-          course.subject,
-          course.credits ? formatCredits(course.credits) : "Credits to verify"
-        ],
-        readinessLabel: readiness.label,
-        readinessTone: readiness.tone
-      };
-    });
     return (
       <CourseCatalogBrowser
         source="dtech"
@@ -1313,7 +1381,7 @@ export default function PlanningWorkspace() {
           <label><span>Subject</span><select value={catalogSubject} onChange={(event) => setCatalogSubject(event.target.value)}><option value="all">All subjects</option>{catalogAvailability.subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
           <label><span>Planning year</span><select value={activeCatalogGrade} onChange={(event) => { setCatalogGrade(Number(event.target.value) as GradeLevel); setSelectedDtechCourseId(null); }}>{availableCatalogGrades.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
         </>}
-        results={results}
+        results={dtechCatalogResults}
         selectedId={selectedDtechCourseId}
         onSelect={(id) => { const course = courseMap.get(id); if (course) chooseDtechCourse(course); }}
         emptyTitle="No matching courses"
@@ -1542,7 +1610,7 @@ export default function PlanningWorkspace() {
         onThemeToggle={toggleTheme}
         onSignOut={() => void signOut()}
       >
-        <Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense>
+        <Suspense fallback={<LoadingView />}>{renderView()}</Suspense>
       </AppChrome>
       {assistantOpen && <Suspense fallback={null}><GlobalAssistant
         key={`${settings.ai_enabled}:${settings.ai_connection_approved_at ?? "off"}`}
