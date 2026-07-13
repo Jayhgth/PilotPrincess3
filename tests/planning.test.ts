@@ -25,6 +25,7 @@ import {
   selectedPlanGrades
 } from "@/lib/planning";
 import {
+  findExistingTranscriptPlanCourse,
   findTranscriptCatalogMatch,
   resolveTranscriptCourse,
   transcriptPlanCourseDraft,
@@ -564,6 +565,54 @@ describe("transcript import", () => {
     expect(draft.custom_course_name).toBe("Independent Study in Robotics");
     expect(draft.mapping_verified).toBe(false);
     expect(draft.status).toBe("completed");
+  });
+
+  it("reuses completed transcript rows without duplicating repeated custom courses", () => {
+    const rows = [
+      planCourse({ id: "crochet-fall", course_id: null, custom_course_name: "Crochet", grade_level: 10, school_year: "2024-2025", term: "fall", source_review_item_id: "old-fall" }),
+      planCourse({ id: "crochet-spring", course_id: null, custom_course_name: "Crochet", grade_level: 10, school_year: "2024-2025", term: "spring", source_review_item_id: "old-spring" })
+    ];
+    const fallDraft = transcriptPlanCourseDraft(
+      { course_name: "Crochet", grade_level: 10, school_year: "2024-2025", term: "fall", letter_grade: "P", credits: 2.5 },
+      settings,
+      [],
+      [],
+      "new-fall"
+    );
+    const springDraft = transcriptPlanCourseDraft(
+      { course_name: "Crochet", grade_level: 10, school_year: "2024-2025", term: "spring", letter_grade: "P", credits: 2.5 },
+      settings,
+      [],
+      [],
+      "new-spring"
+    );
+    const claimed = new Set<string>();
+    const fallMatch = findExistingTranscriptPlanCourse(fallDraft, rows, claimed);
+    if (fallMatch) claimed.add(fallMatch.id);
+
+    expect(fallMatch?.id).toBe("crochet-fall");
+    expect(findExistingTranscriptPlanCourse(springDraft, rows, claimed)?.id).toBe("crochet-spring");
+  });
+
+  it("does not replace a future planned course during transcript import", () => {
+    const draft = transcriptPlanCourseDraft(
+      { course_name: "Independent Study in Robotics", grade_level: 10, school_year: "2025-2026", term: "fall", letter_grade: "A", credits: 5 },
+      settings,
+      [],
+      [],
+      "review-completed"
+    );
+    const planned = planCourse({
+      id: "future-course",
+      course_id: null,
+      custom_course_name: "Independent Study in Robotics",
+      grade_level: 10,
+      school_year: "2025-2026",
+      term: "fall",
+      status: "planned"
+    });
+
+    expect(findExistingTranscriptPlanCourse(draft, [planned])).toBeNull();
   });
 
   it("weights an unmatched district course from its institution", () => {

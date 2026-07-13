@@ -41,6 +41,7 @@ import {
 } from "@/lib/planning";
 import { requirementsForSettings } from "@/lib/planning";
 import {
+  findExistingTranscriptPlanCourse,
   resolveTranscriptCourse,
   transcriptPlanCourseDraft,
   visibleTranscriptUncertaintyNotes,
@@ -953,7 +954,10 @@ export default function PlanningWorkspace() {
     if (rows.length > 0) {
       const copies = rows.map(({ id: _id, ...row }) => ({ ...row, plan_version_id: snapshot.id }));
       const { error: copyError } = await supabase.from("plan_courses").insert(copies);
-      if (copyError) throw copyError;
+      if (copyError) {
+        await supabase.from("plan_versions").delete().eq("id", snapshot.id);
+        throw copyError;
+      }
     }
     setVersions((current) => [snapshot as unknown as PlanVersion, ...current]);
     return snapshot as unknown as PlanVersion;
@@ -1159,30 +1163,24 @@ export default function PlanningWorkspace() {
           if (correctionError) throw correctionError;
         }
 
-        const inserts: Array<Record<string, unknown>> = [];
+        const claimedPlanCourseIds = new Set<string>();
+        let nextSortOrder = planCourses.reduce((maximum, row) => Math.max(maximum, row.sort_order), -1) + 1;
+        const planUpserts: Array<Record<string, unknown>> = [];
         for (const { item, payload } of prepared) {
           const draft = transcriptPlanCourseDraft(payload as unknown as TranscriptCoursePayload, settings, courses, mappings, item.id, equivalencies);
-          const existing = draft.course_id
-            ? planCourses.find((row) => row.course_id === draft.course_id)
-            : null;
-          if (existing) {
-            const { error } = await supabase
-              .from("plan_courses")
-              .update(draft)
-              .eq("id", existing.id);
-            if (error) throw error;
-            continue;
-          }
-          inserts.push({
+          const existing = findExistingTranscriptPlanCourse(draft, planCourses, claimedPlanCourseIds);
+          if (existing) claimedPlanCourseIds.add(existing.id);
+          planUpserts.push({
+            id: existing?.id ?? crypto.randomUUID(),
             ...draft,
             plan_version_id: activeVersion.id,
             user_id: session.user.id,
-            sort_order: planCourses.length + inserts.length
+            sort_order: existing?.sort_order ?? nextSortOrder++
           });
         }
-        if (inserts.length > 0) {
-          const { error: insertError } = await supabase.from("plan_courses").insert(inserts);
-          if (insertError) throw insertError;
+        if (planUpserts.length > 0) {
+          const { error: upsertError } = await supabase.from("plan_courses").upsert(planUpserts);
+          if (upsertError) throw upsertError;
         }
         await logEvent("transcript_courses_imported", { review_item_ids: ids, course_count: prepared.length });
         await loadWorkspace();
@@ -1415,7 +1413,7 @@ export default function PlanningWorkspace() {
           <header className="transcript-results-heading">
             <div><h2 id="transcript-results-title">Courses found</h2><p>{availableItems.length ? `${selectedCount} of ${availableItems.length} selected` : "All courses imported"}</p></div>
             {availableItems.length > 0
-              ? <button className="primary-button" type="button" onClick={() => void importSelectedTranscriptCourses(selectedTranscript?.id ?? null)} disabled={Boolean(busyLabel) || selectedCount === 0}><Check size={17} /> Import selected</button>
+              ? <button className="primary-button" type="button" onClick={() => void importSelectedTranscriptCourses(selectedTranscript?.id ?? null)} disabled={Boolean(busyLabel) || selectedCount === 0}><Check size={17} /> {busyLabel === "Importing transcript courses" ? "Importing" : "Import selected"}</button>
               : <button className="secondary-button" type="button" onClick={() => openCourses("mine")}><BookOpen size={17} /> Open Done</button>}
           </header>
           <div className="transcript-course-table" role="table" aria-label="Extracted transcript courses">

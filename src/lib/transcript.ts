@@ -195,3 +195,33 @@ export function transcriptPlanCourseDraft(
     requirement_area_override: equivalency?.requirement_area ?? (isIntersession ? "personal_development" : null)
   };
 }
+
+type TranscriptPlanCourseDraft = Omit<PlanCourse, "id" | "plan_version_id" | "user_id">;
+
+export function findExistingTranscriptPlanCourse(
+  draft: TranscriptPlanCourseDraft,
+  rows: PlanCourse[],
+  claimedIds: ReadonlySet<string> = new Set()
+) {
+  const draftName = normalizeCourseName(draft.custom_course_name ?? "");
+  const ranked = rows.flatMap((row) => {
+    if (row.status !== "completed" || claimedIds.has(row.id)) return [];
+
+    const sameCatalogCourse = Boolean(draft.course_id && row.course_id === draft.course_id);
+    const sameCollegeCourse = Boolean(draft.smccd_course_id && row.smccd_course_id === draft.smccd_course_id);
+    const sameName = Boolean(draftName && normalizeCourseName(row.custom_course_name ?? "") === draftName);
+    if (!sameCatalogCourse && !sameCollegeCourse && !sameName) return [];
+    if (sameName && !sameCatalogCourse && !sameCollegeCourse
+      && row.grade_level !== draft.grade_level && row.school_year !== draft.school_year) return [];
+
+    const identityScore = sameCatalogCourse || sameCollegeCourse ? 100 : 50;
+    const score = identityScore
+      + (row.grade_level === draft.grade_level ? 12 : 0)
+      + (row.school_year === draft.school_year ? 8 : 0)
+      + (row.term === draft.term ? 4 : 0);
+    return [{ row, score }];
+  });
+
+  ranked.sort((left, right) => right.score - left.score || left.row.id.localeCompare(right.row.id));
+  return ranked[0]?.row ?? null;
+}
