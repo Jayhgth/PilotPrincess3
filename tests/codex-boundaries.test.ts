@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, requiredAssistantEvidenceRead } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -156,8 +156,9 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
-    expect(prompt).toContain("Read recommended_max_units from that result; never supply or memorize a district number yourself");
-    expect(prompt).toContain("Put the Yes option first and label it recommended");
+    expect(prompt).toContain("Show the exact returned courses before any proposal");
+    expect(prompt).toContain("never claim workload personalization unless the student supplied workload information");
+    expect(prompt).toContain("Never end with a promise such as 'I'll check'");
   });
 
   it("accepts the expanded student-data tools in structured assistant output", () => {
@@ -182,6 +183,10 @@ describe("Codex feature boundaries", () => {
   });
 
   it("builds policy-backed schedule options before asking about the default-on unit limit", () => {
+    expect(requiredAssistantEvidenceRead("Suggest a schedule for me.")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true }
+    });
     expect(requiredAssistantEvidenceRead("Generate a four-year course plan for me")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true }
@@ -194,6 +199,14 @@ describe("Codex feature boundaries", () => {
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: false }
     });
+    expect(requiredAssistantEvidenceRead("Suggest a study schedule for finals")).toBeNull();
+    expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
+    expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "add_schedule", accepted: false });
+  });
+
+  it("rejects ungrounded promises to inspect app data later", () => {
+    expect(assistantMessagePromisesFutureWork("I’ll check the schedule options first, then tailor the recommendation.")).toBe(true);
+    expect(assistantMessagePromisesFutureWork("Grade 12 has three open course options.")).toBe(false);
   });
 
   it("loads exact plan IDs before bulk course changes", () => {

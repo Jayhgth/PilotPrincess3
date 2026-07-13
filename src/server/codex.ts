@@ -526,6 +526,7 @@ export interface AssistantChatOptions {
 }
 
 type PlanCourseStatus = "completed" | "current" | "planned";
+type ScheduleAnswer = { kind: "unit_limit" | "add_schedule"; accepted: boolean };
 
 function requestedBulkCourseMove(normalized: string): { source: PlanCourseStatus | "all"; target: PlanCourseStatus } | null {
   if (!/\b(move|mark|set)\b/.test(normalized)) return null;
@@ -555,14 +556,19 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   const auditIntent = /\b(audit|check|double[ -]?check|error|wrong|mismatch|parse|parsed|accurate|accuracy)\b/.test(normalized);
   if (transcript && auditIntent) return { name: "audit_transcript_data", arguments: { include_source_text: true } };
 
-  const scheduleGenerationIntent = /\b(generate|build|create|make|draft|suggest|plan)\b/.test(normalized)
-    && /\b(course|class|four[ -]?year)\s+(plan|schedule)|\b(plan|schedule)\s+(courses|classes)\b/.test(normalized);
+  const scheduleGenerationIntent = /\b(generate|build|create|make|draft|suggest|plan|recommend)\b/.test(normalized)
+    && (
+      /\b(course|class|academic|high[ -]?school|four[ -]?year)\s+(plan|schedule)\b/.test(normalized)
+      || /\b(plan|schedule)\s+(courses|classes)\b/.test(normalized)
+      || (/\bschedule\b/.test(normalized) && !/\b(meeting|appointment|calendar|study|homework|workout|sleep)\b/.test(normalized))
+    );
   if (scheduleGenerationIntent) return { name: "get_course_schedule_options", arguments: { respect_recommended_limit: true } };
-  const structuredScheduleAnswer = normalized.includes("here are my answers:")
-    && /(?:respect|within).*(?:unit|district).*limit/.test(normalized);
-  if (structuredScheduleAnswer) {
-    const declined = /\*\*[^*]*(?:unit|district)[^*]*\*\*\s*no\b/i.test(userMessage);
-    return { name: "get_course_schedule_options", arguments: { respect_recommended_limit: !declined } };
+  const scheduleAnswer = parseScheduleAnswer(userMessage);
+  if (scheduleAnswer) {
+    return {
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: scheduleAnswer.kind === "unit_limit" ? scheduleAnswer.accepted : true }
+    };
   }
 
   const bulkCourseTarget = /\b(all|every|each)\b/.test(normalized) && /\b(course|courses|class|classes)\b/.test(normalized);
@@ -589,6 +595,36 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   return null;
 }
 
+export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null {
+  if (!/here are my answers:/i.test(userMessage)) return null;
+  const match = userMessage.match(/\*\*([^*]+)\*\*\s*(yes|no)\b/i);
+  if (!match) return null;
+  const prompt = match[1].toLowerCase();
+  const accepted = match[2].toLowerCase() === "yes";
+  if (/(?:unit|district).*limit|college coursework within/.test(prompt)) return { kind: "unit_limit", accepted };
+  if (/\badd\b.*\bschedule\b.*\bplan\b/.test(prompt)) return { kind: "add_schedule", accepted };
+  return null;
+}
+
+export function assistantMessagePromisesFutureWork(message: string) {
+  return /\b(?:i(?:['’]ll| will)|i(?:['’]m| am) going to|let me)\s+(?:first\s+)?(?:check|review|read|look up|inspect|analyze|search|find|build|generate|prepare)\b/i.test(message);
+}
+
+function schedulePreview(courses: Record<string, unknown>[]) {
+  const visible = courses.slice(0, 6).map((course) => {
+    const grade = Number(course.grade_level);
+    const term = String(course.term ?? "").replaceAll("_", " ");
+    const name = String(course.name ?? "Course").slice(0, 64);
+    return `- Grade ${Number.isFinite(grade) ? grade : "?"}, ${term || "term not set"}: ${name}`;
+  });
+  const remainder = courses.length - visible.length;
+  return [
+    `I found ${courses.length} course ${courses.length === 1 ? "option" : "options"} from your saved plan and current catalog:`,
+    ...visible,
+    ...(remainder > 0 ? [`- Plus ${remainder} more`] : [])
+  ].join("\n");
+}
+
 function addUsage(current: Usage | null, next: Usage): Usage {
   return {
     input_tokens: (current?.input_tokens ?? 0) + next.input_tokens,
@@ -608,8 +644,8 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     options.images?.length
       ? `The student explicitly attached ${options.images.length} ${options.images.length === 1 ? "image" : "images"}: ${(options.imageNames ?? []).join(", ") || "unnamed image"}. Use visible image content only as context for this turn. Describe uncertainty when text or details are unclear, and do not infer unsupported student records.`
       : "No image was attached to this turn.",
-    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing data domain; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting any saved-plan change. Treat all-A as the ceiling of the included saved schedule, never a grade prediction or admission guarantee.",
-    "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Read recommended_max_units from that result; never supply or memorize a district number yourself. Before proposing add_course_schedule, ask one structured question: whether the student wants to keep college coursework within that displayed per-term limit. Put the Yes option first and label it recommended. If the student says no, call get_course_schedule_options again with false before proposing the batch. Never exceed absolute_max_units, and do not ask again when the recent conversation already contains the student's answer for this schedule request.",
+    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover the supported academic-planning domains listed below; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting any saved-plan change. Treat all-A as the ceiling of the included saved schedule, never a grade prediction or admission guarantee.",
+    "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Show the exact returned courses before any proposal. Ask about the displayed per-term unit limit only when the returned schedule includes college coursework; otherwise ask whether to add the shown schedule. Put the safe Yes option first and label it recommended. Never exceed absolute_max_units, and never claim workload personalization unless the student supplied workload information in this conversation.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change supported dashboard data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to three exact related changes in one turn.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
@@ -617,6 +653,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
     "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
+    "Never end with a promise such as 'I'll check' or 'let me look' without actually calling the relevant read tool in the same turn. If no tool can perform the promised work, state that limitation directly.",
     "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Available tools:\n" + assistantToolCatalogPrompt(),
     `Current page context: ${JSON.stringify(options.pageContext)}`,
@@ -824,27 +861,6 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           const courses = Array.isArray(data.courses)
             ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
             : [];
-          const isStructuredAnswer = options.userMessage.toLowerCase().includes("here are my answers:");
-          if (!isStructuredAnswer) {
-            return {
-              message: Number.isFinite(unitLimit)
-                ? `The matching district policy's planning limit is ${unitLimit} units per term. Should I keep the generated schedule within it?`
-                : "Should I keep the generated schedule within the district's recommended college-unit limit?",
-              questions: [{
-                id: "respect_unit_limit",
-                prompt: Number.isFinite(unitLimit)
-                  ? `Keep college coursework within the ${unitLimit}-unit per-term district limit in the course plan I asked Pilot to generate?`
-                  : "Keep college coursework within the district's recommended per-term limit in the course plan I asked Pilot to generate?",
-                options: [{ id: "yes", label: "Yes (Recommended)" }, { id: "no", label: "No" }],
-                allow_custom: false
-              }],
-              threadId: thread.id,
-              usage,
-              latencyMs: Date.now() - startedAt,
-              model,
-              proposals: []
-            };
-          }
           const ids = courses.map((row) => row.course_id).filter((id): id is string => typeof id === "string");
           if (!courses.length) {
             return {
@@ -858,6 +874,43 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
           }
           if (ids.length !== courses.length || ids.length > 24) throw new Error("The generated schedule did not return a safe batch of course IDs.");
+          const answer = parseScheduleAnswer(options.userMessage);
+          const preview = schedulePreview(courses);
+          if (!answer) {
+            const includesCollegeCourses = courses.some((course) => Number(course.college_units ?? 0) > 0);
+            return {
+              message: preview,
+              questions: includesCollegeCourses ? [{
+                id: "respect_unit_limit",
+                prompt: Number.isFinite(unitLimit)
+                  ? `Keep college coursework within the ${unitLimit}-unit per-term district limit in this schedule?`
+                  : "Keep college coursework within the district's recommended per-term limit in this schedule?",
+                options: [{ id: "yes", label: "Yes (Recommended)" }, { id: "no", label: "No" }],
+                allow_custom: false
+              }] : [{
+                id: "add_schedule",
+                prompt: "Add this suggested schedule to your plan?",
+                options: [{ id: "yes", label: "Yes (Recommended)" }, { id: "no", label: "No" }],
+                allow_custom: false
+              }],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          if (answer.kind === "add_schedule" && !answer.accepted) {
+            return {
+              message: "I left your plan unchanged.",
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
           const respectsLimit = requiredRead.arguments.respect_recommended_limit !== false;
           const proposal: AssistantChatToolActivity = {
             id: crypto.randomUUID(),
@@ -871,8 +924,8 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           await options.onToolActivity(proposal);
           return {
             message: options.reviewMode === "auto_review"
-              ? `I prepared ${ids.length} schedule ${ids.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact batch automatically.`
-              : `I prepared ${ids.length} schedule ${ids.length === 1 ? "course" : "courses"} for your approval.`,
+              ? `${preview}\n\nAuto-review will apply or decline this exact batch automatically.`
+              : `${preview}\n\nReview the exact batch before applying it.`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -975,6 +1028,17 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
 
       if (invalidResults.length > 0) {
         prompt = `The requested tools could not be called because their arguments were invalid. Correct the arguments or answer without the tool. Errors: ${JSON.stringify(invalidResults)}`;
+        continue;
+      }
+
+      if (parsed.data.assistant_message && parsed.data.questions.length === 0 && assistantMessagePromisesFutureWork(parsed.data.assistant_message)) {
+        latestMessage = "";
+        latestQuestions = [];
+        prompt = [
+          "Your previous response promised future work but did not perform it. A Pilot turn may not end with an ungrounded promise.",
+          "Call the relevant read-only tool now. If no available tool can do the work, state that limitation directly instead of promising to continue later.",
+          `Student request: ${options.userMessage}`
+        ].join("\n\n");
         continue;
       }
 

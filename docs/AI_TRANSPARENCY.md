@@ -38,6 +38,7 @@ Read tools may run automatically after a student sends a message:
 - course-level GPA inclusion and weighting evidence;
 - saved-schedule GPA scenario arithmetic and the all-A ceiling;
 - source-backed concurrent and dual-enrollment limits with term totals;
+- deterministic schedule options from the current plan, approved catalog, open planning years, and provider limit;
 - next steps;
 - transcript-source labels and review state;
 - a transcript evidence audit that compares printed GPA/credit totals, bounded source text, parsed rows, review decisions, catalog matches, and imported plan rows;
@@ -48,6 +49,7 @@ Read tools may run automatically after a student sends a message:
 Write tools may prepare these changes:
 
 - add a d.tech or SMCCD course;
+- add an exact schedule batch only after showing the returned courses and receiving a structured Yes answer;
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
 - add a next step or complete an exact set of open next steps;
 - edit an unlocked plan course;
@@ -65,6 +67,8 @@ Risk labels describe impact but do not create a second approval step. Explicit r
 The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. GPA optimization is bounded to deterministic arithmetic on the saved schedule and student-supplied assumptions. Pilot must call the all-A output an all-A schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
 
 Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent triggers the deterministic evidence tool before the model answers, so Pilot cannot return a placeholder such as “I’m checking” without doing the check. Pilot must lead with that verdict, compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. A `needs_review` status alone is not an error, and a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows remain read-only in chat even when Pilot can inspect their evidence.
+
+Schedule-generation intent also triggers its deterministic evidence tool before Pilot answers, including short requests such as “Suggest a schedule for me.” Pilot shows the exact returned courses first. It asks about the district unit limit only when the proposed schedule includes college coursework; otherwise it asks whether to add the shown schedule. A turn may not finish with an unsupported promise to check app data later. Pilot does not claim workload personalization unless the student supplied workload information in that conversation.
 
 ## Conversation and event model
 
