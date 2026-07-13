@@ -1,4 +1,3 @@
-import { MotionConfig, motion } from "motion/react";
 import type { KeyboardEvent } from "react";
 
 export interface WorkspaceTab<T extends string> {
@@ -12,7 +11,6 @@ export default function WorkspaceTabs<T extends string>({
   value,
   onChange,
   label,
-  layoutId,
   className = ""
 }: {
   items: WorkspaceTab<T>[];
@@ -23,8 +21,7 @@ export default function WorkspaceTabs<T extends string>({
   className?: string;
 }) {
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}>
-      <div className={`workspace-tabs ${className}`.trim()} role="tablist" aria-label={label}>
+    <div className={`workspace-tabs ${className}`.trim()} role="tablist" aria-label={label}>
         {items.map((item) => {
           const active = item.id === value;
           const focusTab = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -53,11 +50,10 @@ export default function WorkspaceTabs<T extends string>({
             >
               <span>{item.label}</span>
               {typeof item.count === "number" && <strong>{item.count}</strong>}
-              {active && <motion.i layoutId={layoutId} aria-hidden />}
+              {active && <i aria-hidden />}
             </button>
           );
         })}
-      </div>
-    </MotionConfig>
+    </div>
   );
 }

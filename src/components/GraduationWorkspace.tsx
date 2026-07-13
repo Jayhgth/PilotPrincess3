@@ -6,7 +6,6 @@ import {
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
-import FadeContent from "@/components/reactbits/FadeContent";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   PlanCourse,
@@ -73,7 +72,7 @@ export default function GraduationWorkspace({
         layoutId="graduation-view-indicator"
       />
 
-      <FadeContent key={view} className="graduation-view-transition">
+      <div className="graduation-view-transition">
         {view === "diploma" && <DiplomaView
           progress={progress}
           selectedId={selectedDiplomaId || firstDiplomaGap?.requirement.id || ""}
@@ -82,7 +81,7 @@ export default function GraduationWorkspace({
         />}
         {view === "degree" && degreePlanner}
         {view === "general_education" && generalEducationPlanner}
-      </FadeContent>
+      </div>
     </div>
   );
 }

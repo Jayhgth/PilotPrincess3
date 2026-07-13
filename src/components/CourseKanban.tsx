@@ -23,7 +23,7 @@ import {
   ListPlusIcon as ListPlus,
   TrashIcon as Trash
 } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import { INSTITUTIONS } from "@/lib/institutions";
 import { courseDisplayName, GRADE_LEVELS, LETTER_GRADES, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
@@ -56,18 +56,7 @@ interface CourseKanbanProps {
   onBrowseCourses: () => void;
 }
 
-function CourseCard({
-  row,
-  courseMap,
-  smccdCourseMap,
-  settings,
-  editing,
-  busy,
-  onEditingChange,
-  onMove,
-  onUpdate,
-  onRemove
-}: {
+interface CourseCardProps {
   row: PlanCourse;
   courseMap: Map<string, Course>;
   smccdCourseMap: Map<string, SmccdCourse>;
@@ -78,13 +67,39 @@ function CourseCard({
   onMove: (row: PlanCourse, status: CourseStatus) => void;
   onUpdate: (id: string, patch: Partial<PlanCourse>) => void;
   onRemove: (id: string) => void;
-}) {
-  const locked = Boolean(row.source_review_item_id);
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: row.id,
-    disabled: locked || busy || editing,
-    data: { row }
+}
+
+type DragBindings = Pick<ReturnType<typeof useDraggable>, "attributes" | "listeners" | "setNodeRef" | "isDragging">;
+
+function CourseCard(props: CourseCardProps) {
+  return props.row.source_review_item_id
+    ? <CourseCardBody {...props} locked />
+    : <DraggableCourseCard {...props} />;
+}
+
+function DraggableCourseCard(props: CourseCardProps) {
+  const drag = useDraggable({
+    id: props.row.id,
+    disabled: props.busy || props.editing,
+    data: { row: props.row }
   });
+  return <CourseCardBody {...props} locked={false} drag={drag} />;
+}
+
+function CourseCardBody({
+  row,
+  courseMap,
+  smccdCourseMap,
+  settings,
+  editing,
+  onEditingChange,
+  onMove,
+  onUpdate,
+  onRemove,
+  locked,
+  drag
+}: CourseCardProps & { locked: boolean; drag?: DragBindings }) {
+  const { attributes, listeners, setNodeRef, isDragging = false } = drag ?? {};
   const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
   const isSmccd = Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0);
   const smccdCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null;
@@ -176,9 +191,15 @@ export default function CourseKanban(props: CourseKanbanProps) {
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
     useSensor(KeyboardSensor)
   );
-  const courseMap = new Map(props.courses.map((course) => [course.id, course]));
-  const smccdCourseMap = new Map(props.smccdCourses.map((course) => [course.id, course]));
-  const activeRow = activeId ? props.rows.find((row) => row.id === activeId) ?? null : null;
+  const courseMap = useMemo(() => new Map(props.courses.map((course) => [course.id, course])), [props.courses]);
+  const smccdCourseMap = useMemo(() => new Map(props.smccdCourses.map((course) => [course.id, course])), [props.smccdCourses]);
+  const rowsByStatus = useMemo(() => new Map(STATUS_ORDER.map((status) => [
+    status,
+    props.rows
+      .filter((row) => row.status === status)
+      .sort((a, b) => status === "completed" ? b.grade_level - a.grade_level : a.grade_level - b.grade_level || a.sort_order - b.sort_order)
+  ])), [props.rows]);
+  const activeRow = useMemo(() => activeId ? props.rows.find((row) => row.id === activeId) ?? null : null, [activeId, props.rows]);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
@@ -199,9 +220,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
       <div className="course-kanban-viewport">
         <section className="course-kanban" aria-label="Course kanban board">
           {STATUS_ORDER.map((status) => {
-            const rows = props.rows
-              .filter((row) => row.status === status)
-              .sort((a, b) => status === "completed" ? b.grade_level - a.grade_level : a.grade_level - b.grade_level || a.sort_order - b.sort_order);
+            const rows = rowsByStatus.get(status) ?? [];
             return <KanbanColumn status={status} rows={rows} busy={props.busy} onGeneratePlan={props.onGeneratePlan} onImportTranscript={props.onImportTranscript} onBrowseCourses={props.onBrowseCourses} key={status}>
               {rows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} settings={props.settings} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
             </KanbanColumn>;

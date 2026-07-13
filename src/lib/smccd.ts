@@ -160,9 +160,18 @@ export interface SmccdProgramProgressContext {
   optionsByRequirement: Map<string, SmccdRequirementCourse[]>;
   courseById: Map<string, SmccdCourse>;
   coursesByCode: Map<string, SmccdCourse[]>;
+  courseUnitsByCode: Map<string, number>;
   smccdRows: PlanCourse[];
   rowsByCode: Map<string, PlanCourse[]>;
   completedRowsByCode: Map<string, PlanCourse[]>;
+  completedAttemptsByCode: Map<string, PlanCourse>;
+  projectedAttemptsByCode: Map<string, PlanCourse>;
+  completedCollegeUnits: number;
+  projectedCollegeUnits: number;
+  completedDegreeApplicableUnits: number;
+  projectedDegreeApplicableUnits: number;
+  geEvidence: SmccdGeEvidence[];
+  eligibleGeCourseCodesByCollege: Map<SmccdCourse["college_code"], Map<string, string[]>>;
 }
 
 export function createSmccdProgramProgressContext(
@@ -184,22 +193,35 @@ export function createSmccdProgramProgressContext(
 
   const courseById = new Map(courses.map((course) => [course.id, course]));
   const coursesByCode = new Map<string, SmccdCourse[]>();
+  const courseUnitsByCode = new Map<string, number>();
   for (const course of courses) {
     const code = normalizeSmccdCourseCode(course.course_code);
     coursesByCode.set(code, [...(coursesByCode.get(code) ?? []), course]);
+    courseUnitsByCode.set(code, Math.max(courseUnitsByCode.get(code) ?? 0, Number(course.units_max ?? course.units_min ?? 0)));
   }
   const smccdRows = planCourses.filter((row) => row.smccd_course_id && courseById.has(row.smccd_course_id));
   const rowsByCode = groupRowsByCode(smccdRows, courseById);
   const completedRowsByCode = groupRowsByCode(smccdRows.filter((row) => row.status === "completed"), courseById);
+  const completedAttemptsByCode = bestAttemptsByCode(smccdRows, courseById, false);
+  const projectedAttemptsByCode = bestAttemptsByCode(smccdRows, courseById, true);
 
   return {
     requirementsByProgram,
     optionsByRequirement,
     courseById,
     coursesByCode,
+    courseUnitsByCode,
     smccdRows,
     rowsByCode,
-    completedRowsByCode
+    completedRowsByCode,
+    completedAttemptsByCode,
+    projectedAttemptsByCode,
+    completedCollegeUnits: sumAttemptUnits(completedAttemptsByCode, courseById, false),
+    projectedCollegeUnits: sumAttemptUnits(projectedAttemptsByCode, courseById, false),
+    completedDegreeApplicableUnits: sumAttemptUnits(completedAttemptsByCode, courseById, true),
+    projectedDegreeApplicableUnits: sumAttemptUnits(projectedAttemptsByCode, courseById, true),
+    geEvidence: collectGeEvidence(projectedAttemptsByCode, courseById),
+    eligibleGeCourseCodesByCollege: buildEligibleGeCourseCodes(courseById)
   };
 }
 
@@ -207,15 +229,15 @@ export function calculateSmccdProgramProgressWithContext(
   program: SmccdProgram,
   context: SmccdProgramProgressContext
 ): SmccdProgramProgress {
-  const completedAttempts = bestAttemptsByCode(context.smccdRows, context.courseById, false);
-  const projectedAttempts = bestAttemptsByCode(context.smccdRows, context.courseById, true);
+  const completedAttempts = context.completedAttemptsByCode;
+  const projectedAttempts = context.projectedAttemptsByCode;
   const completedMajorCodes = new Set<string>();
   const projectedMajorCodes = new Set<string>();
   const requirementProgress = (context.requirementsByProgram.get(program.id) ?? []).map((requirement) => {
     const requirementOptions = context.optionsByRequirement.get(requirement.id) ?? [];
     const optionCodes = [...new Set(requirementOptions.map((option) => normalizeSmccdCourseCode(option.course_code)))];
-    const projected = evaluateRequirement(requirement, requirementOptions, optionCodes, projectedAttempts, context.courseById, projectedMajorCodes);
-    const completed = evaluateRequirement(requirement, requirementOptions, optionCodes, completedAttempts, context.courseById, completedMajorCodes);
+    const projected = evaluateRequirement(requirement, requirementOptions, optionCodes, projectedAttempts, context.courseById, context.courseUnitsByCode, projectedMajorCodes);
+    const completed = evaluateRequirement(requirement, requirementOptions, optionCodes, completedAttempts, context.courseById, context.courseUnitsByCode, completedMajorCodes);
     for (const code of projected.selectedCodes) projectedMajorCodes.add(code);
     for (const code of completed.selectedCodes) completedMajorCodes.add(code);
     const selectedCourses = projected.selectedCodes
@@ -256,19 +278,14 @@ export function calculateSmccdProgramProgressWithContext(
 
   const completedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + progress.completedUnits, 0));
   const projectedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + progress.earnedUnits, 0));
-  const completedCollegeUnits = sumAttemptUnits(completedAttempts, context.courseById, false);
-  const projectedCollegeUnits = sumAttemptUnits(projectedAttempts, context.courseById, false);
-  const completedDegreeApplicableUnits = sumAttemptUnits(completedAttempts, context.courseById, true);
-  const projectedDegreeApplicableUnits = sumAttemptUnits(projectedAttempts, context.courseById, true);
   const fromCatalog = Number(program.total_major_units_text.match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
   const requiredMajorUnits = fromCatalog || round(requirementProgress.reduce((sum, progress) => sum + Number(progress.requiredUnits ?? 0), 0));
-  const geEvidence = collectGeEvidence(projectedAttempts, context.courseById);
 
   return {
-    completedCollegeUnits,
-    projectedCollegeUnits,
-    completedDegreeApplicableUnits,
-    projectedDegreeApplicableUnits,
+    completedCollegeUnits: context.completedCollegeUnits,
+    projectedCollegeUnits: context.projectedCollegeUnits,
+    completedDegreeApplicableUnits: context.completedDegreeApplicableUnits,
+    projectedDegreeApplicableUnits: context.projectedDegreeApplicableUnits,
     totalDegreeUnits: Number(program.total_degree_units || 60),
     completedMajorUnits,
     projectedMajorUnits,
@@ -278,13 +295,13 @@ export function calculateSmccdProgramProgressWithContext(
     totalRequirements: requirementProgress.length,
     manualReviewRequirements: requirementProgress.filter((progress) => progress.status === "manual_review" || Boolean(progress.manualReviewReason)).length,
     majorPercent: requiredMajorUnits > 0 ? Math.min(100, Math.round((projectedMajorUnits / requiredMajorUnits) * 100)) : 0,
-    geEvidence,
+    geEvidence: context.geEvidence,
     requirements: requirementProgress
   };
 }
 
 export function calculateSmccdGeEvidence(context: SmccdProgramProgressContext): SmccdGeEvidence[] {
-  return collectGeEvidence(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById);
+  return context.geEvidence;
 }
 
 export function calculateSmccdGeProgress(
@@ -293,8 +310,8 @@ export function calculateSmccdGeProgress(
   completedAreaOverrides: ReadonlySet<string> = new Set()
 ): SmccdGeProgress[] {
   const definitions = localGeAreas(collegeCode);
-  const completed = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, false), context.courseById, definitions, collegeCode, completedAreaOverrides);
-  const projected = auditLocalGe(bestAttemptsByCode(context.smccdRows, context.courseById, true), context.courseById, definitions, collegeCode, completedAreaOverrides);
+  const completed = auditLocalGe(context.completedAttemptsByCode, context.courseById, definitions, collegeCode, completedAreaOverrides);
+  const projected = auditLocalGe(context.projectedAttemptsByCode, context.courseById, definitions, collegeCode, completedAreaOverrides);
 
   return definitions.map((definition) => {
     const completedArea = completed.get(definition.area) ?? emptyGeArea(definition.requiredUnits);
@@ -329,10 +346,7 @@ export function calculateSmccdGeProgress(
       completedCourseCodes: completedArea.codes,
       projectedCourseCodes: projectedArea.codes,
       missingSummary,
-      eligibleCourseCodes: [...new Set([...context.courseById.values()]
-        .filter((course) => courseGeAreas(course, collegeCode).some((candidate) => geAreaMatches(definition.area, candidate)))
-        .map((course) => normalizeSmccdCourseCode(course.course_code)))]
-        .sort((left, right) => left.localeCompare(right, undefined, { numeric: true })),
+      eligibleCourseCodes: context.eligibleGeCourseCodesByCollege.get(collegeCode)?.get(definition.area) ?? [],
       manuallyCompleted: completedArea.manuallyCompleted
     };
   });
@@ -368,12 +382,13 @@ function evaluateRequirement(
   optionCodes: string[],
   attemptsByCode: Map<string, PlanCourse>,
   courseById: Map<string, SmccdCourse>,
+  courseUnitsByCode: Map<string, number>,
   alreadyUsed: Set<string>
 ) {
   const minUnits = requirementMinUnits(requirement);
   const minCount = requirement.min_count ?? (requirement.kind === "or_group" ? 1 : null);
   const minDisciplines = minimumDisciplineCount(requirement);
-  const unitSelection = requirement.kind === "all" && isUnitSelectionGroup(requirement, options, courseById);
+  const unitSelection = requirement.kind === "all" && isUnitSelectionGroup(requirement, options, courseUnitsByCode);
 
   if (requirement.kind === "text_rule") {
     return {
@@ -398,7 +413,7 @@ function evaluateRequirement(
   } else if (requirement.kind === "or_group" || requirement.kind === "choose_count") {
     selectedCodes = eligible.slice(0, minCount ?? 1);
   } else {
-    const sorted = [...eligible].sort((left, right) => catalogCourseUnitsForCode(right, courseById) - catalogCourseUnitsForCode(left, courseById));
+    const sorted = [...eligible].sort((left, right) => (courseUnitsByCode.get(right) ?? 0) - (courseUnitsByCode.get(left) ?? 0));
     selectedCodes = [];
     let selectedUnits = 0;
     for (const code of sorted) {
@@ -620,6 +635,29 @@ function geAreaMatches(requiredArea: string, catalogArea: string) {
   return catalogArea === requiredArea || catalogArea.startsWith(requiredArea);
 }
 
+function buildEligibleGeCourseCodes(courseById: Map<string, SmccdCourse>) {
+  return new Map<SmccdCourse["college_code"], Map<string, string[]>>(
+    (["CSM", "SKY", "CAN"] as const).map((collegeCode) => {
+      const definitions = localGeAreas(collegeCode);
+      const codesByArea = new Map(definitions.map((definition) => [definition.area, new Set<string>()]));
+      for (const course of courseById.values()) {
+        const catalogAreas = courseGeAreas(course, collegeCode);
+        if (!catalogAreas.length) continue;
+        const normalizedCode = normalizeSmccdCourseCode(course.course_code);
+        for (const definition of definitions) {
+          if (catalogAreas.some((candidate) => geAreaMatches(definition.area, candidate))) {
+            codesByArea.get(definition.area)?.add(normalizedCode);
+          }
+        }
+      }
+      return [collegeCode, new Map([...codesByArea].map(([area, codes]) => [
+        area,
+        [...codes].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+      ]))];
+    })
+  );
+}
+
 function qualifiesForLocalGe(row: PlanCourse, minimumGrade: GeGradeMinimum) {
   if (row.status === "current" || row.status === "planned") return true;
   const grade = normalizeGrade(row.letter_grade);
@@ -663,14 +701,6 @@ function attemptUnits(row: PlanCourse, courseById: Map<string, SmccdCourse>) {
   return Number(row.college_units ?? course?.units_max ?? course?.units_min ?? 0);
 }
 
-function catalogCourseUnitsForCode(code: string, courseById: Map<string, SmccdCourse>) {
-  let units = 0;
-  for (const course of courseById.values()) {
-    if (normalizeSmccdCourseCode(course.course_code) === code) units = Math.max(units, Number(course.units_max ?? course.units_min ?? 0));
-  }
-  return units;
-}
-
 function sumAttemptUnits(attemptsByCode: Map<string, PlanCourse>, courseById: Map<string, SmccdCourse>, degreeApplicableOnly: boolean) {
   let units = 0;
   for (const row of attemptsByCode.values()) {
@@ -690,16 +720,11 @@ function requirementMinUnits(requirement: SmccdProgramRequirement) {
 function isUnitSelectionGroup(
   requirement: SmccdProgramRequirement,
   options: readonly SmccdRequirementCourse[],
-  courseById: Map<string, SmccdCourse>
+  courseUnitsByCode: Map<string, number>
 ) {
   const minUnits = requirementMinUnits(requirement);
   if (!minUnits) return false;
   if (/select|selected|minimum|at least|from the following|or more units/i.test(`${requirement.label} ${requirement.raw_text ?? ""}`)) return true;
-  const courseUnitsByCode = new Map<string, number>();
-  for (const course of courseById.values()) {
-    const code = normalizeSmccdCourseCode(course.course_code);
-    courseUnitsByCode.set(code, Math.max(courseUnitsByCode.get(code) ?? 0, Number(course.units_max ?? course.units_min ?? 0)));
-  }
   const totalOptionUnits = options.reduce((sum, option) => sum + optionUnits(option, courseUnitsByCode), 0);
   return totalOptionUnits > minUnits;
 }

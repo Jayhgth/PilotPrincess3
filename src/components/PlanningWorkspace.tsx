@@ -280,6 +280,67 @@ export default function PlanningWorkspace() {
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
   const graduationPercent = useMemo(() => overallGraduationPercent(fullProgress), [fullProgress]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(fullProgress), [fullProgress]);
+  const availableCatalogGrades = useMemo(() => settings ? selectedPlanGrades(settings) : [], [settings]);
+  const activeCatalogGrade = (catalogGrade !== "all" && availableCatalogGrades.includes(catalogGrade)
+    ? catalogGrade
+    : availableCatalogGrades[0] ?? settings?.grade_level ?? 9) as GradeLevel;
+  const catalogAvailability = useMemo(() => {
+    const eligibilityById = new Map(courses.map((course) => [
+      course.id,
+      dtechCatalogEligibility(course, activeCatalogGrade, planCourses, courses)
+    ]));
+    const structurallyEligible = courses.filter((course) => eligibilityById.get(course.id)?.eligible);
+    const blockedIds = new Set(structurallyEligible.filter((course) =>
+      evaluateDtechPlannerPrerequisites(
+        course,
+        defaultDtechPlacement(course, activeCatalogGrade),
+        courses,
+        planCourses,
+        plannedSmccdCourses,
+        equivalencies
+      ).result.status === "blocked"
+    ).map((course) => course.id));
+    const hiddenCounts = [...eligibilityById.values()].reduce((counts, eligibility) => {
+      if (eligibility.reason) counts[eligibility.reason] += 1;
+      return counts;
+    }, { already_in_plan: 0, outside_grade: 0, below_math_level: 0 });
+    return {
+      eligibleCourses: structurallyEligible.filter((course) => !blockedIds.has(course.id)),
+      hiddenTotal: hiddenCounts.already_in_plan + hiddenCounts.outside_grade + hiddenCounts.below_math_level + blockedIds.size,
+      subjects: [...new Set(courses.map((course) => course.subject))]
+    };
+  }, [activeCatalogGrade, courses, equivalencies, planCourses, plannedSmccdCourses]);
+  const filteredCourses = useMemo(() => {
+    const query = catalogSearch.trim().toLowerCase();
+    return catalogAvailability.eligibleCourses.filter((course) => (
+      (!query || [course.name, course.subject, course.description ?? "", course.prerequisites.join(" ")].join(" ").toLowerCase().includes(query)) &&
+      (catalogSubject === "all" || course.subject === catalogSubject)
+    )).sort((a, b) => a.name.localeCompare(b.name));
+  }, [catalogAvailability.eligibleCourses, catalogSearch, catalogSubject]);
+  const courseCounts = useMemo(() => ({
+    completed: planCourses.filter((row) => row.status === "completed").length,
+    current: planCourses.filter((row) => row.status === "current").length,
+    planned: planCourses.filter((row) => row.status === "planned").length
+  }), [planCourses]);
+  const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
+  const selectedDtechEvaluation = useMemo(() => selectedDtechCourse
+    ? evaluateDtechPlannerPrerequisites(
+        selectedDtechCourse,
+        dtechDraft,
+        courses,
+        planCourses,
+        plannedSmccdCourses,
+        equivalencies
+      )
+    : null, [courses, dtechDraft, equivalencies, planCourses, plannedSmccdCourses, selectedDtechCourse]);
+  const plannedSmccdMap = useMemo(() => new Map(plannedSmccdCourses.map((course) => [course.id, course])), [plannedSmccdCourses]);
+  const assistantPageContext = useMemo(() => ({
+    view,
+    label: NAV_ITEMS.find((item) => item.id === view)?.label ?? "workspace",
+    ...(view === "courses" ? { course_area: courseArea } : {}),
+    ...(view === "gpa" ? { gpa_scenario: gpaScenarioContext } : {}),
+    ...(view === "graduation" ? { graduation_earned_percent: graduationEarnedPercent } : {})
+  }), [courseArea, gpaScenarioContext, graduationEarnedPercent, view]);
   const loadWorkspace = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!supabase) return;
     if (!options.silent) {
@@ -1214,60 +1275,9 @@ export default function PlanningWorkspace() {
     );
   }
 
-  const availableCatalogGrades = selectedPlanGrades(settings);
-  const activeCatalogGrade = (catalogGrade !== "all" && availableCatalogGrades.includes(catalogGrade)
-    ? catalogGrade
-    : availableCatalogGrades[0] ?? settings.grade_level ?? 9) as GradeLevel;
-  const catalogEligibilityById = new Map(courses.map((course) => [
-    course.id,
-    dtechCatalogEligibility(course, activeCatalogGrade, planCourses, courses)
-  ]));
-  const structurallyEligibleCourses = courses.filter((course) => catalogEligibilityById.get(course.id)?.eligible);
-  const prerequisiteBlockedIds = new Set(structurallyEligibleCourses.filter((course) =>
-    evaluateDtechPlannerPrerequisites(
-      course,
-      defaultDtechPlacement(course, activeCatalogGrade),
-      courses,
-      planCourses,
-      plannedSmccdCourses,
-      equivalencies
-    ).result.status === "blocked"
-  ).map((course) => course.id));
-  const eligibleCatalogCourses = structurallyEligibleCourses.filter((course) => !prerequisiteBlockedIds.has(course.id));
-  const filteredCourses = eligibleCatalogCourses.filter((course) => {
-    const query = catalogSearch.trim().toLowerCase();
-    return (
-      (!query || [course.name, course.subject, course.description ?? "", course.prerequisites.join(" ")].join(" ").toLowerCase().includes(query)) &&
-      (catalogSubject === "all" || course.subject === catalogSubject)
-    );
-  }).sort((a, b) => a.name.localeCompare(b.name));
-  const hiddenCatalogCounts = [...catalogEligibilityById.values()].reduce((counts, eligibility) => {
-    if (eligibility.reason) counts[eligibility.reason] += 1;
-    return counts;
-  }, { already_in_plan: 0, outside_grade: 0, below_math_level: 0 });
-  const hiddenCatalogTotal = hiddenCatalogCounts.already_in_plan + hiddenCatalogCounts.outside_grade
-    + hiddenCatalogCounts.below_math_level + prerequisiteBlockedIds.size;
-  const subjects = [...new Set(courses.map((course) => course.subject))];
-  const courseCounts = {
-    completed: planCourses.filter((row) => row.status === "completed").length,
-    current: planCourses.filter((row) => row.status === "current").length,
-    planned: planCourses.filter((row) => row.status === "planned").length
-  };
   const catalogPageSize = 12;
   const catalogPageCount = Math.max(1, Math.ceil(filteredCourses.length / catalogPageSize));
   const visibleCatalogCourses = filteredCourses.slice(catalogPage * catalogPageSize, (catalogPage + 1) * catalogPageSize);
-  const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
-  const selectedDtechEvaluation = selectedDtechCourse
-    ? evaluateDtechPlannerPrerequisites(
-        selectedDtechCourse,
-        dtechDraft,
-        courses,
-        planCourses,
-        plannedSmccdCourses,
-        equivalencies
-      )
-    : null;
-  const plannedSmccdMap = new Map(plannedSmccdCourses.map((course) => [course.id, course]));
   function renderDashboard() {
     if (!settings) return null;
     const requirementSnapshot = overviewProgress.map((item) => {
@@ -1471,10 +1481,10 @@ export default function PlanningWorkspace() {
         description="Courses you can still add in the selected school year."
         countLabel={filteredCourses.length ? `${catalogPage * catalogPageSize + 1}-${Math.min((catalogPage + 1) * catalogPageSize, filteredCourses.length)} of ${filteredCourses.length}` : "No courses"}
         planningContext={`Planning Grade ${activeCatalogGrade}`}
-        hiddenSummary={`${hiddenCatalogTotal} unavailable courses hidden from this view`}
+        hiddenSummary={`${catalogAvailability.hiddenTotal} unavailable courses hidden from this view`}
         filters={<>
           <label className="catalog-search-field"><span>Search courses</span><div className="catalog-search-input"><BookOpen size={16} aria-hidden /><input value={catalogSearch} onChange={(event) => { setCatalogSearch(event.target.value); setCatalogPage(0); }} placeholder="Name, subject, or prerequisite" /></div></label>
-          <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
+          <label><span>Subject</span><select value={catalogSubject} onChange={(event) => { setCatalogSubject(event.target.value); setCatalogPage(0); }}><option value="all">All subjects</option>{catalogAvailability.subjects.map((subject) => <option value={subject} key={subject}>{subject}</option>)}</select></label>
           <label><span>Planning year</span><select value={activeCatalogGrade} onChange={(event) => { setCatalogGrade(Number(event.target.value) as GradeLevel); setSelectedDtechCourseId(null); setCatalogPage(0); }}>{availableCatalogGrades.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
         </>}
         results={results}
@@ -1722,13 +1732,6 @@ export default function PlanningWorkspace() {
   const activeView = NAV_ITEMS.find((item) => item.id === view);
   const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
   const visibleSettingsNavItems = isAdmin ? SETTINGS_NAV_ITEMS : SETTINGS_NAV_ITEMS.filter((item) => item.id !== "admin");
-  const assistantPageContext = {
-    view,
-    label: activeView?.label ?? "workspace",
-    ...(view === "courses" ? { course_area: courseArea } : {}),
-    ...(view === "gpa" ? { gpa_scenario: gpaScenarioContext } : {}),
-    ...(view === "graduation" ? { graduation_earned_percent: graduationEarnedPercent } : {})
-  };
   return (
       <div className={`app-shell t3code-app ${assistantOpen ? "assistant-docked" : ""}`}>
       <AppChrome
@@ -1755,7 +1758,7 @@ export default function PlanningWorkspace() {
       >
         <Suspense fallback={<LoadingWorkspace />}>{renderView()}</Suspense>
       </AppChrome>
-      <Suspense fallback={null}><GlobalAssistant
+      {assistantOpen && <Suspense fallback={null}><GlobalAssistant
         key={`${settings.ai_enabled}:${settings.ai_model}:${settings.ai_connection_approved_at ?? "off"}`}
         session={session}
         open={assistantOpen}
@@ -1763,7 +1766,7 @@ export default function PlanningWorkspace() {
         preferences={{ enabled: settings.ai_enabled, reviewMode: settings.ai_review_mode }}
         onClose={() => setAssistantOpen(false)}
         onDataChanged={refreshAfterAssistantChange}
-      /></Suspense>
+      /></Suspense>}
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}<span>{toast}</span>{toastAction && <button type="button" onClick={() => void (async () => { const action = toastAction; setToastAction(null); try { await action.run(); setToastKind("success"); setToast("Change undone."); } catch (caught) { setToastKind("error"); setToast(caught instanceof Error ? caught.message : "The change could not be undone."); } })()}>{toastAction.label}</button>}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
       </div>

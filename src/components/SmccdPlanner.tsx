@@ -80,6 +80,8 @@ interface SmccdDegreeCatalog {
 
 let courseCatalogRequest: Promise<SmccdCourseCatalog> | null = null;
 let degreeCatalogRequest: Promise<SmccdDegreeCatalog> | null = null;
+let courseCatalogCache: SmccdCourseCatalog | null = null;
+let degreeCatalogCache: SmccdDegreeCatalog | null = null;
 
 function loadCourseCatalog(supabase: SupabaseClient) {
   if (!courseCatalogRequest) {
@@ -94,10 +96,12 @@ function loadCourseCatalog(supabase: SupabaseClient) {
         .map((result) => result.error)
         .find(Boolean);
       if (firstError) throw firstError;
-      return {
+      const catalog = {
         colleges: (collegeResult.data ?? []) as unknown as SmccdCollege[],
         courses: [...(csmCourses.data ?? []), ...(skylineCourses.data ?? []), ...(canadaCourses.data ?? [])] as unknown as SmccdCourse[]
       };
+      courseCatalogCache = catalog;
+      return catalog;
     })().catch((caught) => {
       courseCatalogRequest = null;
       throw caught;
@@ -128,11 +132,13 @@ function loadDegreeCatalog(supabase: SupabaseClient) {
       const optionError = optionPages.map((result) => result.error).find(Boolean);
       if (optionError) throw optionError;
 
-      return {
+      const catalog = {
         programs: (programResult.data ?? []) as unknown as SmccdProgram[],
         requirements: (requirementResult.data ?? []) as unknown as SmccdProgramRequirement[],
         requirementCourses: optionPages.flatMap((result) => result.data ?? []) as unknown as SmccdRequirementCourse[]
       };
+      degreeCatalogCache = catalog;
+      return catalog;
     })().catch((caught) => {
       degreeCatalogRequest = null;
       throw caught;
@@ -156,18 +162,18 @@ export default function SmccdPlanner({
   onOpenMyCourses,
   onFindCourse
 }: Props) {
-  const [courseCatalogReady, setCourseCatalogReady] = useState(false);
-  const [degreeCatalogReady, setDegreeCatalogReady] = useState(false);
+  const [courseCatalogReady, setCourseCatalogReady] = useState(Boolean(courseCatalogCache));
+  const [degreeCatalogReady, setDegreeCatalogReady] = useState(Boolean(degreeCatalogCache));
   const [goalsReady, setGoalsReady] = useState(surface === "courses");
   const [geCompletionsReady, setGeCompletionsReady] = useState(surface === "courses");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [colleges, setColleges] = useState<SmccdCollege[]>([]);
-  const [courses, setCourses] = useState<SmccdCourse[]>([]);
-  const [programs, setPrograms] = useState<SmccdProgram[]>([]);
-  const [requirements, setRequirements] = useState<SmccdProgramRequirement[]>([]);
-  const [requirementCourses, setRequirementCourses] = useState<SmccdRequirementCourse[]>([]);
+  const [colleges, setColleges] = useState<SmccdCollege[]>(() => courseCatalogCache?.colleges ?? []);
+  const [courses, setCourses] = useState<SmccdCourse[]>(() => courseCatalogCache?.courses ?? []);
+  const [programs, setPrograms] = useState<SmccdProgram[]>(() => degreeCatalogCache?.programs ?? []);
+  const [requirements, setRequirements] = useState<SmccdProgramRequirement[]>(() => degreeCatalogCache?.requirements ?? []);
+  const [requirementCourses, setRequirementCourses] = useState<SmccdRequirementCourse[]>(() => degreeCatalogCache?.requirementCourses ?? []);
   const [goals, setGoals] = useState<StudentSmccdGoal[]>([]);
   const [geCompletions, setGeCompletions] = useState<SmccdGeCompletion[]>([]);
   const [geCollegeCode, setGeCollegeCode] = useState<SmccdCourse["college_code"]>("CSM");
@@ -176,8 +182,9 @@ export default function SmccdPlanner({
   const [transferFilter, setTransferFilter] = useState("all");
   const [goalProgramId, setGoalProgramId] = useState("");
   const [programSearch, setProgramSearch] = useState("");
+  const [programRenderLimit, setProgramRenderLimit] = useState(24);
   const [selectedCourse, setSelectedCourse] = useState<SmccdCourse | null>(null);
-  const availablePlanGrades = selectedPlanGrades(settings);
+  const availablePlanGrades = useMemo(() => selectedPlanGrades(settings), [settings]);
   const [targetGrade, setTargetGrade] = useState<GradeLevel>(availablePlanGrades[0] ?? (settings.grade_level ?? 11) as GradeLevel);
   const [courseDraft, setCourseDraft] = useState({
     term: "fall" as PlanCourse["term"]
@@ -343,15 +350,21 @@ export default function SmccdPlanner({
   }), [visibleCourses]);
 
   const progressContext = useMemo(
-    () => createSmccdProgramProgressContext(requirements, requirementCourses, planCourses, courses),
-    [courses, planCourses, requirementCourses, requirements]
+    () => {
+      if (surface === "courses") return null;
+      return createSmccdProgramProgressContext(requirements, requirementCourses, planCourses, courses);
+    },
+    [courses, planCourses, requirementCourses, requirements, surface]
   );
-  const programProgress = useMemo(() => new Map(programs.map((program) => [
-    program.id,
-    calculateSmccdProgramProgressWithContext(program, progressContext)
-  ])), [programs, progressContext]);
+  const programProgress = useMemo(() => {
+    if (surface !== "degree" || !progressContext) return new Map<string, SmccdProgramProgress>();
+    return new Map(programs.map((program) => [
+        program.id,
+        calculateSmccdProgramProgressWithContext(program, progressContext)
+      ]));
+  }, [programs, progressContext, surface]);
   const geProgressByCollege = useMemo(() => new Map<SmccdCourse["college_code"], SmccdGeProgress[]>(
-    (["CSM", "SKY", "CAN"] as const).map((collegeCode) => [
+    surface === "courses" || !progressContext ? [] : (["CSM", "SKY", "CAN"] as const).map((collegeCode) => [
       collegeCode,
       calculateSmccdGeProgress(
         progressContext,
@@ -359,13 +372,14 @@ export default function SmccdPlanner({
         new Set(geCompletions.filter((completion) => completion.college_code === collegeCode).map((completion) => completion.area))
       )
     ])
-  ), [geCompletions, progressContext]);
+  ), [geCompletions, progressContext, surface]);
   const markedProgramIds = useMemo(() => new Set(goals.map((goal) => goal.program_id)), [goals]);
   const selectedProgram = programs.find((program) => program.id === goalProgramId) ?? null;
   const generalEducationCollege = surface === "general_education" ? geCollegeCode : selectedProgram?.college_code ?? "CSM";
   const generalEducationProgress = geProgressByCollege.get(generalEducationCollege) ?? [];
   const deferredProgramSearch = useDeferredValue(programSearch);
   const visiblePrograms = useMemo(() => {
+    if (surface !== "degree") return [];
     const query = deferredProgramSearch.trim().toLowerCase();
     return programs
       .map((program) => ({ program, progress: programProgress.get(program.id)! }))
@@ -375,9 +389,20 @@ export default function SmccdPlanner({
         || b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
         || a.program.title.localeCompare(b.program.title))
       .slice(0, 60);
-  }, [deferredProgramSearch, geProgressByCollege, markedProgramIds, programProgress, programs]);
-  const districtRows = planCourses.filter((row) => Number(row.college_units ?? 0) > 0 || row.smccd_course_id);
-  const smccdCourseMap = new Map(courses.map((course) => [course.id, course]));
+  }, [deferredProgramSearch, geProgressByCollege, markedProgramIds, programProgress, programs, surface]);
+  const renderedPrograms = visiblePrograms.slice(0, programRenderLimit);
+  useEffect(() => {
+    if (surface !== "degree" || visiblePrograms.length <= 24) return;
+    setProgramRenderLimit(24);
+    if ("requestIdleCallback" in window) {
+      const idleId = window.requestIdleCallback(() => setProgramRenderLimit(60), { timeout: 400 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    const timeout = setTimeout(() => setProgramRenderLimit(60), 80);
+    return () => clearTimeout(timeout);
+  }, [deferredProgramSearch, surface, visiblePrograms.length]);
+  const districtRows = useMemo(() => planCourses.filter((row) => Number(row.college_units ?? 0) > 0 || row.smccd_course_id), [planCourses]);
+  const smccdCourseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   function chooseCourse(course: SmccdCourse) {
     setSelectedCourse(course);
     setCourseDraft({
@@ -628,7 +653,7 @@ export default function SmccdPlanner({
 
       {surface === "degree" && !degreeCatalogReady && <div className="smccd-loading smccd-degree-loading" role="status">Loading degree requirements...</div>}
 
-      {surface === "degree" && degreeCatalogReady && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section">
+      {surface === "degree" && degreeCatalogReady && <section className="content-section smccd-goal-section smccd-degree-transition">
         <header className="section-heading smccd-degree-section-heading">
           <div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div>
           <div className="smccd-program-filters smccd-program-toolbar">
@@ -641,7 +666,7 @@ export default function SmccdPlanner({
           {visiblePrograms.length ? <table className="smccd-degree-table">
             <colgroup><col className="smccd-degree-column" /><col className="smccd-progress-column" /><col className="smccd-major-column" /></colgroup>
             <thead><tr><th>Degree</th><th>Progress</th><th>Major units</th></tr></thead>
-            <tbody>{visiblePrograms.map(({ program, progress: programResult }) => {
+            <tbody>{renderedPrograms.map(({ program, progress: programResult }) => {
               const markedGoal = goals.find((goal) => goal.program_id === program.id);
               const isMarked = Boolean(markedGoal);
               const isSelected = goalProgramId === program.id;
@@ -689,9 +714,9 @@ export default function SmccdPlanner({
             })}</tbody>
           </table> : <div className="smccd-program-empty"><strong>No matching degrees</strong><p>Try another program name, award, or college.</p></div>}
         </div>
-      </section></FadeContent>}
+      </section>}
 
-      {surface === "general_education" && <FadeContent className="smccd-degree-transition"><section className="content-section smccd-goal-section smccd-ge-page">
+      {surface === "general_education" && <section className="content-section smccd-goal-section smccd-ge-page smccd-degree-transition">
         <header className="section-heading smccd-ge-page-heading">
           <div><h2>General education</h2><p>Local AA and AS requirements matched against the active plan and transcript.</p></div>
           <label><span className="sr-only">College pattern</span><select value={geCollegeCode} onChange={(event) => setGeCollegeCode(event.target.value as SmccdCourse["college_code"])}><option value="CSM">College of San Mateo</option><option value="SKY">Skyline College</option><option value="CAN">Cañada College</option></select></label>
@@ -716,7 +741,7 @@ export default function SmccdPlanner({
           })}</div>
           <footer><Warning size={15} /><p>Courses are assigned to one local GE area at a time. Manual PE completion is student-confirmed. Catalog rights, waivers, substitutions, residency, and transfer-pattern rules still need official review.</p><a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">Official 2025-2026 pattern <ArrowSquareOut size={13} /></a></footer>
         </section>
-      </section></FadeContent>}
+      </section>}
 
       {surface === "courses" && <details className="smccd-manual-entry">
         <summary>Course missing from the catalog?</summary>
