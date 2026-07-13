@@ -177,7 +177,6 @@ export const assistantToolNames = [
   "list_plan_courses",
   "search_course_catalog",
   "get_graduation_progress",
-  "get_next_steps",
   "get_transcript_sources",
   "get_student_data_inventory",
   "audit_transcript_data",
@@ -197,12 +196,6 @@ export const assistantToolNames = [
   "remove_plan_courses",
   "update_plan_course",
   "update_enrollment_preference",
-  "add_next_step",
-  "complete_next_step",
-  "complete_next_steps",
-  "update_next_step",
-  "remove_next_step",
-  "remove_next_steps",
   "set_college_goal",
   "clear_college_goal"
 ] as const;

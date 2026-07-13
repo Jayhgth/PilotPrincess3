@@ -78,7 +78,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/AppChrome.tsx`, `src/components/OverviewPath.tsx`, and `src/styles/t3code.css`: the retained t3code-inspired workspace shell and planning overview.
 - `src/components/GraduationWorkspace.tsx`: d.tech diploma and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
-- `src/lib/planning.ts`: deterministic graduation, GPA, course-plan, and next-step logic.
+- `src/lib/planning.ts`: deterministic graduation, GPA, and course-plan logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
 - `src/lib/prerequisites/`: exact prerequisite parsing, evaluation, and audits.
 - `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, private image context, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.

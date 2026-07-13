@@ -273,19 +273,6 @@ export interface StudentEnrollmentPreference {
   updated_at: string;
 }
 
-export interface TimelineTask {
-  id: string;
-  user_id: string;
-  plan_version_id: string | null;
-  title: string;
-  category: "academics" | "activities" | "college" | "summer" | "admin";
-  due_date: string | null;
-  due_label: string | null;
-  is_completed: boolean;
-  is_generated: boolean;
-  explanation: string | null;
-}
-
 export interface AiConversation {
   id: string;
   user_id: string;

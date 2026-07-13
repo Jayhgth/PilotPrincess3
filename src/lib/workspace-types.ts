@@ -19,6 +19,5 @@ export type {
   SmccdRequirementCourse,
   StudentSmccdGoal,
   StudentEnrollmentPreference,
-  StudentSettings,
-  TimelineTask
+  StudentSettings
 } from "@/lib/models";

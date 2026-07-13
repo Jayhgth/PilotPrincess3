@@ -8,14 +8,13 @@ export const prerender = false;
 const requestSchema = z.object({ toolCallId: z.uuid() });
 const rowSchema = z.record(z.string(), z.unknown());
 const undoSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("delete_rows"), table: z.enum(["plan_versions", "plan_courses", "timeline_tasks"]), ids: z.array(z.uuid()).min(1).max(40), summary: z.string().min(1).max(500) }),
-  z.object({ kind: z.literal("restore_rows"), table: z.enum(["plan_courses", "timeline_tasks", "student_smccd_goals"]), rows: z.array(rowSchema).min(1).max(40), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("delete_rows"), table: z.enum(["plan_versions", "plan_courses"]), ids: z.array(z.uuid()).min(1).max(40), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("restore_rows"), table: z.enum(["plan_courses", "student_smccd_goals"]), rows: z.array(rowSchema).min(1).max(40), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_enrollment_preference"), row: rowSchema.nullable(), summary: z.string().min(1).max(500) })
 ]);
 
 const RESTORABLE_KEYS = {
   plan_courses: ["id", "plan_version_id", "user_id", "course_id", "custom_course_name", "grade_level", "school_year", "term", "status", "credits", "college_units", "letter_grade", "is_weighted", "mapping_verified", "user_edited", "notes", "sort_order", "source_review_item_id", "smccd_course_id", "college_provider_code", "requirement_area_override"],
-  timeline_tasks: ["id", "user_id", "plan_version_id", "title", "category", "due_date", "due_label", "is_completed", "is_generated", "explanation"],
   student_smccd_goals: ["id", "user_id", "program_id", "is_primary", "notes"]
 } as const;
 

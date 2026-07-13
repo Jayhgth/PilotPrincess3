@@ -11,7 +11,7 @@ Pilot Princess is a student decision workspace, not a KPI dashboard. It helps a 
 3. **Graduation** owns d.tech diploma evidence and the complete associate-degree workspace: finding, comparing, tracking, prioritizing, and auditing AA or AS programs. Missing degree courses link into the College Courses selector without moving degree controls there.
 4. **GPA planner** compares grade assumptions for the saved schedule. College-unit policy warnings belong with Courses, where the schedule changes.
 5. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
-6. **Settings** is an account-level destination in the sidebar footer, beside Sign out. Opening it replaces the planning navigation with General, Planning, Pilot, and account-gated Admin sections. Appearance and student details live in General; plan scope, college enrollment type, and next steps live in Planning; all assistant configuration lives in Pilot; administrator previews and reset controls live in Admin.
+6. **Settings** is an account-level destination in the sidebar footer, beside Sign out. Opening it replaces the planning navigation with General, Planning, Pilot, and account-gated Admin sections. Student details and account lifecycle controls live in General; plan scope and college enrollment type live in Planning; all assistant configuration lives in Pilot; administrator previews and reset controls live in Admin.
 
 Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
 
@@ -22,7 +22,6 @@ Associate-degree discovery uses one search field rather than stacked mode, award
 | Tool | Student job | Standout capability |
 | --- | --- | --- |
 | GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, and source-backed college-unit checks |
-| Overview actions | Know the next action and why it comes next | Plan-derived and student-owned actions live beside the current path, with add, complete, delete, and reconciliation controls |
 | Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a docked rail that archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.

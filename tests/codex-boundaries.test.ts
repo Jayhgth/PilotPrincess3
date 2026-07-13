@@ -86,7 +86,6 @@ describe("Codex feature boundaries", () => {
 
   it("validates exact tool arguments and marks writes for confirmation", () => {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
-    expect(parseAssistantToolCall("add_next_step", { title: "Meet with my counselor", category: "admin", due_label: null })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
@@ -114,16 +113,16 @@ describe("Codex feature boundaries", () => {
 
   it("builds a separate autonomous review prompt and bounds its decision", () => {
     const prompt = buildAutoReviewPrompt({
-      userMessage: "Add a counseling task",
-      toolName: "add_next_step",
-      arguments: { title: "Meet counselor", category: "admin" },
-      explanation: "Add the requested task."
+      userMessage: "Use concurrent enrollment",
+      toolName: "update_enrollment_preference",
+      arguments: { program_type: "concurrent" },
+      explanation: "Apply the requested enrollment type."
     });
     expect(prompt).toContain("separate approval reviewer");
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
     expect(prompt).toContain("a structured Yes or No answer to Pilot's unit-limit question may approve");
-    expect(prompt).toContain('"title":"Meet counselor"');
+    expect(prompt).toContain('"program_type":"concurrent"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
     expect(() => autoReviewResultSchema.parse({ decision: "manual", risk: "medium", summary: "Ask the student." })).toThrow();
@@ -235,19 +234,6 @@ describe("Codex feature boundaries", () => {
     expect(requiredAssistantEvidenceRead("What are all my current classes?")).toBeNull();
     expect(parseAssistantToolCall("remove_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("move_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()], status: "completed" })).toMatchObject({ mutatesData: true });
-    expect(requiredAssistantEvidenceRead("Mark all my next steps complete")).toEqual({
-      name: "get_next_steps",
-      arguments: {}
-    });
-    expect(requiredAssistantEvidenceRead("Delete every custom task")).toEqual({
-      name: "get_next_steps",
-      arguments: {}
-    });
-    expect(requiredAssistantEvidenceRead("Show all my next steps")).toBeNull();
-    expect(requiredAssistantEvidenceRead("Check all my next steps for issues")).toBeNull();
-    expect(requiredAssistantEvidenceRead("Complete every task except meeting my counselor")).toBeNull();
-    expect(parseAssistantToolCall("complete_next_steps", { task_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("remove_next_steps", { task_ids: [crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("search_smccd_programs", { query: "computer science", college: "CSM", award_type: "AS" })).toMatchObject({ mutatesData: false });
   });
 });

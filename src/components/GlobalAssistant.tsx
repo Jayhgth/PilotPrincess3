@@ -117,8 +117,7 @@ function contextSuggestions(context: Record<string, unknown>) {
     dashboard: ["What should I focus on next?", "Check whether my current plan is balanced.", "What should I verify with my counselor?"],
     courses: ["Find an eligible course for my plan.", "Check my current course sequence.", "Help me add a course to my plan."],
     graduation: ["Which graduation requirement still needs attention?", "Explain what is completed versus only scheduled.", "What should I plan next for graduation?"],
-    gpa: ["Explain my GPA in plain language.", "Which courses are included in this GPA?", "What GPA evidence should I verify?"],
-    timeline: ["What is my most important next step?", "Check whether any steps are out of order.", "Add a next step for me."]
+    gpa: ["Explain my GPA in plain language.", "Which courses are included in this GPA?", "What GPA evidence should I verify?"]
   } as Record<string, string[]>)[view] ?? ["What should I focus on next?", "Check my current plan.", "What can you help me change?"];
 }
 
@@ -196,7 +195,6 @@ const TOOL_LABELS: Record<string, string> = {
   list_plan_courses: "Course plan",
   search_course_catalog: "Course catalog",
   get_graduation_progress: "Graduation progress",
-  get_next_steps: "Next steps",
   get_transcript_sources: "Transcript sources",
   get_student_data_inventory: "Student records",
   audit_transcript_data: "Transcript audit",
@@ -216,12 +214,6 @@ const TOOL_LABELS: Record<string, string> = {
   remove_plan_courses: "Remove courses",
   update_plan_course: "Update course",
   update_enrollment_preference: "Update college enrollment type",
-  add_next_step: "Add next step",
-  complete_next_step: "Complete next step",
-  complete_next_steps: "Complete next steps",
-  update_next_step: "Update next step",
-  remove_next_step: "Remove next step",
-  remove_next_steps: "Remove next steps",
   set_college_goal: "Bookmark degree",
   clear_college_goal: "Remove degree bookmark"
 };

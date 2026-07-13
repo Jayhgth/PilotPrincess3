@@ -1484,6 +1484,10 @@ export default function PlanningWorkspace() {
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
         onAiPreferencesChanged={refreshAiPreferences}
+        onAccountDeleted={async () => {
+          await supabase?.auth.signOut({ scope: "local" });
+          window.location.assign("/");
+        }}
       />}
     </div>;
   }

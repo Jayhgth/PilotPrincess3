@@ -1,6 +1,7 @@
 import { CheckIcon as Check } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState, type SyntheticEvent } from "react";
+import AccountLifecycleControls from "@/components/AccountLifecycleControls";
 import PilotSettingsSection from "@/components/PilotSettingsSection";
 import type { GradeLevel, StudentSettings } from "@/lib/models";
 import styles from "./StudentSettingsPanel.module.css";
@@ -26,6 +27,7 @@ interface StudentSettingsPanelProps {
   busy?: boolean;
   onSave: (patch: StudentSettingsPatch) => void | Promise<void>;
   onAiPreferencesChanged: () => void | Promise<void>;
+  onAccountDeleted: () => void | Promise<void>;
 }
 
 interface SettingsDraft {
@@ -54,7 +56,8 @@ export default function StudentSettingsPanel({
   settings,
   busy = false,
   onSave,
-  onAiPreferencesChanged
+  onAiPreferencesChanged,
+  onAccountDeleted
 }: StudentSettingsPanelProps) {
   const [draft, setDraft] = useState<SettingsDraft>(() => settingsDraft(settings));
   const [saving, setSaving] = useState(false);
@@ -125,7 +128,7 @@ export default function StudentSettingsPanel({
     return <div className={`${styles.settingsPanel} ${styles.compactPanel}`}>
       <section className={`content-section ${styles.section} ${styles.planningSection}`} aria-labelledby="plan-settings-heading">
         <header className={styles.sectionHeading}>
-          <div><h2 id="plan-settings-heading">Plan range</h2><p>Choose the first and last high-school years included in the plan.</p></div>
+          <div><h2 id="plan-settings-heading">Plan range</h2><p>First and last high-school years shown in the plan.</p></div>
         </header>
         <form className={styles.planningForm} onSubmit={save}>
           <div className={`form-grid two ${styles.settingsGrid}`}>
@@ -143,11 +146,12 @@ export default function StudentSettingsPanel({
     <section className={`content-section ${styles.section}`} aria-labelledby="account-settings-heading">
       <header className={styles.sectionHeading}><div><h2 id="account-settings-heading">Account</h2></div></header>
       <div className={styles.accountIdentity}><span><strong>Signed in</strong><small>{session.user.email ?? "Student account"}</small></span></div>
+      <AccountLifecycleControls onDeleted={onAccountDeleted} />
     </section>
 
     <section className={`content-section ${styles.section}`} aria-labelledby="student-settings-heading">
       <header className={styles.sectionHeading}>
-        <div><h2 id="student-settings-heading">Student profile</h2><p>Used for grade-aware planning, school years, and graduation timing.</p></div>
+        <div><h2 id="student-settings-heading">Student profile</h2><p>Grade, school years, and expected graduation.</p></div>
       </header>
       <form onSubmit={save}>
         <div className={`form-grid two ${styles.settingsGrid}`}>

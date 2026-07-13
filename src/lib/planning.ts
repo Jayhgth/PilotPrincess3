@@ -8,8 +8,7 @@ import type {
   PlanCourse,
   RequirementProgress,
   SmccdHighSchoolEquivalency,
-  StudentSettings,
-  TimelineTask
+  StudentSettings
 } from "@/lib/models";
 import { courseEquivalenceKeys } from "@/lib/course-names";
 
@@ -615,100 +614,6 @@ export function generateSuggestedPlan(
   }
 
   return generated;
-}
-
-export interface GeneratedTimelineTask {
-  title: string;
-  category: "academics" | "activities" | "college" | "summer" | "admin";
-  due_label: string;
-  explanation: string;
-}
-
-export function generateTimeline(settings: StudentSettings, progress: RequirementProgress[]): GeneratedTimelineTask[] {
-  const grade = (settings.grade_level ?? 9) as GradeLevel;
-  const tasks: GeneratedTimelineTask[] = [];
-  const missing = progress.filter((item) => item.status === "missing").slice(0, 3);
-
-  for (const item of missing) {
-    tasks.push({
-      title: `Choose a course for ${item.requirement.name}`,
-      category: "academics",
-      due_label: "Before next course registration",
-      explanation: `${item.requirement.name} is projected at ${item.verifiedProjectedCredits} of ${item.requirement.credits_required} verified credits.`
-    });
-  }
-
-  if (grade === 11) {
-    tasks.push({
-      title: "Review senior-year rigor with a counselor",
-      category: "college",
-      due_label: "Before senior registration",
-      explanation: "Confirm prerequisites, graduation coverage, and whether concurrent enrollment fits the district unit threshold."
-    });
-  }
-  if (grade === 12) {
-    tasks.push({
-      title: "Verify final graduation requirement status",
-      category: "admin",
-      due_label: "Before graduation clearance",
-      explanation: "Use the app as a planning aid, then confirm official transcript and requirement status with d.tech."
-    });
-  }
-
-  tasks.push({
-    title: "Plan one restorative summer goal",
-    category: "summer",
-    due_label: "Before summer",
-    explanation: "Balance academic plans with rest, responsibilities, and activities."
-  });
-  return tasks;
-}
-
-export interface GeneratedTimelineTaskUpdate {
-  id: string;
-  patch: Pick<TimelineTask, "category" | "due_label" | "explanation">;
-}
-
-export function reconcileGeneratedTimelineTasks(
-  savedTasks: TimelineTask[],
-  desiredGeneratedTasks: GeneratedTimelineTask[]
-) {
-  const desiredByTitle = new Map(desiredGeneratedTasks.map((task) => [task.title, task]));
-  const manualTitles = new Set(savedTasks.filter((task) => !task.is_generated).map((task) => task.title));
-  const retainedGeneratedTitles = new Set<string>();
-  const obsoleteIds: string[] = [];
-  const updateTasks: GeneratedTimelineTaskUpdate[] = [];
-
-  for (const task of savedTasks) {
-    if (!task.is_generated) continue;
-    const desired = desiredByTitle.get(task.title);
-    if (!desired || manualTitles.has(task.title) || retainedGeneratedTitles.has(task.title)) {
-      obsoleteIds.push(task.id);
-      continue;
-    }
-    retainedGeneratedTitles.add(task.title);
-    if (
-      task.category !== desired.category
-      || task.due_label !== desired.due_label
-      || task.explanation !== desired.explanation
-    ) {
-      updateTasks.push({
-        id: task.id,
-        patch: {
-          category: desired.category,
-          due_label: desired.due_label,
-          explanation: desired.explanation
-        }
-      });
-    }
-  }
-
-  const obsolete = new Set(obsoleteIds);
-  const visibleTasks = savedTasks.filter((task) => !obsolete.has(task.id));
-  const existingTitles = new Set(visibleTasks.map((task) => task.title));
-  const insertTasks = desiredGeneratedTasks.filter((task) => !existingTitles.has(task.title));
-
-  return { visibleTasks, obsoleteIds, updateTasks, insertTasks };
 }
 
 export function overallGraduationPercent(progress: RequirementProgress[]) {

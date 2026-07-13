@@ -19,8 +19,7 @@ import type {
   SmccdRequirementCourse,
   StudentSmccdGoal,
   StudentEnrollmentPreference,
-  StudentSettings,
-  TimelineTask
+  StudentSettings
 } from "@/lib/models";
 import {
   calculateGpa,
@@ -44,7 +43,6 @@ import { evaluateGpaScenario } from "@/lib/gpa-planner";
 const courseStatusSchema = z.enum(["current", "planned"]);
 const termSchema = z.enum(["fall", "spring", "summer", "full_year"]);
 const gradeSchema = z.union([z.literal(9), z.literal(10), z.literal(11), z.literal(12)]);
-const timelineCategorySchema = z.enum(["academics", "activities", "college", "summer", "admin"]);
 const optionalText = (maximum: number) => z.string().trim().max(maximum).nullable();
 
 function assertPlanningTermExists(gradeLevel: GradeLevel, term: PlanCourse["term"]) {
@@ -62,7 +60,6 @@ const toolArgumentSchemas = {
     grade_level: gradeSchema.optional()
   }),
   get_graduation_progress: z.object({}),
-  get_next_steps: z.object({}),
   get_transcript_sources: z.object({}),
   get_student_data_inventory: z.object({}),
   audit_transcript_data: z.object({ include_source_text: z.boolean().default(false) }),
@@ -125,28 +122,6 @@ const toolArgumentSchemas = {
   update_enrollment_preference: z.object({
     program_type: z.enum(["concurrent", "dual"])
   }),
-  add_next_step: z.object({
-    title: z.string().trim().min(1).max(240),
-    category: timelineCategorySchema,
-    due_label: z.string().trim().max(160).nullable().default(null)
-  }),
-  complete_next_step: z.object({ task_id: z.uuid() }),
-  complete_next_steps: z.object({
-    task_ids: z.array(z.uuid()).min(1).max(40)
-      .refine((ids) => new Set(ids).size === ids.length, "Next-step IDs must be unique.")
-  }),
-  update_next_step: z.object({
-    task_id: z.uuid(),
-    title: z.string().trim().min(1).max(240).optional(),
-    category: timelineCategorySchema.optional(),
-    due_label: optionalText(160).optional(),
-    is_completed: z.boolean().optional()
-  }).refine((value) => Object.keys(value).some((key) => key !== "task_id"), "Provide at least one next-step field to update."),
-  remove_next_step: z.object({ task_id: z.uuid() }),
-  remove_next_steps: z.object({
-    task_ids: z.array(z.uuid()).min(1).max(40)
-      .refine((ids) => new Set(ids).size === ids.length, "Next-step IDs must be unique.")
-  }),
   set_college_goal: z.object({ program_id: z.string().trim().min(1).max(180), notes: z.string().trim().max(1200).default("") }),
   clear_college_goal: z.object({ program_id: z.string().trim().min(1).max(180) })
 } as const;
@@ -163,7 +138,6 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "list_plan_courses", mutatesData: false, description: "List courses already in the active plan, with stable IDs and Done/In progress/Planned state.", arguments: '{"status":"completed|current|planned|all"}' },
   { name: "search_course_catalog", mutatesData: false, description: "Search eligible d.tech and/or SMCCD catalog courses. Returns stable course IDs needed for add-course requests.", arguments: '{"query":"string","source":"dtech|smccd|all","grade_level":9|10|11|12}' },
   { name: "get_graduation_progress", mutatesData: false, description: "Read requirement-by-requirement completed, scheduled, and remaining credit evidence.", arguments: "{}" },
-  { name: "get_next_steps", mutatesData: false, description: "Read open graduation gaps and saved next-step tasks.", arguments: "{}" },
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Transcript evidence remains read-only in chat.", arguments: "{}" },
   { name: "get_student_data_inventory", mutatesData: false, description: "Read a compact inventory of the current student's available records so the assistant can choose the correct evidence tool.", arguments: "{}" },
   { name: "audit_transcript_data", mutatesData: false, description: "Compare transcript source text, parsed rows, review decisions, catalog identities, and imported plan rows. Use source text for an actual extraction audit; never treat a graduation gap as a parsing error.", arguments: '{"include_source_text":boolean}' },
@@ -183,12 +157,6 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "remove_plan_courses", mutatesData: true, description: "Propose removing an exact set of editable courses from the active plan in one atomic request. Use this for all/every bulk removal requests after listing the matching plan courses.", arguments: '{"plan_course_ids":["uuid"]}' },
   { name: "update_plan_course", mutatesData: true, description: "Propose editing the placement, grade, or notes of an unlocked plan course.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","notes":"string|null"}' },
   { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing whether the student plans to use SMCCD concurrent enrollment or a dual-enrollment partnership. District unit thresholds remain source-backed policy and cannot be customized.", arguments: '{"program_type":"concurrent|dual"}' },
-  { name: "add_next_step", mutatesData: true, description: "Propose adding one student-owned next step. The selected review route must approve it.", arguments: '{"title":"string","category":"academics|activities|college|summer|admin","due_label":"string|null"}' },
-  { name: "complete_next_step", mutatesData: true, description: "Propose completing one saved next step. The selected review route must approve it.", arguments: '{"task_id":"uuid"}' },
-  { name: "complete_next_steps", mutatesData: true, description: "Propose completing an exact set of open next steps in one atomic request. Use this for all/every bulk completion requests after reading next steps.", arguments: '{"task_ids":["uuid"]}' },
-  { name: "update_next_step", mutatesData: true, description: "Propose editing a saved next step.", arguments: '{"task_id":"uuid",...changed fields}' },
-  { name: "remove_next_step", mutatesData: true, description: "Propose removing a student-created next step. Generated requirement gaps cannot be deleted here.", arguments: '{"task_id":"uuid"}' },
-  { name: "remove_next_steps", mutatesData: true, description: "Propose removing an exact set of student-created next steps in one atomic request. Generated requirement steps cannot be deleted.", arguments: '{"task_ids":["uuid"]}' },
   { name: "set_college_goal", mutatesData: true, description: "Propose bookmarking one SMCCD AA or AS degree. Existing bookmarks remain marked.", arguments: '{"program_id":"string","notes":"string"}' },
   { name: "clear_college_goal", mutatesData: true, description: "Propose removing one SMCCD degree bookmark.", arguments: '{"program_id":"string"}' }
 ];
@@ -207,7 +175,6 @@ export function assistantToolLabel(name: string) {
     list_plan_courses: "Read course plan",
     search_course_catalog: "Search course catalogs",
     get_graduation_progress: "Check graduation progress",
-    get_next_steps: "Read next steps",
     get_transcript_sources: "Read transcript sources",
     get_student_data_inventory: "Inventory student records",
     audit_transcript_data: "Audit transcript evidence",
@@ -227,12 +194,6 @@ export function assistantToolLabel(name: string) {
     remove_plan_courses: "Remove courses",
     update_plan_course: "Update course",
     update_enrollment_preference: "Update college enrollment type",
-    add_next_step: "Add next step",
-    complete_next_step: "Complete next step",
-    complete_next_steps: "Complete next steps",
-    update_next_step: "Update next step",
-    remove_next_step: "Remove next step",
-    remove_next_steps: "Remove next steps",
     set_college_goal: "Set college goal",
     clear_college_goal: "Clear college goal"
   } as Record<string, string>)[name] ?? name.replaceAll("_", " ");
@@ -258,7 +219,6 @@ interface AssistantWorkspace {
   requirements: GraduationRequirement[];
   mappings: CourseRequirementMapping[];
   equivalencies: SmccdHighSchoolEquivalency[];
-  tasks: TimelineTask[];
   plannedSmccdCourses: SmccdCourse[];
   sources: OfficialSource[];
   transcriptReviewItems: CatalogReviewItem[];
@@ -272,21 +232,20 @@ function firstError(results: ReadonlyArray<{ error: { message: string } | null }
 }
 
 async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string): Promise<AssistantWorkspace> {
-  const [settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult] = await Promise.all([
+  const [settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult] = await Promise.all([
     supabase.from("student_settings").select("*").eq("id", userId).single(),
     supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
     supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
     supabase.from("graduation_requirements").select("*").eq("review_status", "approved").order("name"),
     supabase.from("course_requirement_mappings").select("*"),
     supabase.from("smccd_high_school_equivalencies").select("*"),
-    supabase.from("timeline_tasks").select("*").eq("user_id", userId).order("is_completed").order("due_date"),
     supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
     supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
     supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("created_at"),
     supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
     supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle()
   ]);
-  const error = firstError([settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, taskResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult]);
+  const error = firstError([settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult]);
   if (error) throw new Error(error.message);
 
   const plan = planResult.data as unknown as FourYearPlan;
@@ -311,7 +270,6 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     requirements: (requirementResult.data ?? []) as unknown as GraduationRequirement[],
     mappings: (mappingResult.data ?? []) as unknown as CourseRequirementMapping[],
     equivalencies: (equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[],
-    tasks: (taskResult.data ?? []) as unknown as TimelineTask[],
     plannedSmccdCourses: (smccdResult.data ?? []) as unknown as SmccdCourse[],
     sources: (sourceResult.data ?? []) as unknown as OfficialSource[],
     transcriptReviewItems: (reviewResult.data ?? []) as unknown as CatalogReviewItem[],
@@ -342,8 +300,8 @@ export interface AssistantToolResult {
 }
 
 export type AssistantUndo =
-  | { kind: "delete_rows"; table: "plan_versions" | "plan_courses" | "timeline_tasks"; ids: string[]; summary: string }
-  | { kind: "restore_rows"; table: "plan_courses" | "timeline_tasks" | "student_smccd_goals"; rows: Array<Record<string, unknown>>; summary: string }
+  | { kind: "delete_rows"; table: "plan_versions" | "plan_courses"; ids: string[]; summary: string }
+  | { kind: "restore_rows"; table: "plan_courses" | "student_smccd_goals"; rows: Array<Record<string, unknown>>; summary: string }
   | { kind: "restore_enrollment_preference"; row: Record<string, unknown> | null; summary: string };
 
 export async function executeAssistantReadTool(
@@ -465,25 +423,6 @@ export async function executeAssistantReadTool(
     return { summary: "Read the current graduation requirement audit.", data };
   }
 
-  if (name === "get_next_steps") {
-    return {
-      summary: "Read current requirement gaps and saved next steps.",
-      data: {
-        requirement_gaps: calculated.graduationProgress.filter((item) => item.status === "missing").map((item) => ({
-          area: item.requirement.name,
-          remaining_credits: Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)
-        })),
-        tasks: workspace.tasks.filter((task) => !task.is_completed).map((task) => ({
-          task_id: task.id,
-          title: task.title,
-          category: task.category,
-          due: task.due_label ?? task.due_date,
-          generated: task.is_generated
-        }))
-      }
-    };
-  }
-
   if (name === "get_transcript_sources") {
     const data = workspace.sources.map((source) => ({
       source_id: source.id,
@@ -513,7 +452,6 @@ export async function executeAssistantReadTool(
           parsed_course_row_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course").length,
           pending_review_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course" && item.status === "pending").length
         },
-        next_steps: { count: workspace.tasks.length, open_count: workspace.tasks.filter((task) => !task.is_completed).length },
         college_goal: { selected: workspace.collegeGoals.length > 0 },
         college_enrollment_preference: {
           provider: workspace.enrollmentPreference.provider_code,
@@ -527,7 +465,6 @@ export async function executeAssistantReadTool(
           "evaluate_gpa_scenario",
           "get_enrollment_constraints",
           "audit_transcript_data",
-          "get_next_steps",
           "get_degree_progress"
         ]
       }
@@ -1046,104 +983,6 @@ export async function executeAssistantMutationTool(
       data: { provider_code: "SMCCD", ...args, planning_threshold_units: policy.recommended_max_units, published_absolute_max_units: policy.absolute_max_units },
       changed: { entity: "student_enrollment_preference", id: `${data.user_id}:${data.provider_code}` },
       undo: { kind: "restore_enrollment_preference", row: previousResult.data as Record<string, unknown> | null, summary: "The previous college enrollment type was restored." }
-    };
-  }
-
-  if (name === "add_next_step") {
-    const args = toolArgumentSchemas.add_next_step.parse(argumentsValue);
-    const { data, error } = await supabase.from("timeline_tasks").insert({
-      user_id: userId,
-      plan_version_id: workspace.activeVersion.id,
-      title: args.title,
-      category: args.category,
-      due_label: args.due_label,
-      is_generated: false
-    }).select("id").single();
-    if (error) throw new Error(error.message);
-    return {
-      summary: `${args.title} was added to Next steps.`,
-      data: { title: args.title, category: args.category, due_label: args.due_label },
-      changed: { entity: "timeline_task", id: data.id },
-      undo: { kind: "delete_rows", table: "timeline_tasks", ids: [data.id], summary: `${args.title} was removed from Next steps.` }
-    };
-  }
-
-  if (name === "complete_next_step") {
-    const args = toolArgumentSchemas.complete_next_step.parse(argumentsValue);
-    const task = workspace.tasks.find((candidate) => candidate.id === args.task_id);
-    if (!task) throw new Error("That next step no longer exists.");
-    const { error } = await supabase.from("timeline_tasks").update({ is_completed: true }).eq("id", task.id);
-    if (error) throw new Error(error.message);
-    return {
-      summary: `${task.title} was marked complete.`,
-      data: { task_id: task.id, title: task.title },
-      changed: { entity: "timeline_task", id: task.id },
-      undo: { kind: "restore_rows", table: "timeline_tasks", rows: [task as unknown as Record<string, unknown>], summary: `${task.title} was marked open again.` }
-    };
-  }
-
-  if (name === "complete_next_steps") {
-    const args = toolArgumentSchemas.complete_next_steps.parse(argumentsValue);
-    const tasks = args.task_ids.map((id) => workspace.tasks.find((candidate) => candidate.id === id));
-    if (tasks.some((task) => !task)) throw new Error("One or more next steps no longer exist.");
-    const matchedTasks = tasks as TimelineTask[];
-    if (matchedTasks.some((task) => task.is_completed)) throw new Error("One or more next steps are already complete.");
-    const { error } = await supabase.from("timeline_tasks").update({ is_completed: true }).in("id", args.task_ids);
-    if (error) throw new Error(error.message);
-    return {
-      summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step was" : "steps were"} marked complete.`,
-      data: { task_ids: args.task_ids, titles: matchedTasks.map((task) => task.title), completed_count: matchedTasks.length },
-      changed: { entity: "timeline_tasks", id: args.task_ids.join(",") },
-      undo: { kind: "restore_rows", table: "timeline_tasks", rows: matchedTasks as unknown as Array<Record<string, unknown>>, summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step is" : "steps are"} open again.` }
-    };
-  }
-
-  if (name === "update_next_step") {
-    const args = toolArgumentSchemas.update_next_step.parse(argumentsValue);
-    const task = workspace.tasks.find((candidate) => candidate.id === args.task_id);
-    if (!task) throw new Error("That next step no longer exists.");
-    if (task.is_generated) throw new Error("Generated requirement steps update from the plan and cannot be edited directly.");
-    const { task_id: _id, ...patch } = args;
-    const { error } = await supabase.from("timeline_tasks").update(patch).eq("id", task.id);
-    if (error) throw new Error(error.message);
-    return {
-      summary: `${args.title ?? task.title} was updated.`,
-      data: { task_id: task.id, ...patch },
-      changed: { entity: "timeline_task", id: task.id },
-      undo: { kind: "restore_rows", table: "timeline_tasks", rows: [task as unknown as Record<string, unknown>], summary: "The previous next-step details were restored." }
-    };
-  }
-
-  if (name === "remove_next_step") {
-    const args = toolArgumentSchemas.remove_next_step.parse(argumentsValue);
-    const task = workspace.tasks.find((candidate) => candidate.id === args.task_id);
-    if (!task) throw new Error("That next step no longer exists.");
-    if (task.is_generated) throw new Error("Generated requirement steps update from the plan and cannot be deleted directly.");
-    const { error } = await supabase.from("timeline_tasks").delete().eq("id", task.id);
-    if (error) throw new Error(error.message);
-    return {
-      summary: `${task.title} was removed from Next steps.`,
-      data: { task_id: task.id },
-      changed: { entity: "timeline_task", id: task.id },
-      undo: { kind: "restore_rows", table: "timeline_tasks", rows: [task as unknown as Record<string, unknown>], summary: `${task.title} was restored to Next steps.` }
-    };
-  }
-
-  if (name === "remove_next_steps") {
-    const args = toolArgumentSchemas.remove_next_steps.parse(argumentsValue);
-    const tasks = args.task_ids.map((id) => workspace.tasks.find((candidate) => candidate.id === id));
-    if (tasks.some((task) => !task)) throw new Error("One or more next steps no longer exist.");
-    const matchedTasks = tasks as TimelineTask[];
-    if (matchedTasks.some((task) => task.is_generated)) {
-      throw new Error("Generated requirement steps update from the plan and cannot be deleted directly.");
-    }
-    const { error } = await supabase.from("timeline_tasks").delete().in("id", args.task_ids);
-    if (error) throw new Error(error.message);
-    return {
-      summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step was" : "steps were"} removed.`,
-      data: { task_ids: args.task_ids, titles: matchedTasks.map((task) => task.title), removed_count: matchedTasks.length },
-      changed: { entity: "timeline_tasks", id: args.task_ids.join(",") },
-      undo: { kind: "restore_rows", table: "timeline_tasks", rows: matchedTasks as unknown as Array<Record<string, unknown>>, summary: `${matchedTasks.length} next ${matchedTasks.length === 1 ? "step was" : "steps were"} restored.` }
     };
   }
 

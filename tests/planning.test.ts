@@ -7,19 +7,16 @@ import type {
   GraduationRequirement,
   PlanCourse,
   SmccdHighSchoolEquivalency,
-  StudentSettings,
-  TimelineTask
+  StudentSettings
 } from "@/lib/models";
 import {
   appliedCreditBreakdown,
   calculateGpa,
   calculateRequirementProgress,
   generateSuggestedPlan,
-  generateTimeline,
   overallGraduationPercent,
   overallCompletedPercent,
   planCourseMovePatch,
-  reconcileGeneratedTimelineTasks,
   requirementsForSettings,
   schoolYearForGrade,
   selectedPlanGrades
@@ -572,61 +569,6 @@ describe("planning", () => {
       [englishRequirement, mathRequirement],
       { ...settings, tracker_mode: "selected", tracked_requirement_areas: ["math"] }
     )).toEqual([mathRequirement]);
-  });
-
-  it("produces requirement and summer next steps without removed profile prompts", () => {
-    const progress = calculateRequirementProgress([englishRequirement], [], []);
-    const tasks = generateTimeline(settings, progress);
-
-    expect(tasks.some((task) => task.title === "Choose a course for English")).toBe(true);
-    expect(tasks.some((task) => task.title === "Record two academic or career interests")).toBe(false);
-    expect(tasks.some((task) => task.category === "summer")).toBe(true);
-  });
-
-  it("reconciles generated next steps with the current deterministic set", () => {
-    const task = (overrides: Partial<TimelineTask>): TimelineTask => ({
-      id: "task-default",
-      user_id: settings.id,
-      plan_version_id: "version-1",
-      title: "Manual step",
-      category: "admin",
-      due_date: null,
-      due_label: null,
-      is_completed: false,
-      is_generated: false,
-      explanation: null,
-      ...overrides
-    });
-    const saved = [
-      task({ id: "manual", title: "Ask my counselor", is_generated: false }),
-      task({ id: "obsolete", title: "Choose a course for English", is_generated: true }),
-      task({ id: "retained", title: "Plan one restorative summer goal", is_generated: true, due_label: "Old timing" }),
-      task({ id: "duplicate", title: "Plan one restorative summer goal", is_generated: true })
-    ];
-    const desired = [
-      {
-        title: "Plan one restorative summer goal",
-        category: "summer" as const,
-        due_label: "Before summer",
-        explanation: "Balance the plan."
-      },
-      {
-        title: "Review senior-year rigor with a counselor",
-        category: "college" as const,
-        due_label: "Before registration",
-        explanation: "Verify the course sequence."
-      }
-    ];
-
-    const result = reconcileGeneratedTimelineTasks(saved, desired);
-
-    expect(result.obsoleteIds).toEqual(["obsolete", "duplicate"]);
-    expect(result.visibleTasks.map((item) => item.id)).toEqual(["manual", "retained"]);
-    expect(result.updateTasks).toEqual([{
-      id: "retained",
-      patch: { category: "summer", due_label: "Before summer", explanation: "Balance the plan." }
-    }]);
-    expect(result.insertTasks.map((item) => item.title)).toEqual(["Review senior-year rigor with a counselor"]);
   });
 
 });
