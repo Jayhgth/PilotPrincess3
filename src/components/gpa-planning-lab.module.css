@@ -35,13 +35,12 @@
 .courseIdentity strong { overflow: hidden; font-size: var(--type-body); line-height: var(--leading-body); text-overflow: ellipsis; white-space: nowrap; }
 .courseIdentity span { display: flex; min-width: 0; flex-wrap: wrap; gap: 3px 12px; color: var(--ink-faint); font-size: var(--type-supporting); line-height: 1.35; }
 .courseControls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.includeControl { display: grid; width: 30px; height: 34px; place-items: center; cursor: pointer; }
-.includeControl input { display: grid; width: 18px; height: 18px; min-height: 18px; appearance: none; place-content: center; margin: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-raised); cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease; }
-.includeControl input::before { width: 9px; height: 5px; border-bottom: 2px solid white; border-left: 2px solid white; content: ""; transform: rotate(-45deg) scale(0); transition: transform 100ms ease; }
-.includeControl input:hover { border-color: var(--accent); }
-.includeControl input:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
-.includeControl input:checked { border-color: var(--accent); background: var(--accent); }
-.includeControl input:checked::before { transform: rotate(-45deg) scale(1); }
+.includeControl { display: grid; width: 28px; height: 34px; place-items: center; cursor: pointer; }
+.scenarioCheckbox { display: grid; width: 16px; height: 16px; place-items: center; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-raised); color: var(--surface-raised); box-shadow: 0 1px 2px rgb(35 38 43 / .08); cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease; }
+.scenarioCheckbox:hover { border-color: color-mix(in srgb, var(--accent) 72%, var(--line-strong)); }
+.scenarioCheckbox[data-focused] { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
+.scenarioCheckbox[data-checked] { border-color: var(--accent); background: var(--accent); color: white; }
+.checkboxIndicator { display: grid; place-items: center; }
 .gradeControl { display: block; }
 .gradeControl select { width: 82px; min-height: 34px; padding: 5px 7px; font-size: var(--type-supporting); }
 .empty { display: flex; align-items: center; gap: 10px; min-height: 66px; padding: 12px; border-radius: 8px; background: var(--surface-muted); color: var(--ink-soft); }
