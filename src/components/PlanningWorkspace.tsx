@@ -1393,7 +1393,7 @@ export default function PlanningWorkspace() {
           facts={[
             { label: "Subject", value: selectedDtechCourse.subject },
             { label: "Credits", value: selectedDtechCourse.credits ? formatCredits(selectedDtechCourse.credits) : "Verify" },
-            { label: "Offered", value: selectedDtechCourse.grade_levels.length ? selectedDtechCourse.grade_levels.map((grade) => `Grade ${grade}`).join(", ") : "Verify" }
+            { label: "Offered", value: selectedDtechCourse.grade_levels.length ? selectedDtechCourse.grade_levels.join(", ") : "Verify" }
           ]}
           description={selectedDtechCourse.description}
           controls={<form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
