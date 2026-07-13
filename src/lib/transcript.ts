@@ -7,10 +7,10 @@ import type {
   StudentSettings
 } from "@/lib/models";
 import { courseEquivalenceKeys, courseNameAliases, normalizeCourseName } from "@/lib/course-names";
+import { institutionKeyFromName } from "@/lib/institutions";
 import { schoolYearForGrade } from "@/lib/planning";
 
 const DTECH_INSTITUTION_PATTERN = /Design Tech High School|\bd\.?tech\b/i;
-const SMCCD_INSTITUTION_PATTERN = /College of San Mateo|Skyline College|Cañada College|Canada College/i;
 const DTECH_CATALOG_MISS = "No exact d.tech catalog match was found.";
 const SMCCD_CATALOG_MISS = "No exact SMCCD catalog match was found";
 
@@ -110,7 +110,9 @@ export function resolveTranscriptCourse(payload: TranscriptCoursePayload, course
     : payload.matched_course_id
       ? courses.find((course) => course.id === payload.matched_course_id) ?? findTranscriptCatalogMatch(payload.course_name, courses)
       : findTranscriptCatalogMatch(payload.course_name, courses);
-  const isSmccd = Boolean(payload.matched_smccd_course_id) || SMCCD_INSTITUTION_PATTERN.test(payload.institution_name ?? "");
+  const institutionKey = institutionKeyFromName(payload.institution_name);
+  const isSmccd = Boolean(payload.matched_smccd_course_id)
+    || institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
   const classification: TranscriptCourseClassification = isIntersession
     ? "dtech_intersession"
     : isSmccd
@@ -155,10 +157,9 @@ export function transcriptPlanCourseDraft(
   const isIntersession = resolution.classification === "dtech_intersession";
   const passedIntersession = isIntersession && payload.letter_grade?.trim().toUpperCase() === "P";
   const credits = isIntersession && !passedIntersession ? 0 : reportedCredits;
-  const isSmccdCourse = Boolean(
-    payload.matched_smccd_course_id ||
-    /College of San Mateo|Skyline College|Cañada College|Canada College/i.test(payload.institution_name ?? "")
-  );
+  const institutionKey = institutionKeyFromName(payload.institution_name);
+  const isSmccdCourse = Boolean(payload.matched_smccd_course_id)
+    || institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
   const verifiedMapping = Boolean(equivalency) || passedIntersession || Boolean(
     matched && mappings.some((mapping) => mapping.course_id === matched.id && mapping.confidence === "verified")
   );

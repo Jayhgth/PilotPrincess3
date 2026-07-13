@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Course } from "@/lib/models";
+import type { Course, SmccdCourse } from "@/lib/models";
 import type { ParsedTranscriptResult } from "@/server/ai-schemas";
 import { transcriptReviewRows } from "@/server/transcript-review";
 
@@ -90,5 +90,35 @@ describe("transcript review reconciliation", () => {
     expect(row.confidence).toBe("uncertain");
     expect(row.proposed_payload).toMatchObject({ transcript_classification: "custom" });
     expect(row.uncertainty_notes[0]).toContain("No exact d.tech catalog match");
+  });
+
+  it("matches district course codes when the transcript uses the district name instead of a campus name", () => {
+    const history = {
+      ...baseCourse,
+      course_name: "History 101 - History of Western Civilization II",
+      course_code: "HIST 101",
+      institution_name: "San Mateo County Community College District",
+      college_units: 3,
+      credits: null,
+      letter_grade: "A",
+      subject: "History"
+    };
+    const catalogHistory = {
+      id: "CSM:HIST 101",
+      college_code: "CSM",
+      course_code: "HIST 101",
+      title: "History of Western Civilization II",
+      units_min: 3,
+      units_max: 3
+    } as SmccdCourse;
+
+    const [row] = transcriptReviewRows("user-1", "source-1", parsedResult([history]), [], [catalogHistory]);
+
+    expect(row.uncertainty_notes).toEqual([]);
+    expect(row.proposed_payload).toMatchObject({
+      matched_smccd_course_id: "CSM:HIST 101",
+      transcript_classification: "smccd_catalog",
+      college_units: 3
+    });
   });
 });

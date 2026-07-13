@@ -195,6 +195,36 @@ describe("SMCCD curriculum planning", () => {
     expect(progress.find((area) => area.area === "5")).toMatchObject({ status: "completed", completedCourseCodes: ["BIOL 110"] });
   });
 
+  it("counts HIST 101 in CSM Area 4 and recovers legacy district transcript links by course code", () => {
+    const courses = [{
+      id: "CSM:HIST 101",
+      college_code: "CSM",
+      course_code: "HIST 101",
+      title: "History of Western Civilization II",
+      units_min: 3,
+      units_max: 3,
+      degree_applicable: true,
+      attributes: ["AA/AS Degree Requirements: Area 3"]
+    }] as SmccdCourse[];
+    const rows = [{
+      id: "legacy-history",
+      smccd_course_id: null,
+      custom_course_name: "History 101 - History of Western Civilization II",
+      college_provider_code: "SMCCD",
+      status: "completed",
+      college_units: 3,
+      letter_grade: "A",
+      notes: "Imported from a reviewed transcript (College of San Mateo)."
+    }] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "CSM");
+
+    expect(progress.find((area) => area.area === "4")).toMatchObject({
+      status: "completed",
+      completedCourseCodes: ["HIST 101"]
+    });
+  });
+
   it("enforces a discipline condition alongside the unit total", () => {
     const program = { id: "CSM:interdisciplinary", college_code: "CSM", total_degree_units: 60, total_major_units_text: "18 units" } as SmccdProgram;
     const requirements = [{

@@ -728,14 +728,13 @@ export default function SmccdPlanner({
             const isSatisfied = area.status === "completed" || area.status === "planned";
             const examples = area.eligibleCourseCodes.slice(0, 8);
             return <article className="smccd-ge-row" key={area.area}>
-              <span className={`smccd-ge-check ${area.status === "completed" ? "completed" : area.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${area.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>
+              {area.area === "7A"
+                ? <input className="smccd-ge-manual-checkbox" type="checkbox" checked={isSatisfied} disabled={busy || (isSatisfied && !area.manuallyCompleted)} onChange={() => void toggleManualPeCompletion()} aria-label="Physical education requirement completed" title={isSatisfied && !area.manuallyCompleted ? "Covered by a course in the plan" : "Confirm physical education completion"} />
+                : <span className={`smccd-ge-check ${area.status === "completed" ? "completed" : area.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${area.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>}
               <div><h4>{area.label}: {area.description}</h4><p>{examples.length ? `Courses include ${examples.join(", ")}${area.eligibleCourseCodes.length > examples.length ? ", and more." : "."}` : area.missingSummary}</p></div>
               <div className="smccd-ge-courses">
                 {area.completedCourseCodes.map((code) => <span className="completed" key={`completed-${area.area}-${code}`}>{code}</span>)}
                 {planned.map((code) => <span className="planned" key={`planned-${area.area}-${code}`}>{code}</span>)}
-                {area.manuallyCompleted && <span className="completed">PE confirmed</span>}
-                {area.area === "7A" && area.status === "missing" && <button className="secondary-button small" type="button" disabled={busy} onClick={() => void toggleManualPeCompletion()}>Mark PE complete</button>}
-                {area.area === "7A" && area.manuallyCompleted && <button className="quiet-button" type="button" disabled={busy} onClick={() => void toggleManualPeCompletion()}>Undo</button>}
               </div>
             </article>;
           })}</div>

@@ -5,6 +5,7 @@ import type {
   SmccdProgramRequirement,
   SmccdRequirementCourse
 } from "@/lib/models";
+import { institutionKeyFromName } from "@/lib/institutions";
 
 const DOTTED_SUBJECTS = new Set(["BUS", "EMC", "LIT", "MUS", "P.E", "RE", "BCM", "ECE", "HTM"]);
 const PASSING_MAJOR_GRADES = new Set(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "P"]);
@@ -13,6 +14,7 @@ const PASSING_DEGREE_GRADES = new Set(["A+", "A", "A-", "B+", "B", "B-", "C+", "
 
 const OFFICIAL_LOCAL_GE_OVERRIDES: Record<SmccdCourse["college_code"], Partial<Record<string, Set<string>>>> = {
   CSM: {
+    "4": new Set(["HIST 101"]),
     "6": new Set(["ETHN 101", "ETHN 103", "ETHN 104", "ETHN 105", "ETHN 106", "ETHN 107", "ETHN 108", "ETHN 109", "ETHN 110", "ETHN 265", "ETHN 288", "ETHN 300", "ETHN 585"]),
     "8": new Set(["HIST 201", "HIST 202", "HIST 260", "HIST 261", "HIST 262", "HIST 310", "POLS C1000", "POLS 210", "POLS 310"])
   },
@@ -41,6 +43,48 @@ export function normalizeSmccdCourseCode(input: string) {
   const rawSubject = match[1].replace(/\.$/, "");
   const subject = DOTTED_SUBJECTS.has(rawSubject) ? `${rawSubject}.` : rawSubject;
   return `${subject} ${match[3]}`;
+}
+
+export function extractSmccdCourseCode(input: string | null | undefined) {
+  if (!input) return null;
+  const cleaned = input
+    .trim()
+    .toUpperCase()
+    .replace(/^CHINESE\b/, "CHIN")
+    .replace(/^SPANISH\b/, "SPAN")
+    .replace(/^BIOLOGY\b/, "BIOL")
+    .replace(/^CHEMISTRY\b/, "CHEM")
+    .replace(/^PHYSICS\b/, "PHYS")
+    .replace(/^ECONOMICS\b/, "ECON")
+    .replace(/^HISTORY\b/, "HIST")
+    .replace(/^POLITICAL SCIENCE\b/, "PLSC")
+    .replace(/\s+/g, " ");
+  const match = cleaned.match(/^([A-Z]{2,5}|P\.?E\.?|R\.?E\.?)\s*\.?\s*([A-Z]?\d{1,4}(?:\.\d)?[A-Z]?)(?:\b|\s|$)/);
+  return match ? normalizeSmccdCourseCode(`${match[1]} ${match[2]}`) : null;
+}
+
+export function findSmccdCourseMatch(
+  input: {
+    courseCode?: string | null;
+    courseName?: string | null;
+    institutionName?: string | null;
+    providerCode?: string | null;
+  },
+  courses: readonly SmccdCourse[]
+) {
+  const code = extractSmccdCourseCode(input.courseCode) ?? extractSmccdCourseCode(input.courseName);
+  if (!code) return null;
+  const matches = courses.filter((course) => normalizeSmccdCourseCode(course.course_code) === code);
+  if (!matches.length) return null;
+  const institutionKey = institutionKeyFromName(input.institutionName);
+  const providerCode = input.providerCode?.trim().toUpperCase();
+  const preferredCollege = institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN"
+    ? institutionKey
+    : providerCode === "CSM" || providerCode === "SKY" || providerCode === "CAN"
+      ? providerCode
+      : null;
+  return (preferredCollege ? matches.find((course) => course.college_code === preferredCollege) : null)
+    ?? [...matches].sort((left, right) => ["CSM", "SKY", "CAN"].indexOf(left.college_code) - ["CSM", "SKY", "CAN"].indexOf(right.college_code))[0];
 }
 
 export type SmccdRequirementState = "satisfied" | "partial" | "missing" | "manual_review";
@@ -199,7 +243,23 @@ export function createSmccdProgramProgressContext(
     coursesByCode.set(code, [...(coursesByCode.get(code) ?? []), course]);
     courseUnitsByCode.set(code, Math.max(courseUnitsByCode.get(code) ?? 0, Number(course.units_max ?? course.units_min ?? 0)));
   }
-  const smccdRows = planCourses.filter((row) => row.smccd_course_id && courseById.has(row.smccd_course_id));
+  const smccdRows = planCourses.flatMap((row) => {
+    if (row.smccd_course_id && courseById.has(row.smccd_course_id)) return [row];
+    const provider = row.college_provider_code?.trim().toUpperCase();
+    const hasCollegeEvidence = provider === "SMCCD" || provider === "CSM" || provider === "SKY" || provider === "CAN" || Number(row.college_units ?? 0) > 0;
+    if (!hasCollegeEvidence) return [];
+    const matchedCourse = findSmccdCourseMatch({
+      courseName: row.custom_course_name,
+      institutionName: row.notes,
+      providerCode: provider
+    }, courses);
+    if (!matchedCourse) return [];
+    return [{
+      ...row,
+      smccd_course_id: matchedCourse.id,
+      college_units: row.college_units ?? matchedCourse.units_max ?? matchedCourse.units_min
+    }];
+  });
   const rowsByCode = groupRowsByCode(smccdRows, courseById);
   const completedRowsByCode = groupRowsByCode(smccdRows.filter((row) => row.status === "completed"), courseById);
   const completedAttemptsByCode = bestAttemptsByCode(smccdRows, courseById, false);

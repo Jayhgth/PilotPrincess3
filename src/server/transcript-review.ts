@@ -5,7 +5,8 @@ import {
   stripTranscriptQuarterPrefix,
   type TranscriptCourseClassification
 } from "@/lib/transcript";
-import { normalizeSmccdCourseCode, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
+import { institutionKeyFromName } from "@/lib/institutions";
+import { findSmccdCourseMatch } from "@/lib/smccd";
 import type { ParsedTranscriptResult } from "@/server/ai-schemas";
 
 export function transcriptReviewRows(
@@ -20,14 +21,16 @@ export function transcriptReviewRows(
     const normalizedCourse = isIntersession
       ? { ...course, course_name: stripTranscriptQuarterPrefix(course.course_name), subject: "Personal Development", weighted: false }
       : course;
-    const institutionCode = Object.entries(SMCCD_COLLEGE_NAMES).find(([, name]) => name === normalizedCourse.institution_name)?.[0];
-    const isCollegeCourse = Boolean(normalizedCourse.course_code && institutionCode);
-    const normalizedCollegeCode = normalizedCourse.course_code ? normalizeSmccdCourseCode(normalizedCourse.course_code) : null;
-    const collegeMatches = normalizedCollegeCode
-      ? smccdCourses.filter((candidate) => candidate.course_code === normalizedCollegeCode)
-      : [];
-    const smccdMatch = collegeMatches.find((candidate) => candidate.college_code === institutionCode)
-      ?? (collegeMatches.length === 1 ? collegeMatches[0] : null);
+    const institutionKey = institutionKeyFromName(normalizedCourse.institution_name);
+    const districtInstitution = institutionKey === "CSM" || institutionKey === "SKY" || institutionKey === "CAN" || institutionKey === "smccd";
+    const isCollegeCourse = Boolean(normalizedCourse.course_code && (districtInstitution || Number(normalizedCourse.college_units ?? 0) > 0));
+    const smccdMatch = isCollegeCourse
+      ? findSmccdCourseMatch({
+          courseCode: normalizedCourse.course_code,
+          courseName: normalizedCourse.course_name,
+          institutionName: normalizedCourse.institution_name
+        }, smccdCourses)
+      : null;
     const match = isCollegeCourse || isIntersession ? null : findTranscriptCatalogMatch(normalizedCourse.course_name, courses);
     const transcriptClassification: TranscriptCourseClassification = isCollegeCourse
       ? smccdMatch ? "smccd_catalog" : "smccd_unmatched"

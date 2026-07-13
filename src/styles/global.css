@@ -1664,6 +1664,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-ge-check { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; margin-top: 2px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink-faint); box-shadow: 0 1px 2px rgb(0 0 0 / .04); }
 .smccd-ge-check.completed { border-color: color-mix(in srgb, var(--success) 55%, var(--line)); background: var(--success-soft); color: var(--success); }
 .smccd-ge-check.planned { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); color: var(--accent); }
+.smccd-ge-manual-checkbox { width: 18px; height: 18px; min-height: 18px; margin: 2px 0 0; border-radius: 4px; padding: 0; accent-color: var(--success); }
 .smccd-ge-row h4 { margin: 0 0 5px; font-size: var(--type-body); font-weight: 650; line-height: var(--leading-body); }
 .smccd-ge-row p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .smccd-ge-courses { display: flex; flex-wrap: wrap; align-content: start; justify-content: flex-end; gap: 7px; }
