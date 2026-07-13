@@ -1,11 +1,12 @@
 import {
   CheckCircleIcon as CheckCircle,
-  InfoIcon as Info,
+  MinusCircleIcon as MinusCircle,
   QuestionIcon as Question,
-  WarningCircleIcon as WarningCircle
+  XCircleIcon as XCircle
 } from "@phosphor-icons/react";
 
 import type { PlannerPrerequisiteEvaluation } from "@/lib/prerequisites";
+import FadeContent from "@/components/reactbits/FadeContent";
 
 interface Props {
   evaluation: PlannerPrerequisiteEvaluation;
@@ -14,15 +15,15 @@ interface Props {
 
 export function prerequisiteDisplay(evaluation: PlannerPrerequisiteEvaluation) {
   if (evaluation.originalTexts.length === 0) {
-    return { label: "No prerequisite listed", tone: "none" as const };
+    return { label: "No prereq", tone: "none" as const };
   }
   if (evaluation.result.status === "satisfied") {
-    return { label: "Ready in this plan", tone: "ready" as const };
+    return { label: "Met", tone: "ready" as const };
   }
   if (evaluation.result.status === "blocked") {
-    return { label: "Prerequisite missing", tone: "blocked" as const };
+    return { label: "Not met", tone: "blocked" as const };
   }
-  return { label: "Counselor review", tone: "review" as const };
+  return { label: "Review", tone: "review" as const };
 }
 
 export default function PrerequisiteReadout({ evaluation, recommendedPreparation = [] }: Props) {
@@ -33,19 +34,22 @@ export default function PrerequisiteReadout({ evaluation, recommendedPreparation
   const Icon = display.tone === "ready"
     ? CheckCircle
     : display.tone === "blocked"
-      ? WarningCircle
+      ? XCircle
       : display.tone === "review"
         ? Question
-        : Info;
+        : MinusCircle;
   const hasExplanation = evaluation.originalTexts.length > 0
     || evaluation.result.evidence.length > 0
     || evaluation.result.suggestedCounselorQuestions.length > 0;
 
   return (
     <section className={`prerequisite-readout readiness-${display.tone}`}>
-      <header><Icon size={17} aria-hidden /><div><strong>{display.label}</strong>{firstIssue && <p>{firstIssue}</p>}</div></header>
+      <FadeContent className="prerequisite-status-transition" duration={0.14} key={`${display.tone}-${display.label}`}>
+        <header><span>Prerequisite</span><strong><Icon size={16} weight="bold" aria-hidden />{display.label}</strong></header>
+        {firstIssue && <p className="prerequisite-summary">{firstIssue}</p>}
+      </FadeContent>
       {hasExplanation && <details>
-        <summary>Review prerequisite evidence</summary>
+        <summary>Prerequisite details</summary>
         {evaluation.originalTexts.length > 0 && <div className="prerequisite-source-text"><strong>Catalog language</strong>{evaluation.originalTexts.map((text) => <p key={text}>{text}</p>)}</div>}
         {evaluation.result.evidence.length > 0 && <div className="prerequisite-evidence"><strong>Plan evidence</strong><ul>{evaluation.result.evidence.map((item, index) => <li key={`${item.clauseText}-${index}`}>{item.message}</li>)}</ul></div>}
         {evaluation.result.suggestedCounselorQuestions.length > 0 && <div className="prerequisite-questions"><strong>Ask a counselor</strong><ul>{evaluation.result.suggestedCounselorQuestions.map((question) => <li key={question}>{question}</li>)}</ul></div>}

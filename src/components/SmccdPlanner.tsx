@@ -11,6 +11,7 @@ import {
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { Fragment, useDeferredValue, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
+import CourseDetailLayout from "@/components/CourseDetailLayout";
 import InstitutionMark from "@/components/InstitutionMark";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import FadeContent from "@/components/reactbits/FadeContent";
@@ -307,10 +308,9 @@ export default function SmccdPlanner({
       return counts;
     }
     const evaluation = prerequisiteEvaluator(course, { gradeLevel: targetGrade, term: "fall" });
-    if (evaluation.result.status === "blocked") counts.prerequisite += 1;
-    else counts.visible.push({ course, evaluation });
+    counts.visible.push({ course, evaluation });
     return counts;
-  }, { already: 0, prerequisite: 0, visible: [] as Array<{ course: SmccdCourse; evaluation: ReturnType<typeof prerequisiteEvaluator> }> }), [planCourseIndex, prerequisiteEvaluator, searchedCourses, targetGrade]);
+  }, { already: 0, visible: [] as Array<{ course: SmccdCourse; evaluation: ReturnType<typeof prerequisiteEvaluator> }> }), [planCourseIndex, prerequisiteEvaluator, searchedCourses, targetGrade]);
   const visibleCourses = smccdUnavailable.visible.slice(0, 80);
   const equivalencyMap = useMemo(
     () => new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency])),
@@ -349,7 +349,7 @@ export default function SmccdPlanner({
       id: course.id,
       code: course.course_code,
       title: course.title,
-      metadata: [SMCCD_COLLEGE_NAMES[course.college_code], units, course.transfer_credit ?? "Transfer not listed"],
+      metadata: [units, course.transfer_credit ?? "Transfer not listed"],
       readinessLabel: readiness.label,
       readinessTone: readiness.tone,
       institution: course.college_code
@@ -618,9 +618,9 @@ export default function SmccdPlanner({
         source="smccd"
         title="College course catalog"
         description="College courses you can still add to this planning year."
-        countLabel={search !== deferredSearch ? "Updating results" : !search.trim() ? `${visibleCourses.length} eligible courses` : visibleCourses.length === 80 ? "First 80 eligible matches" : `${visibleCourses.length} eligible ${visibleCourses.length === 1 ? "course" : "courses"}`}
+        countLabel={search !== deferredSearch ? "Updating results" : !search.trim() ? `${visibleCourses.length} courses` : visibleCourses.length === 80 ? "First 80 matches" : `${visibleCourses.length} ${visibleCourses.length === 1 ? "course" : "courses"}`}
         planningContext={`Planning Grade ${targetGrade}`}
-        hiddenSummary={search.trim() ? `${smccdUnavailable.already + smccdUnavailable.prerequisite} unavailable matches hidden` : "Taken and prerequisite-blocked courses stay out of results"}
+        hiddenSummary={search.trim() ? `${smccdUnavailable.already} already-added matches hidden` : "Courses already in your plan stay out of results"}
         filters={<>
           <label className="catalog-search-field"><span>Search college courses</span><div className="catalog-search-input"><MagnifyingGlass size={17} aria-hidden /><input aria-label="Search college courses" value={search} onChange={(event) => { setSearch(event.target.value); setSelectedCourse(null); }} placeholder="Try ENGL C1000, statistics, or biology" /></div></label>
           <label><span>Planning year</span><select value={targetGrade} onChange={(event) => { selectTargetGrade(Number(event.target.value) as GradeLevel); setSelectedCourse(null); }}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
@@ -631,30 +631,29 @@ export default function SmccdPlanner({
         selectedId={selectedCourse?.id ?? null}
         onSelect={(id) => { const course = courses.find((candidate) => candidate.id === id); if (course) chooseCourse(course); }}
         emptyTitle={search.trim() ? "No matching courses" : "No eligible courses in this view"}
-        emptyBody={search.trim() ? "Try another code or title. Courses already taken or blocked by an unmet prerequisite stay hidden." : "Change the college, transfer, or planning-year filters."}
+        emptyBody={search.trim() ? "Try another code or title. Courses already in your plan stay hidden." : "Change the college, transfer, or planning-year filters."}
         sourceAction={<a className="secondary-button small" href="https://smccd.edu/k-12/" target="_blank" rel="noreferrer">K-12 enrollment <ArrowSquareOut size={14} /></a>}
         footer={visibleCourses.length === 80 ? <p className="catalog-limit-note">Refine the search to narrow these results.</p> : undefined}
-        detail={selectedCourse && selectedPrerequisiteEvaluation ? <div className="catalog-course-detail">
-          <header className="catalog-detail-heading">
-            <span className="catalog-detail-institution"><InstitutionMark institution={selectedCourse.college_code} decorative />{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span>
-            <h3><b>{selectedCourse.course_code}</b>{selectedCourse.title}</h3>
-            <a href={selectedCourse.catalog_url} target="_blank" rel="noreferrer">Official course page <ArrowSquareOut size={13} /></a>
-          </header>
-          <dl className="catalog-fact-grid">
-            <div><dt>Units</dt><dd>{selectedCourse.units_max && selectedCourse.units_max !== selectedCourse.units_min ? `${selectedCourse.units_min}-${selectedCourse.units_max}` : selectedCourse.units_min}</dd></div>
-            <div><dt>Transfer</dt><dd>{selectedCourse.transfer_credit ?? "Not listed"}</dd></div>
-            <div><dt>Degree credit</dt><dd>{selectedCourse.degree_applicable ? "Yes" : "No"}</dd></div>
-            <div><dt>Source</dt><dd>{selectedCourse.detail_status === "verified" ? "Course page" : "Needs review"}</dd></div>
-          </dl>
-          {(selectedCourse.attributes ?? []).length > 0 && <div className="catalog-attribute-list"><strong>College gen-ed</strong>{selectedCourse.attributes.map((attribute) => <span key={attribute}>{attribute}</span>)}</div>}
-          {selectedEquivalency && <dl className="catalog-equivalency-summary"><div><dt>High school credit</dt><dd>{selectedEquivalency.high_school_credits} credits</dd></div><div><dt>Counts as</dt><dd>{selectedEquivalency.high_school_equivalent}</dd></div></dl>}
-          <PrerequisiteReadout evaluation={selectedPrerequisiteEvaluation} recommendedPreparation={selectedCourse.recommended_preparation ?? []} />
-          <form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
+        detail={selectedCourse && selectedPrerequisiteEvaluation ? <CourseDetailLayout
+          identity={<span className="catalog-detail-institution"><InstitutionMark institution={selectedCourse.college_code} decorative />{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span>}
+          code={selectedCourse.course_code}
+          title={selectedCourse.title}
+          sourceUrl={selectedCourse.catalog_url}
+          facts={[
+            { label: "Units", value: selectedCourse.units_max && selectedCourse.units_max !== selectedCourse.units_min ? `${selectedCourse.units_min}-${selectedCourse.units_max}` : selectedCourse.units_min },
+            { label: "Transfer", value: selectedCourse.transfer_credit ?? "Not listed" },
+            { label: "Degree credit", value: selectedCourse.degree_applicable ? "Yes" : "No" }
+          ]}
+          controls={<form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
             <label><span>School year</span><select value={targetGrade} onChange={(event) => selectTargetGrade(Number(event.target.value) as GradeLevel)}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
             <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option>{targetGrade < 12 && <option value="summer">Summer</option>}</select></label>
-            <button className="primary-button" type="submit" disabled={busy}><Plus size={16} /> Add to plan</button>
-          </form>
-        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a college course</strong><p>Review transfer status, college gen-ed, high school credit, and prerequisite evidence.</p></div>}
+            <button className="primary-button" type="submit" disabled={busy || selectedPrerequisiteEvaluation.result.status === "blocked"}><Plus size={16} /> Add to plan</button>
+          </form>}
+        >
+          {(selectedCourse.attributes ?? []).length > 0 && <section className="catalog-detail-section"><strong>College gen-ed</strong><ul>{selectedCourse.attributes.map((attribute) => <li key={attribute}>{attribute}</li>)}</ul></section>}
+          {selectedEquivalency && <section className="catalog-detail-section catalog-equivalency-section"><strong>High school credit</strong><dl><div><dt>Credits</dt><dd>{selectedEquivalency.high_school_credits}</dd></div><div><dt>Counts as</dt><dd>{selectedEquivalency.high_school_equivalent}</dd></div></dl></section>}
+          <PrerequisiteReadout evaluation={selectedPrerequisiteEvaluation} recommendedPreparation={selectedCourse.recommended_preparation ?? []} />
+        </CourseDetailLayout> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a college course</strong><p>Review the course and choose its term before adding it.</p></div>}
       />}
 
       {!embedded && <section className="content-section smccd-plan-section">

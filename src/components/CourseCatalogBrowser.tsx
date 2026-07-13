@@ -2,8 +2,9 @@ import {
   BookOpenIcon as BookOpen,
   CaretRightIcon as CaretRight,
   CheckCircleIcon as CheckCircle,
+  MinusCircleIcon as MinusCircle,
   QuestionIcon as Question,
-  WarningCircleIcon as WarningCircle
+  XCircleIcon as XCircle
 } from "@phosphor-icons/react";
 import { useRef, type ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
@@ -64,9 +65,10 @@ export default function CourseCatalogBrowser({
 }: Props) {
   const detailPanelRef = useRef<HTMLElement>(null);
   const readinessIcon = (tone: CatalogReadinessTone) => {
-    if (tone === "ready") return <CheckCircle size={15} weight="fill" aria-hidden />;
-    if (tone === "blocked") return <WarningCircle size={15} weight="fill" aria-hidden />;
-    return <Question size={15} weight="bold" aria-hidden />;
+    if (tone === "ready") return <CheckCircle size={15} weight="bold" aria-hidden />;
+    if (tone === "blocked") return <XCircle size={15} weight="bold" aria-hidden />;
+    if (tone === "review") return <Question size={15} weight="bold" aria-hidden />;
+    return <MinusCircle size={15} weight="bold" aria-hidden />;
   };
   const selectResult = (id: string) => {
     onSelect(id);

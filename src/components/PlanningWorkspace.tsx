@@ -49,6 +49,7 @@ import {
 } from "@/lib/transcript";
 import AdminSettingsPanel from "@/components/AdminSettingsPanel";
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
+import CourseDetailLayout from "@/components/CourseDetailLayout";
 import CourseKanban, { type CoursePlacement } from "@/components/CourseKanban";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
@@ -300,26 +301,16 @@ export default function PlanningWorkspace() {
       dtechCatalogEligibility(course, activeCatalogGrade, planCourses, courses)
     ]));
     const structurallyEligible = courses.filter((course) => eligibilityById.get(course.id)?.eligible);
-    const blockedIds = new Set(structurallyEligible.filter((course) =>
-      evaluateDtechPlannerPrerequisites(
-        course,
-        defaultDtechPlacement(course, activeCatalogGrade),
-        courses,
-        planCourses,
-        plannedSmccdCourses,
-        equivalencies
-      ).result.status === "blocked"
-    ).map((course) => course.id));
     const hiddenCounts = [...eligibilityById.values()].reduce((counts, eligibility) => {
       if (eligibility.reason) counts[eligibility.reason] += 1;
       return counts;
     }, { already_in_plan: 0, outside_grade: 0, below_math_level: 0 });
     return {
-      eligibleCourses: structurallyEligible.filter((course) => !blockedIds.has(course.id)),
-      hiddenTotal: hiddenCounts.already_in_plan + hiddenCounts.outside_grade + hiddenCounts.below_math_level + blockedIds.size,
+      eligibleCourses: structurallyEligible,
+      hiddenTotal: hiddenCounts.already_in_plan + hiddenCounts.outside_grade + hiddenCounts.below_math_level,
       subjects: [...new Set(courses.map((course) => course.subject))]
     };
-  }, [activeCatalogGrade, courses, equivalencies, planCourses, plannedSmccdCourses]);
+  }, [activeCatalogGrade, courses, planCourses]);
   const filteredCourses = useMemo(() => {
     const query = catalogSearch.trim().toLowerCase();
     return catalogAvailability.eligibleCourses.filter((course) => (
@@ -1480,7 +1471,6 @@ export default function PlanningWorkspace() {
         title: course.name,
         metadata: [
           course.subject,
-          `Grade ${activeCatalogGrade}`,
           course.credits ? formatCredits(course.credits) : "Credits to verify"
         ],
         readinessLabel: readiness.label,
@@ -1504,25 +1494,26 @@ export default function PlanningWorkspace() {
         selectedId={selectedDtechCourseId}
         onSelect={(id) => { const course = courseMap.get(id); if (course) chooseDtechCourse(course); }}
         emptyTitle="No matching courses"
-        emptyBody="Try another search or subject. Courses already taken, below your demonstrated math level, outside this grade, or blocked by prerequisites stay hidden."
+        emptyBody="Try another search or subject. Courses already taken, below your demonstrated math level, or outside this grade stay hidden."
         sourceAction={<strong className="catalog-source-count">Official 2025-26</strong>}
         footer={<PaginationControls page={catalogPage} pageCount={catalogPageCount} onChange={setCatalogPage} label="Course catalog pages" />}
-        detail={selectedDtechCourse && selectedDtechEvaluation ? <div className="catalog-course-detail">
-          <header className="catalog-detail-heading"><span>High school</span><h3>{selectedDtechCourse.name}</h3></header>
-          <dl className="catalog-fact-grid">
-            <div><dt>Subject</dt><dd>{selectedDtechCourse.subject}</dd></div>
-            <div><dt>Credits</dt><dd>{selectedDtechCourse.credits ? formatCredits(selectedDtechCourse.credits) : "Verify"}</dd></div>
-            <div><dt>Grades</dt><dd>{selectedDtechCourse.grade_levels.join(", ") || "Verify"}</dd></div>
-            <div><dt>Course type</dt><dd>{selectedDtechCourse.is_honors ? "Honors option" : selectedDtechCourse.is_weighted ? "Weighted" : "Standard"}</dd></div>
-          </dl>
-          {selectedDtechCourse.description && <p className="catalog-course-description">{selectedDtechCourse.description}</p>}
-          <PrerequisiteReadout evaluation={selectedDtechEvaluation} />
-          <form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
+        detail={selectedDtechCourse && selectedDtechEvaluation ? <CourseDetailLayout
+          identity={<span>High school</span>}
+          title={selectedDtechCourse.name}
+          facts={[
+            { label: "Subject", value: selectedDtechCourse.subject },
+            { label: "Credits", value: selectedDtechCourse.credits ? formatCredits(selectedDtechCourse.credits) : "Verify" },
+            { label: "Offered", value: selectedDtechCourse.grade_levels.length ? selectedDtechCourse.grade_levels.map((grade) => `Grade ${grade}`).join(", ") : "Verify" }
+          ]}
+          description={selectedDtechCourse.description}
+          controls={<form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
             <label><span>School year</span><select value={dtechDraft.gradeLevel} disabled><option value={dtechDraft.gradeLevel}>Grade {dtechDraft.gradeLevel}</option></select></label>
             <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })} disabled={selectedDtechCourse.term_type !== "semester"}>{selectedDtechCourse.term_type === "semester" ? <><option value="fall">Fall</option><option value="spring">Spring</option></> : <option value="full_year">Full year</option>}</select></label>
-            <button className="primary-button" type="submit"><Plus size={16} /> Add to plan</button>
-          </form>
-        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a high school course</strong><p>Review description, prerequisite evidence, and placement before adding it.</p></div>}
+            <button className="primary-button" type="submit" disabled={selectedDtechEvaluation.result.status === "blocked"}><Plus size={16} /> Add to plan</button>
+          </form>}
+        >
+          <PrerequisiteReadout evaluation={selectedDtechEvaluation} />
+        </CourseDetailLayout> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a high school course</strong><p>Review the course and choose its term before adding it.</p></div>}
       />
     );
   }
