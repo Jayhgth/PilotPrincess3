@@ -10,7 +10,23 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 import BrandMark from "@/components/BrandMark";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
-const EvilEye = lazy(() => import("@/components/reactbits/EvilEye"));
+const Hyperspeed = lazy(() => import("@/components/reactbits/Hyperspeed"));
+const AUTH_HYPERSPEED_OPTIONS = {
+  distortion: "turbulentDistortion",
+  lanesPerRoad: 3,
+  lightPairsPerRoadWay: 34,
+  totalSideLightSticks: 28,
+  colors: {
+    roadColor: 0x08090b,
+    islandColor: 0x0c0d0f,
+    background: 0x0c0d0f,
+    shoulderLines: 0x3b2029,
+    brokenLines: 0x321c24,
+    leftCars: [0x843148, 0xb84d6a, 0xd58aa0],
+    rightCars: [0xf0a5bb, 0xc45f7c, 0x7b2a41],
+    sticks: 0xb84d6a
+  }
+};
 
 type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
@@ -123,18 +139,9 @@ export default function AuthExperience() {
   return (
     <main className="auth-page">
       <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
-        <EvilEye
-          backgroundColor="#0c0d0f"
+        <Hyperspeed
           className="auth-page-background"
-          eyeColor="#b84d6a"
-          flameSpeed={0.7}
-          glowIntensity={0.3}
-          intensity={1.15}
-          irisWidth={0.28}
-          noiseScale={1}
-          pupilFollow={0.75}
-          pupilSize={0.68}
-          scale={0.74}
+          effectOptions={AUTH_HYPERSPEED_OPTIONS}
         />
       </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">

@@ -237,17 +237,17 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse at 58% 50%, rgb(184 77 106 / 0.32), transparent 24%),
-    radial-gradient(ellipse at 58% 50%, rgb(98 38 55 / 0.24), transparent 52%),
+    radial-gradient(circle at 50% 32%, rgb(184 77 106 / 0.28), transparent 15%),
+    linear-gradient(105deg, transparent 44%, rgb(132 49 72 / 0.18) 49%, transparent 54%),
     #0c0d0f;
 }
-.evil-eye-container {
+.hyperspeed-container {
   width: 100%;
   height: 100%;
   overflow: hidden;
   pointer-events: none;
 }
-.evil-eye-container canvas { width: 100%; height: 100%; }
+.hyperspeed-container canvas { width: 100%; height: 100%; }
 
 .auth-story {
   display: flex;
