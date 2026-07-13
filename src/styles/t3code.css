@@ -149,23 +149,17 @@
 
 .overview-bento-degrees .magic-bento-body { padding: 12px 14px 14px; }
 .degree-dashboard-chart { display: grid; gap: 2px; }
-.degree-chart-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; justify-self: end; width: 140px; color: var(--ink-faint); font-size: 10px; }
-.degree-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
-.degree-chart-legend span::before { width: 8px; height: 3px; border-radius: 1px; background: var(--accent); content: ""; }
-.degree-chart-legend .units::before { background: var(--ink-soft); }
-.degree-chart-row { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) 140px 62px; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 10px 0; text-align: left; }
+.degree-chart-row { display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) 140px 36px; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 10px 0; text-align: left; }
 .degree-chart-row:hover { background: var(--surface-muted); }
 .degree-chart-identity { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .degree-chart-identity > .institution-mark { width: 36px; }
 .degree-chart-identity > span { display: grid; min-width: 0; gap: 2px; }
 .degree-chart-identity strong { overflow: hidden; font-size: var(--type-supporting); text-overflow: ellipsis; white-space: nowrap; }
 .degree-chart-identity small { overflow: hidden; color: var(--ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.degree-chart-bars { display: grid; gap: 6px; }
+.degree-chart-bars { display: block; }
 .degree-chart-bars > span { position: relative; display: block; height: 4px; border-radius: 2px; background: var(--surface-muted); }
 .degree-chart-bars > span::before { display: block; width: var(--degree-progress); height: 100%; border-radius: inherit; background: var(--accent); content: ""; }
-.degree-chart-bars > span.units::before { background: var(--ink-soft); }
-.degree-chart-values { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-.degree-chart-values b { font-size: 11px; text-align: right; }
+.degree-chart-value { font-size: 11px; text-align: right; }
 .degree-chart-more,
 .degree-dashboard-state button { display: inline-flex; width: fit-content; min-height: 28px; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--accent); padding: 0; font-size: var(--type-supporting); font-weight: 650; }
 .degree-chart-more { margin-top: 6px; }
@@ -215,10 +209,9 @@
   .dashboard-gpa-stats { grid-template-columns: 1fr; }
   .dashboard-gpa-stats > div { grid-template-columns: 1fr auto; align-items: center; }
   .dashboard-gpa-stats > div + div { border-top: 1px solid var(--line); border-left: 0; }
-  .degree-chart-legend { display: none; }
   .degree-chart-row { grid-template-columns: minmax(0, 1fr) 48px; }
   .degree-chart-bars { grid-column: 1 / -1; grid-row: 2; }
-  .degree-chart-values { grid-column: 2; grid-row: 1; }
+  .degree-chart-value { grid-column: 2; grid-row: 1; }
 }
 
 @media (hover: none) {

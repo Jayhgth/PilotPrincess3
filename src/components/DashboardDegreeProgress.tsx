@@ -102,10 +102,7 @@ export default function DashboardDegreeProgress({ supabase, userId, planCourses,
       const program = programById.get(goal.program_id);
       if (!program) return [];
       const progress = calculateSmccdProgramProgressWithContext(program, progressContext);
-      const unitPercent = progress.totalDegreeUnits > 0
-        ? Math.min(100, Math.round((progress.projectedDegreeApplicableUnits / progress.totalDegreeUnits) * 100))
-        : 0;
-      return [{ program, progress, unitPercent }];
+      return [{ program, progress }];
     }).slice(0, 3);
   }, [catalog, goals, planCourses, plannedSmccdCourses]);
 
@@ -113,15 +110,13 @@ export default function DashboardDegreeProgress({ supabase, userId, planCourses,
   if (!catalog || !goals) return <div className="degree-dashboard-loading" aria-label="Loading degree progress"><span /><span /><span /></div>;
   if (!goals.length) return <div className="degree-dashboard-state"><BookmarkSimple size={20} aria-hidden /><strong>No degrees bookmarked</strong><button type="button" onClick={onOpen}>Browse degrees <ArrowRight size={14} /></button></div>;
 
-  return <div className="degree-dashboard-chart" role="img" aria-label={rows.map(({ program, progress, unitPercent }) => `${program.title}: ${progress.majorPercent}% of major requirements and ${unitPercent}% of degree units covered`).join(". ")}>
-    <div className="degree-chart-legend" aria-hidden><span className="major">Major</span><span className="units">Degree units</span></div>
-    {rows.map(({ program, progress, unitPercent }) => <button type="button" className="degree-chart-row" onClick={onOpen} key={program.id}>
+  return <div className="degree-dashboard-chart" role="img" aria-label={rows.map(({ program, progress }) => `${program.title}: ${progress.majorPercent}% complete`).join(". ")}>
+    {rows.map(({ program, progress }) => <button type="button" className="degree-chart-row" onClick={onOpen} key={program.id}>
       <span className="degree-chart-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{program.award_type}, {SMCCD_COLLEGE_NAMES[program.college_code]}</small></span></span>
       <span className="degree-chart-bars" aria-hidden>
-        <span className="major" style={{ "--degree-progress": `${progress.majorPercent}%` } as CSSProperties} />
-        <span className="units" style={{ "--degree-progress": `${unitPercent}%` } as CSSProperties} />
+        <span style={{ "--degree-progress": `${progress.majorPercent}%` } as CSSProperties} />
       </span>
-      <span className="degree-chart-values"><b>{progress.majorPercent}%</b><b>{unitPercent}%</b></span>
+      <b className="degree-chart-value">{progress.majorPercent}%</b>
     </button>)}
     {goals.length > rows.length && <button className="degree-chart-more" type="button" onClick={onOpen}>+{goals.length - rows.length} more <ArrowRight size={13} /></button>}
   </div>;
