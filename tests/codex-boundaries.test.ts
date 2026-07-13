@@ -94,7 +94,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("get_enrollment_constraints", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_course_schedule_options", { respect_recommended_limit: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
-    expect(parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
+    expect(() => parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toThrow();
     expect(parseAssistantToolCall("add_course_schedule", { course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();

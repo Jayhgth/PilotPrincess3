@@ -77,16 +77,12 @@ const toolArgumentSchemas = {
   }),
   get_enrollment_constraints: z.object({}),
   get_course_schedule_options: z.object({ respect_recommended_limit: z.boolean().default(true) }),
-  get_plan_versions: z.object({}),
   get_degree_progress: z.object({ program_id: z.string().trim().min(1).max(180).optional() }),
   get_college_goal: z.object({}),
   search_smccd_programs: z.object({
     query: z.string().trim().min(1).max(100),
     college: z.enum(["CSM", "SKY", "CAN", "all"]).default("all"),
     award_type: z.enum(["AA", "AS", "all"]).default("all")
-  }),
-  save_plan_snapshot: z.object({
-    label: z.string().trim().min(1).max(80).optional()
   }),
   add_course_schedule: z.object({
     course_ids: z.array(z.uuid()).min(1).max(24)
@@ -175,11 +171,9 @@ export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the saved schedule, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
   { name: "get_enrollment_constraints", mutatesData: false, description: "Read source-backed concurrent or dual-enrollment limits and evaluate the saved college schedule by term.", arguments: "{}" },
   { name: "get_course_schedule_options", mutatesData: false, description: "Generate deterministic high-school flow suggestions using the saved plan and provider policy. Call with the student's answer about respecting the recommended unit limit.", arguments: '{"respect_recommended_limit":boolean}' },
-  { name: "get_plan_versions", mutatesData: false, description: "Read active and saved plan versions with labels, creation dates, and course counts.", arguments: "{}" },
   { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for one bookmarked SMCCD associate degree. Omit program_id only when one bookmark is sufficient context.", arguments: '{"program_id":"string|optional"}' },
   { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
   { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
-  { name: "save_plan_snapshot", mutatesData: true, description: "Propose saving a read-only copy of the active course plan before a larger change.", arguments: '{"label":"optional short label"}' },
   { name: "add_course_schedule", mutatesData: true, description: "Propose adding an exact batch returned by get_course_schedule_options. Revalidation prevents stale, duplicate, prerequisite-blocked, or over-limit additions.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
@@ -221,11 +215,9 @@ export function assistantToolLabel(name: string) {
     evaluate_gpa_scenario: "Evaluate GPA scenario",
     get_enrollment_constraints: "Check college-unit limits",
     get_course_schedule_options: "Build course schedule options",
-    get_plan_versions: "Read plan versions",
     get_degree_progress: "Read degree progress",
     get_college_goal: "Read college goal",
     search_smccd_programs: "Search college programs",
-    save_plan_snapshot: "Save plan snapshot",
     add_course_schedule: "Add course schedule",
     add_dtech_course: "Add high school course",
     add_smccd_course: "Add college course",
@@ -535,7 +527,6 @@ export async function executeAssistantReadTool(
           "evaluate_gpa_scenario",
           "get_enrollment_constraints",
           "audit_transcript_data",
-          "get_plan_versions",
           "get_next_steps",
           "get_degree_progress"
         ]
@@ -680,32 +671,6 @@ export async function executeAssistantReadTool(
     };
   }
 
-  if (name === "get_plan_versions") {
-    const { data: versions, error: versionError } = await supabase
-      .from("plan_versions")
-      .select("*")
-      .eq("plan_id", workspace.plan.id)
-      .order("created_at", { ascending: false });
-    if (versionError) throw new Error(versionError.message);
-    const versionRows = (versions ?? []) as unknown as PlanVersion[];
-    const versionIds = versionRows.map((version) => version.id);
-    const courseResult = versionIds.length
-      ? await supabase.from("plan_courses").select("plan_version_id").eq("user_id", userId).in("plan_version_id", versionIds)
-      : { data: [], error: null };
-    if (courseResult.error) throw new Error(courseResult.error.message);
-    const counts = new Map<string, number>();
-    for (const row of courseResult.data ?? []) counts.set(row.plan_version_id, (counts.get(row.plan_version_id) ?? 0) + 1);
-    const data = versionRows.map((version) => ({
-      version_id: version.id,
-      label: version.label,
-      kind: version.kind,
-      course_count: counts.get(version.id) ?? 0,
-      created_at: version.created_at,
-      has_ai_summary: Boolean(version.ai_summary)
-    }));
-    return { summary: `Read ${data.length} plan ${data.length === 1 ? "version" : "versions"}.`, data };
-  }
-
   if (name === "get_degree_progress") {
     const args = toolArgumentSchemas.get_degree_progress.parse(argumentsValue);
     const selectedGoal = args.program_id
@@ -817,36 +782,6 @@ export async function executeAssistantMutationTool(
   argumentsValue: Record<string, unknown>
 ): Promise<AssistantToolResult> {
   const workspace = await loadAssistantWorkspace(supabase, userId);
-
-  if (name === "save_plan_snapshot") {
-    const args = toolArgumentSchemas.save_plan_snapshot.parse(argumentsValue);
-    const label = args.label ?? `Snapshot ${new Date().toLocaleDateString("en-US")}`;
-    const { data: snapshot, error } = await supabase.from("plan_versions").insert({
-      plan_id: workspace.plan.id,
-      user_id: userId,
-      label,
-      kind: "snapshot",
-      generation_config: { source_version_id: workspace.activeVersion.id, created_by: "pilot_assistant" }
-    }).select("id").single();
-    if (error) throw new Error(error.message);
-    if (workspace.planCourses.length > 0) {
-      const copies = workspace.planCourses.map(({ id: _id, ...row }) => ({
-        ...row,
-        plan_version_id: snapshot.id
-      }));
-      const copyResult = await supabase.from("plan_courses").insert(copies);
-      if (copyResult.error) {
-        await supabase.from("plan_versions").delete().eq("id", snapshot.id);
-        throw new Error(copyResult.error.message);
-      }
-    }
-    return {
-      summary: `${label} was saved.`,
-      data: { label, course_count: workspace.planCourses.length },
-      changed: { entity: "plan_version", id: snapshot.id },
-      undo: { kind: "delete_rows", table: "plan_versions", ids: [snapshot.id], summary: `${label} was removed.` }
-    };
-  }
 
   if (name === "add_course_schedule") {
     const args = toolArgumentSchemas.add_course_schedule.parse(argumentsValue);

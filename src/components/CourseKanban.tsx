@@ -248,7 +248,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragCancel={() => setActiveId(null)} onDragEnd={handleDragEnd}>
-      <div className="course-plan-toolbar"><p>Choose a grade, then drag unlocked courses between terms. Use Edit to move a course to another school year.</p><button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button></div>
+      <div className="course-plan-toolbar"><button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button></div>
       <div className="course-grade-tabs" role="tablist" aria-label="High school year">
         {GRADE_LEVELS.map((grade) => {
           const courseCount = props.rows.filter((row) => row.grade_level === grade).length;

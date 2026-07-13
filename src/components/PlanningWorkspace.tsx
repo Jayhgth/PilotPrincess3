@@ -5,7 +5,6 @@ import {
   ChatCircleDotsIcon as ChatCircleDots,
   CheckIcon as Check,
   FileArrowUpIcon as FileArrowUp,
-  FloppyDiskIcon as FloppyDisk,
   GearSixIcon as GearSix,
   GraduationCapIcon as GraduationCap,
   HouseIcon as House,
@@ -22,7 +21,6 @@ import {
   useEffect,
   lazy,
   useMemo,
-  useRef,
   Suspense,
   useState,
   type ReactNode,
@@ -37,7 +35,6 @@ import {
   courseDisplayName,
   generateSuggestedPlan,
   overallCompletedPercent,
-  overallGraduationPercent,
   nextAcademicPeriod,
   selectedPlanGrades,
   schoolYearForGrade
@@ -220,7 +217,7 @@ export default function PlanningWorkspace() {
   const [equivalencies, setEquivalencies] = useState<SmccdHighSchoolEquivalency[]>([]);
   const [plannedSmccdCourses, setPlannedSmccdCourses] = useState<SmccdCourse[]>([]);
   const [plan, setPlan] = useState<FourYearPlan | null>(null);
-  const [versions, setVersions] = useState<PlanVersion[]>([]);
+  const [activeVersion, setActiveVersion] = useState<PlanVersion | null>(null);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
   const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
@@ -238,10 +235,6 @@ export default function PlanningWorkspace() {
   const [suggestedPlan, setSuggestedPlan] = useState<ReturnType<typeof generateSuggestedPlan>>([]);
   const [planGenerationPromptOpen, setPlanGenerationPromptOpen] = useState(false);
   const [respectUnitCapDraft, setRespectUnitCapDraft] = useState(true);
-  const [compareVersionId, setCompareVersionId] = useState("");
-  const [compareCourses, setCompareCourses] = useState<PlanCourse[]>([]);
-  const [compareLoading, setCompareLoading] = useState(false);
-  const compareRequestRef = useRef(0);
 
   useEffect(() => {
     if (!supabase) return;
@@ -256,7 +249,6 @@ export default function PlanningWorkspace() {
     return () => subscription.unsubscribe();
   }, [supabase]);
 
-  const activeVersion = versions.find((candidate) => candidate.kind === "active") ?? null;
   const courseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const trackedRequirements = useMemo(
     () => settings ? requirementsForSettings(requirements, settings) : requirements,
@@ -271,7 +263,6 @@ export default function PlanningWorkspace() {
     [requirements, planCourses, mappings, courses, equivalencies]
   );
   const gpa = useMemo(() => calculateGpa(planCourses), [planCourses]);
-  const graduationPercent = useMemo(() => overallGraduationPercent(fullProgress), [fullProgress]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(fullProgress), [fullProgress]);
   const availableCatalogGrades = useMemo(() => settings ? selectedPlanGrades(settings) : [], [settings]);
   const activeCatalogGrade = (catalogGrade !== "all" && availableCatalogGrades.includes(catalogGrade)
@@ -381,10 +372,11 @@ export default function PlanningWorkspace() {
         .from("plan_versions")
         .select("*")
         .eq("plan_id", loadedPlan.id)
-        .order("created_at", { ascending: false });
+        .eq("kind", "active")
+        .order("created_at", { ascending: false })
+        .limit(1);
       if (versionResult.error) throw versionResult.error;
-      const loadedVersions = versionResult.data as unknown as PlanVersion[];
-      const loadedActiveVersion = loadedVersions.find((candidate) => candidate.kind === "active");
+      const loadedActiveVersion = (versionResult.data as unknown as PlanVersion[])[0] ?? null;
       const planCourseResult = loadedActiveVersion
         ? await supabase
             .from("plan_courses")
@@ -414,7 +406,7 @@ export default function PlanningWorkspace() {
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
       setEquivalencies((equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[]);
       setPlan(loadedPlan);
-      setVersions(loadedVersions);
+      setActiveVersion(loadedActiveVersion);
       const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
       const plannedSmccdIds = [...new Set(loadedPlanCourses.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
       const plannedSmccdResult = plannedSmccdIds.length > 0
@@ -463,31 +455,7 @@ export default function PlanningWorkspace() {
   const refreshWorkspaceSilently = useCallback(() => loadWorkspace({ silent: true }), [loadWorkspace]);
 
   async function refreshAfterAssistantChange() {
-    if (!supabase || !activeVersion) return refreshWorkspaceSilently();
-    try {
-      const { data, error } = await supabase.from("plan_courses").select("*").eq("plan_version_id", activeVersion.id).order("grade_level").order("sort_order");
-      if (!error) {
-        const nextRows = (data ?? []) as unknown as PlanCourse[];
-        const signature = (rows: PlanCourse[]) => JSON.stringify(rows.map((row) => ({
-          id: row.id,
-          course_id: row.course_id,
-          name: row.custom_course_name,
-          grade: row.grade_level,
-          term: row.term,
-          status: row.status,
-          credits: row.credits,
-          units: row.college_units,
-          letter: row.letter_grade
-        })).sort((a, b) => a.id.localeCompare(b.id)));
-        if (signature(nextRows) !== signature(planCourses)) {
-          await createSnapshot(`Before Pilot change ${new Date().toLocaleString()}`, planCourses);
-        }
-      }
-    } catch {
-      notify("Pilot applied the change, but the automatic backup could not be saved.", "error");
-    } finally {
-      await refreshWorkspaceSilently();
-    }
+    await refreshWorkspaceSilently();
   }
 
   useEffect(() => {
@@ -537,27 +505,6 @@ export default function PlanningWorkspace() {
     setToastKind("success");
     setToast(message);
     setToastAction({ label: "Undo", run: action });
-  }
-
-  async function selectComparisonVersion(versionId: string) {
-    const requestId = ++compareRequestRef.current;
-    setCompareVersionId(versionId);
-    setCompareCourses([]);
-    if (!supabase || !versionId) {
-      setCompareLoading(false);
-      return;
-    }
-    setCompareLoading(true);
-    const { data, error } = await supabase
-      .from("plan_courses")
-      .select("*")
-      .eq("plan_version_id", versionId)
-      .order("grade_level")
-      .order("sort_order");
-    if (requestId !== compareRequestRef.current) return;
-    if (error) notify(error.message, "error");
-    else setCompareCourses((data ?? []) as unknown as PlanCourse[]);
-    setCompareLoading(false);
   }
 
   async function runAction<T>(label: string, action: () => Promise<T>, successMessage?: string) {
@@ -918,63 +865,6 @@ export default function PlanningWorkspace() {
     });
   }
 
-  async function createSnapshot(label: string, rows: PlanCourse[]) {
-    if (!supabase || !session || !plan || !activeVersion) throw new Error("The active plan is unavailable.");
-    const { data: snapshot, error } = await supabase
-      .from("plan_versions")
-      .insert({
-        plan_id: plan.id,
-        user_id: session.user.id,
-        label,
-        kind: "snapshot",
-        generation_config: { source_version_id: activeVersion.id }
-      })
-      .select("*")
-      .single();
-    if (error) throw error;
-    if (rows.length > 0) {
-      const copies = rows.map(({ id: _id, ...row }) => ({ ...row, plan_version_id: snapshot.id }));
-      const { error: copyError } = await supabase.from("plan_courses").insert(copies);
-      if (copyError) {
-        await supabase.from("plan_versions").delete().eq("id", snapshot.id);
-        throw copyError;
-      }
-    }
-    setVersions((current) => [snapshot as unknown as PlanVersion, ...current]);
-    return snapshot as unknown as PlanVersion;
-  }
-
-  async function saveSnapshot() {
-    if (!supabase || !session || !plan || !activeVersion) return;
-    await runAction(
-      "Saving snapshot",
-      async () => {
-        await createSnapshot(`Snapshot ${new Date().toLocaleDateString()}`, planCourses);
-      },
-      "Plan snapshot saved."
-    );
-  }
-
-  async function restoreSnapshot(version: PlanVersion, rows: PlanCourse[]) {
-    if (!supabase || !activeVersion || rows.length === 0) return;
-    await runAction("Restoring saved plan", async () => {
-      await createSnapshot(`Before restoring ${version.label}`, planCourses);
-      const copies = rows.map(({ id: _id, ...row }) => ({ ...row, plan_version_id: activeVersion.id }));
-      const { data: inserted, error: insertError } = await supabase.from("plan_courses").insert(copies).select("id");
-      if (insertError) throw insertError;
-      const previousIds = planCourses.map((row) => row.id);
-      const { error: deleteError } = previousIds.length
-        ? await supabase.from("plan_courses").delete().in("id", previousIds)
-        : { error: null };
-      if (deleteError) {
-        const insertedIds = (inserted ?? []).map((row) => row.id);
-        if (insertedIds.length > 0) await supabase.from("plan_courses").delete().in("id", insertedIds);
-        throw deleteError;
-      }
-      await loadWorkspace({ silent: true });
-    }, `${version.label} restored. A backup of the previous plan was saved.`);
-  }
-
   async function submitTranscript(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!supabase || !session || !school) return;
@@ -1127,7 +1017,6 @@ export default function PlanningWorkspace() {
     await runAction(
       "Importing transcript courses",
       async () => {
-        await createSnapshot(`Before transcript import ${new Date().toLocaleDateString()}`, planCourses);
         const ids = prepared.map(({ item }) => item.id);
         const { error: approveError } = await supabase
           .from("catalog_review_items")
@@ -1606,24 +1495,6 @@ export default function PlanningWorkspace() {
 
   function renderMineCourses() {
     if (!settings) return null;
-    const snapshots = versions.filter((version) => version.kind === "snapshot");
-    const selectedSnapshot = snapshots.find((version) => version.id === compareVersionId) ?? null;
-    const comparisonKey = (row: PlanCourse) => `${row.course_id ?? row.custom_course_name ?? row.id}:${row.grade_level}`;
-    const activeByKey = new Map(planCourses.map((row) => [comparisonKey(row), row]));
-    const snapshotByKey = new Map(compareCourses.map((row) => [comparisonKey(row), row]));
-    const addedSinceSnapshot = planCourses.filter((row) => !snapshotByKey.has(comparisonKey(row)));
-    const removedSinceSnapshot = compareCourses.filter((row) => !activeByKey.has(comparisonKey(row)));
-    const changedSinceSnapshot = planCourses.filter((row) => {
-      const previous = snapshotByKey.get(comparisonKey(row));
-      return previous && (
-        previous.status !== row.status ||
-        previous.letter_grade !== row.letter_grade ||
-        previous.is_weighted !== row.is_weighted ||
-        Number(previous.credits ?? 0) !== Number(row.credits ?? 0)
-      );
-    });
-    const snapshotGpa = calculateGpa(compareCourses);
-    const snapshotProgress = calculateRequirementProgress(requirements, compareCourses, mappings, courses, equivalencies);
     const generationPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
 
     return (
@@ -1652,22 +1523,6 @@ export default function PlanningWorkspace() {
           onRemove={(id) => void removePlanCourse(id)}
           onGeneratePlan={openPlanGenerationPrompt}
         />
-        <details className="course-version-section">
-          <summary><span><strong>Plan versions</strong><small>Save a read-only copy before a major change.</small></span><span>{snapshots.length} saved</span></summary>
-          <div className="course-version-body"><button className="secondary-button small" onClick={() => void saveSnapshot()} disabled={Boolean(busyLabel)}><FloppyDisk size={15} /> Save snapshot</button>
-          {snapshots.length ? <>
-            <div className="compare-controls"><label className="form-field"><span>Saved version</span><select value={compareVersionId} onChange={(event) => void selectComparisonVersion(event.target.value)}><option value="">Choose a snapshot</option>{snapshots.map((version) => <option value={version.id} key={version.id}>{version.label}</option>)}</select></label><p>{compareVersionId ? "Differences below are measured against your active plan. Restoring creates a backup first." : "Choose a saved snapshot."}</p>{selectedSnapshot && <button className="secondary-button small" type="button" onClick={() => void restoreSnapshot(selectedSnapshot, compareCourses)} disabled={Boolean(busyLabel) || compareLoading || compareCourses.length === 0}>Restore as active plan</button>}</div>
-            {selectedSnapshot && !compareLoading && <div className="snapshot-comparison" aria-live="polite">
-              <div className="snapshot-metrics"><div><span>Saved courses</span><strong>{compareCourses.length}</strong></div><div><span>Active courses</span><strong>{planCourses.length}</strong></div><div><span>Saved coverage</span><strong>{overallGraduationPercent(snapshotProgress)}%</strong></div><div><span>Active coverage</span><strong>{graduationPercent}%</strong></div><div><span>Saved projected GPA</span><strong>{formatGpa(snapshotGpa.projectedWeighted)}</strong></div><div><span>Active projected GPA</span><strong>{formatGpa(gpa.projectedWeighted)}</strong></div></div>
-              <div className="snapshot-differences">
-                <div><h3>Added since snapshot <span>{addedSinceSnapshot.length}</span></h3>{addedSinceSnapshot.length ? <ul>{addedSinceSnapshot.map((row) => <li key={row.id}>{courseDisplayName(row, courseMap)} <small>Grade {row.grade_level}</small></li>)}</ul> : <p>None</p>}</div>
-                <div><h3>Removed since snapshot <span>{removedSinceSnapshot.length}</span></h3>{removedSinceSnapshot.length ? <ul>{removedSinceSnapshot.map((row) => <li key={row.id}>{courseDisplayName(row, courseMap)} <small>Grade {row.grade_level}</small></li>)}</ul> : <p>None</p>}</div>
-                <div><h3>Changed since snapshot <span>{changedSinceSnapshot.length}</span></h3>{changedSinceSnapshot.length ? <ul>{changedSinceSnapshot.map((row) => <li key={row.id}>{courseDisplayName(row, courseMap)} <small>Status, grade, credits, or weighting</small></li>)}</ul> : <p>None</p>}</div>
-              </div>
-            </div>}
-            {compareLoading && <p className="compare-loading"><ArrowClockwise className="spin" size={16} /> Loading saved courses</p>}
-          </> : <p className="course-version-empty">No saved versions yet.</p>}</div>
-        </details>
       </>
     );
   }

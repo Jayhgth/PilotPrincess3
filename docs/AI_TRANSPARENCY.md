@@ -33,7 +33,6 @@ Read tools may run automatically after a student sends a message:
 - a compact inventory of available student-owned records;
 - student overview;
 - Done, In progress, and Planned courses;
-- active and saved plan versions;
 - eligible d.tech and SMCCD catalog search;
 - graduation evidence;
 - course-level GPA inclusion and weighting evidence;
@@ -48,7 +47,6 @@ Read tools may run automatically after a student sends a message:
 
 Write tools may prepare these changes:
 
-- save a read-only snapshot of the active course plan;
 - add a d.tech or SMCCD course;
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
 - add a next step or complete an exact set of open next steps;
@@ -83,7 +81,7 @@ Structured questions are stored in the assistant message's bounded `page_context
 
 Queued follow-ups also remain browser-memory-only until their turn starts. Their text and image previews stay local while waiting; removing a queued message revokes its local image previews. **Steer** cancels the active request, records that cancellation, moves the selected follow-up to the front, and then starts it as a normal persisted turn. It does not inject text into an already-running model response or bypass the normal tool approval boundary.
 
-After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Reversible writes also store a private server-side inverse and place **Undo change** inside the receipt for 15 minutes. Undo re-authenticates the student, validates the stored inverse and time window, reapplies normal RLS ownership, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. This is evidence of an application-side mutation, not a claim made by the model. When the active plan changed, the workspace also saves the previous client-visible plan as a **Before Pilot change** snapshot before refreshing to the canonical server result, so the student can restore it from Plan versions.
+After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Reversible writes also store a private server-side inverse and place **Undo change** inside the receipt for 15 minutes. Undo re-authenticates the student, validates the stored inverse and time window, reapplies normal RLS ownership, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. This is evidence of an application-side mutation, not a claim made by the model.
 
 Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from the Pilot Assistant section in Settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
 
