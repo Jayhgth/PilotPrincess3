@@ -86,8 +86,8 @@ describe("checked-in d.tech catalog prerequisite audit", () => {
     const unresolved = audit.issues.filter((issue) => issue.kind === "unresolved_prerequisite");
 
     expect(audit).toMatchObject({
-      courseCount: 41,
-      parsedCourseCount: 41,
+      courseCount: 40,
+      parsedCourseCount: 40,
       referenceCount: 25,
       unresolvedClauseCount: 1
     });

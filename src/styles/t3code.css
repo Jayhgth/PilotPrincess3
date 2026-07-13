@@ -45,7 +45,7 @@
 .t3code-app .sidebar-nav button,
 .t3code-app .sidebar-utility { min-height: 34px; border-radius: 7px; padding: 0 9px; font-size: 13px; font-weight: 520; box-shadow: none; }
 .t3code-app .sidebar-account-actions .sidebar-utility { gap: 5px; padding-inline: 5px; font-size: 12px; }
-.t3code-app .sidebar-nav button.active { background: var(--surface-muted); box-shadow: inset 2px 0 var(--accent); }
+.t3code-app .sidebar-nav button.active { background: var(--surface-muted); }
 .t3code-app .sidebar-footer { padding: 8px; }
 .t3code-app .school-chip { border-radius: 8px; background: var(--surface-muted); }
 .t3code-app .app-sidebar,
@@ -65,7 +65,6 @@
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip { justify-content: center; padding-inline: 0; }
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-account-actions { grid-template-columns: 1fr; }
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip { min-height: 34px; margin-bottom: 6px; }
-  :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-nav button.active { box-shadow: inset 2px 0 var(--accent); }
 }
 .t3code-app .app-toolbar { min-height: 52px; border-bottom: 1px solid var(--line); padding: 0 18px; }
 .t3code-app .app-toolbar button { min-height: 32px; border-radius: 8px; font-size: 12px; }

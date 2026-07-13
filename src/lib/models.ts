@@ -85,6 +85,8 @@ export interface Course {
 
 export interface GraduationRequirement {
   id: string;
+  school_id?: string;
+  catalog_version_id?: string;
   area: RequirementArea;
   name: string;
   credits_required: number;

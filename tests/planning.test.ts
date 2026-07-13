@@ -238,6 +238,121 @@ describe("graduation requirement calculations", () => {
     expect(result.status).toBe("complete");
   });
 
+  it("requires World History, US History, and Government & Economics for Social Science", () => {
+    const socialScience: GraduationRequirement = {
+      ...englishRequirement,
+      id: "requirement-social-science",
+      area: "social_science",
+      name: "Social Science",
+      credits_required: 30
+    };
+    const socialCourses = [
+      course({ id: "ethnic-studies", name: "Ethnic Studies", subject: "Social Science" }),
+      course({ id: "world-history", name: "World History", subject: "Social Science" }),
+      course({ id: "us-history", name: "US History", subject: "Social Science" }),
+      course({ id: "government-economics", name: "Government & Economics", subject: "Social Science" })
+    ];
+    const mappings = socialCourses.map((item, index) => ({
+      ...verifiedMapping,
+      id: `social-map-${index}`,
+      course_id: item.id,
+      requirement_id: socialScience.id
+    }));
+
+    const missingSeniorRequirement = calculateRequirementProgress(
+      [socialScience],
+      [
+        planCourse({ id: "ethnic-row", course_id: "ethnic-studies", credits: 10 }),
+        planCourse({ id: "world-row", course_id: "world-history", credits: 10 }),
+        planCourse({ id: "us-row", course_id: "us-history", credits: 10 })
+      ],
+      mappings,
+      socialCourses
+    )[0];
+    expect(missingSeniorRequirement.completedCredits).toBe(20);
+    expect(missingSeniorRequirement.status).toBe("missing");
+    expect(missingSeniorRequirement.ruleWarnings).toContain("10 Government & Economics credits still need coverage.");
+    expect(missingSeniorRequirement.unusedCourses.map((row) => row.courseName)).toContain("Ethnic Studies");
+    expect(missingSeniorRequirement.unusedCourses.find((row) => row.courseName === "Ethnic Studies")?.note)
+      .toBe("Does not replace World History, US History, or Government & Economics.");
+
+    const complete = calculateRequirementProgress(
+      [socialScience],
+      [
+        planCourse({ id: "world-row", course_id: "world-history", credits: 10 }),
+        planCourse({ id: "us-row", course_id: "us-history", credits: 10 }),
+        planCourse({ id: "government-economics-row", course_id: "government-economics", credits: 10 })
+      ],
+      mappings,
+      socialCourses
+    )[0];
+    expect(complete.completedCredits).toBe(30);
+    expect(complete.status).toBe("complete");
+    expect(complete.ruleWarnings).toEqual([]);
+  });
+
+  it("combines verified college Government and Economics equivalents into the senior requirement", () => {
+    const socialScience: GraduationRequirement = {
+      ...englishRequirement,
+      id: "requirement-social-science",
+      area: "social_science",
+      name: "Social Science",
+      credits_required: 30
+    };
+    const socialCourses = [
+      course({ id: "world-history", name: "World History", subject: "Social Science" }),
+      course({ id: "us-history", name: "US History", subject: "Social Science" })
+    ];
+    const mappings = socialCourses.map((item, index) => ({
+      ...verifiedMapping,
+      id: `social-college-map-${index}`,
+      course_id: item.id,
+      requirement_id: socialScience.id
+    }));
+    const equivalencies: SmccdHighSchoolEquivalency[] = [
+      {
+        normalized_course_code: "PLSC 200",
+        college_course_code: "Political Science 200",
+        description: "National, State & Local Governments",
+        college_units: 5,
+        high_school_credits: 5,
+        high_school_equivalent: "Government",
+        requirement_area: "social_science",
+        pairing_note: null,
+        source_id: "source-equivalency",
+        confidence: "verified"
+      },
+      {
+        normalized_course_code: "ECON 100",
+        college_course_code: "Economics 100",
+        description: "Principles of Macroeconomics",
+        college_units: 3,
+        high_school_credits: 5,
+        high_school_equivalent: "Economics",
+        requirement_area: "social_science",
+        pairing_note: null,
+        source_id: "source-equivalency",
+        confidence: "verified"
+      }
+    ];
+    const result = calculateRequirementProgress(
+      [socialScience],
+      [
+        planCourse({ id: "world-row", course_id: "world-history", credits: 10 }),
+        planCourse({ id: "us-row", course_id: "us-history", credits: 10 }),
+        planCourse({ id: "government-row", course_id: null, custom_course_name: "PLSC 200", credits: 5, smccd_course_id: "CSM:PLSC 200", requirement_area_override: "social_science" }),
+        planCourse({ id: "economics-row", course_id: null, custom_course_name: "ECON 100", credits: 5, smccd_course_id: "CSM:ECON 100", requirement_area_override: "social_science" })
+      ],
+      mappings,
+      socialCourses,
+      equivalencies
+    )[0];
+
+    expect(result.completedCredits).toBe(30);
+    expect(result.status).toBe("complete");
+    expect(result.ruleWarnings).toEqual([]);
+  });
+
   it("enforces the Biology, Chemistry, and third-science sequence", () => {
     const scienceRequirement: GraduationRequirement = {
       ...englishRequirement,
@@ -394,16 +509,14 @@ describe("planning", () => {
     expect(generateSuggestedPlan(settings, catalog, existing, policy, false).map((row) => row.course_id)).toEqual(["english-2"]);
   });
 
-  it("places semester flow courses into separate fall and spring lanes", () => {
+  it("places the combined senior Government and Economics course across the full year", () => {
     const seniorSettings: StudentSettings = { ...settings, grade_level: 12, graduation_year: 2027, plan_start_grade: 12, plan_end_grade: 12 };
     const catalog = [
-      course({ id: "government", name: "Government", grade_levels: [12], term_type: "semester" }),
-      course({ id: "economics", name: "Economics", grade_levels: [12], term_type: "semester" })
+      course({ id: "government-economics", name: "Government & Economics", grade_levels: [12], term_type: "year" })
     ];
 
     expect(generateSuggestedPlan(seniorSettings, catalog, []).map((row) => [row.course_id, row.term])).toEqual([
-      ["government", "fall"],
-      ["economics", "spring"]
+      ["government-economics", "full_year"]
     ]);
   });
 
@@ -789,6 +902,14 @@ describe("transcript import", () => {
     expect(findTranscriptCatalogMatch("Pre-Calculus", catalogCourses)?.id).toBe("precalculus");
     expect(findTranscriptCatalogMatch("Pre-Calculus Honors", catalogCourses)?.id).toBe("precalculus-honors");
     expect(findTranscriptCatalogMatch("Advanced Physics", catalogCourses)?.id).toBe("advanced-physics");
+  });
+
+  it("matches common Government and Economics transcript labels to the combined course", () => {
+    const combined = course({ id: "government-economics", name: "Government & Economics" });
+
+    expect(findTranscriptCatalogMatch("Government and Economics", [combined])?.id).toBe(combined.id);
+    expect(findTranscriptCatalogMatch("Gov & Econ", [combined])?.id).toBe(combined.id);
+    expect(findTranscriptCatalogMatch("Govt/Econ", [combined])?.id).toBe(combined.id);
   });
 
   it("resolves d.tech intersession rows without treating absent catalog membership as uncertainty", () => {

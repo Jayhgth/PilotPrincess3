@@ -40,6 +40,8 @@ export const REQUIREMENT_LABELS = {
   personal_development: "Personal Development"
 } as const;
 
+const DTECH_SCHOOL_ID = "d7ec0000-0000-4000-8000-000000000001";
+
 export const GRADE_LEVELS: GradeLevel[] = [9, 10, 11, 12];
 export const LETTER_GRADES = ["", "A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F", "P", "IP"];
 
@@ -238,6 +240,7 @@ export function calculateRequirementProgress(
     const ruleWarnings: string[] = [];
     const appliedById = new Map<string, number>();
     const contributionNotes = new Map<string, string>();
+    const unusedNotes = new Map<string, string>();
     let usesRuleAllocation = false;
     if (requirement.area === "world_language") {
       const proficiencyRows = verifiedRows.filter((row) => {
@@ -275,6 +278,57 @@ export function calculateRequirementProgress(
           `A verified Level 3 language course satisfies the full sequence; otherwise ${requirement.credits_required} credits are needed.`
         );
       }
+    }
+    if (requirement.area === "social_science" && (!requirement.school_id || requirement.school_id === DTECH_SCHOOL_ID)) {
+      usesRuleAllocation = true;
+      const allocation = { completed: 0, current: 0, planned: 0 };
+      const statusOrder: PlanCourse["status"][] = ["completed", "current", "planned"];
+      const classify = (row: typeof verifiedRows[number]) => {
+        const evidence = `${row.equivalent ?? ""} ${row.name}`.toLowerCase();
+        const government = /\bgovernment\b|\bamerican politics\b/.test(evidence);
+        const economics = /\beconom(?:ics|y)\b/.test(evidence);
+        if (government && economics) return "government_economics";
+        if (government) return "government";
+        if (economics) return "economics";
+        if (/\bu\.?s\.? history\b|\bunited states history\b/.test(evidence)) return "us_history";
+        if (/\bworld history\b|\bwestern civilization\b/.test(evidence)) return "world_history";
+        return "other";
+      };
+      const socialRows = verifiedRows.map((row) => ({ ...row, lane: classify(row), remaining: row.credits }));
+      for (const row of socialRows.filter((candidate) => candidate.lane === "other")) {
+        unusedNotes.set(row.id, "Does not replace World History, US History, or Government & Economics.");
+      }
+      const allocate = (candidates: typeof socialRows, limit: number) => {
+        let remaining = limit;
+        for (const status of statusOrder) {
+          for (const row of candidates.filter((candidate) => candidate.status === status)) {
+            const applied = Math.min(row.remaining, remaining);
+            allocation[status] += applied;
+            appliedById.set(row.id, (appliedById.get(row.id) ?? 0) + applied);
+            row.remaining -= applied;
+            remaining -= applied;
+            if (remaining <= 0) return limit;
+          }
+        }
+        return limit - remaining;
+      };
+      const worldHistoryApplied = allocate(socialRows.filter((row) => row.lane === "world_history"), 10);
+      const usHistoryApplied = allocate(socialRows.filter((row) => row.lane === "us_history"), 10);
+      let governmentEconomicsApplied = allocate(socialRows.filter((row) => row.lane === "government_economics"), 10);
+      if (governmentEconomicsApplied < 10) {
+        const governmentApplied = allocate(socialRows.filter((row) => row.lane === "government"), Math.min(5, 10 - governmentEconomicsApplied));
+        governmentEconomicsApplied += governmentApplied;
+        governmentEconomicsApplied += allocate(
+          socialRows.filter((row) => row.lane === "economics"),
+          Math.min(5, 10 - governmentEconomicsApplied)
+        );
+      }
+      completedCredits = allocation.completed;
+      currentCredits = allocation.current;
+      plannedCredits = allocation.planned;
+      if (worldHistoryApplied < 10) ruleWarnings.push(`${10 - worldHistoryApplied} World History credits still need coverage.`);
+      if (usHistoryApplied < 10) ruleWarnings.push(`${10 - usHistoryApplied} US History credits still need coverage.`);
+      if (governmentEconomicsApplied < 10) ruleWarnings.push(`${10 - governmentEconomicsApplied} Government & Economics credits still need coverage.`);
     }
     if (requirement.area === "lab_science") {
       usesRuleAllocation = true;
@@ -349,7 +403,7 @@ export function calculateRequirementProgress(
         .map((row) => requirementEvidence(
           row,
           Math.min(row.credits, appliedById.get(row.id) ?? 0),
-          "Verified credit is not applied because this requirement is already covered."
+          unusedNotes.get(row.id) ?? "Verified credit is not applied because this requirement is already covered."
         )),
       unverifiedCourses: unverifiedRows.map((row) => requirementEvidence(
         row,
@@ -461,7 +515,7 @@ const FLOW_BY_GRADE: Record<GradeLevel, string[]> = {
   9: ["English 1", "Ethnic Studies", "Algebra 1", "Environmental Science", "Foundation in Design Thinking", "Spanish 1", "Introduction to Prototyping and Fabrication"],
   10: ["English 2", "World History", "Geometry", "Chemistry", "Co-designers", "Spanish 2", "Introduction to Visual Art"],
   11: ["English 3", "US History", "Algebra 2", "Biology", "Spanish 3"],
-  12: ["English 4", "Government", "Economics", "Precalculus"]
+  12: ["English 4", "Government & Economics", "Precalculus"]
 };
 
 export interface GeneratedPlanCourse {

@@ -7,6 +7,9 @@ export function normalizeCourseName(value: string) {
     .replace(/\badvanced placement\b/g, "ap")
     .replace(/\bintro\b/g, "introduction")
     .replace(/\bcodesigners\b/g, "co designers")
+    .replace(/\bgov(?:t)?\b/g, "government")
+    .replace(/\becon\b/g, "economics")
+    .replace(/\band\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\bpre\s+calculus\b/g, "precalculus")
     .trim();
