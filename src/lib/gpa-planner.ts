@@ -17,6 +17,13 @@ export interface GpaScenarioResult {
   targetAlreadyReached: boolean;
 }
 
+export interface GpaScenarioSummary {
+  baseline: ReturnType<typeof calculateGpa>;
+  scenario: ReturnType<typeof calculateGpa>;
+  bestCase: ReturnType<typeof calculateGpa>;
+  missingExpectedGrades: number;
+}
+
 const TARGET_GRADES = ["F", "D", "C", "B", "A"] as const;
 
 export function scenarioRows(rows: readonly PlanCourse[], choices: readonly GpaScenarioChoice[]) {
@@ -33,16 +40,29 @@ function withUniformOpenGrade(rows: readonly PlanCourse[], choices: readonly Gpa
   return scenarioRows(rows, choices).map((row) => row.status === "completed" ? row : { ...row, letter_grade: grade });
 }
 
+export function calculateGpaScenario(
+  rows: readonly PlanCourse[],
+  choices: readonly GpaScenarioChoice[]
+): GpaScenarioSummary {
+  const baselineRows = rows.filter((row) => row.status === "completed");
+  const projectedRows = scenarioRows(rows, choices);
+  const openRows = projectedRows.filter((row) => row.status !== "completed");
+  const bestCaseRows = projectedRows.map((row) => row.status === "completed" ? row : { ...row, letter_grade: "A" });
+  return {
+    baseline: calculateGpa(baselineRows),
+    scenario: calculateGpa(projectedRows),
+    bestCase: calculateGpa(bestCaseRows),
+    missingExpectedGrades: openRows.filter((row) => !row.letter_grade || ["IP", "P"].includes(row.letter_grade.toUpperCase())).length
+  };
+}
+
 export function evaluateGpaScenario(
   rows: readonly PlanCourse[],
   choices: readonly GpaScenarioChoice[],
   targetWeighted: number
 ): GpaScenarioResult {
-  const baselineRows = rows.filter((row) => row.status === "completed");
-  const projectedRows = scenarioRows(rows, choices);
-  const openRows = projectedRows.filter((row) => row.status !== "completed");
-  const bestCaseRows = projectedRows.map((row) => row.status === "completed" ? row : { ...row, letter_grade: "A" });
-  const baseline = calculateGpa(baselineRows);
+  const summary = calculateGpaScenario(rows, choices);
+  const baseline = summary.baseline;
   const targetAlreadyReached = baseline.projectedWeighted !== null && baseline.projectedWeighted >= targetWeighted;
   const targetGrade = targetAlreadyReached ? null : TARGET_GRADES.find((grade) => {
     const result = calculateGpa(withUniformOpenGrade(rows, choices, grade));
@@ -51,9 +71,9 @@ export function evaluateGpaScenario(
 
   return {
     baseline,
-    scenario: calculateGpa(projectedRows),
-    bestCase: calculateGpa(bestCaseRows),
-    missingExpectedGrades: openRows.filter((row) => !row.letter_grade || ["IP", "P"].includes(row.letter_grade.toUpperCase())).length,
+    scenario: summary.scenario,
+    bestCase: summary.bestCase,
+    missingExpectedGrades: summary.missingExpectedGrades,
     targetGrade,
     targetReachable: targetAlreadyReached || targetGrade !== null,
     targetAlreadyReached
@@ -68,4 +88,8 @@ export function initialGpaScenarioChoices(rows: readonly PlanCourse[]): GpaScena
       included: true,
       expectedGrade: row.letter_grade && !["IP", "P"].includes(row.letter_grade.toUpperCase()) ? row.letter_grade : null
     }));
+}
+
+export function setAllGpaScenarioGrades(choices: readonly GpaScenarioChoice[], grade: string): GpaScenarioChoice[] {
+  return choices.map((choice) => ({ ...choice, expectedGrade: grade }));
 }

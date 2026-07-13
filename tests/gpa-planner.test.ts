@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlanCourse } from "@/lib/models";
-import { evaluateGpaScenario, initialGpaScenarioChoices, scenarioRows } from "@/lib/gpa-planner";
+import { calculateGpaScenario, evaluateGpaScenario, initialGpaScenarioChoices, scenarioRows, setAllGpaScenarioGrades } from "@/lib/gpa-planner";
 
 function row(id: string, status: PlanCourse["status"], grade: string | null, weighted = false): PlanCourse {
   return {
@@ -56,5 +56,12 @@ describe("GPA scenario planning", () => {
     const result = evaluateGpaScenario(rows, choices, 4.5);
     expect(result.missingExpectedGrades).toBe(1);
     expect(result.targetReachable).toBe(false);
+  });
+
+  it("sets one selected grade across every open-course assumption", () => {
+    const rows = [row("current", "current", null), row("plan", "planned", null, true)];
+    const choices = setAllGpaScenarioGrades(initialGpaScenarioChoices(rows), "B+");
+    expect(choices.map((choice) => choice.expectedGrade)).toEqual(["B+", "B+"]);
+    expect(calculateGpaScenario(rows, choices).missingExpectedGrades).toBe(0);
   });
 });
