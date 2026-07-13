@@ -232,6 +232,16 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   position: relative;
   background: #0c0d0f;
 }
+.auth-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgb(12 13 15 / 0.76) 0%, rgb(12 13 15 / 0.38) 38%, rgb(12 13 15 / 0.18) 68%, rgb(12 13 15 / 0.28) 100%),
+    linear-gradient(0deg, rgb(12 13 15 / 0.38) 0%, transparent 38%, rgb(12 13 15 / 0.16) 100%);
+  pointer-events: none;
+}
 .auth-page-background {
   position: absolute;
   inset: 0;
@@ -260,16 +270,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   color: #f4f1f2;
   position: relative;
   z-index: 2;
-}
-.auth-story::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  background:
-    linear-gradient(90deg, rgb(12 13 15 / 0.76) 0%, rgb(12 13 15 / 0.3) 48%, rgb(12 13 15 / 0.08) 100%),
-    linear-gradient(0deg, rgb(12 13 15 / 0.38) 0%, transparent 38%, rgb(12 13 15 / 0.16) 100%);
-  pointer-events: none;
 }
 .auth-story > .wordmark,
 .auth-story-copy {
