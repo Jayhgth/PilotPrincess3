@@ -1652,7 +1652,6 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-search-start strong, .smccd-search-empty strong { font-size: 14px; }
 .smccd-search-start p, .smccd-search-empty p { max-width: 48ch; margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .smccd-search-empty { min-height: 120px; border: 0; border-top: 1px solid var(--line); }
-.catalog-limit-note { margin: 10px 0 0; color: var(--ink-faint); font-size: 12px; }
 .smccd-selection-panel { position: sticky; top: 18px; min-height: 280px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-raised); padding: 16px; }
 .smccd-course-draft { display: grid; gap: 13px; }
 .smccd-selection-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 8px; }

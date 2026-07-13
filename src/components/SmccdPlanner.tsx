@@ -645,7 +645,6 @@ export default function SmccdPlanner({
         onSelect={(id) => { const course = courses.find((candidate) => candidate.id === id); if (course) chooseCourse(course); }}
         emptyTitle={search.trim() ? "No matching courses" : "No eligible courses in this view"}
         emptyBody={search.trim() ? "Try another code or title. Courses already in your plan stay hidden." : "Choose another college."}
-        footer={visibleCourses.length === 80 ? <p className="catalog-limit-note">Refine the search to narrow these results.</p> : undefined}
         detail={selectedCourse && selectedPrerequisiteEvaluation ? <CourseDetailLayout
           identity={<span className="catalog-detail-institution"><InstitutionMark institution={selectedCourse.college_code} decorative />{SMCCD_COLLEGE_NAMES[selectedCourse.college_code]}</span>}
           code={selectedCourse.course_code}
