@@ -527,6 +527,10 @@ export interface AssistantChatOptions {
 
 type PlanCourseStatus = "completed" | "current" | "planned";
 type ScheduleAnswer = { kind: "unit_limit" | "add_schedule"; accepted: boolean };
+type ScheduleProposalAction =
+  | { kind: "ask" }
+  | { kind: "decline" }
+  | { kind: "propose"; respectRecommendedLimit: boolean };
 
 function requestedBulkCourseMove(normalized: string): { source: PlanCourseStatus | "all"; target: PlanCourseStatus } | null {
   if (!/\b(move|mark|set)\b/.test(normalized)) return null;
@@ -599,6 +603,21 @@ export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null 
   if (/(?:unit|district).*limit|college coursework within/.test(prompt)) return { kind: "unit_limit", accepted };
   if (/\badd\b.*\bschedule\b.*\bplan\b/.test(prompt)) return { kind: "add_schedule", accepted };
   return null;
+}
+
+export function scheduleProposalAction(reviewMode: AiReviewMode, userMessage: string): ScheduleProposalAction {
+  const answer = parseScheduleAnswer(userMessage);
+  if (!answer) {
+    return reviewMode === "auto_review"
+      ? { kind: "propose", respectRecommendedLimit: true }
+      : { kind: "ask" };
+  }
+  if (answer.kind === "add_schedule") {
+    return answer.accepted
+      ? { kind: "propose", respectRecommendedLimit: true }
+      : { kind: "decline" };
+  }
+  return { kind: "propose", respectRecommendedLimit: answer.accepted };
 }
 
 export function assistantMessagePromisesFutureWork(message: string) {
@@ -806,9 +825,9 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
           }
           if (ids.length !== courses.length || ids.length > 24) throw new Error("The generated schedule did not return a safe batch of course IDs.");
-          const answer = parseScheduleAnswer(options.userMessage);
+          const scheduleAction = scheduleProposalAction(options.reviewMode, options.userMessage);
           const preview = schedulePreview(courses);
-          if (!answer) {
+          if (scheduleAction.kind === "ask") {
             const includesCollegeCourses = courses.some((course) => Number(course.college_units ?? 0) > 0);
             return {
               message: preview,
@@ -832,7 +851,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          if (answer.kind === "add_schedule" && !answer.accepted) {
+          if (scheduleAction.kind === "decline") {
             return {
               message: "I left your plan unchanged.",
               questions: [],
@@ -843,7 +862,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          const respectsLimit = requiredRead.arguments.respect_recommended_limit !== false;
+          const respectsLimit = scheduleAction.respectRecommendedLimit;
           const proposal: AssistantChatToolActivity = {
             id: crypto.randomUUID(),
             name: "add_course_schedule",

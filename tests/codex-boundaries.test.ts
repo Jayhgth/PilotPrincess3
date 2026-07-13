@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, scheduleProposalAction } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -121,6 +121,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("separate approval reviewer");
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
+    expect(prompt).toContain("an explicit request to generate, suggest, or build a schedule may approve");
     expect(prompt).toContain("a structured Yes or No answer to Pilot's unit-limit question may approve");
     expect(prompt).toContain('"program_type":"concurrent"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
@@ -201,6 +202,10 @@ describe("Codex feature boundaries", () => {
     expect(requiredAssistantEvidenceRead("Suggest a study schedule for finals")).toBeNull();
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "add_schedule", accepted: false });
+    expect(scheduleProposalAction("auto_review", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
+    expect(scheduleProposalAction("manual", "Suggest a schedule for me.")).toEqual({ kind: "ask" });
+    expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "decline" });
+    expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Keep college coursework within the district limit?** No")).toEqual({ kind: "propose", respectRecommendedLimit: false });
   });
 
   it("rejects ungrounded promises to inspect app data later", () => {
