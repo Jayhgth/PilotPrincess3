@@ -2384,6 +2384,14 @@ textarea,
 /* Four-year course schedule and rule-aware graduation */
 .course-plan-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .course-plan-toolbar p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.course-grade-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
+.course-grade-tabs button { display: grid; min-width: 0; gap: 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-soft); padding: 9px 12px 8px; text-align: left; }
+.course-grade-tabs button:hover { background: var(--surface-muted); color: var(--ink); }
+.course-grade-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent); outline-offset: -3px; }
+.course-grade-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
+.course-grade-tabs button.completed:not([aria-selected="true"]) { color: var(--ink-faint); }
+.course-grade-tabs span { overflow: hidden; font-size: var(--type-body); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.course-grade-tabs small { overflow: hidden; color: var(--ink-faint); font-size: var(--type-supporting); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .course-year-board { display: grid; gap: 14px; }
 .course-year { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
 .course-year.completed { background: color-mix(in srgb, var(--surface-muted) 68%, var(--bg)); opacity: .64; }
@@ -2499,6 +2507,7 @@ textarea,
   .smccd-ge-page-heading select { width: 100%; }
   .course-plan-toolbar { align-items: stretch; flex-direction: column; }
   .course-plan-toolbar .secondary-button { align-self: flex-start; }
+  .course-grade-tabs { overflow-x: auto; grid-template-columns: repeat(4, minmax(112px, 1fr)); }
   .course-year-terms { grid-template-columns: 1fr; }
   .course-term-lane { border-top: 1px solid var(--line); border-left: 0; }
   .course-term-lane:first-child { border-top: 0; }

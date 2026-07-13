@@ -31,11 +31,12 @@ function row(id: string, name: string, gradeLevel: PlanCourse["grade_level"], st
 }
 
 describe("four-year course board", () => {
-  it("renders every high-school year with three terms and locks completed evidence", () => {
+  it("opens the current grade and keeps every school year one click away", () => {
     const html = renderToStaticMarkup(createElement(CourseKanban, {
       rows: [
-        row("completed", "Completed Algebra", 9, "completed", "full_year"),
-        row("future", "Future English", 12, "planned", "spring")
+        row("completed", "Completed Algebra", 11, "completed", "full_year"),
+        row("current", "Current English", 11, "current", "spring"),
+        row("future", "Future Physics", 12, "planned", "fall")
       ],
       courses: [],
       smccdCourses: [],
@@ -49,10 +50,14 @@ describe("four-year course board", () => {
       onGeneratePlan: () => undefined
     }));
 
-    expect(html.match(/class="course-year /g)).toHaveLength(4);
-    expect(html.match(/class="course-term-lane /g)).toHaveLength(12);
+    expect(html.match(/role="tab"/g)).toHaveLength(4);
+    expect(html.match(/aria-selected="true"/g)).toHaveLength(1);
+    expect(html).toContain('id="course-grade-11"');
+    expect(html.match(/class="course-year /g)).toHaveLength(1);
+    expect(html.match(/class="course-term-lane /g)).toHaveLength(3);
     expect(html).toContain("Completed courses cannot move");
-    expect(html).toContain("Move Future English. Drag this card to another school year or term.");
+    expect(html).toContain("Move Current English. Drag this card to another school year or term.");
+    expect(html).not.toContain("Future Physics");
     expect(html).toContain("Full year");
   });
 });

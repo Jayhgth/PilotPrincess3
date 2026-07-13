@@ -19,11 +19,38 @@ Comments
 Legend
 `;
 
+const TERM_COLUMNS = { summer: 52, fall: 64, spring: 76 };
+
+function placeCells(label: string, values: Partial<Record<keyof typeof TERM_COLUMNS, string>>) {
+  let line = label;
+  for (const term of ["summer", "fall", "spring"] as const) {
+    if (!values[term]) continue;
+    line = line.padEnd(TERM_COLUMNS[term], " ") + values[term];
+  }
+  return line;
+}
+
+const TRANSCRIPT_LAYOUT = [
+  placeCells("GR Course", { summer: "S0 CR", fall: "S1 CR", spring: "S2 CR" }),
+  "25-26 College of San Mateo",
+  placeCells("11 * CIS 127 HTML5 and CSS", { fall: "A 5.0" }),
+  "25-26 Design Tech High School",
+  placeCells("11 * Advanced Physics Honors", { fall: "A 5.0", spring: "A 5.0" }),
+  placeCells("11 Q1 Internship/TA (Teacher's Assistant)", { fall: "P 2.5" }),
+  "24-25 Skyline College",
+  placeCells("10 * CIS 255 (CS1) Programming Methods:Java", { spring: "A 10.0" }),
+  "24-25 Design Tech High School",
+  placeCells("10 * Chemistry", { fall: "A 5.0", spring: "A 5.0" }),
+  placeCells("10 * D.Lab: CoDesigners Honors", { fall: "A 5.0", spring: "A- 5.0" }),
+  "Comments",
+  "Legend"
+].join("\n");
+
 describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
-    const result = parseDtechTranscriptText(TRANSCRIPT_TEXT);
+    const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.3.0");
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.4.0");
     expect(result.courses).toHaveLength(6);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
@@ -34,6 +61,7 @@ describe("deterministic d.tech transcript parser", () => {
       grade_level: 11,
       letter_grade: "A",
       credits: 5,
+      term: "fall",
       weighted: true
     });
     expect(result.courses.find((course) => course.course_name.includes("Internship"))).toMatchObject({
@@ -43,12 +71,13 @@ describe("deterministic d.tech transcript parser", () => {
       weighted: false
     });
     expect(result.courses.find((course) => course.course_name === "Chemistry")).toMatchObject({
+      term: "full_year",
       weighted: false
     });
   });
 
   it("joins wrapped course titles and preserves reviewable grade conflicts", () => {
-    const result = parseDtechTranscriptText(TRANSCRIPT_TEXT);
+    const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
     const programming = result.courses.find((course) => course.course_code === "CIS 255");
     const dlab = result.courses.find((course) => course.course_name.includes("CoDesigners"));
 
@@ -56,7 +85,8 @@ describe("deterministic d.tech transcript parser", () => {
       course_name: "CIS 255 (CS1) Programming Methods:Java",
       institution_name: "Skyline College",
       letter_grade: "A",
-      credits: 10
+      credits: 10,
+      term: "spring"
     });
     expect(dlab).toMatchObject({ letter_grade: "A-", credits: 10, confidence: "likely", weighted: true });
     expect(result.conflicts).toEqual([]);
@@ -82,6 +112,7 @@ Comments
       course_name: "Documentary Film",
       subject: "Personal Development",
       letter_grade: "P",
+      term: "fall",
       weighted: false
     });
     expect(result.courses[0].evidence).toContain("intersession pass/fail course");
@@ -90,9 +121,21 @@ Comments
       course_name: "Experimental Studio",
       subject: "Personal Development",
       letter_grade: "F",
+      term: "fall",
       credits: 0,
       weighted: false
     });
     expect(result.courses[1].evidence).not.toContain("Personal Development credit");
+  });
+
+  it("does not silently invent a semester when flattened text loses the column", () => {
+    const result = parseDtechTranscriptText(`
+25-26 College of San Mateo
+11 * CIS 127 HTML5 and CSS A 5.0
+Comments
+`);
+
+    expect(result.courses[0]).toMatchObject({ term: "full_year", confidence: "uncertain" });
+    expect(result.conflicts[0]).toContain("semester column was not available");
   });
 });

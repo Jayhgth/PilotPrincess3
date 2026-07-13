@@ -63,6 +63,7 @@ export const POST: APIRoute = async ({ request }) => {
 
   try {
     let extractedText = source.raw_text ?? "";
+    let layoutText = "";
     let attachments: Array<{ type: "local_image"; path: string }> = [];
     let extractionNote = source.raw_text ? "Pasted transcript text supplied by the student." : "";
 
@@ -75,9 +76,11 @@ export const POST: APIRoute = async ({ request }) => {
         Buffer.from(await file.arrayBuffer()),
         source.mime_type ?? file.type,
         basename(source.storage_path),
-        scratchDirectory
+        scratchDirectory,
+        { preserveTableLayout: true }
       );
       extractedText = extracted.text;
+      layoutText = extracted.layoutText ?? "";
       attachments = extracted.attachments.filter(
         (entry): entry is { type: "local_image"; path: string } => entry.type === "local_image"
       );
@@ -99,7 +102,7 @@ export const POST: APIRoute = async ({ request }) => {
     let aiUsage: { input_tokens: number; cached_input_tokens: number; output_tokens: number; reasoning_output_tokens: number } | null = null;
     if (extractedText.trim()) {
       const parserStartedAt = Date.now();
-      parsedResult = parseDtechTranscriptText(extractedText);
+      parsedResult = parseDtechTranscriptText(extractedText, layoutText);
       parserLatencyMs = Date.now() - parserStartedAt;
       parserMethod = "deterministic_text";
     } else {
@@ -109,6 +112,7 @@ export const POST: APIRoute = async ({ request }) => {
       const prompt = [
         "This transcript has no usable text layer and is provided as images. Extract only courses explicitly shown as completed or carrying a final grade.",
         "For every course, preserve the printed course name, institution, grade level, school year, term, final letter grade, high-school credits, college units, and weighting when present.",
+        "Read the transcript's semester columns directly: S0 is summer, S1 is fall, and S2 is spring. A row graded in both S1 and S2 is full_year; a row graded in only one column belongs to that specific term. Never turn a single semester grade into full_year.",
         "On d.tech transcripts, Q1 through Q4 rows graded P or F are intersession pass/fail courses. Preserve the Q prefix and use Personal Development as the subject; they are not expected to have an annual d.tech catalog match.",
         "Do not treat in-progress, requested, or planned courses as completed. Omit them from courses and mention them in conflicts when relevant.",
         "Use verified only when the field is explicit and legible. Use uncertain for inferred, incomplete, or conflicting values.",

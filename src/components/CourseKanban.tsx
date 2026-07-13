@@ -202,7 +202,9 @@ function TermLane({
 }
 
 export default function CourseKanban(props: CourseKanbanProps) {
+  const currentGrade = (props.settings.grade_level ?? 9) as GradeLevel;
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(currentGrade);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 7 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
@@ -211,8 +213,13 @@ export default function CourseKanban(props: CourseKanbanProps) {
   const courseMap = useMemo(() => new Map(props.courses.map((course) => [course.id, course])), [props.courses]);
   const smccdCourseMap = useMemo(() => new Map(props.smccdCourses.map((course) => [course.id, course])), [props.smccdCourses]);
   const activeRow = useMemo(() => activeId ? props.rows.find((row) => row.id === activeId) ?? null : null, [activeId, props.rows]);
-  const currentGrade = (props.settings.grade_level ?? 9) as GradeLevel;
   const graduationYear = props.settings.graduation_year ?? new Date().getFullYear() + (12 - currentGrade);
+  const selectedRows = useMemo(
+    () => props.rows.filter((row) => row.grade_level === selectedGrade).sort((left, right) => left.sort_order - right.sort_order),
+    [props.rows, selectedGrade]
+  );
+  const selectedYearLocked = selectedGrade < currentGrade;
+  const selectedYearState = selectedYearLocked ? "completed" : selectedGrade === currentGrade ? "current" : "future";
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
@@ -233,22 +240,39 @@ export default function CourseKanban(props: CourseKanbanProps) {
 
   return (
     <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragCancel={() => setActiveId(null)} onDragEnd={handleDragEnd}>
-      <div className="course-plan-toolbar"><p>Drag unlocked courses between open years and terms. Completed years and courses stay visible but locked.</p><button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button></div>
-      <section className="course-year-board" aria-label="Four-year course plan">
+      <div className="course-plan-toolbar"><p>Choose a grade, then drag unlocked courses between terms. Use Edit to move a course to another school year.</p><button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button></div>
+      <div className="course-grade-tabs" role="tablist" aria-label="High school year">
         {GRADE_LEVELS.map((grade) => {
-          const rows = props.rows.filter((row) => row.grade_level === grade).sort((left, right) => left.sort_order - right.sort_order);
-          const locked = grade < currentGrade;
-          const state = locked ? "completed" : grade === currentGrade ? "current" : "future";
-          return <section className={`course-year ${state}`} aria-labelledby={`course-year-${grade}`} key={grade}>
-            <header className="course-year-header"><div><h2 id={`course-year-${grade}`}>Grade {grade}</h2><p>{schoolYearForGrade(graduationYear, grade)}</p></div><strong>{rows.length} {rows.length === 1 ? "course" : "courses"}</strong></header>
-            <div className="course-year-terms">{BOARD_TERMS.map((term) => {
-              const termRows = rows.filter((row) => boardTerm(row) === term);
-              return <TermLane grade={grade} term={term} rows={termRows} locked={locked} key={term}>
-                {termRows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} settings={props.settings} sectionLocked={locked} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
-              </TermLane>;
-            })}</div>
-          </section>;
+          const courseCount = props.rows.filter((row) => row.grade_level === grade).length;
+          const state = grade < currentGrade ? "completed" : grade === currentGrade ? "current" : "future";
+          return <button
+            id={`course-grade-${grade}`}
+            className={state}
+            type="button"
+            role="tab"
+            aria-selected={selectedGrade === grade}
+            aria-controls={`course-year-${grade}`}
+            onClick={() => {
+              setSelectedGrade(grade);
+              props.onEditingChange(null);
+            }}
+            key={grade}
+          >
+            <span>Grade {grade}</span>
+            <small>{courseCount} {courseCount === 1 ? "course" : "courses"}</small>
+          </button>;
         })}
+      </div>
+      <section className="course-year-board" aria-label="Four-year course plan">
+        <section className={`course-year ${selectedYearState}`} id={`course-year-${selectedGrade}`} role="tabpanel" aria-labelledby={`course-grade-${selectedGrade}`}>
+          <header className="course-year-header"><div><h2>Grade {selectedGrade}</h2><p>{schoolYearForGrade(graduationYear, selectedGrade)}</p></div><strong>{selectedRows.length} {selectedRows.length === 1 ? "course" : "courses"}</strong></header>
+          <div className="course-year-terms">{BOARD_TERMS.map((term) => {
+            const termRows = selectedRows.filter((row) => boardTerm(row) === term);
+            return <TermLane grade={selectedGrade} term={term} rows={termRows} locked={selectedYearLocked} key={term}>
+              {termRows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} settings={props.settings} sectionLocked={selectedYearLocked} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={row.id} />)}
+            </TermLane>;
+          })}</div>
+        </section>
       </section>
       <DragOverlay dropAnimation={{ duration: 150, easing: "cubic-bezier(.2,.8,.2,1)" }}>
         {activeRow && <div className="course-drag-preview"><HandGrabbing size={19} weight="bold" /><span><strong>{courseDisplayName(activeRow, courseMap)}</strong><small>Release over a year and term</small></span></div>}
