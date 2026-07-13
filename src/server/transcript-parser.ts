@@ -5,8 +5,10 @@ const COURSE_ROW_PATTERN = /^(9|10|11|12)\s+(\*)?\s*(.+)$/;
 const GRADE_CREDIT_PATTERN = /\b(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F|P|I|IP|NP|W)\s+(\d{1,3}(?:\.\d+)?)\b/g;
 const COLLEGE_CODE_PATTERN = /^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)\b/;
 const DISTRICT_COLLEGES = ["College of San Mateo", "Skyline College", "Cañada College", "Canada College"];
+const PDF_PAGE_MARKER_PATTERN = /^\[\[PILOT_PDF_PAGE:\d+\]\]$/;
+const TRANSCRIPT_COLUMN_MARKER = "[[PILOT_TRANSCRIPT_COLUMN]]";
 
-export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.4.0";
+export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.5.0";
 
 type TranscriptTerm = "fall" | "spring" | "summer" | "full_year";
 
@@ -99,8 +101,44 @@ function dtechGradeBand(grade: string) {
   return /^[A-D]/.test(grade) ? grade[0] : grade;
 }
 
+function linearizeTranscriptColumns(layoutText: string) {
+  const output: string[] = [];
+  let pageLines: string[] = [];
+
+  const flushPage = () => {
+    if (pageLines.length === 0) return;
+    const repeatedHeader = pageLines
+      .map((line) => [...line.matchAll(/\bGR\s+Course\b/gi)])
+      .find((matches) => matches.length > 1);
+    const rightColumnStart = repeatedHeader?.[1]?.index;
+
+    if (rightColumnStart === undefined) {
+      output.push(...pageLines);
+      pageLines = [];
+      return;
+    }
+
+    const leftColumn = pageLines.map((line) => line.slice(0, rightColumnStart).trimEnd());
+    const rightColumn = pageLines.map((line) => line.slice(rightColumnStart).trimEnd());
+    output.push(...leftColumn, TRANSCRIPT_COLUMN_MARKER, ...rightColumn);
+    pageLines = [];
+  };
+
+  for (const line of layoutText.split(/\r?\n/)) {
+    if (PDF_PAGE_MARKER_PATTERN.test(line.trim())) {
+      flushPage();
+      output.push(line.trim());
+      continue;
+    }
+    pageLines.push(line);
+  }
+  flushPage();
+  return output.join("\n");
+}
+
 export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedTranscriptResult {
-  const lines = (layoutText.trim() || text)
+  const parserInput = layoutText.trim() ? linearizeTranscriptColumns(layoutText) : text;
+  const lines = parserInput
     .split(/\r?\n/)
     .map((raw) => ({ raw: raw.replace(/\t/g, "    ").trimEnd(), normalized: raw.replace(/\s+/g, " ").trim() }))
     .filter((line) => Boolean(line.normalized));
@@ -111,6 +149,7 @@ export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedT
   let section: TranscriptSection | null = null;
   let pending: PendingCourse | null = null;
   let termColumns: TermColumns | null = null;
+  let ignoringMetadata = false;
 
   const flush = () => {
     if (!pending) return;
@@ -164,19 +203,23 @@ export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedT
   };
 
   for (const line of lines) {
-    if (/^(Comments|Legend|P\s*=|I\s*=|S0\s*=|Signature|Director|--\s*\d+\s+of)/i.test(line.normalized)) {
+    if (PDF_PAGE_MARKER_PATTERN.test(line.normalized) || line.normalized === TRANSCRIPT_COLUMN_MARKER) {
       flush();
-      if (/^(Comments|Legend)/i.test(line.normalized)) break;
+      termColumns = null;
+      ignoringMetadata = false;
       continue;
     }
     if (/^GR\s+Course\b/i.test(line.normalized)) {
+      flush();
       termColumns = termColumnsFromHeader(line.raw);
+      ignoringMetadata = false;
       continue;
     }
 
     const sectionMatch = line.normalized.match(SECTION_PATTERN);
     if (sectionMatch && /(High School|College)/i.test(sectionMatch[2])) {
       flush();
+      ignoringMetadata = false;
       const institution = sectionMatch[2].replace(/^Canada College$/i, "Cañada College");
       section = {
         schoolYear: sectionMatch[1],
@@ -185,6 +228,17 @@ export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedT
       };
       academicYears.add(fullSchoolYear(sectionMatch[1]));
       institutions.add(institution);
+      continue;
+    }
+
+    if (/^(Comments|Legend)/i.test(line.normalized)) {
+      flush();
+      ignoringMetadata = true;
+      continue;
+    }
+    if (ignoringMetadata) continue;
+    if (/^(P\s*=|I\s*=|S0\s*=|Signature|Director|--\s*\d+\s+of)/i.test(line.normalized)) {
+      flush();
       continue;
     }
 

@@ -52,7 +52,7 @@ async function extractPositionedPdfText(parser: PDFParse) {
 
     lines.sort((left, right) => left.y - right.y);
     const pageMinX = Math.min(...lines.flatMap((line) => line.items.map((item) => item.x)));
-    pages.push(lines.map((line) => {
+    const pageText = lines.map((line) => {
       let value = "";
       for (const item of line.items.sort((left, right) => left.x - right.x)) {
         const column = Math.max(0, Math.round((item.x - pageMinX) / 4));
@@ -60,7 +60,8 @@ async function extractPositionedPdfText(parser: PDFParse) {
         value += item.text;
       }
       return value.trimEnd();
-    }).join("\n"));
+    }).join("\n");
+    pages.push(`[[PILOT_PDF_PAGE:${pageNumber}]]\n${pageText}`);
     page.cleanup();
   }
 

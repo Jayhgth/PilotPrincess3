@@ -30,6 +30,14 @@ function placeCells(label: string, values: Partial<Record<keyof typeof TERM_COLU
   return line;
 }
 
+function sideBySide(left: string[], right: string[], columnWidth = 96) {
+  return Array.from({ length: Math.max(left.length, right.length) }, (_, index) => {
+    const leftLine = left[index] ?? "";
+    const rightLine = right[index] ?? "";
+    return leftLine.padEnd(columnWidth, " ") + rightLine;
+  }).join("\n");
+}
+
 const TRANSCRIPT_LAYOUT = [
   placeCells("GR Course", { summer: "S0 CR", fall: "S1 CR", spring: "S2 CR" }),
   "25-26 College of San Mateo",
@@ -50,7 +58,7 @@ describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.4.0");
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.5.0");
     expect(result.courses).toHaveLength(6);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
@@ -137,5 +145,67 @@ Comments
 
     expect(result.courses[0]).toMatchObject({ term: "full_year", confidence: "uncertain" });
     expect(result.conflicts[0]).toContain("semester column was not available");
+  });
+
+  it("reads both table columns and continues across PDF pages", () => {
+    const header = placeCells("GR Course", { summer: "S0 CR", fall: "S1 CR", spring: "S2 CR" });
+    const layout = [
+      "[[PILOT_PDF_PAGE:1]]",
+      sideBySide(
+        [
+          header,
+          "25-26 Design Tech High School",
+          placeCells("11 * English 3", { fall: "A 5.0", spring: "A 5.0" }),
+          placeCells("11 * Physics", { spring: "B 5.0" }),
+          "Comments",
+          "Legend",
+          "P = Pass"
+        ],
+        [
+          header,
+          "24-25 Design Tech High School",
+          placeCells("10 * World History", { fall: "A 5.0", spring: "A 5.0" }),
+          "24-25 Skyline College",
+          placeCells("10 * CIS 110 Introduction to Computer Science", { spring: "A 3.0" }),
+          "Comments",
+          "Legend"
+        ]
+      ),
+      "[[PILOT_PDF_PAGE:2]]",
+      sideBySide(
+        [
+          header,
+          "23-24 Design Tech High School",
+          placeCells("9 * Algebra 1", { fall: "B 5.0", spring: "B 5.0" }),
+          "Comments",
+          "Legend"
+        ],
+        [
+          header,
+          "25-26 College of San Mateo",
+          placeCells("11 * HIST 101 History of Western Civilization I", { fall: "A 3.0" }),
+          "Comments",
+          "Legend"
+        ]
+      )
+    ].join("\n");
+
+    const result = parseDtechTranscriptText("", layout);
+
+    expect(result.courses).toHaveLength(6);
+    expect(result.academic_years).toEqual(["2023-2024", "2024-2025", "2025-2026"]);
+    expect(result.courses.map((course) => course.course_name)).toEqual([
+      "English 3",
+      "Physics",
+      "World History",
+      "CIS 110 Introduction to Computer Science",
+      "Algebra 1",
+      "HIST 101 History of Western Civilization I"
+    ]);
+    expect(result.courses.find((course) => course.course_name === "Physics")).toMatchObject({ term: "spring" });
+    expect(result.courses.find((course) => course.course_code === "HIST 101")).toMatchObject({
+      institution_name: "College of San Mateo",
+      term: "fall"
+    });
   });
 });
