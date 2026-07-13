@@ -1576,7 +1576,6 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-degree-loading { min-height: 240px; justify-content: center; border: 1px solid var(--line); background: var(--surface); }
 .smccd-workspace { --accent: var(--pilot-brand); --accent-hover: color-mix(in srgb, var(--pilot-brand) 84%, var(--ink)); --accent-soft: var(--pilot-soft); }
 .dual-enrollment-tabs { margin-bottom: 16px; }
-.dual-enrollment-tabs button i { background: var(--dual-ui); }
 .smccd-degree-transition { min-width: 0; }
 .smccd-goal-section, .smccd-catalog-section, .smccd-plan-section { margin-bottom: 16px; }
 .smccd-goal-section { border: 0; background: transparent; padding: 0; }
@@ -1588,7 +1587,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-program-toolbar { display: flex; width: min(420px, 100%); max-width: none; align-items: center; justify-content: flex-end; gap: 10px; }
 .smccd-program-toolbar .search-box { width: min(260px, 100%); }
 .smccd-program-toolbar > span { flex: 0 0 auto; color: var(--ink-faint); font-size: var(--type-supporting); }
-.smccd-degree-browser { display: grid; width: 100%; max-width: 860px; justify-self: center; }
+.smccd-degree-browser { display: grid; width: 100%; }
 .smccd-degree-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .smccd-degree-column { width: 69.5%; }
 .smccd-progress-column { width: 17.7%; }
@@ -1658,7 +1657,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-general-education > header > div { display: grid; gap: 3px; }
 .smccd-general-education h3 { margin: 0; font-size: var(--type-section); font-weight: 650; }
 .smccd-general-education header p, .smccd-general-education header > span { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.smccd-ge-list { display: grid; width: 100%; max-width: 860px; justify-self: center; }
+.smccd-ge-list { display: grid; width: 100%; }
 .smccd-ge-row { display: grid; grid-template-columns: auto minmax(300px, 1fr) minmax(220px, 320px); gap: 18px; border-bottom: 1px solid var(--line); padding: 18px 0; }
 .smccd-ge-row:first-child { padding-top: 0; }
 .smccd-ge-row:last-child { border-bottom: 0; }
@@ -1740,6 +1739,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
   border-bottom: 1px solid var(--line);
 }
 .workspace-tabs button {
+  --tab-indicator: var(--accent);
   position: relative;
   display: flex;
   min-height: 39px;
@@ -1747,6 +1747,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
   align-items: center;
   gap: 7px;
   border: 0;
+  border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--ink-soft);
   padding: 0 1px;
@@ -1756,12 +1757,13 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 }
 .workspace-tabs button:hover,
 .workspace-tabs button.active { color: var(--ink); }
+.workspace-tabs button.active,
+.workspace-tabs button:focus-visible { border-bottom-color: var(--tab-indicator); outline: none; }
 .workspace-tabs button strong { color: var(--ink-faint); font-size: 12px; }
-.workspace-tabs button i { position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; background: var(--accent); }
+.course-workspace-tabs button:nth-child(2) { --tab-indicator: var(--dtech-ui); }
+.course-workspace-tabs button:nth-child(3) { --tab-indicator: var(--dual-ui); }
 .course-workspace-tabs button:nth-child(2).active { color: var(--dtech-ui); }
-.course-workspace-tabs button:nth-child(2) i { background: var(--dtech-ui); }
 .course-workspace-tabs button:nth-child(3).active { color: var(--dual-ui); }
-.course-workspace-tabs button:nth-child(3) i { background: var(--dual-ui); }
 .dual-enrollment-tabs button.active { color: var(--dual-ui); }
 
 .coverage-segments { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; gap: 4px; width: 100%; }
@@ -1831,12 +1833,10 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 
 .graduation-workspace { min-width: 0; }
 .graduation-workspace-tabs { margin-bottom: 18px; }
+.graduation-workspace-tabs button:nth-child(1) { --tab-indicator: var(--dtech-brand); }
 .graduation-workspace-tabs button:nth-child(1).active { color: var(--dtech-ui); }
-.graduation-workspace-tabs button:nth-child(1) i { background: var(--dtech-brand); }
 .graduation-workspace-tabs button:nth-child(2).active,
 .graduation-workspace-tabs button:nth-child(3).active { color: var(--accent); }
-.graduation-workspace-tabs button:nth-child(2) i,
-.graduation-workspace-tabs button:nth-child(3) i { background: var(--accent); }
 .graduation-view-transition { min-width: 0; }
 .eligibility-summary { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); gap: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 22px; }
 .eligibility-summary.dtech { background: color-mix(in srgb, var(--dtech-soft) 34%, var(--surface)); }

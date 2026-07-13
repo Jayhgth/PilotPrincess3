@@ -64,12 +64,11 @@ export default function GraduationWorkspace({
         items={[
           { id: "diploma", label: "d.tech diploma", count: diplomaMissing },
           { id: "degree", label: "Associate degree" },
-          { id: "general_education", label: "General education" }
+          { id: "general_education", label: "College gen-ed" }
         ]}
         value={view}
         onChange={changeView}
         label="Graduation and eligibility views"
-        layoutId="graduation-view-indicator"
       />
 
       <div className="graduation-view-transition">

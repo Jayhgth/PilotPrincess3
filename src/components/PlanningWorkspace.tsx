@@ -1518,7 +1518,7 @@ export default function PlanningWorkspace() {
     if (!settings || !supabase || !session || !activeVersion) return null;
     return (
       <div className="graduation-page page-frame">
-        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress and bookmarked associate-degree plans." />
+        <PageHeader title="Graduation" description="Source-backed d.tech diploma progress, associate-degree plans, and college gen-ed." />
         <GraduationWorkspace
           progress={fullProgress}
           onFindDtechCourses={openRequirementCourses}
@@ -1676,7 +1676,7 @@ export default function PlanningWorkspace() {
       : [];
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A board for finished work, current classes, and what comes next." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" layoutId="course-area-indicator" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "d.tech courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
       {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && <aside className="enrollment-policy-callout" role="status">
         <Warning size={18} weight="fill" aria-hidden />
         <div>

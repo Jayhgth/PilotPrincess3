@@ -635,7 +635,7 @@ export default function SmccdPlanner({
             <div><dt>Degree credit</dt><dd>{selectedCourse.degree_applicable ? "Yes" : "No"}</dd></div>
             <div><dt>Source</dt><dd>{selectedCourse.detail_status === "verified" ? "Course page" : "Needs review"}</dd></div>
           </dl>
-          {(selectedCourse.attributes ?? []).length > 0 && <div className="catalog-attribute-list"><strong>General education</strong>{selectedCourse.attributes.map((attribute) => <span key={attribute}>{attribute}</span>)}</div>}
+          {(selectedCourse.attributes ?? []).length > 0 && <div className="catalog-attribute-list"><strong>College gen-ed</strong>{selectedCourse.attributes.map((attribute) => <span key={attribute}>{attribute}</span>)}</div>}
           {selectedEquivalency && <dl className="catalog-equivalency-summary"><div><dt>d.tech credit</dt><dd>{selectedEquivalency.high_school_credits} credits</dd></div><div><dt>Counts as</dt><dd>{selectedEquivalency.high_school_equivalent}</dd></div></dl>}
           <PrerequisiteReadout evaluation={selectedPrerequisiteEvaluation} recommendedPreparation={selectedCourse.recommended_preparation ?? []} />
           <form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
@@ -643,7 +643,7 @@ export default function SmccdPlanner({
             <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option><option value="summer">Summer</option></select></label>
             <button className="primary-button" type="submit" disabled={busy}><Plus size={16} /> Add to plan</button>
           </form>
-        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select an SMCCD course</strong><p>Review transfer status, general education, d.tech credit, and prerequisite evidence.</p></div>}
+        </div> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select an SMCCD course</strong><p>Review transfer status, college gen-ed, d.tech credit, and prerequisite evidence.</p></div>}
       />}
 
       {!embedded && <section className="content-section smccd-plan-section">
@@ -718,11 +718,11 @@ export default function SmccdPlanner({
 
       {surface === "general_education" && <section className="content-section smccd-goal-section smccd-ge-page smccd-degree-transition">
         <header className="section-heading smccd-ge-page-heading">
-          <div><h2>General education</h2><p>Local AA and AS requirements matched against the active plan and transcript.</p></div>
+          <div><h2>College gen-ed</h2><p>Local AA and AS requirements matched against the active plan and transcript.</p></div>
           <label><span className="sr-only">College pattern</span><select value={geCollegeCode} onChange={(event) => setGeCollegeCode(event.target.value as SmccdCourse["college_code"])}><option value="CSM">College of San Mateo</option><option value="SKY">Skyline College</option><option value="CAN">Cañada College</option></select></label>
         </header>
         <section className="smccd-general-education" aria-labelledby="smccd-general-education-title">
-          <header><div><h3 id="smccd-general-education-title">{SMCCD_COLLEGE_NAMES[generalEducationCollege]} local general education</h3><p>Communication, physical activity, and every other local requirement remain visible.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} covered</span></header>
+          <header><div><h3 id="smccd-general-education-title">{SMCCD_COLLEGE_NAMES[generalEducationCollege]} gen-ed requirements</h3><p>Communication, physical activity, and every other local requirement remain visible.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} covered</span></header>
           <div className="smccd-ge-list">{generalEducationProgress.map((area) => {
             const planned = area.projectedCourseCodes.filter((code) => !area.completedCourseCodes.includes(code));
             const isSatisfied = area.status === "completed" || area.status === "planned";

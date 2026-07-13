@@ -17,7 +17,6 @@ export default function WorkspaceTabs<T extends string>({
   value: T;
   onChange: (value: T) => void;
   label: string;
-  layoutId: string;
   className?: string;
 }) {
   return (
@@ -50,7 +49,6 @@ export default function WorkspaceTabs<T extends string>({
             >
               <span>{item.label}</span>
               {typeof item.count === "number" && <strong>{item.count}</strong>}
-              {active && <i aria-hidden />}
             </button>
           );
         })}
