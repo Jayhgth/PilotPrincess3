@@ -48,6 +48,7 @@ export const GET: APIRoute = async ({ request }) => {
     messages,
     events,
     toolCalls,
+    memories,
     attachments,
     eventLogs
   ] = await Promise.all([
@@ -66,6 +67,7 @@ export const GET: APIRoute = async ({ request }) => {
     readAllUserRows(auth.supabase, "ai_messages", userId),
     readAllUserRows(auth.supabase, "ai_events", userId, { order: ["id"] }),
     readAllUserRows(auth.supabase, "ai_tool_calls", userId),
+    readAllUserRows(auth.supabase, "ai_student_memories", userId),
     readAllUserRows(auth.supabase, "ai_message_attachments", userId, { columns: "id,conversation_id,message_id,user_id,name,mime_type,size_bytes,created_at" }),
     readAllUserRows(auth.supabase, "event_logs", userId)
   ]);
@@ -85,6 +87,7 @@ export const GET: APIRoute = async ({ request }) => {
     messages.error,
     events.error,
     toolCalls.error,
+    memories.error,
     attachments.error,
     eventLogs.error
   ].find(Boolean);
@@ -122,6 +125,7 @@ export const GET: APIRoute = async ({ request }) => {
       messages: messages.data ?? [],
       events: events.data ?? [],
       tool_calls: toolCalls.data ?? [],
+      memories: memories.data ?? [],
       attachments: attachments.data ?? []
     },
     event_logs: eventLogs.data ?? []

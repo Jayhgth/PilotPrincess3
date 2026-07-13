@@ -780,6 +780,11 @@ describe("transcript import", () => {
       basis: "dtech_printed_honors",
       sourceId: environmentalScience.source_id
     });
+    expect(resolveTranscriptWeighting({ ...standard, weighted: true, weighting_basis: "student_correction" }, [environmentalScience])).toEqual({
+      weighted: true,
+      basis: "student_correction",
+      sourceId: null
+    });
 
     const reconciledDraft = transcriptPlanCourseDraft(
       {

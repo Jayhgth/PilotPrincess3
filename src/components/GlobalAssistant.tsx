@@ -202,6 +202,7 @@ const TOOL_LABELS: Record<string, string> = {
   evaluate_gpa_scenario: "GPA scenario",
   get_enrollment_constraints: "College unit limits",
   get_course_schedule_options: "Course schedule options",
+  get_prerequisite_evidence: "Prerequisite evidence",
   get_degree_progress: "Degree progress",
   get_college_goal: "Degree bookmarks",
   search_smccd_programs: "College programs",
@@ -214,6 +215,11 @@ const TOOL_LABELS: Record<string, string> = {
   remove_plan_courses: "Remove courses",
   update_plan_course: "Update course",
   update_enrollment_preference: "Update college enrollment type",
+  update_student_settings: "Update student settings",
+  correct_transcript_course: "Correct transcript course",
+  save_prerequisite_evidence: "Submit prerequisite evidence",
+  create_plan_snapshot: "Save plan snapshot",
+  set_smccd_ge_completion: "Update college GE completion",
   set_college_goal: "Bookmark degree",
   clear_college_goal: "Remove degree bookmark"
 };
@@ -280,6 +286,8 @@ function activityItem(event: LiveActivity) {
   if (event.type === "attachments.received") return { kind: "image", label: "Image context", detail: String(event.summary ?? "Student-provided images were added to this turn") };
   if (event.type === "knowledge.retrieved") return { kind: "tool", label: "Planning guidance", detail: String(event.summary ?? "Retrieved relevant application guidance") };
   if (event.type === "knowledge.failed") return { kind: "tool", label: "Planning guidance", detail: "Built-in guidance used because retrieved guidance was unavailable" };
+  if (event.type === "memory.retrieved") return { kind: "tool", label: "Student context", detail: String(event.summary ?? "Retrieved relevant preferences") };
+  if (event.type === "memory.updated") return { kind: "tool", label: "Student context", detail: String(event.summary ?? "Updated lightweight preferences") };
   if (event.type === "auto_review.started") return { kind: "review", label: "Auto-review", detail: String(event.summary ?? "Checking the proposed change") };
   if (event.type === "auto_review.completed") {
     const review = event.review as Record<string, unknown> | undefined;

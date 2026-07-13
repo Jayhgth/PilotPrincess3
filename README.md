@@ -81,7 +81,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/lib/planning.ts`: deterministic graduation, GPA, and course-plan logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
 - `src/lib/prerequisites/`: exact prerequisite parsing, evaluation, and audits.
-- `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/ai-knowledge.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, retrieved versioned application guidance, private image context, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.
+- `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/ai-knowledge.ts`, `src/server/ai-memory.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, retrieved versioned application guidance, lightweight per-student memory, private image context, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
 

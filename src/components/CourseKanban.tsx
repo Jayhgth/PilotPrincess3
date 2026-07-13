@@ -17,10 +17,9 @@ import {
   HandGrabbingIcon as HandGrabbing,
   ListPlusIcon as ListPlus,
   LockKeyIcon as LockKey,
-  PencilSimpleIcon as PencilSimple,
   TrashIcon as Trash
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import {
   compareCourseBoardRows,
@@ -31,7 +30,7 @@ import {
   type CourseBoardTerm
 } from "@/lib/course-board";
 import { INSTITUTIONS } from "@/lib/institutions";
-import { courseDisplayName, GRADE_LEVELS, LETTER_GRADES, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
+import { courseDisplayName, GRADE_LEVELS, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
 import type { Course, CourseStatus, GradeLevel, PlanCourse, SmccdCourse, StudentSettings } from "@/lib/models";
 
 const TERM_CONTENT: Record<CourseBoardTerm, { label: string; description: string }> = {
@@ -59,11 +58,8 @@ interface CourseKanbanProps {
   courses: Course[];
   smccdCourses: SmccdCourse[];
   settings: StudentSettings;
-  editingCourseId: string | null;
   busy: boolean;
-  onEditingChange: (id: string | null) => void;
   onMove: (row: PlanCourse, placement: CoursePlacement) => void;
-  onUpdate: (id: string, patch: Partial<PlanCourse>) => void;
   onRemove: (id: string) => void;
   onGeneratePlan: () => void;
 }
@@ -72,15 +68,11 @@ interface CourseCardProps {
   row: PlanCourse;
   courseMap: Map<string, Course>;
   smccdCourseMap: Map<string, SmccdCourse>;
-  settings: StudentSettings;
   sectionLocked: boolean;
   continuation?: boolean;
-  editing: boolean;
+  confirmingRemove: boolean;
   busy: boolean;
-  onEditingChange: (id: string | null) => void;
-  onMove: (row: PlanCourse, placement: CoursePlacement) => void;
-  onUpdate: (id: string, patch: Partial<PlanCourse>) => void;
-  onRemove: (id: string) => void;
+  onRemoveRequest: (id: string) => void;
 }
 
 type DragBindings = Pick<ReturnType<typeof useDraggable>, "attributes" | "listeners" | "setNodeRef" | "isDragging">;
@@ -96,7 +88,7 @@ function CourseCard(props: CourseCardProps) {
 function DraggableCourseCard(props: CourseCardProps) {
   const drag = useDraggable({
     id: props.row.id,
-    disabled: props.busy || props.editing,
+    disabled: props.busy || props.confirmingRemove,
     data: { row: props.row }
   });
   return <CourseCardBody {...props} locked={false} drag={drag} />;
@@ -106,12 +98,9 @@ function CourseCardBody({
   row,
   courseMap,
   smccdCourseMap,
-  settings,
-  editing,
-  onEditingChange,
-  onMove,
-  onUpdate,
-  onRemove,
+  confirmingRemove,
+  busy,
+  onRemoveRequest,
   locked,
   continuation = false,
   drag
@@ -124,7 +113,6 @@ function CourseCardBody({
   const weighted = isSmccd || row.is_weighted;
   const isPassFail = isPassFailPlanCourse(row);
   const title = courseDisplayName(row, courseMap);
-  const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
   const metadata = [
     termLabel(row.term),
     row.credits ? formatCredits(Number(row.credits)) : "Credits need review",
@@ -134,25 +122,13 @@ function CourseCardBody({
     row.status === "completed" ? null : row.status === "current" ? "In progress" : "Planned"
   ].filter(Boolean) as string[];
 
-  function move(patch: Partial<CoursePlacement>) {
-    const gradeLevel = patch.gradeLevel ?? row.grade_level;
-    const term = patch.term ?? row.term;
-    if (gradeLevel === 12 && term === "summer") return;
-    const nextStatus = patch.status ?? (gradeLevel < currentGrade ? "completed" : gradeLevel === currentGrade ? "current" : "planned");
-    onMove(row, {
-      gradeLevel,
-      term,
-      status: nextStatus
-    });
-  }
-
   return (
-    <div ref={setNodeRef} className={`kanban-course ${editing ? "editing" : ""} ${isDragging ? "dragging" : ""} ${locked ? "locked" : "draggable"} ${continuation ? "continuation" : ""} ${row.status === "completed" ? "completed" : ""} ${isSmccd ? `dual-enrollment institution-${institution?.toLowerCase()}` : ""}`}>
+    <div ref={setNodeRef} className={`kanban-course ${confirmingRemove ? "confirming-remove" : ""} ${isDragging ? "dragging" : ""} ${locked ? "locked" : "draggable"} ${continuation ? "continuation" : ""} ${row.status === "completed" ? "completed" : ""} ${isSmccd ? `dual-enrollment institution-${institution?.toLowerCase()}` : ""}`}>
       <article
         className="kanban-course-main"
-        {...(locked || editing || continuation ? {} : listeners)}
-        {...(locked || editing || continuation ? {} : attributes)}
-        aria-label={continuation ? `${title}, full-year course continuing in spring.` : locked || editing ? undefined : `Move ${title}. Drag this card to another school year or term.`}
+        {...(locked || confirmingRemove || continuation ? {} : listeners)}
+        {...(locked || confirmingRemove || continuation ? {} : attributes)}
+        aria-label={continuation ? `${title}, full-year course continuing in spring.` : locked || confirmingRemove ? undefined : `Move ${title}. Drag this card to another school year or term.`}
       >
         {continuation
           ? <span className="kanban-continuation-mark" aria-hidden />
@@ -166,23 +142,14 @@ function CourseCardBody({
           {row.status === "completed" && <small>{row.letter_grade ? `Final grade ${row.letter_grade}` : "Final grade not entered"}</small>}
         </div>
       </article>
-      {!continuation && <button className="icon-button course-edit-button" type="button" onClick={() => onEditingChange(editing ? null : row.id)} aria-expanded={editing} aria-label={`${editing ? "Close editor for" : "Edit"} ${title}`}><PencilSimple size={15} /></button>}
-      {editing && <div className="kanban-course-editor">
-        <label><span>Status</span>{locked
-          ? <input value={row.status === "completed" ? "Completed" : "Locked"} readOnly />
-          : <select value={row.status} onChange={(event) => move({ status: event.target.value as CourseStatus })}><option value="completed">Completed</option><option value="current">In progress</option><option value="planned">Planned</option></select>}</label>
-        <label><span>Final grade</span><select value={row.letter_grade ?? ""} onChange={(event) => onUpdate(row.id, { letter_grade: event.target.value || null })}>{LETTER_GRADES.map((grade) => <option value={grade} key={grade}>{grade || "Not entered"}</option>)}</select></label>
-        <label><span>Grade level</span>{locked
-          ? <input value={`Grade ${row.grade_level}`} readOnly />
-          : <select value={row.grade_level} onChange={(event) => move({ gradeLevel: Number(event.target.value) as GradeLevel })}>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade} disabled={grade < currentGrade || (grade === 12 && row.term === "summer")}>Grade {grade}</option>)}</select>}</label>
-        <label><span>Term</span>{locked
-          ? <input value={termLabel(row.term)} readOnly />
-          : catalogCourse?.term_type === "year"
-            ? <input value="Full year" readOnly />
-            : <select value={row.term === "full_year" ? "fall" : row.term} onChange={(event) => move({ term: event.target.value as CourseBoardTerm })}>{courseBoardTermsForGrade(row.grade_level).map((term) => <option value={term} key={term}>{TERM_CONTENT[term].label}</option>)}</select>}</label>
-        <label className="course-weight-control"><input type="checkbox" checked={weighted} disabled={isSmccd} onChange={(event) => onUpdate(row.id, { is_weighted: event.target.checked })} /><span>{isSmccd ? "College courses are weighted" : "Weighted or honors"}</span></label>
-        <button className="danger-button small" type="button" onClick={() => onRemove(row.id)}><Trash size={15} /> Remove</button>
-      </div>}
+      {!continuation && <button
+        className={`icon-button course-delete-button ${confirmingRemove ? "confirm" : ""}`}
+        type="button"
+        onClick={() => onRemoveRequest(row.id)}
+        disabled={busy || Boolean(row.source_review_item_id)}
+        title={row.source_review_item_id ? "Correct transcript-backed courses through transcript review" : confirmingRemove ? "Click again to remove" : "Remove course"}
+        aria-label={row.source_review_item_id ? `${title} is transcript-backed and cannot be removed here` : confirmingRemove ? `Confirm removal of ${title}` : `Remove ${title}`}
+      ><Trash size={15} />{confirmingRemove && <span>Confirm</span>}</button>}
     </div>
   );
 }
@@ -213,6 +180,12 @@ export default function CourseKanban(props: CourseKanbanProps) {
   const currentGrade = (props.settings.grade_level ?? 9) as GradeLevel;
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(currentGrade);
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!confirmingRemoveId) return;
+    const timeout = window.setTimeout(() => setConfirmingRemoveId(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [confirmingRemoveId]);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 7 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
@@ -231,7 +204,16 @@ export default function CourseKanban(props: CourseKanbanProps) {
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
-    props.onEditingChange(null);
+    setConfirmingRemoveId(null);
+  }
+
+  function handleRemoveRequest(id: string) {
+    if (confirmingRemoveId !== id) {
+      setConfirmingRemoveId(id);
+      return;
+    }
+    setConfirmingRemoveId(null);
+    props.onRemove(id);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -262,7 +244,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
             aria-controls={`course-year-${grade}`}
             onClick={() => {
               setSelectedGrade(grade);
-              props.onEditingChange(null);
+              setConfirmingRemoveId(null);
             }}
             key={grade}
           >
@@ -276,7 +258,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
           <div className={`course-year-terms ${selectedGrade === 12 ? "two-terms" : ""}`}>{courseBoardTermsForGrade(selectedGrade).map((term) => {
             const termRows = selectedRows.filter((row) => courseAppearsInBoardTerm(row, term)).sort(compareCourseBoardRows);
             return <TermLane grade={selectedGrade} term={term} rows={termRows} locked={selectedYearLocked} key={term}>
-              {termRows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} settings={props.settings} sectionLocked={selectedYearLocked} continuation={row.term === "full_year" && term === "spring"} editing={props.editingCourseId === row.id} busy={props.busy} onEditingChange={props.onEditingChange} onMove={props.onMove} onUpdate={props.onUpdate} onRemove={props.onRemove} key={`${row.id}-${term}`} />)}
+              {termRows.map((row) => <CourseCard row={row} courseMap={courseMap} smccdCourseMap={smccdCourseMap} sectionLocked={selectedYearLocked} continuation={row.term === "full_year" && term === "spring"} confirmingRemove={confirmingRemoveId === row.id} busy={props.busy} onRemoveRequest={handleRemoveRequest} key={`${row.id}-${term}`} />)}
             </TermLane>;
           })}</div>
         </section>

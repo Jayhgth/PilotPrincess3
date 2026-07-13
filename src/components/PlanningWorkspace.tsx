@@ -221,7 +221,6 @@ export default function PlanningWorkspace() {
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
   const [settingsArea, setSettingsArea] = useState<SettingsArea>(() => locationState().settingsArea);
   const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
-  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
   const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
@@ -538,7 +537,6 @@ export default function PlanningWorkspace() {
       setView(next.view);
       setCourseArea(next.courseArea);
       setSettingsArea(next.settingsArea);
-      setEditingCourseId(null);
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -663,7 +661,6 @@ export default function PlanningWorkspace() {
 
   function openCourses(area: CourseArea = "mine") {
     setCourseArea(area);
-    setEditingCourseId(null);
     setView("courses");
     setMobileNavOpen(false);
     syncLocation("courses", area);
@@ -826,6 +823,10 @@ export default function PlanningWorkspace() {
     if (!supabase) return;
     const removed = planCourses.find((row) => row.id === id);
     if (!removed) return;
+    if (removed.source_review_item_id) {
+      notify("Transcript-backed courses must be corrected through transcript review.");
+      return;
+    }
     const succeeded = await runAction(
       "Removing course",
       async () => {
@@ -1514,11 +1515,8 @@ export default function PlanningWorkspace() {
           courses={courses}
           smccdCourses={plannedSmccdCourses}
           settings={settings}
-          editingCourseId={editingCourseId}
           busy={Boolean(busyLabel)}
-          onEditingChange={setEditingCourseId}
           onMove={movePlanCourse}
-          onUpdate={(id, patch) => void updatePlanCourse(id, patch)}
           onRemove={(id) => void removePlanCourse(id)}
           onGeneratePlan={openPlanGenerationPrompt}
         />

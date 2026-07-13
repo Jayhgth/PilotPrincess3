@@ -38,11 +38,8 @@ function renderBoard(rows: PlanCourse[], gradeLevel: PlanCourse["grade_level"] =
     courses: [],
     smccdCourses: [],
     settings: { grade_level: gradeLevel, graduation_year: 2027 } as StudentSettings,
-    editingCourseId: null,
     busy: false,
-    onEditingChange: () => undefined,
     onMove: () => undefined,
-    onUpdate: () => undefined,
     onRemove: () => undefined,
     onGeneratePlan: () => undefined
   }));
@@ -69,6 +66,9 @@ describe("four-year course board", () => {
     expect(html).toContain("Full year");
     expect(html.match(/Completed Algebra/g)).toHaveLength(4);
     expect(html).toContain("Completed Algebra, full-year course continuing in spring.");
+    expect(html).toContain("Remove Current English");
+    expect(html).not.toContain("course-edit-button");
+    expect(html).not.toContain("kanban-course-editor");
   });
 
   it("omits senior summer and shows one full-year record in both semester lanes", () => {

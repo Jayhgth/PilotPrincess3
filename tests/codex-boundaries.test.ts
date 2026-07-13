@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, schedulePreview, scheduleProposalAction, scheduleResultIsComplete } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
-import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantTurnSchema } from "@/server/ai-schemas";
+import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
@@ -95,10 +95,19 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("get_course_schedule_options", { respect_recommended_limit: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
     expect(() => parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toThrow();
+    expect(parseAssistantToolCall("create_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("update_student_settings", { plan_start_grade: 11, plan_end_grade: 12 })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("correct_transcript_course", { review_item_id: "00000000-0000-4000-8000-000000000002", weighted: true, reason: "The transcript marks this as honors." })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("save_prerequisite_evidence", { target_course_id: "CSM:MATH 200", clearance_type: "placement", authority: "SMCCD placement", evidence_summary: "Placed into MATH 200", source_url: null })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_course_schedule", { course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
     expect(() => parseAssistantToolCall("unknown_removed_tool", {})).toThrow();
+  });
+
+  it("stores only bounded explicit lightweight memory updates", () => {
+    expect(assistantMemoryUpdateSchema.parse({ operation: "remember", key: "schedule_interests", category: "interest", content: "Interested in computer science and design.", tags: ["schedule", "courses"], importance: 4 })).toMatchObject({ key: "schedule_interests" });
+    expect(() => assistantMemoryUpdateSchema.parse({ operation: "remember", key: "gpa", category: "context", content: null, tags: [], importance: 3 })).toThrow();
   });
 
   it("allowlists the onboarding model choices and recommends Luna", () => {
@@ -250,6 +259,7 @@ describe("Codex feature boundaries", () => {
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true }
     });
+    expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toBeNull();
     expect(requiredAssistantEvidenceRead("Here are my answers:\n- **Keep college coursework within the 11-unit per-term district planning limit?** Yes (Recommended)")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true }

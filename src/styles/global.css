@@ -2311,16 +2311,17 @@ textarea,
 .course-term-empty { margin: 0; padding: 12px 2px; color: var(--ink-faint); font-size: var(--type-supporting); }
 
 .kanban-course { position: relative; min-width: 0; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 7px; background: var(--surface-raised); box-shadow: 0 1px 2px rgb(35 38 43 / 0.035); content-visibility: auto; contain-intrinsic-block-size: auto 108px; transition: border-color 150ms ease, background-color 150ms ease, opacity 140ms ease, box-shadow 150ms ease; }
-.kanban-course.draggable:hover:not(.editing):not(.dragging) { z-index: 1; border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); box-shadow: 0 2px 8px rgb(35 38 43 / 0.08); }
+.kanban-course.draggable:hover:not(.confirming-remove):not(.dragging) { z-index: 1; border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); box-shadow: 0 2px 8px rgb(35 38 43 / 0.08); }
 .kanban-course.dual-enrollment { border-color: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 25%, var(--line)); background: color-mix(in srgb, var(--dual-soft) 32%, var(--surface-raised)); }
-.kanban-course.dual-enrollment.draggable:hover:not(.editing):not(.dragging) { border-color: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 52%, var(--line)); }
-.kanban-course.draggable:active:not(.editing) { cursor: grabbing; }
+.kanban-course.dual-enrollment.draggable:hover:not(.confirming-remove):not(.dragging) { border-color: color-mix(in srgb, var(--institution-color, var(--dual-ui)) 52%, var(--line)); }
+.kanban-course.draggable:active:not(.confirming-remove) { cursor: grabbing; }
 .kanban-course.dragging { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); box-shadow: none; opacity: .22; }
-.kanban-course.editing { border-color: var(--line-strong); box-shadow: var(--shadow); }
+.kanban-course.confirming-remove { border-color: color-mix(in srgb, var(--danger) 48%, var(--line)); }
 .kanban-course.locked { background: color-mix(in srgb, var(--surface-raised) 84%, var(--surface-muted)); }
 .kanban-course.completed { opacity: .58; }
 .course-year.completed .kanban-course.completed { opacity: 1; }
 .kanban-course-main { display: grid; min-height: 82px; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; padding: 12px 42px 12px 12px; text-align: left; }
+.kanban-course.confirming-remove .kanban-course-main { padding-right: 96px; }
 .kanban-course.completed .kanban-course-main { min-height: 68px; padding-top: 9px; padding-bottom: 9px; }
 .kanban-course.completed .kanban-course-institution small { display: none; }
 .kanban-course.draggable .kanban-course-main { cursor: grab; touch-action: pan-y; user-select: none; }
@@ -2342,16 +2343,12 @@ textarea,
 .kanban-course-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: 3px 10px; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .kanban-course-meta > span { display: inline-flex; align-items: center; }
 .kanban-course-copy > small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.kanban-course .course-edit-button { position: absolute; z-index: 2; top: 8px; right: 8px; opacity: .64; transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease; }
-.kanban-course:hover .course-edit-button,
-.kanban-course .course-edit-button:focus-visible,
-.kanban-course.editing .course-edit-button { opacity: 1; }
-.kanban-course-editor { display: grid; grid-template-columns: 1fr; gap: 10px; border-top: 1px solid var(--line); background: var(--surface); padding: 12px; }
-.kanban-course-editor > label:not(.course-weight-control) { display: grid; gap: 5px; }
-.kanban-course-editor > label > span { font-size: var(--type-supporting); font-weight: 650; }
-.kanban-course-editor input,
-.kanban-course-editor select { min-height: 38px; font-size: var(--type-body); }
-.kanban-course-editor .danger-button { justify-self: start; }
+.kanban-course .course-delete-button { position: absolute; z-index: 2; top: 8px; right: 8px; width: 32px; opacity: .64; color: var(--danger); transition: width 140ms ease, background-color 140ms ease, color 140ms ease, opacity 140ms ease; }
+.kanban-course:hover .course-delete-button,
+.kanban-course .course-delete-button:focus-visible,
+.kanban-course .course-delete-button.confirm { opacity: 1; }
+.kanban-course .course-delete-button.confirm { width: 86px; border-color: color-mix(in srgb, var(--danger) 48%, var(--line)); background: color-mix(in srgb, var(--danger) 9%, var(--surface-raised)); }
+.kanban-course .course-delete-button span { font-size: var(--type-supporting); font-weight: 700; }
 .course-drag-preview { display: flex; width: min(310px, 78vw); align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 7px; background: var(--surface-raised); padding: 13px 14px; box-shadow: 0 8px 24px rgb(35 38 43 / 0.16); cursor: grabbing; }
 .course-drag-preview > svg { flex: 0 0 auto; color: var(--accent); }
 .course-drag-preview > span { display: grid; gap: 3px; }

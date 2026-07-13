@@ -9,6 +9,7 @@ import type { AiMessage } from "@/lib/models";
 import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat } from "@/server/codex";
 import { executeAssistantReadTool } from "@/server/ai-tools";
 import { retrieveAssistantKnowledge, type AssistantKnowledgeChunk } from "@/server/ai-knowledge";
+import { persistAssistantMemoryUpdates, retrieveAssistantMemories, type AssistantMemory } from "@/server/ai-memory";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 
@@ -153,16 +154,27 @@ export const POST: APIRoute = async ({ request }) => {
       record("turn.started", { turnId, capabilities: CODEX_RUNTIME_CAPABILITIES, attachmentCount: attachmentRows.length });
       try {
         let knowledge: AssistantKnowledgeChunk[] = [];
-        try {
-          knowledge = await retrieveAssistantKnowledge(auth.supabase, parsed.data.message, parsed.data.pageContext);
+        let memories: AssistantMemory[] = [];
+        const [knowledgeResult, memoryResult] = await Promise.allSettled([
+          retrieveAssistantKnowledge(auth.supabase, parsed.data.message, parsed.data.pageContext),
+          retrieveAssistantMemories(auth.supabase, parsed.data.message, parsed.data.pageContext)
+        ]);
+        if (knowledgeResult.status === "fulfilled") {
+          knowledge = knowledgeResult.value;
           record("knowledge.retrieved", {
             chunks: knowledge.map((chunk) => ({ id: chunk.id, title: chunk.title, sourcePath: chunk.sourcePath, score: chunk.score, matchReason: chunk.matchReason })),
             summary: `Retrieved ${knowledge.length} application-guidance ${knowledge.length === 1 ? "chunk" : "chunks"}.`
           });
-        } catch (error) {
+        } else {
           record("knowledge.failed", {
-            summary: error instanceof Error ? error.message : "Pilot application guidance could not be retrieved."
+            summary: knowledgeResult.reason instanceof Error ? knowledgeResult.reason.message : "Pilot application guidance could not be retrieved."
           });
+        }
+        if (memoryResult.status === "fulfilled") {
+          memories = memoryResult.value;
+          record("memory.retrieved", { count: memories.length, summary: `Retrieved ${memories.length} relevant student ${memories.length === 1 ? "memory" : "memories"}.` });
+        } else {
+          record("memory.failed", { summary: memoryResult.reason instanceof Error ? memoryResult.reason.message : "Pilot memory could not be retrieved." });
         }
         const localImages: Array<{ type: "local_image"; path: string }> = [];
         if (attachmentRows.length) {
@@ -189,6 +201,7 @@ export const POST: APIRoute = async ({ request }) => {
           reasoningEffort: preferences.reasoningEffort,
           reviewMode: preferences.reviewMode,
           knowledge,
+          memories,
           signal,
           executeReadTool: (name, argumentsValue) => executeAssistantReadTool(auth.supabase, auth.user.id, name, argumentsValue),
           onSdkEvent: (event, iteration) => {
@@ -243,6 +256,14 @@ export const POST: APIRoute = async ({ request }) => {
           page_context: { model: result.model, provider_thread_id: result.threadId, questions: sanitizeCodexValue(result.questions) }
         }).select("*").single();
         if (assistantResult.error) throw new Error(assistantResult.error.message);
+        if (result.memoryUpdates?.length) {
+          try {
+            const memoryChange = await persistAssistantMemoryUpdates(auth.supabase, auth.user.id, parsed.data.conversationId, turnId, result.memoryUpdates);
+            record("memory.updated", { ...memoryChange, summary: `Updated ${memoryChange.remembered + memoryChange.forgotten} lightweight student ${memoryChange.remembered + memoryChange.forgotten === 1 ? "memory" : "memories"}.` });
+          } catch (error) {
+            record("memory.failed", { summary: error instanceof Error ? error.message : "Pilot memory could not be updated." });
+          }
+        }
         record("assistant.message", { message: assistantResult.data });
         record("turn.completed", { turnId, latencyMs: result.latencyMs, model: result.model, usage: result.usage, proposalCount: result.proposals.length });
         const title = conversationResult.data.title === "New conversation"

@@ -184,6 +184,7 @@ export const assistantToolNames = [
   "evaluate_gpa_scenario",
   "get_enrollment_constraints",
   "get_course_schedule_options",
+  "get_prerequisite_evidence",
   "get_degree_progress",
   "get_college_goal",
   "search_smccd_programs",
@@ -196,6 +197,11 @@ export const assistantToolNames = [
   "remove_plan_courses",
   "update_plan_course",
   "update_enrollment_preference",
+  "update_student_settings",
+  "correct_transcript_course",
+  "save_prerequisite_evidence",
+  "create_plan_snapshot",
+  "set_smccd_ge_completion",
   "set_college_goal",
   "clear_college_goal"
 ] as const;
@@ -214,6 +220,19 @@ export const assistantQuestionSchema = z.object({
 
 export type AssistantQuestion = z.infer<typeof assistantQuestionSchema>;
 
+export const assistantMemoryUpdateSchema = z.object({
+  operation: z.enum(["remember", "forget"]),
+  key: z.string().trim().min(2).max(64).regex(/^[a-z0-9_]+$/),
+  category: z.enum(["preference", "goal", "constraint", "interest", "context"]),
+  content: z.string().trim().max(600).nullable(),
+  tags: z.array(z.string().trim().min(1).max(40).regex(/^[a-z0-9_-]+$/)).max(8),
+  importance: z.number().int().min(1).max(5)
+}).superRefine((value, context) => {
+  if (value.operation === "remember" && !value.content) context.addIssue({ code: "custom", message: "Remembered memory needs content." });
+});
+
+export type AssistantMemoryUpdate = z.infer<typeof assistantMemoryUpdateSchema>;
+
 export const assistantTurnSchema = z.object({
   assistant_message: z.string().trim().min(1).max(ASSISTANT_MESSAGE_MAX_LENGTH).nullable(),
   questions: z.array(assistantQuestionSchema).max(3).default([]),
@@ -221,7 +240,8 @@ export const assistantTurnSchema = z.object({
     name: z.enum(assistantToolNames),
     arguments_json: z.string().min(2),
     explanation: z.string().min(1)
-  })).max(3)
+  })).max(8),
+  memory_updates: z.array(assistantMemoryUpdateSchema).max(5).default([])
 });
 
 export type AssistantTurnResult = z.infer<typeof assistantTurnSchema>;
@@ -229,7 +249,7 @@ export type AssistantTurnResult = z.infer<typeof assistantTurnSchema>;
 export const assistantTurnJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["assistant_message", "questions", "tool_calls"],
+  required: ["assistant_message", "questions", "tool_calls", "memory_updates"],
   properties: {
     assistant_message: { type: ["string", "null"], maxLength: ASSISTANT_MESSAGE_MAX_LENGTH },
     questions: {
@@ -262,7 +282,7 @@ export const assistantTurnJsonSchema = {
     },
     tool_calls: {
       type: "array",
-      maxItems: 3,
+      maxItems: 8,
       items: {
         type: "object",
         additionalProperties: false,
@@ -271,6 +291,23 @@ export const assistantTurnJsonSchema = {
           name: { type: "string", enum: assistantToolNames },
           arguments_json: { type: "string" },
           explanation: { type: "string" }
+        }
+      }
+    },
+    memory_updates: {
+      type: "array",
+      maxItems: 5,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["operation", "key", "category", "content", "tags", "importance"],
+        properties: {
+          operation: { type: "string", enum: ["remember", "forget"] },
+          key: { type: "string", pattern: "^[a-z0-9_]+$" },
+          category: { type: "string", enum: ["preference", "goal", "constraint", "interest", "context"] },
+          content: { type: ["string", "null"] },
+          tags: { type: "array", maxItems: 8, items: { type: "string", pattern: "^[a-z0-9_-]+$" } },
+          importance: { type: "integer", minimum: 1, maximum: 5 }
         }
       }
     }

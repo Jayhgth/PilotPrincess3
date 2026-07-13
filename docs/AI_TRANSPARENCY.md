@@ -9,7 +9,7 @@ Pilot Princess uses Codex as an optional conversational layer over deterministic
 Pilot Assistant is one global, persistent rail available from the authenticated workspace after opt-in setup. It follows the useful parts of t3code and coding-agent interfaces without copying developer telemetry into a student product:
 
 - student messages appear as compact bubbles and assistant answers as readable conversation text;
-- assistant answers lead with the decision, default to one to three short sentences, use no more than three bullets, and are schema-bounded to 900 characters; longer detail is returned only when the student asks for it;
+- assistant answers lead with the decision and default to one to three short sentences; complete schedules and evidence audits may be longer when every choice or affected record must be explained;
 - assistant answers render sanitized GitHub Flavored Markdown, including structured lists, task lists, tables, links, blockquotes, and code fences;
 - the current turn streams visible progress;
 - safe reasoning summaries and actual student-data tool calls remain inspectable under that turn;
@@ -39,6 +39,7 @@ Read tools may run automatically after a student sends a message:
 - current-four-year-plan GPA scenario arithmetic and the all-A ceiling;
 - source-backed concurrent and dual-enrollment limits with term totals;
 - deterministic schedule options from the current plan, approved catalog, open planning years, and provider limit;
+- official prerequisite evaluation plus the student's submitted clearance evidence and independent verification state;
 - transcript-source labels and review state;
 - a transcript evidence audit that compares printed GPA/credit totals, bounded source text, parsed rows, review decisions, catalog matches, and imported plan rows;
 - the selected associate-degree goal;
@@ -50,8 +51,12 @@ Write tools may prepare these changes:
 - add a d.tech or SMCCD course;
 - add an exact schedule batch after showing the returned courses; Supervised mode requires a structured Yes answer, while Auto-review sends the safe-limit batch directly to its independent reviewer;
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
-- edit an unlocked plan course;
+- edit placement, grade, credits, units, notes, and weighting on an unlocked plan course; GPA always recalculates from these course variables rather than accepting a hardcoded GPA value;
+- correct an imported transcript course while preserving the original parsed payload, the exact corrected payload, and a student-provided reason;
+- submit prerequisite, placement, equivalency, challenge, approval, admission, audition, or portfolio evidence as pending; Pilot cannot approve institutional evidence;
+- update ordinary student and planning settings, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
+- save a named snapshot of the current plan and update the student-confirmed SMCCD Area 7A completion;
 - select or clear an associate-degree goal.
 
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
@@ -61,24 +66,31 @@ Every write is an exact proposal first. The chat composer exposes two persisted 
 
 Risk labels describe impact but do not create a second approval step. Explicit removals, grade edits, and moves to Done can be approved when the request and exact arguments match. Ambiguous, broader-than-requested, unsupported, or unverifiable proposals are denied automatically. A reviewer failure also declines the proposal instead of leaving it pending. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
 
-The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. The **current four-year plan** means the active Done, In progress, and Planned rows shown in Courses; Pilot does not use the unexplained phrase “saved plan.” GPA optimization is bounded to deterministic arithmetic on that current plan and student-supplied assumptions. Pilot must call the all-A output an all-A schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot enroll at a college, approve a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
+The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. The **current four-year plan** means the active Done, In progress, and Planned rows shown in Courses; Pilot does not use the unexplained phrase “saved plan.” GPA optimization is bounded to deterministic arithmetic on that current plan and student-supplied assumptions. Pilot must call the all-A output an all-A schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot delete an account, change authentication or AI consent, grant administrator access, enroll at a college, independently approve prerequisite evidence or a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
 
-Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent triggers the deterministic evidence tool before the model answers, so Pilot cannot return a placeholder such as “I’m checking” without doing the check. Pilot must lead with that verdict, compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. A `needs_review` status alone is not an error, and a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows remain read-only in chat even when Pilot can inspect their evidence.
+Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent triggers the deterministic evidence tool before the model answers, so Pilot cannot return a placeholder such as “I’m checking” without doing the check. Pilot must lead with that verdict, compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. A `needs_review` status alone is not an error, and a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows cannot be moved or deleted as ordinary plan rows. An explicit correction instead preserves the imported proposal, stores a separate corrected payload and reason, and updates its linked completed course; weighting corrections use that explicit reviewed value and GPA then recalculates normally.
 
-Schedule-generation intent also triggers its deterministic evidence tool before Pilot answers, including short requests such as “Suggest a schedule for me.” The result treats existing active rows as the current four-year plan, reports how many are retained, lists each exact addition with its verified requirement effect, and states which graduation gaps remain after the batch. One addition is presented as a completion of an otherwise populated plan, never as the whole schedule. A batch with remaining gaps is labeled partial and is not proposed or sent to Auto-review, so an incomplete generator result cannot silently change the plan. For a complete result, Supervised mode asks about the district unit limit only when additions include college coursework; otherwise it asks whether to add the shown courses. Auto-review defaults to the recommended unit limit and sends the exact complete additions to its independent reviewer without a student confirmation form. A turn may not finish with an unsupported promise to check app data later. Pilot does not claim workload personalization unless the student supplied workload information in that conversation.
+Schedule generation retains all existing active rows, restores the verified standard grade-level flow, and then fills remaining tracked graduation gaps with eligible catalog courses. It validates grade availability and prerequisites, balances semester placement, respects the chosen college-unit boundary, and can apply explicit or remembered interests, rigor, and maximum-course constraints. The output reports how many existing courses remain and explains every exact addition. A batch with remaining gaps is labeled partial and is not proposed or sent to Auto-review, so an incomplete result cannot silently change the plan. Supervised mode uses one lightweight in-chat double-check before adding a complete batch; Auto-review sends the same exact batch to its independent reviewer. Pilot attempts the full request unless the student explicitly narrows its scope.
 
 ## Retrieved application guidance
 
 Each Pilot turn retrieves a bounded set of active guidance chunks from Supabase before Codex runs. Retrieval combines PostgreSQL full-text relevance with an allowlisted set of page and intent tags; required role and answer-contract chunks are always included. The runtime passes chunk title, content, durable source path, and match reason to Codex, and records only retrieval metadata in the visible event stream. These chunks define product terminology and behavior but never substitute for student-record evidence, which still comes exclusively from validated read tools. Retrieval failure is recorded and falls back to the built-in safety and tool rules rather than blocking deterministic planning.
 
+## Lightweight student memory
+
+Pilot also retrieves RLS-scoped `ai_student_memories` relevant to the current message and page. This layer stores only explicitly stated durable preferences, goals, constraints, interests, and personal planning context under stable keys. It updates automatically after a student message without a separate save prompt and can forget a value when the student retracts it. It does not store transcripts, course rows, grades, GPA, secrets, inferred traits, or facts already owned by canonical application tables. Memory can rank equally valid schedule choices, but it cannot override catalog, graduation, prerequisite, enrollment, transcript, or review rules.
+
+Together, the assistant uses three distinct grounding layers: retrieved application guidance explains how Pilot Princess works; validated tools read and write canonical student records; and lightweight memory personalizes choices. None of the three grants arbitrary database access.
+
 ## Conversation and event model
 
-Supabase stores four RLS-protected records per user:
+Supabase stores five RLS-protected assistant record types per user:
 
 - `ai_conversations`: title and recent activity;
 - `ai_messages`: user, assistant, and completed tool outcomes;
-- `ai_events`: sanitized lifecycle and reasoning-summary events; and
-- `ai_tool_calls`: validated arguments, explanation, approval state, and bounded result.
+- `ai_events`: sanitized lifecycle and reasoning-summary events;
+- `ai_tool_calls`: validated arguments, explanation, approval state, and bounded result; and
+- `ai_student_memories`: explicit lightweight personalization facts, separately deletable and exportable.
 
 The browser receives newline-delimited activity while a turn runs, then reloads the canonical persisted conversation. Tool events already represented by a persisted tool call are de-duplicated. A turn identifier keeps messages, events, and approvals grouped after reload.
 

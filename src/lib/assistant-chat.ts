@@ -79,7 +79,23 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   equivalency_verified: "d.tech equivalency reviewed",
   existing_courses_retained: "Existing courses kept",
   graduation_coverage_after: "Graduation coverage after",
-  respect_recommended_limit: "Respect district unit limit"
+  respect_recommended_limit: "Respect district unit limit",
+  preferred_name: "Preferred name",
+  age: "Age",
+  graduation_year: "Graduation year",
+  plan_start_grade: "Plan starts",
+  plan_end_grade: "Plan ends",
+  tracker_mode: "Tracker mode",
+  tracked_requirement_areas: "Tracked areas",
+  credits: "Credits",
+  college_units: "College units",
+  is_weighted: "Weighted",
+  reason: "Correction reason",
+  clearance_type: "Evidence type",
+  authority: "Evidence authority",
+  verification_status: "Verification",
+  area: "Requirement area",
+  completed: "Completed"
 };
 
 function readableValue(value: unknown): string | null {

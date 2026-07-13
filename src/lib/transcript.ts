@@ -103,7 +103,7 @@ export interface TranscriptCoursePayload {
   matched_smccd_course_name?: string | null;
   transcript_classification?: TranscriptCourseClassification;
   grading_basis?: "letter" | "pass_fail";
-  weighting_basis?: "college_course" | "dtech_printed_honors" | "dtech_printed_standard" | "reported" | "catalog_default";
+  weighting_basis?: "college_course" | "dtech_printed_honors" | "dtech_printed_standard" | "reported" | "catalog_default" | "student_correction";
   weighting_source_id?: string | null;
 }
 
@@ -132,6 +132,9 @@ export function resolveTranscriptCourse(payload: TranscriptCoursePayload, course
 }
 
 export function resolveTranscriptWeighting(payload: TranscriptCoursePayload, courses: Course[]) {
+  if (payload.weighting_basis === "student_correction" && payload.weighted !== null && payload.weighted !== undefined) {
+    return { weighted: payload.weighted, basis: "student_correction" as const, sourceId: payload.weighting_source_id ?? null };
+  }
   const resolution = resolveTranscriptCourse(payload, courses);
   const institutionKey = institutionKeyFromName(payload.institution_name);
   const isDtechCourse = DTECH_INSTITUTION_PATTERN.test(payload.institution_name ?? "")
