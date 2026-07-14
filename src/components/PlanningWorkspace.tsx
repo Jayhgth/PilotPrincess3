@@ -1291,6 +1291,7 @@ export default function PlanningWorkspace() {
           equivalencies={equivalencies}
           activeVersion={activeVersion}
           existingPlanCourses={planCourses}
+          theme={theme}
           mode={replayingOnboarding ? "replay" : "initial"}
           onComplete={async () => {
             await refreshWorkspaceSilently();
@@ -1308,6 +1309,7 @@ export default function PlanningWorkspace() {
             notify("Onboarding exited without saving changes.");
           } : undefined}
           onSignOut={signOut}
+          onThemeToggle={toggleTheme}
         />
       </Suspense>
     );

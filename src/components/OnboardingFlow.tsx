@@ -5,6 +5,8 @@ import {
   CheckCircleIcon as CheckCircle,
   CpuIcon as Cpu,
   FileTextIcon as FileText,
+  MoonIcon as Moon,
+  SunIcon as Sun,
   UploadSimpleIcon as UploadSimple,
   UserCircleIcon as UserCircle,
   WarningIcon as Warning
@@ -25,6 +27,7 @@ import type {
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
 import {
+  findExistingTranscriptPlanCourse,
   isDtechIntersessionCourse,
   resolveTranscriptCourse,
   transcriptPlanCourseDraft,
@@ -54,6 +57,15 @@ export function applyOnboardingPlanningDefaults(settings: StudentSettings, grade
   };
 }
 
+export function onboardingErrorMessage(caught: unknown, fallback: string) {
+  if (caught instanceof Error && caught.message) return caught.message;
+  if (caught && typeof caught === "object" && "message" in caught) {
+    const message = (caught as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return fallback;
+}
+
 function asNumber(value: string) {
   if (!value) return null;
   const parsed = Number(value);
@@ -79,10 +91,12 @@ interface OnboardingFlowProps {
   equivalencies: SmccdHighSchoolEquivalency[];
   activeVersion: PlanVersion;
   existingPlanCourses: PlanCourse[];
+  theme: "light" | "dark";
   mode?: "initial" | "replay";
   onComplete: () => Promise<void>;
   onExit?: () => void;
   onSignOut: () => Promise<void>;
+  onThemeToggle: () => void;
 }
 
 export default function OnboardingFlow({
@@ -95,10 +109,12 @@ export default function OnboardingFlow({
   equivalencies,
   activeVersion,
   existingPlanCourses,
+  theme,
   mode = "initial",
   onComplete,
   onExit,
-  onSignOut
+  onSignOut,
+  onThemeToggle
 }: OnboardingFlowProps) {
   const isReplay = mode === "replay";
   const [stage, setStage] = useState<OnboardingStage>("student");
@@ -185,7 +201,7 @@ export default function OnboardingFlow({
       try {
         await saveAiPreferences();
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : "The AI preference could not be saved.");
+        setError(onboardingErrorMessage(caught, "The AI preference could not be saved."));
         return;
       } finally {
         setBusyLabel(null);
@@ -287,7 +303,7 @@ export default function OnboardingFlow({
         setError("No completed courses were extracted. The source is saved for manual review.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The transcript could not be parsed.");
+      setError(onboardingErrorMessage(caught, "The transcript could not be parsed."));
     } finally {
       setBusyLabel(null);
     }
@@ -315,33 +331,34 @@ export default function OnboardingFlow({
         if (rejectError) throw rejectError;
       }
 
-      const existingReviewIds = new Set(existingPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
-      const candidates = selectedTranscriptItems
-        .filter((item) => !existingReviewIds.has(item.id))
-        .map((item, index) => ({
-          ...transcriptPlanCourseDraft(payloadFor(item), settings, courses, mappings, item.id, equivalencies),
+      const { data: persistedPlanData, error: persistedPlanError } = await supabase
+        .from("plan_courses")
+        .select("*")
+        .eq("plan_version_id", activeVersion.id);
+      if (persistedPlanError) throw persistedPlanError;
+      const persistedPlanCourses = (persistedPlanData ?? []) as unknown as PlanCourse[];
+      const linkedPlanCoursesByReviewId = new Map(
+        persistedPlanCourses
+          .filter((row): row is PlanCourse & { source_review_item_id: string } => Boolean(row.source_review_item_id))
+          .map((row) => [row.source_review_item_id, row])
+      );
+      const claimedPlanCourseIds = new Set([...linkedPlanCoursesByReviewId.values()].map((row) => row.id));
+      let nextSortOrder = persistedPlanCourses.reduce((maximum, row) => Math.max(maximum, row.sort_order), -1) + 1;
+      const candidates = selectedTranscriptItems.map((item) => {
+        const draft = transcriptPlanCourseDraft(payloadFor(item), settings, courses, mappings, item.id, equivalencies);
+        const linked = linkedPlanCoursesByReviewId.get(item.id);
+        const existing = linked ?? findExistingTranscriptPlanCourse(draft, persistedPlanCourses, claimedPlanCourseIds);
+        if (existing) claimedPlanCourseIds.add(existing.id);
+        return {
+          id: existing?.id ?? crypto.randomUUID(),
+          ...draft,
           plan_version_id: activeVersion.id,
           user_id: session.user.id,
-          sort_order: existingPlanCourses.length + index
-        }));
-      const drafts = [] as typeof candidates;
-      for (const candidate of candidates) {
-        const existing = candidate.course_id
-          ? existingPlanCourses.find((row) => row.course_id === candidate.course_id)
-          : null;
-        if (existing) {
-          const { plan_version_id: _version, user_id: _user, ...update } = candidate;
-          const { error: reconcileError } = await supabase
-            .from("plan_courses")
-            .update(update)
-            .eq("id", existing.id);
-          if (reconcileError) throw reconcileError;
-        } else {
-          drafts.push(candidate);
-        }
-      }
-      if (drafts.length > 0) {
-        const { error: importError } = await supabase.from("plan_courses").insert(drafts);
+          sort_order: existing?.sort_order ?? nextSortOrder++
+        };
+      });
+      if (candidates.length > 0) {
+        const { error: importError } = await supabase.from("plan_courses").upsert(candidates);
         if (importError) throw importError;
       }
 
@@ -389,7 +406,7 @@ export default function OnboardingFlow({
       });
       await onComplete();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Onboarding could not be completed.");
+      setError(onboardingErrorMessage(caught, "Onboarding could not be completed."));
     } finally {
       setBusyLabel(null);
     }
@@ -401,6 +418,10 @@ export default function OnboardingFlow({
         <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">
           {isReplay && <span>Setup changes save at Finish. Pilot approval saves on its step.</span>}
+          <button className="quiet-button onboarding-theme-toggle" onClick={onThemeToggle} type="button" title={`Use ${theme === "light" ? "dark" : "light"} theme`} aria-label={`Use ${theme === "light" ? "dark" : "light"} theme`}>
+            {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
+            <span>{theme === "light" ? "Dark" : "Light"}</span>
+          </button>
           <button className="quiet-button" onClick={() => isReplay ? onExit?.() : void onSignOut()} type="button">{isReplay ? "Exit onboarding" : "Sign out"}</button>
         </div>
       </header>
@@ -415,13 +436,6 @@ export default function OnboardingFlow({
               </li>
             ))}
           </ol>
-          <div className="onboarding-route-summary">
-            <strong>Grade {currentGrade} to {planEndGrade}</strong>
-            <span>{planYears} school {planYears === 1 ? "year" : "years"}</span>
-            <span>Full diploma tracker</span>
-            <span>{aiSetup.enabled ? (aiSetup.testedAt ? "Pilot connected" : "Pilot setup pending") : "Pilot off"}</span>
-            <span>{isReplay ? `${completedCourseCount} saved courses kept` : `${selectedTranscriptIds.size} completed courses ready`}</span>
-          </div>
         </aside>
 
         <section className="onboarding-stage" aria-live="polite">

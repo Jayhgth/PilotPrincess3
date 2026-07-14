@@ -2,7 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
-import OnboardingFlow, { applyOnboardingPlanningDefaults } from "@/components/OnboardingFlow";
+import OnboardingFlow, { applyOnboardingPlanningDefaults, onboardingErrorMessage } from "@/components/OnboardingFlow";
 import type { PlanVersion, School, StudentSettings } from "@/lib/models";
 
 const settings: StudentSettings = {
@@ -47,19 +47,29 @@ describe("onboarding flow", () => {
       equivalencies: [],
       activeVersion: { id: "version-1", generation_config: {} } as PlanVersion,
       existingPlanCourses: [],
+      theme: "dark",
       onComplete: async () => undefined,
-      onSignOut: async () => undefined
+      onSignOut: async () => undefined,
+      onThemeToggle: () => undefined
     }));
 
     expect(html).toContain("About you");
     expect(html).toContain("Pilot Assistant");
     expect(html).toContain("Transcript");
-    expect(html).toContain("Grade 10 to 12");
-    expect(html).toContain("3 school years");
-    expect(html).toContain("Full diploma tracker");
+    expect(html).toContain("Use light theme");
+    expect(html).not.toContain("Grade 10 to 12");
+    expect(html).not.toContain("3 school years");
+    expect(html).not.toContain("Full diploma tracker");
     expect(html).not.toContain("Plan window");
     expect(html).not.toContain("Requirement tracker");
     expect(html).not.toContain("College enrollment type");
     expect(html).not.toContain("Focused tracker");
+  });
+
+  it("surfaces Supabase response messages instead of replacing them with a generic failure", () => {
+    expect(onboardingErrorMessage({ message: "Transcript row already belongs to another plan version." }, "Fallback")).toBe(
+      "Transcript row already belongs to another plan version."
+    );
+    expect(onboardingErrorMessage({}, "Fallback")).toBe("Fallback");
   });
 });
