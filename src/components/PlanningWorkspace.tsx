@@ -88,15 +88,15 @@ import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } 
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import AppChrome from "@/components/AppChrome";
+import GlobalAssistant from "@/components/GlobalAssistant";
+import PilotErrorBoundary from "@/components/PilotErrorBoundary";
 
 const loadOnboardingFlow = () => import("@/components/OnboardingFlow");
-const loadGlobalAssistant = () => import("@/components/GlobalAssistant");
 const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace");
 const loadSmccdPlanner = () => import("@/components/SmccdPlanner");
 const loadGpaPlanningLab = () => import("@/components/GpaPlanningLab");
 
 const OnboardingFlow = lazy(loadOnboardingFlow);
-const GlobalAssistant = lazy(loadGlobalAssistant);
 const GraduationWorkspace = lazy(loadGraduationWorkspace);
 const SmccdPlanner = lazy(loadSmccdPlanner);
 const GpaPlanningLab = lazy(loadGpaPlanningLab);
@@ -1800,16 +1800,21 @@ export default function PlanningWorkspace() {
       >
         <Suspense fallback={<LoadingView />}>{renderView()}</Suspense>
       </AppChrome>
-      {assistantOpen && <Suspense fallback={null}><GlobalAssistant
-        key={`${settings.ai_enabled}:${settings.ai_connection_approved_at ?? "off"}`}
-        session={session}
-        open={assistantOpen}
-        pageContext={assistantPageContext}
-        preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reasoningEffort: settings.ai_reasoning_effort, reviewMode: settings.ai_review_mode }}
-        onPreferencesChanged={refreshAiPreferences}
-        onClose={() => setAssistantOpen(false)}
-        onDataChanged={refreshAfterAssistantChange}
-      /></Suspense>}
+      {assistantOpen && <PilotErrorBoundary onFailure={() => {
+        setAssistantOpen(false);
+        notify("Pilot could not open. Your workspace is still available; try opening Pilot again.", "error");
+      }}>
+        <GlobalAssistant
+          key={`${settings.ai_enabled}:${settings.ai_connection_approved_at ?? "off"}`}
+          session={session}
+          open={assistantOpen}
+          pageContext={assistantPageContext}
+          preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reasoningEffort: settings.ai_reasoning_effort, reviewMode: settings.ai_review_mode }}
+          onPreferencesChanged={refreshAiPreferences}
+          onClose={() => setAssistantOpen(false)}
+          onDataChanged={refreshAfterAssistantChange}
+        />
+      </PilotErrorBoundary>}
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}<span>{toast}</span>{toastAction && <button type="button" onClick={() => void (async () => { const action = toastAction; setToastAction(null); try { await action.run(); setToastKind("success"); setToast("Change undone."); } catch (caught) { setToastKind("error"); setToast(caught instanceof Error ? caught.message : "The change could not be undone."); } })()}>{toastAction.label}</button>}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
       </div>
