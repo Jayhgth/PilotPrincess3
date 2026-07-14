@@ -44,6 +44,7 @@ export const GET: APIRoute = async ({ request }) => {
     prerequisiteClearances,
     geCompletions,
     enrollmentPreferences,
+    collegeDistrictPreferences,
     conversations,
     messages,
     events,
@@ -63,6 +64,7 @@ export const GET: APIRoute = async ({ request }) => {
     readAllUserRows(auth.supabase, "student_prerequisite_clearances", userId),
     readAllUserRows(auth.supabase, "student_smccd_ge_completions", userId, { order: ["created_at", "college_code", "area"] }),
     readAllUserRows(auth.supabase, "student_enrollment_preferences", userId, { order: ["provider_code"] }),
+    readAllUserRows(auth.supabase, "student_college_district_preferences", userId),
     readAllUserRows(auth.supabase, "ai_conversations", userId),
     readAllUserRows(auth.supabase, "ai_messages", userId),
     readAllUserRows(auth.supabase, "ai_events", userId, { order: ["id"] }),
@@ -83,6 +85,7 @@ export const GET: APIRoute = async ({ request }) => {
     prerequisiteClearances.error,
     geCompletions.error,
     enrollmentPreferences.error,
+    collegeDistrictPreferences.error,
     conversations.error,
     messages.error,
     events.error,
@@ -118,7 +121,8 @@ export const GET: APIRoute = async ({ request }) => {
       degree_goals: degreeGoals.data ?? [],
       prerequisite_clearances: prerequisiteClearances.data ?? [],
       ge_completions: geCompletions.data ?? [],
-      enrollment_preferences: enrollmentPreferences.data ?? []
+      enrollment_preferences: enrollmentPreferences.data ?? [],
+      college_district_preferences: collegeDistrictPreferences.data ?? []
     },
     pilot: {
       conversations: conversations.data ?? [],

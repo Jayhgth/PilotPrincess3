@@ -16,6 +16,7 @@ import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
 import BrandMark from "@/components/BrandMark";
 import InstitutionMark from "@/components/InstitutionMark";
+import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import {
   useCallback,
   useEffect,
@@ -441,7 +442,12 @@ export default function PlanningWorkspace() {
               custom_unit_limit: null,
               respect_recommended_limit: bootstrap.enrollment_preference.respect_recommended_limit !== false
             }
-          : defaultEnrollmentPreference(userId)
+          : defaultEnrollmentPreference(
+              userId,
+              bootstrap.college_district?.policy_provider_code
+                ?? bootstrap.college_district_preference?.district_code
+                ?? "SMCCD"
+            )
       );
       setIsAdmin(bootstrap.is_admin);
       setDegreeGoals(bootstrap.degree_goals);
@@ -956,24 +962,28 @@ export default function PlanningWorkspace() {
   async function generatePlan(respectRecommendedLimit: boolean) {
     if (!settings || !supabase || !session || !enrollmentPreference) return;
     const enrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
-    const { data: savedPreference, error: preferenceError } = await supabase.from("student_enrollment_preferences").upsert({
-      user_id: session.user.id,
-      provider_code: enrollmentPreference.provider_code,
-      program_type: enrollmentPreference.program_type,
-      limit_mode: "recommended",
-      custom_unit_limit: null,
-      respect_recommended_limit: respectRecommendedLimit
-    }, { onConflict: "user_id,provider_code" }).select("*").single();
-    if (preferenceError) {
-      notify(preferenceError.message, "error");
-      return;
+    if (enrollmentPolicy) {
+      const { data: savedPreference, error: preferenceError } = await supabase.from("student_enrollment_preferences").upsert({
+        user_id: session.user.id,
+        provider_code: enrollmentPreference.provider_code,
+        program_type: enrollmentPreference.program_type,
+        limit_mode: "recommended",
+        custom_unit_limit: null,
+        respect_recommended_limit: respectRecommendedLimit
+      }, { onConflict: "user_id,provider_code" }).select("*").single();
+      if (preferenceError) {
+        notify(preferenceError.message, "error");
+        return;
+      }
+      setEnrollmentPreference({
+        ...savedPreference as unknown as StudentEnrollmentPreference,
+        limit_mode: "recommended",
+        custom_unit_limit: null,
+        respect_recommended_limit: savedPreference.respect_recommended_limit !== false
+      });
+    } else {
+      setEnrollmentPreference((current) => current ? { ...current, respect_recommended_limit: respectRecommendedLimit } : current);
     }
-    setEnrollmentPreference({
-      ...savedPreference as unknown as StudentEnrollmentPreference,
-      limit_mode: "recommended",
-      custom_unit_limit: null,
-      respect_recommended_limit: savedPreference.respect_recommended_limit !== false
-    });
     setPlanGenerationPromptOpen(false);
     const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy, respectRecommendedLimit);
     if (generated.length === 0) {
@@ -1480,7 +1490,7 @@ export default function PlanningWorkspace() {
     return (
       <CourseCatalogBrowser
         source={school?.slug === "design-tech-high-school" ? "dtech" : "high_school"}
-        sourceIdentity={school?.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" size="header" decorative /> : <Buildings size={25} aria-hidden />}
+        sourceIdentity={school ? <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} size="header" decorative /> : <Buildings size={25} aria-hidden />}
         title="Course catalog"
         description="Courses you can still add in the selected school year."
         countLabel={filteredCourses.length ? `${filteredCourses.length} ${filteredCourses.length === 1 ? "course" : "courses"}` : "No courses"}
@@ -1614,6 +1624,7 @@ export default function PlanningWorkspace() {
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
         onAiPreferencesChanged={refreshAiPreferences}
+        onInstitutionChanged={refreshWorkspaceSilently}
         onAccountDeleted={async () => {
           await supabase?.auth.signOut({ scope: "local" });
           window.location.assign("/");
@@ -1630,8 +1641,8 @@ export default function PlanningWorkspace() {
       <>
         {planExplanation && <p className="plan-explanation">{planExplanation}</p>}
         {planGenerationPromptOpen && <section className="plan-generation-prompt" aria-labelledby="plan-generation-heading">
-          <div><h2 id="plan-generation-heading">Suggest a course plan</h2><p>Should college coursework stay at or below the district planning limit for each term?</p></div>
-          <label><input type="checkbox" checked={respectUnitCapDraft} onChange={(event) => setRespectUnitCapDraft(event.target.checked)} /><span><strong>Yes, respect the limit</strong><small>{generationPolicy ? `${generationPolicy.recommended_max_units} units per term from the saved ${generationPolicy.provider_name} policy. Recommended.` : "Use the saved district policy. Recommended."}</small></span></label>
+          <div><h2 id="plan-generation-heading">Suggest a course plan</h2><p>{generationPolicy ? "Should college coursework stay at or below the district planning limit for each term?" : "The selected district does not have a reviewed enrollment-limit policy in Pilot yet. High-school suggestions remain available."}</p></div>
+          {generationPolicy && <label><input type="checkbox" checked={respectUnitCapDraft} onChange={(event) => setRespectUnitCapDraft(event.target.checked)} /><span><strong>Yes, respect the limit</strong><small>{generationPolicy.recommended_max_units} units per term from the saved {generationPolicy.provider_name} policy. Recommended.</small></span></label>}
           <div><button className="secondary-button small" type="button" onClick={() => setPlanGenerationPromptOpen(false)}>Cancel</button><button className="primary-button small" type="button" onClick={() => void generatePlan(respectUnitCapDraft)} disabled={Boolean(busyLabel)}>Generate suggestions</button></div>
         </section>}
         {suggestedPlan.length > 0 && <section className="suggested-plan-preview" aria-label="Suggested plan preview">

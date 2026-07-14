@@ -98,7 +98,7 @@ For the reviewed 2026 SMCCD sources:
 
 Aggregate CSM, Skyline, and Cañada units across the same school year and term. A full-year row counts in fall and spring. Completed rows do not consume a future-term limit. Crossing a selected or fee-free limit produces review, while crossing the sourced absolute maximum blocks the scenario. Unit count never proves course eligibility: prerequisites, placement, school and college approval, impacted-course restrictions, materials, fees, and seat availability stay separate. Other districts require their own reviewed policy rows; do not infer them from SMCCD.
 
-Nearby-provider discovery uses the selected school's public CDE address and official provider coordinates. It is a discovery aid, not a claim of enrollment eligibility, articulation, or a current course offering, and it never requests precise student location.
+Nearby-provider discovery uses the selected school's public CDE address and official provider coordinates. Colleges are normalized into their official community-college district before suggestions are ranked. `student_college_district_preferences` stores one suggested, student-selected, or Pilot-selected district; this is separate from the source-backed concurrent/dual-enrollment policy and never implies eligibility. A manual student or Pilot choice persists across high-school changes, while an untouched suggestion follows the newly selected school's public address. Institution marks use checked-in official assets where available, then the official institution website favicon, then a neutral accessible fallback. Discovery is not a claim of articulation or a current course offering and never requests precise student location.
 
 ## Shared-data corrections
 

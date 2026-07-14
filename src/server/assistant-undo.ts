@@ -8,7 +8,8 @@ const undoSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("restore_rows"), table: z.enum(["plan_courses", "student_smccd_goals", "student_prerequisite_clearances"]), rows: z.array(rowSchema).min(1).max(160), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_enrollment_preference"), row: rowSchema.nullable(), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_student_settings"), values: rowSchema, summary: z.string().min(1).max(500) }),
-  z.object({ kind: z.literal("restore_school_selection"), school_id: z.uuid(), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("restore_school_selection"), school_id: z.uuid(), college_district_preference: rowSchema.nullable().optional(), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("restore_college_district_preference"), row: rowSchema.nullable(), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_gpa_scenario"), plan_course_ids: z.array(z.uuid()).min(1).max(160), rows: z.array(rowSchema).max(160), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_smccd_completion"), college_code: z.enum(["CSM", "SKY", "CAN"]), area: z.enum(["7A", "information_literacy"]), completed: z.boolean(), summary: z.string().min(1).max(500) }),
   z.object({
@@ -117,6 +118,25 @@ export async function undoAssistantToolCall(options: {
     } else if (undo.data.kind === "restore_school_selection") {
       const restoration = await options.supabase.rpc("select_current_school", { target_school_id: undo.data.school_id });
       if (restoration.error) throw new Error(restoration.error.message);
+      if (undo.data.college_district_preference !== undefined) {
+        if (undo.data.college_district_preference) {
+          const row = pickRow(undo.data.college_district_preference, ["user_id", "district_code", "selection_method", "school_id_at_selection"], options.userId);
+          const preferenceRestoration = await options.supabase.from("student_college_district_preferences").upsert(row, { onConflict: "user_id" });
+          if (preferenceRestoration.error) throw new Error(preferenceRestoration.error.message);
+        } else {
+          const preferenceRemoval = await options.supabase.from("student_college_district_preferences").delete().eq("user_id", options.userId);
+          if (preferenceRemoval.error) throw new Error(preferenceRemoval.error.message);
+        }
+      }
+    } else if (undo.data.kind === "restore_college_district_preference") {
+      if (undo.data.row) {
+        const row = pickRow(undo.data.row, ["user_id", "district_code", "selection_method", "school_id_at_selection"], options.userId);
+        const restoration = await options.supabase.from("student_college_district_preferences").upsert(row, { onConflict: "user_id" });
+        if (restoration.error) throw new Error(restoration.error.message);
+      } else {
+        const removal = await options.supabase.from("student_college_district_preferences").delete().eq("user_id", options.userId);
+        if (removal.error) throw new Error(removal.error.message);
+      }
     } else if (undo.data.kind === "restore_gpa_scenario") {
       const removal = await options.supabase.from("student_gpa_scenario_choices").delete().eq("user_id", options.userId).in("plan_course_id", undo.data.plan_course_ids);
       if (removal.error) throw new Error(removal.error.message);

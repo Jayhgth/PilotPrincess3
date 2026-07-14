@@ -22,6 +22,10 @@ function providerCode(name) {
   return `ccc-${name.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 }
 
+function districtCode(name) {
+  return `ccc-district-${name.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+}
+
 function normalizeWebsite(url) {
   try {
     const parsed = new URL(url);
@@ -54,6 +58,7 @@ function parseDirectory(html) {
       provider_code: providerCode(name),
       provider_type: "community_college",
       district_name: districtName,
+      district_code: districtCode(districtName),
       name: name.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()),
       website_url: normalizeWebsite(identity[1]),
       street_address: streetAddress,
@@ -109,6 +114,17 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!supabaseUrl || !serviceRoleKey) throw new Error("PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
 const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
+const districts = [...new Map(colleges.map((college) => [college.district_code, {
+  district_code: college.district_code,
+  name: college.district_name,
+  policy_provider_code: college.district_name === "San Mateo County Community College District" ? "SMCCD" : null,
+  status: "active",
+  source_url: DIRECTORY_URL,
+  source_updated_at: college.source_updated_at
+}])).values()];
+const districtSync = await supabase.from("college_districts").upsert(districts, { onConflict: "district_code" });
+if (districtSync.error) throw districtSync.error;
+
 if (!skipGeocoding) {
   const { data: existing, error } = await supabase.from("education_providers").select("provider_code, latitude, longitude").eq("provider_type", "community_college");
   if (error) throw error;
@@ -124,4 +140,4 @@ for (let index = 0; index < colleges.length; index += 100) {
   if (error) throw error;
 }
 
-console.log(`Synced ${colleges.length} official California community colleges (${colleges.filter((row) => row.latitude != null).length} geocoded).`);
+console.log(`Synced ${colleges.length} official California community colleges in ${districts.length} districts (${colleges.filter((row) => row.latitude != null).length} geocoded).`);

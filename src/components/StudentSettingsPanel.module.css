@@ -45,6 +45,18 @@
 .accountIdentity strong { font-size: var(--type-body); }
 .accountIdentity small { color: var(--ink-faint); font-size: var(--type-supporting); }
 
+.institutionIdentity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+}
+
+.institutionIdentity > span { display: grid; min-width: 0; gap: 2px; }
+.institutionIdentity strong { overflow: hidden; font-size: var(--type-body); text-overflow: ellipsis; white-space: nowrap; }
+.institutionIdentity small { color: var(--ink-faint); font-size: var(--type-supporting); }
+.districtForm { max-width: 620px; }
+
 .error {
   margin: 13px 0 0;
   color: var(--danger);

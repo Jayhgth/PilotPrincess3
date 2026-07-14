@@ -37,7 +37,7 @@ Read tools may run automatically after a student sends a message:
 - active California public and charter high-school search for an exact selected-school change;
 - eligible selected-school and SMCCD catalog search;
 - official selected-school diploma evidence, including explicit unavailable or unverified state;
-- nearby community-college providers derived from the selected school's public address;
+- nearby community-college providers grouped into official districts and derived from the selected school's public address;
 - course-level GPA inclusion and weighting evidence;
 - current-four-year-plan GPA scenario arithmetic and the all-A ceiling;
 - saved GPA-planner inclusion and expected-grade assumptions;
@@ -64,6 +64,7 @@ Write tools may prepare these changes:
 - change the selected public or charter high school while retaining existing plan rows;
 - update ordinary student and planning settings plus the connected Pilot model, reasoning, and review preference, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
+- change the student's selected California community-college district using an exact district identifier returned by the nearby-provider read; this preference is reversible and does not assert enrollment eligibility;
 - save a named snapshot, update a student-confirmed SMCCD Area 7A completion, and record Skyline's manually completed information-literacy tutorial or equivalent;
 - select or clear an associate-degree goal;
 - clear editable schedule rows, degree bookmarks, and GPA assumptions as one compound action while retaining transcript-backed evidence; and

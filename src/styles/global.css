@@ -142,6 +142,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .institution-mark.header { width: 72px; height: 34px; }
 .institution-mark.rail { width: 78px; height: 30px; }
 .institution-mark img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.institution-identity-mark { display: inline-grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink-faint); }
+.institution-identity-mark.header { width: 36px; height: 36px; border-radius: 9px; }
+.institution-identity-mark.rail { width: 32px; height: 32px; }
+.institution-identity-mark img { display: block; width: 100%; height: 100%; object-fit: contain; padding: 3px; }
 .institution-mark.institution-dtech.compact { width: 26px; height: 26px; }
 .institution-mark.institution-dtech.header { width: 34px; height: 34px; }
 .institution-mark.institution-dtech.rail { width: 32px; height: 32px; }
@@ -671,18 +675,23 @@ input:focus, select:focus, textarea:focus {
 .onboarding-school-field { position: relative; }
 .onboarding-school-field > label { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
 .onboarding-school-results { position: absolute; z-index: 5; top: calc(100% + 5px); right: 0; left: 0; max-height: 230px; overflow-y: auto; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); box-shadow: 0 4px 8px rgb(0 0 0 / 8%); }
-.onboarding-school-results button { display: grid; width: 100%; min-height: 50px; gap: 3px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 9px 11px; text-align: left; }
+.onboarding-school-results button { display: grid; width: 100%; min-height: 50px; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 9px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 9px 11px; text-align: left; }
 .onboarding-school-results button:last-child { border-bottom: 0; }
 .onboarding-school-results button:hover,
 .onboarding-school-results button[aria-selected="true"] { background: var(--surface-muted); }
-.onboarding-school-results strong { color: var(--ink); font-size: 12px; font-weight: 650; }
-.onboarding-school-results span { overflow: hidden; color: var(--ink-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.onboarding-nearby-providers { display: grid; gap: 7px; margin-top: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); padding: 9px; }
-.onboarding-nearby-providers > span { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
-.onboarding-nearby-providers > div { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
-.onboarding-nearby-providers > div > span { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 7px; border-radius: 5px; background: var(--surface); padding: 6px 7px; }
+.onboarding-school-results button > span { display: grid; min-width: 0; gap: 2px; }
+.onboarding-school-results strong { overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-school-results small { overflow: hidden; color: var(--ink-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-nearby-providers { display: grid; min-width: 0; gap: 7px; margin: 3px 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); padding: 9px; }
+.onboarding-nearby-providers legend { padding: 0 4px; color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+.onboarding-nearby-providers > div { display: grid; gap: 5px; }
+.onboarding-nearby-providers label { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 6px; background: var(--surface); padding: 7px 8px; cursor: pointer; }
+.onboarding-nearby-providers label.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.onboarding-nearby-providers input { accent-color: var(--accent); }
+.onboarding-nearby-providers label > span { display: grid; min-width: 0; gap: 2px; }
 .onboarding-nearby-providers strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.onboarding-nearby-providers small { flex: 0 0 auto; color: var(--ink-faint); font-size: 10px; }
+.onboarding-nearby-providers small { overflow: hidden; color: var(--ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-nearby-providers em { color: var(--ink-soft); font-size: 9px; font-style: normal; font-weight: 700; }
 .onboarding-nearby-providers p { margin: 0; color: var(--ink-faint); font-size: 10px; line-height: 1.4; }
 .transcript-entry { display: grid; gap: 17px; }
 .transcript-drop {

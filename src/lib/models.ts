@@ -93,6 +93,35 @@ export interface EducationProvider {
   source_updated_at: string | null;
 }
 
+export interface CollegeDistrict {
+  district_code: string;
+  name: string;
+  website_url: string | null;
+  policy_provider_code: string | null;
+  status: "active" | "inactive";
+  source_url: string;
+  source_updated_at: string | null;
+}
+
+export interface StudentCollegeDistrictPreference {
+  user_id: string;
+  district_code: string;
+  selection_method: "suggested" | "student" | "pilot";
+  school_id_at_selection: string | null;
+  updated_at: string;
+}
+
+export interface NearbyCollegeDistrict {
+  district_code: string;
+  district_name: string;
+  colleges_count: number;
+  nearest_distance_miles: number | null;
+  providers: Array<Pick<EducationProvider, "id" | "provider_code" | "name" | "website_url" | "city" | "postal_code"> & {
+    distance_miles: number | null;
+  }>;
+  is_recommended: boolean;
+}
+
 export interface SharedDataProposal {
   id: string;
   submitted_by: string;

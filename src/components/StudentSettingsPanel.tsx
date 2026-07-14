@@ -2,8 +2,9 @@ import { CheckIcon as Check } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState, type SyntheticEvent } from "react";
 import AccountLifecycleControls from "@/components/AccountLifecycleControls";
+import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import PilotSettingsSection from "@/components/PilotSettingsSection";
-import type { GradeLevel, School, StudentSettings } from "@/lib/models";
+import type { CollegeDistrict, GradeLevel, NearbyCollegeDistrict, School, StudentCollegeDistrictPreference, StudentSettings } from "@/lib/models";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import styles from "./StudentSettingsPanel.module.css";
 
@@ -29,6 +30,7 @@ interface StudentSettingsPanelProps {
   busy?: boolean;
   onSave: (patch: StudentSettingsPatch) => void | Promise<void>;
   onAiPreferencesChanged: () => void | Promise<void>;
+  onInstitutionChanged?: () => void | Promise<void>;
   onAccountDeleted: () => void | Promise<void>;
 }
 
@@ -60,6 +62,7 @@ export default function StudentSettingsPanel({
   busy = false,
   onSave,
   onAiPreferencesChanged,
+  onInstitutionChanged,
   onAccountDeleted
 }: StudentSettingsPanelProps) {
   const [draft, setDraft] = useState<SettingsDraft>(() => settingsDraft(settings));
@@ -68,6 +71,11 @@ export default function StudentSettingsPanel({
   const [saved, setSaved] = useState(false);
   const [correction, setCorrection] = useState({ field: "website_url", value: "", evidenceUrl: "", summary: "" });
   const [correctionStatus, setCorrectionStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [collegeDistricts, setCollegeDistricts] = useState<CollegeDistrict[]>([]);
+  const [nearbyDistricts, setNearbyDistricts] = useState<NearbyCollegeDistrict[]>([]);
+  const [districtPreference, setDistrictPreference] = useState<StudentCollegeDistrictPreference | null>(null);
+  const [selectedDistrictCode, setSelectedDistrictCode] = useState("");
+  const [districtStatus, setDistrictStatus] = useState<"loading" | "idle" | "saving" | "saved">("loading");
 
   const dirty = section === "general"
     ? draft.preferredName !== settings.preferred_name
@@ -84,6 +92,36 @@ export default function StudentSettingsPanel({
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [settings]);
+
+  useEffect(() => {
+    if (section !== "general") return;
+    let active = true;
+    const supabase = getBrowserSupabase();
+    if (!supabase) {
+      void Promise.resolve().then(() => { if (active) setDistrictStatus("idle"); });
+      return;
+    }
+    void Promise.all([
+      supabase.from("college_districts").select("district_code,name,website_url,policy_provider_code,status,source_url,source_updated_at").eq("status", "active").order("name"),
+      supabase.rpc("nearby_college_districts", { target_school_id: school.id, result_limit: 8 }),
+      supabase.from("student_college_district_preferences").select("user_id,district_code,selection_method,school_id_at_selection,updated_at").eq("user_id", session.user.id).maybeSingle()
+    ]).then(([districtResult, nearbyResult, preferenceResult]) => {
+      if (!active) return;
+      if (districtResult.error || nearbyResult.error || preferenceResult.error) {
+        setError("College-district options could not be loaded.");
+        setDistrictStatus("idle");
+        return;
+      }
+      const preference = preferenceResult.data as unknown as StudentCollegeDistrictPreference | null;
+      const nearby = (nearbyResult.data ?? []) as unknown as NearbyCollegeDistrict[];
+      setCollegeDistricts((districtResult.data ?? []) as unknown as CollegeDistrict[]);
+      setNearbyDistricts(nearby);
+      setDistrictPreference(preference);
+      setSelectedDistrictCode(preference?.district_code ?? nearby.find((district) => district.is_recommended)?.district_code ?? nearby[0]?.district_code ?? "");
+      setDistrictStatus("idle");
+    });
+    return () => { active = false; };
+  }, [school.id, section, session.user.id]);
 
   async function save(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
@@ -158,6 +196,30 @@ export default function StudentSettingsPanel({
     setCorrectionStatus("saved");
   }
 
+  async function saveCollegeDistrict(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
+    event.preventDefault();
+    if (!selectedDistrictCode || selectedDistrictCode === districtPreference?.district_code) return;
+    const supabase = getBrowserSupabase();
+    if (!supabase) {
+      setError("College-district settings are unavailable in this environment.");
+      return;
+    }
+    setError(null);
+    setDistrictStatus("saving");
+    const { data, error: districtError } = await supabase.rpc("set_college_district_preference", {
+      target_district_code: selectedDistrictCode,
+      preference_method: "student"
+    });
+    if (districtError) {
+      setError(districtError.message);
+      setDistrictStatus("idle");
+      return;
+    }
+    setDistrictPreference(data as unknown as StudentCollegeDistrictPreference);
+    setDistrictStatus("saved");
+    await onInstitutionChanged?.();
+  }
+
   const controlsDisabled = busy || saving;
   const currentYear = new Date().getFullYear();
 
@@ -211,6 +273,25 @@ export default function StudentSettingsPanel({
         </div>
         {error && <p className={styles.error} role="alert">{error}</p>}
         <div className={styles.saveRow}>{saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Profile saved</span>}<button className="primary-button" type="submit" disabled={controlsDisabled || !dirty}>{saving ? "Saving" : "Save profile"}</button></div>
+      </form>
+    </section>
+
+    <section className={`content-section ${styles.section}`} aria-labelledby="institution-settings-heading">
+      <header className={styles.sectionHeading}>
+        <div><h2 id="institution-settings-heading">Schools</h2><p>Your high school controls its course catalog and diploma rules. The college district controls nearby college suggestions and district-specific planning rules.</p></div>
+      </header>
+      <div className={styles.institutionIdentity}>
+        <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} size="header" decorative />
+        <span><strong>{school.name}</strong><small>{[school.district_name, school.city, school.governance_type === "charter" ? "Charter" : "Public"].filter(Boolean).join(" · ")}</small></span>
+      </div>
+      <form className={styles.districtForm} onSubmit={saveCollegeDistrict}>
+        <label className="form-field"><span>Community-college district</span><select value={selectedDistrictCode} onChange={(event) => { setSelectedDistrictCode(event.target.value); setDistrictStatus("idle"); }} disabled={districtStatus === "loading" || districtStatus === "saving"}>
+          <option value="">Choose a district</option>
+          {nearbyDistricts.length > 0 && <optgroup label="Near this high school">{nearbyDistricts.map((district) => <option value={district.district_code} key={district.district_code}>{district.is_recommended ? "Recommended — " : ""}{district.district_name}{district.nearest_distance_miles != null ? ` (${Number(district.nearest_distance_miles).toFixed(1)} mi)` : ""}</option>)}</optgroup>}
+          <optgroup label="All California districts">{collegeDistricts.filter((district) => !nearbyDistricts.some((nearby) => nearby.district_code === district.district_code)).map((district) => <option value={district.district_code} key={district.district_code}>{district.name}</option>)}</optgroup>
+        </select><small>Suggested from the school’s public address; no device location is used.</small></label>
+        {error && <p className={styles.error} role="alert">{error}</p>}
+        <div className={styles.saveRow}>{districtStatus === "saved" && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> District saved</span>}<button className="secondary-button" type="submit" disabled={!selectedDistrictCode || selectedDistrictCode === districtPreference?.district_code || districtStatus === "loading" || districtStatus === "saving"}>{districtStatus === "saving" ? "Saving" : "Save district"}</button></div>
       </form>
     </section>
 

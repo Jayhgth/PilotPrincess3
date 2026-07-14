@@ -6,6 +6,7 @@ import {
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
+import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   PlanCourse,
@@ -113,7 +114,7 @@ function DiplomaView({
 
   return progress.length ? <>
     <EligibilitySummary
-      identity={school.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" size="header" decorative /> : <BookOpen size={25} aria-hidden />}
+      identity={<InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} size="header" decorative />}
       label="High school diploma"
       answer={open === 0 ? "The saved plan covers the diploma." : `${formatValue(open)} credits still need a course.`}
       body={`${formatValue(completed)} of ${formatValue(required)} required credits are earned. Scheduled work is shown separately.`}
@@ -126,7 +127,7 @@ function DiplomaView({
       ]}
       action={missing[0] ? <button className="secondary-button small" type="button" onClick={() => onSelect(missing[0].requirement.id)}>Review first gap</button> : null}
     />
-    <p className="graduation-source-note">Official {school.short_name} rules. <a href={DTECH_REQUIREMENTS_URL} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
+    <p className="graduation-source-note">Official {school.short_name} rules. <a href={school.slug === "design-tech-high-school" ? DTECH_REQUIREMENTS_URL : school.directory_source_url ?? school.website_url ?? "#"} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
     <div className="graduation-evidence-layout">
       <RequirementIndex
         title="Diploma requirements"

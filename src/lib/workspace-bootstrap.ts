@@ -1,8 +1,10 @@
 import type {
   CatalogReviewItem,
+  CollegeDistrict,
   Course,
   CourseDesignation,
   CourseRequirementMapping,
+  NearbyCollegeDistrict,
   EducationProvider,
   EnrollmentPolicy,
   FourYearPlan,
@@ -17,6 +19,7 @@ import type {
   SmccdProgramRequirement,
   SmccdRequirementCourse,
   StudentEnrollmentPreference,
+  StudentCollegeDistrictPreference,
   StudentSmccdGoal,
   StudentSettings,
   SmccdPrerequisiteClearance
@@ -42,6 +45,8 @@ export interface WorkspaceBootstrap {
   review_items: CatalogReviewItem[];
   enrollment_policies: EnrollmentPolicy[];
   enrollment_preference: StudentEnrollmentPreference | null;
+  college_district_preference: StudentCollegeDistrictPreference | null;
+  college_district: CollegeDistrict | null;
   plan_courses: PlanCourse[];
   gpa_scenario_choices: StoredGpaScenarioChoice[];
   planned_smccd_courses: SmccdCourse[];
@@ -73,6 +78,7 @@ export interface AssistantWorkspaceBootstrap extends WorkspaceBootstrap {
     relationship_type: string;
     confidence: string;
   }>;
+  nearby_college_districts: NearbyCollegeDistrict[];
 }
 
 export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap {
@@ -86,6 +92,8 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     school: snapshot.school ?? null,
     active_version: snapshot.active_version ?? null,
     enrollment_preference: snapshot.enrollment_preference ?? null,
+    college_district_preference: snapshot.college_district_preference ?? null,
+    college_district: snapshot.college_district ?? null,
     is_admin: snapshot.is_admin === true,
     sources: Array.isArray(snapshot.sources) ? snapshot.sources : [],
     courses: Array.isArray(snapshot.courses) ? snapshot.courses : [],
@@ -115,6 +123,8 @@ export function normalizeAssistantWorkspaceBootstrap(value: unknown): AssistantW
     prerequisite_clearances: Array.isArray(snapshot.prerequisite_clearances) ? snapshot.prerequisite_clearances : [],
     manual_smccd_completions: Array.isArray(snapshot.manual_smccd_completions) ? snapshot.manual_smccd_completions : [],
     memories: Array.isArray(snapshot.memories) ? snapshot.memories : [],
-    nearby_providers: Array.isArray(snapshot.nearby_providers) ? snapshot.nearby_providers : []
+    nearby_providers: Array.isArray(snapshot.nearby_providers) ? snapshot.nearby_providers : [],
+    nearby_college_districts: Array.isArray(snapshot.nearby_college_districts) ? snapshot.nearby_college_districts : [],
+    college_district_preference: snapshot.college_district_preference ?? null
   };
 }

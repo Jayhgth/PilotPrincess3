@@ -1,6 +1,5 @@
 import { Button as BaseButton } from "@base-ui/react/button";
 import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react/dist/csr/ArrowLeft";
-import { BuildingsIcon as Buildings } from "@phosphor-icons/react/dist/csr/Buildings";
 import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
@@ -17,7 +16,8 @@ import {
   type ReactNode
 } from "react";
 import BrandMark from "@/components/BrandMark";
-import InstitutionMark from "@/components/InstitutionMark";
+import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
+import type { School } from "@/lib/models";
 
 const SIDEBAR_WIDTH_KEY = "pilot-princess:sidebar-width";
 const SIDEBAR_COLLAPSED_WIDTH = 64;
@@ -41,7 +41,7 @@ interface Props<ViewId extends string> {
   view: ViewId;
   activeLabel: string;
   navItems: WorkspaceNavItem<ViewId>[];
-  school: { slug: string; short_name: string; source_year: string | null };
+  school: Pick<School, "slug" | "name" | "short_name" | "website_url" | "source_year">;
   theme: "light" | "dark";
   aiEnabled: boolean;
   assistantOpen: boolean;
@@ -167,7 +167,7 @@ export default function AppChrome<ViewId extends string>({
       </nav>
       <div className="sidebar-footer">
         <div className="school-chip" title={`${school.short_name}, ${school.source_year ?? "Current"} sources`}>
-          {school.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" decorative /> : <Buildings size={19} aria-hidden />}
+          <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} decorative />
           <span><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
         </div>
         <div className="sidebar-account-actions">

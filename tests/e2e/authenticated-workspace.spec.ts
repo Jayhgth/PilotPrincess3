@@ -1,18 +1,22 @@
 import { fileURLToPath } from "node:url";
-import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const qaEmail = process.env.QA_EMAIL;
 const qaPassword = process.env.QA_PASSWORD;
 const supabaseUrl = process.env.PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.PUBLIC_SUPABASE_ANON_KEY;
-const qaConfigured = Boolean(qaEmail && qaPassword && supabaseUrl && supabaseAnonKey);
+const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+let activeEmail = qaEmail ?? "";
+let activePassword = qaPassword ?? "";
+let ephemeralSupabase: SupabaseClient | null = null;
 const transcriptPath = fileURLToPath(new URL("../fixtures/transcript-basic.txt", import.meta.url));
 
 async function signInToOnboarding(page: Page) {
   await page.goto("/");
-  await page.getByLabel("Email").fill(qaEmail!);
-  await page.getByLabel("Password", { exact: false }).fill(qaPassword!);
+  await page.getByLabel("Email").fill(activeEmail);
+  await page.getByLabel("Password", { exact: false }).fill(activePassword);
   await page.getByRole("button", { name: "Open workspace" }).click();
   await expect(page).toHaveURL(/\/app/);
   await expect(page.getByRole("heading", { name: "Tell us where you are now" })).toBeVisible();
@@ -47,13 +51,23 @@ async function dragCard(page: Page, source: Locator, target: Locator) {
 }
 
 test.describe("authenticated student workspace", () => {
-  test.skip(!qaConfigured, "Set the isolated QA account and public Supabase variables to run authenticated flows.");
+  test.skip(!supabaseConfigured, "Set the public Supabase variables to run authenticated flows.");
 
   test.beforeEach(async ({ request }) => {
     const supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
-    const { data, error } = await supabase.auth.signInWithPassword({ email: qaEmail!, password: qaPassword! });
+    if (!qaEmail || !qaPassword) {
+      activeEmail = `pilot-workspace-e2e-${randomUUID()}@example.com`;
+      activePassword = `Pp-${randomUUID()}!9a`;
+      const signup = await supabase.auth.signUp({ email: activeEmail, password: activePassword, options: { data: { preferred_name: "Codex QA" } } });
+      if (signup.error || !signup.data.session) throw signup.error ?? new Error("The ephemeral workspace account could not be created.");
+      ephemeralSupabase = supabase;
+      return;
+    }
+    activeEmail = qaEmail;
+    activePassword = qaPassword;
+    const { data, error } = await supabase.auth.signInWithPassword({ email: activeEmail, password: activePassword });
     if (error || !data.session) throw error ?? new Error("The QA account could not sign in.");
 
     const response = await request.post("/api/admin/reset", {
@@ -64,6 +78,13 @@ test.describe("authenticated student workspace", () => {
     });
     expect(response.ok(), await response.text()).toBe(true);
     await supabase.auth.signOut({ scope: "local" });
+  });
+
+  test.afterEach(async () => {
+    if (ephemeralSupabase) {
+      await ephemeralSupabase.rpc("delete_current_user_account");
+      ephemeralSupabase = null;
+    }
   });
 
   test("completes onboarding, imports a transcript, and reaches the course plan", async ({ page }) => {

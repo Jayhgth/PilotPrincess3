@@ -99,10 +99,10 @@ export function evaluateEnrollmentSchedule(
   }).sort((left, right) => left.schoolYear.localeCompare(right.schoolYear) || left.term.localeCompare(right.term));
 }
 
-export function defaultEnrollmentPreference(userId: string): StudentEnrollmentPreference {
+export function defaultEnrollmentPreference(userId: string, providerCode = "SMCCD"): StudentEnrollmentPreference {
   return {
     user_id: userId,
-    provider_code: "SMCCD",
+    provider_code: providerCode,
     program_type: "concurrent",
     limit_mode: "recommended",
     custom_unit_limit: null,

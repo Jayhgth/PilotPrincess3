@@ -4,6 +4,7 @@ import { createSmccdPlanCourseIndex, dtechCatalogEligibility, smccdCourseAlready
 import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import type {
   CatalogReviewItem,
+  CollegeDistrict,
   Course,
   CourseDesignation,
   CourseRequirementMapping,
@@ -12,6 +13,7 @@ import type {
   FourYearPlan,
   GradeLevel,
   GraduationRequirement,
+  NearbyCollegeDistrict,
   OfficialSource,
   PlanCourse,
   PlanVersion,
@@ -23,6 +25,7 @@ import type {
   SmccdProgramRequirement,
   SmccdRequirementCourse,
   StudentSmccdGoal,
+  StudentCollegeDistrictPreference,
   StudentEnrollmentPreference,
   StudentSettings
 } from "@/lib/models";
@@ -120,6 +123,7 @@ const toolArgumentSchemas = {
     award_type: z.enum(["AA", "AS", "all"]).default("all")
   }),
   set_current_school: z.object({ school_id: z.uuid() }),
+  set_college_district_preference: z.object({ district_code: z.string().trim().min(3).max(180) }),
   undo_change: z.object({ tool_call_id: z.uuid() }),
   add_course_schedule: z.object({
     course_ids: z.array(z.uuid()).min(1).max(24)
@@ -271,6 +275,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
   { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
   { name: "set_current_school", mutatesData: true, description: "Propose changing the student's selected California public or charter high school after search_california_high_schools returns its exact ID. Existing plan rows are retained; school-specific catalog and graduation evidence refresh to the new school.", arguments: '{"school_id":"uuid"}' },
+  { name: "set_college_district_preference", mutatesData: true, description: "Propose changing the student's California community-college district. Use an exact district_code returned by get_nearby_education_providers. This changes district-aware suggestions and sourced policy context; it never claims enrollment eligibility.", arguments: '{"district_code":"string"}' },
   { name: "undo_change", mutatesData: true, description: "Undo one exact applied change from this conversation using its private stored inverse. Use only a tool_call_id supplied by the recent conversation change ledger; never reconstruct deleted data from the current plan.", arguments: '{"tool_call_id":"uuid"}' },
   { name: "add_course_schedule", mutatesData: true, description: "Propose adding the exact complete-plan batch returned by get_course_schedule_options. Pass the same objectives, starting grade, interests, rigor, workload cap, and unit-limit choice so revalidation is identical.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean,"interests":["string"],"rigor":"balanced|advanced|lighter","max_courses_per_term":number|null,"start_grade":9|10|11|12,"objectives":["complete_diploma|maximize_weighted_gpa|maximize_degree_overlap|align_major"]}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
@@ -326,6 +331,7 @@ export function assistantToolLabel(name: string) {
     get_college_goal: "Read college goal",
     search_smccd_programs: "Search college programs",
     set_current_school: "Change selected school",
+    set_college_district_preference: "Change college district",
     undo_change: "Undo previous change",
     add_course_schedule: "Add course schedule",
     add_dtech_course: "Add high school course",
@@ -375,6 +381,9 @@ interface AssistantWorkspace {
   mappings: CourseRequirementMapping[];
   courseDesignations: CourseDesignation[];
   nearbyProviders: Array<Pick<EducationProvider, "provider_code" | "name" | "provider_type" | "city" | "postal_code" | "website_url"> & { provider_id: string; distance_miles: number | null; relationship_type: string; confidence: string }>;
+  nearbyCollegeDistricts: NearbyCollegeDistrict[];
+  collegeDistrictPreference: StudentCollegeDistrictPreference | null;
+  collegeDistrict: CollegeDistrict | null;
   equivalencies: SmccdHighSchoolEquivalency[];
   plannedSmccdCourses: SmccdCourse[];
   sources: OfficialSource[];
@@ -410,6 +419,9 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     mappings: bootstrap.mappings,
     courseDesignations: bootstrap.course_designations,
     nearbyProviders: bootstrap.nearby_providers,
+    nearbyCollegeDistricts: bootstrap.nearby_college_districts,
+    collegeDistrictPreference: bootstrap.college_district_preference,
+    collegeDistrict: bootstrap.college_district,
     equivalencies: bootstrap.equivalencies,
     plannedSmccdCourses: bootstrap.planned_smccd_courses,
     sources: bootstrap.transcript_sources,
@@ -418,7 +430,12 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     enrollmentPolicies: bootstrap.enrollment_policies,
     enrollmentPreference: bootstrap.enrollment_preference
       ? bootstrap.enrollment_preference
-      : defaultEnrollmentPreference(userId),
+      : defaultEnrollmentPreference(
+          userId,
+          bootstrap.college_district?.policy_provider_code
+            ?? bootstrap.college_district_preference?.district_code
+            ?? "SMCCD"
+        ),
     prerequisiteClearances: bootstrap.prerequisite_clearances,
     manualSmccdCompletions: bootstrap.manual_smccd_completions,
     memories: bootstrap.memories
@@ -701,7 +718,8 @@ type AssistantUndo =
   | { kind: "restore_rows"; table: "plan_courses" | "student_smccd_goals" | "student_prerequisite_clearances"; rows: Array<Record<string, unknown>>; summary: string }
   | { kind: "restore_enrollment_preference"; row: Record<string, unknown> | null; summary: string }
   | { kind: "restore_student_settings"; values: Record<string, unknown>; summary: string }
-  | { kind: "restore_school_selection"; school_id: string; summary: string }
+  | { kind: "restore_school_selection"; school_id: string; college_district_preference?: Record<string, unknown> | null; summary: string }
+  | { kind: "restore_college_district_preference"; row: Record<string, unknown> | null; summary: string }
   | { kind: "restore_gpa_scenario"; plan_course_ids: string[]; rows: Array<Record<string, unknown>>; summary: string }
   | { kind: "restore_smccd_completion"; college_code: "CSM" | "SKY" | "CAN"; area: "7A" | "information_literacy"; completed: boolean; summary: string }
   | { kind: "restore_transcript_correction"; review_item_id: string; corrected_payload: Record<string, unknown> | null; status: string; plan_rows: Array<Record<string, unknown>>; inserted_plan_course_ids: string[]; summary: string }
@@ -784,6 +802,9 @@ export async function executeAssistantReadTool(
         gpa: calculated.gpa,
         gpa_scenario: workspace.gpaScenarioChoices,
         degree_bookmarks: workspace.collegeGoals,
+        college_district_preference: workspace.collegeDistrictPreference,
+        college_district: workspace.collegeDistrict,
+        nearby_college_districts: workspace.nearbyCollegeDistricts,
         enrollment_preference: workspace.enrollmentPreference,
         manual_degree_completions: workspace.manualSmccdCompletions,
         prerequisite_clearances: workspace.prerequisiteClearances,
@@ -921,6 +942,8 @@ export async function executeAssistantReadTool(
       summary: `Read ${workspace.nearbyProviders.length} nearby education ${workspace.nearbyProviders.length === 1 ? "provider" : "providers"}.`,
       data: {
         school: { name: workspace.school.name, city: workspace.school.city, postal_code: workspace.school.postal_code },
+        selected_district: workspace.collegeDistrictPreference,
+        districts: workspace.nearbyCollegeDistricts,
         providers: workspace.nearbyProviders,
         boundary: "Distances are approximate and derived from institution addresses, not student location. Enrollment, partnership, and course availability require provider verification."
       }
@@ -959,6 +982,7 @@ export async function executeAssistantReadTool(
           pending_review_count: workspace.transcriptReviewItems.filter((item) => item.entity_type === "transcript_course" && item.status === "pending").length
         },
         college_goal: { selected: workspace.collegeGoals.length > 0 },
+        college_district_preference: workspace.collegeDistrictPreference,
         college_enrollment_preference: {
           provider: workspace.enrollmentPreference.provider_code,
           program_type: workspace.enrollmentPreference.program_type,
@@ -1368,7 +1392,27 @@ export async function executeAssistantMutationTool(
       summary: `${school.name} is now the selected high school. Existing plan courses were retained.`,
       data: { school_id: school.id, school_name: school.name, district_name: school.district_name },
       changed: { entity: "student_settings", id: userId },
-      undo: { kind: "restore_school_selection", school_id: workspace.school.id, summary: `${workspace.school.name} was restored as the selected high school.` }
+      undo: { kind: "restore_school_selection", school_id: workspace.school.id, college_district_preference: workspace.collegeDistrictPreference as unknown as Record<string, unknown> | null, summary: `${workspace.school.name} and its prior college-district preference were restored.` }
+    };
+  }
+
+  if (name === "set_college_district_preference") {
+    const args = toolArgumentSchemas.set_college_district_preference.parse(argumentsValue);
+    const districtResult = await supabase.from("college_districts").select("district_code,name,status").eq("district_code", args.district_code).maybeSingle();
+    if (districtResult.error) throw new Error(districtResult.error.message);
+    const district = districtResult.data;
+    if (!district || district.status !== "active") throw new Error("Choose an active California community-college district.");
+    if (workspace.collegeDistrictPreference?.district_code === district.district_code) throw new Error(`${district.name} is already the selected college district.`);
+    const { error } = await supabase.rpc("set_college_district_preference", {
+      target_district_code: district.district_code,
+      preference_method: "pilot"
+    });
+    if (error) throw new Error(error.message);
+    return {
+      summary: `${district.name} is now the selected community-college district.`,
+      data: { district_code: district.district_code, district_name: district.name },
+      changed: { entity: "student_college_district_preference", id: userId },
+      undo: { kind: "restore_college_district_preference", row: workspace.collegeDistrictPreference as unknown as Record<string, unknown> | null, summary: "The previous college-district preference was restored." }
     };
   }
 
@@ -1809,6 +1853,9 @@ export async function executeAssistantMutationTool(
 
   if (name === "update_enrollment_preference") {
     const args = toolArgumentSchemas.update_enrollment_preference.parse(argumentsValue);
+    if (workspace.collegeDistrict?.policy_provider_code !== "SMCCD") {
+      throw new Error("The selected college district does not have a reviewed concurrent/dual-enrollment policy in Pilot yet.");
+    }
     const policy = workspace.enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === args.program_type);
     if (!policy) throw new Error("No source-backed SMCCD policy matches that enrollment type.");
     const previousResult = await supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle();
