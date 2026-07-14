@@ -58,15 +58,15 @@ describe("SMCCD curriculum planning", () => {
     ] as SmccdProgramRequirement[];
     const options = [
       { requirement_id: "core", course_code: "BIOL 100" },
-      { requirement_id: "core", course_code: "CHEM 110" }
+      { requirement_id: "core", course_code: "CHEM 210" }
     ] as SmccdRequirementCourse[];
     const courses = [
       { id: "CSM:BIOL 100", college_code: "CSM", course_code: "BIOL 100", title: "Introduction to Biology", units_min: 4, units_max: 4, degree_applicable: true, attributes: ["AA/AS Degree Requirements: Area 5A"], catalog_url: "https://example.com/biol" },
-      { id: "CSM:CHEM 110", college_code: "CSM", course_code: "CHEM 110", title: "General Chemistry", units_min: 4, units_max: 4, degree_applicable: true, attributes: ["AA/AS Degree Requirements: Area 5A"], catalog_url: "https://example.com/chem" }
+      { id: "CSM:CHEM 210", college_code: "CSM", course_code: "CHEM 210", title: "General Chemistry", units_min: 5, units_max: 5, degree_applicable: true, attributes: [], catalog_url: "https://example.com/chem" }
     ] as SmccdCourse[];
     const planRows = [
       { smccd_course_id: "CSM:BIOL 100", status: "completed", college_units: 4, grade_level: 11, term: "fall", letter_grade: "A" },
-      { smccd_course_id: "CSM:CHEM 110", status: "planned", college_units: 4, grade_level: 12, term: "spring", letter_grade: null }
+      { smccd_course_id: "CSM:CHEM 210", status: "planned", college_units: 4, grade_level: 12, term: "spring", letter_grade: null }
     ] as PlanCourse[];
 
     const result = calculateSmccdProgramProgress(program, requirements, options, planRows, courses);
@@ -77,7 +77,7 @@ describe("SMCCD curriculum planning", () => {
       totalDegreeUnits: 60,
       completedRequirements: 0,
       satisfiedRequirements: 1,
-      geEvidence: [{ area: "5A", completedCourseCodes: ["BIOL 100"], projectedCourseCodes: ["BIOL 100", "CHEM 110"] }]
+      geEvidence: [{ area: "5", completedCourseCodes: ["BIOL 100"], projectedCourseCodes: ["BIOL 100", "CHEM 210"] }]
     });
     expect(result.requirements[0]).toMatchObject({
       completedStatus: "partial",
@@ -85,7 +85,7 @@ describe("SMCCD curriculum planning", () => {
       missingSummary: "Requirement covered"
     });
     expect(calculateSmccdGeEvidence(createSmccdProgramProgressContext([], [], planRows, courses))).toEqual([
-      { area: "5A", label: "Area 5A", completedCourseCodes: ["BIOL 100"], projectedCourseCodes: ["BIOL 100", "CHEM 110"] }
+      { area: "5", label: "Area 5", completedCourseCodes: ["BIOL 100"], projectedCourseCodes: ["BIOL 100", "CHEM 210"] }
     ]);
   });
 
@@ -225,6 +225,61 @@ describe("SMCCD curriculum planning", () => {
     });
   });
 
+  it("uses the official college-wide GE roster when course-detail tags are incomplete", () => {
+    const courses = [{
+      id: "CSM:ANTH 180",
+      college_code: "CSM",
+      course_code: "ANTH 180",
+      attributes: ["AA/AS Degree Requirements: Area 3"],
+      units_min: 3,
+      units_max: 3
+    }] as SmccdCourse[];
+    const rows = [{ smccd_course_id: "CSM:ANTH 180", status: "completed", college_units: 3, letter_grade: "A" }] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "CSM");
+
+    expect(progress.find((area) => area.area === "4")).toMatchObject({ status: "completed", completedCourseCodes: ["ANTH 180"] });
+  });
+
+  it("applies district GE reciprocity when a source-college area has a different unit structure", () => {
+    const courses = [{ ...course("ASTR 100", 3), id: "SKY:ASTR 100", college_code: "SKY" }] as SmccdCourse[];
+    const rows = [{ smccd_course_id: "SKY:ASTR 100", status: "completed", college_units: 3, letter_grade: "A" }] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "CAN");
+
+    expect(progress.find((area) => area.area === "5")).toMatchObject({
+      status: "completed",
+      requiredUnits: 4,
+      projectedUnits: 4,
+      completedCourseCodes: ["ASTR 100"]
+    });
+  });
+
+  it("requires a lab when completing Cañada Area 5 with Cañada coursework", () => {
+    const courses = [
+      { ...course("ASTR 100", 3), id: "CAN:ASTR 100", college_code: "CAN" },
+      { ...course("ASTR 101", 1), id: "CAN:ASTR 101", college_code: "CAN" }
+    ] as SmccdCourse[];
+    const lecture = { smccd_course_id: "CAN:ASTR 100", status: "completed", college_units: 3, letter_grade: "A" } as PlanCourse;
+    const lab = { smccd_course_id: "CAN:ASTR 101", status: "completed", college_units: 1, letter_grade: "A" } as PlanCourse;
+
+    const withoutLab = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], [lecture], courses), "CAN");
+    const withLab = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], [lecture, lab], courses), "CAN");
+
+    expect(withoutLab.find((area) => area.area === "5")).toMatchObject({ status: "partial", missingSummary: "A laboratory science course is still needed" });
+    expect(withLab.find((area) => area.area === "5")).toMatchObject({ status: "completed", completedCourseCodes: ["ASTR 101", "ASTR 100"] });
+  });
+
+  it("tracks Skyline's history and institutions requirement without consuming its GE use", () => {
+    const courses = [{ ...course("HIST 201", 3), id: "SKY:HIST 201", college_code: "SKY" }] as SmccdCourse[];
+    const rows = [{ smccd_course_id: "SKY:HIST 201", status: "completed", college_units: 3, letter_grade: "A" }] as PlanCourse[];
+
+    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "SKY");
+
+    expect(progress.find((area) => area.area === "8")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"] });
+    expect(progress.find((area) => area.area === "4")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"] });
+  });
+
   it("enforces a discipline condition alongside the unit total", () => {
     const program = { id: "CSM:interdisciplinary", college_code: "CSM", total_degree_units: 60, total_major_units_text: "18 units" } as SmccdProgram;
     const requirements = [{
@@ -270,6 +325,28 @@ describe("SMCCD curriculum planning", () => {
     });
     expect(result.requirements[0].manualReviewReason).toBeNull();
     expect(result.manualReviewRequirements).toBe(0);
+  });
+
+  it("evaluates the CSM Social Science subject breadth and concentration rule", () => {
+    const program = { id: "CSM:social-science-aa", college_code: "CSM", total_degree_units: 60, total_major_units_text: "18 units" } as SmccdProgram;
+    const requirements = [{
+      id: "breadth",
+      program_id: program.id,
+      label: "Required Core Courses: 18 units Select courses from at least three of the subject areas listed below. In one of the subject areas you must select at least two courses.",
+      kind: "text_rule",
+      min_units: 18,
+      min_count: null,
+      raw_text: "Anthropology Economics Ethnic Studies Geography History Political Science Psychology Social Science Sociology",
+      sort_order: 0
+    }] as SmccdProgramRequirement[];
+    const codes = ["ANTH 110", "ANTH 180", "ECON 100", "HIST 100", "PSYC C1000", "SOCI 100"];
+    const courses = codes.map((code) => course(code, 3));
+    const rows = codes.map((code) => ({ smccd_course_id: `CSM:${code}`, status: "completed", college_units: 3, letter_grade: "A" })) as PlanCourse[];
+
+    const result = calculateSmccdProgramProgress(program, requirements, [], rows, courses);
+
+    expect(result.requirements[0]).toMatchObject({ status: "satisfied", earnedUnits: 18, remainingDisciplines: 0 });
+    expect(result.majorPercent).toBe(100);
   });
 
   it("counts D grades toward degree units but not major requirements", () => {

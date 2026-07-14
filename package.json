@@ -20,6 +20,7 @@
     "check": "pnpm typecheck && pnpm test",
     "check:release": "pnpm lint && pnpm typecheck && pnpm test:full && pnpm build && pnpm test:e2e && pnpm smccd:validate",
     "smccd:scrape": "node scripts/scrape-smccd-catalog.mjs",
+    "smccd:ge-scrape": "node scripts/scrape-smccd-local-ge.mjs",
     "smccd:migration": "node scripts/generate-smccd-migration.mjs",
     "smccd:requirements-migration": "node scripts/generate-smccd-requirement-migration.mjs",
     "equivalencies:generate": "node scripts/generate-equivalency-migration.mjs",

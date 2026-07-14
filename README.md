@@ -63,10 +63,11 @@ pnpm providers:sync
 
 The syncs are idempotent and retain source URLs, source dates, confidence, and review state. Review ambiguous identities instead of selecting a fuzzy match.
 
-The checked-in SMCCD catalog is generated from official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs.
+The checked-in SMCCD catalog and local-GE rosters are generated from the official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs and degree worksheets. Program scraping audits every official requirement table and course option before validation.
 
 ```sh
 pnpm smccd:scrape
+pnpm smccd:ge-scrape
 pnpm smccd:migration
 pnpm smccd:requirements-migration
 pnpm smccd:validate

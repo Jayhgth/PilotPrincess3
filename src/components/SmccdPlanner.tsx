@@ -768,7 +768,7 @@ export default function SmccdPlanner({
               </div>
             </article>;
           })}</div>
-          <footer><Warning size={15} /><p>Courses are assigned to one local GE area at a time. Manual PE completion is student-confirmed. Catalog rights, waivers, substitutions, residency, and transfer-pattern rules still need official review.</p><a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">Official 2025-2026 pattern <ArrowSquareOut size={13} /></a></footer>
+          <footer><Warning size={15} /><p>Official district reciprocity carries source-college GE credit across Cañada, CSM, and Skyline. Courses otherwise fill one local GE area at a time; catalog rights, waivers, substitutions, residency, and final award review remain official processes.</p><a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">Official 2025-2026 pattern <ArrowSquareOut size={13} /></a></footer>
         </section>
       </section>}
 

@@ -71,7 +71,7 @@ async function scrapeCourses(college) {
       const unitsText = cells.eq(2).text().replace(/\s+/g, " ").trim();
       const transferText = cells.eq(3).text().replace(/\s+/g, " ").trim();
       const rowText = subject$(row).text().replace(/\s+/g, " ").trim();
-      const match = courseText.match(/^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)$/i);
+      const match = courseText.match(/^([A-Z]{2,5}\.?|P\.E\.|R\.E\.)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)$/i);
       const unitRange = parseUnitsText(unitsText);
       if (!match || !unitRange || !title) return;
       const courseCode = normalizeCourseId(`${match[1]} ${match[2]}`);
@@ -182,7 +182,11 @@ async function scrapePrograms(college) {
     const pageTitle = page$("h1").first().text().replace(/\s+/g, " ").trim();
     const bodyText = page$("body").text().replace(/\r/g, "\n");
     const totalMajorUnitsText = bodyText.match(/Total Required Major Units:\s*([0-9.\s-]+)/i)?.[1]?.trim() ?? "";
-    const requirementGroups = parseRequirementGroups(page$, bodyText);
+    const parsedRequirements = parseRequirementGroups(page$, bodyText, {
+      programCode: summary.id,
+      totalMajorUnitsText
+    });
+    const requirementGroups = parsedRequirements.groups;
     if (requirementGroups.length === 0) return null;
     return {
       collegeCode: college.code,
@@ -192,31 +196,77 @@ async function scrapePrograms(college) {
       totalDegreeUnitsRequired: 60,
       totalMajorUnitsText,
       requirementGroups,
+      requirementAudit: parsedRequirements.audit,
       catalogUrl: summary.url
     };
   });
   return programs.filter(Boolean).sort((a, b) => a.title.localeCompare(b.title));
 }
 
-function parseRequirementGroups($, text) {
+function parseRequirementGroups($, text, { programCode, totalMajorUnitsText }) {
   const tableGroups = [];
+  const sourceTables = [];
+  const ignoredTableIndexes = new Set();
+  const representedTableIndexes = new Set();
   let groupedCore = null;
   let alternativePathway = null;
+  let pendingSelection = null;
+  let recommendedSection = false;
+  const pathwayTables = [];
+  const nativeSpeakerTables = [];
+  const addGroup = (group, sourceIndexes) => {
+    for (const sourceIndex of sourceIndexes) representedTableIndexes.add(sourceIndex);
+    tableGroups.push(group);
+    return group;
+  };
+
   $("table.smc-table-core-requirements").each((index, table) => {
     const header = $(table).find("thead th").first().text().replace(/\s+/g, " ").trim();
-    if (/(?:not required|additional recommended)/i.test(header)) return;
     const rows = [];
     $(table).find("tbody tr").each((_, row) => {
       const cells = $(row).find("th, td");
       const courseText = cells.eq(0).text().replace(/\s+/g, " ").trim();
       const rowText = cells.map((__, cell) => $(cell).text().replace(/\s+/g, " ").trim()).get().filter(Boolean).join(" ");
       const unitsText = cells.last().text().replace(/\s+/g, " ").trim();
-      const match = courseText.match(/^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)$/i);
+      const match = courseText.match(/^([A-Z]{2,5}\.?|P\.E\.|R\.E\.)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)$/i);
       if (match) rows.push({ type: "course", option: { courseCode: normalizeCourseId(`${match[1]} ${match[2]}`), unitsText, note: null } });
       else if (/^OR$/i.test(rowText)) rows.push({ type: "or" });
       else if (courseText) rows.push({ type: "text", text: courseText, unitsText });
     });
     const courseOptions = rows.filter((row) => row.type === "course").map((row) => row.option);
+    const freeTextRows = rows.filter((row) => row.type === "text");
+    sourceTables.push({ index, header, courseOptions, freeTextRows });
+
+    if (!header && courseOptions.length === 0 && freeTextRows.length === 0) {
+      ignoredTableIndexes.add(index);
+      return;
+    }
+
+    if (/(?:not required|additional recommended|recommended (?:additional courses|electives)|students can earn hours by taking)/i.test(header)) {
+      ignoredTableIndexes.add(index);
+      recommendedSection = /recommended/i.test(header);
+      pendingSelection = null;
+      return;
+    }
+    const isBareContinuation = !/(?:required|select|choose|plus|complete|core|major requirements?|list\s+[a-z]|one of the following groups)/i.test(header);
+    if (recommendedSection && !/(?:required|complete|major requirements?)/i.test(header)) {
+      ignoredTableIndexes.add(index);
+      return;
+    }
+    recommendedSection = false;
+
+    if (/Pathway:/i.test(header) && /choose one of the following pathways/i.test(text)) {
+      pathwayTables.push({ index, header, courseOptions, freeTextRows });
+      representedTableIndexes.add(index);
+      return;
+    }
+    if (/For (?:non-)?native speakers of Spanish/i.test(header)) {
+      nativeSpeakerTables.push({ index, header, courseOptions });
+      representedTableIndexes.add(index);
+      return;
+    }
+
+    if (pathwayTables.length > 0 || nativeSpeakerTables.length > 0) pendingSelection = null;
     const groupNumber = header.match(/\bGroup\s+(\d+)\b/i)?.[1] ?? null;
     if (/one of the following groups/i.test(header) && courseOptions.length > 0) {
       alternativePathway = {
@@ -229,12 +279,13 @@ function parseRequirementGroups($, text) {
         constraintOnly: false,
         courseOptions: courseOptions.map((option) => ({ ...option, note: `Alternative pathway group ${groupNumber ?? 1}` }))
       };
-      tableGroups.push(alternativePathway);
+      addGroup(alternativePathway, [index]);
       return;
     }
     if (groupNumber && alternativePathway && courseOptions.length > 0) {
       alternativePathway.rawText += ` Group ${groupNumber}: ${courseOptions.map((option) => option.courseCode).join(", ")}`;
       alternativePathway.courseOptions.push(...courseOptions.map((option) => ({ ...option, note: `Alternative pathway group ${groupNumber}` })));
+      representedTableIndexes.add(index);
       return;
     }
     const startsGroupedCore = /one or more courses selected from each group/i.test(header);
@@ -243,7 +294,7 @@ function parseRequirementGroups($, text) {
     }
     if ((startsGroupedCore || groupNumber) && groupedCore && courseOptions.length > 0) {
       groupedCore.courseOptions.push(...courseOptions);
-      tableGroups.push({
+      addGroup({
         id: `required-core-group-${groupNumber ?? tableGroups.length + 1}-${index}`,
         label: `Required core: Group ${groupNumber ?? tableGroups.length + 1}`,
         kind: "or_group",
@@ -252,13 +303,13 @@ function parseRequirementGroups($, text) {
         rawText: header,
         constraintOnly: true,
         courseOptions
-      });
+      }, [index]);
       return;
     }
     if (groupedCore && /complete the required\s+\d+(?:\.\d+)?\s+units with courses selected from Groups/i.test(header)) {
       const combinedOptions = [...groupedCore.courseOptions, ...courseOptions]
         .filter((option, optionIndex, options) => options.findIndex((candidate) => candidate.courseCode === option.courseCode) === optionIndex);
-      tableGroups.push({
+      addGroup({
         id: `required-core-unit-total-${index}`,
         label: `Required core unit total: ${groupedCore.totalUnits ?? parseRequirementMinUnits(header)} units`,
         kind: "choose_units",
@@ -267,11 +318,62 @@ function parseRequirementGroups($, text) {
         rawText: header,
         constraintOnly: false,
         courseOptions: combinedOptions
-      });
+      }, [index]);
       groupedCore = null;
       return;
     }
-    if (!/(core|selective|elective|courses|selection|complete|list\s+[a-z]|group\s+[a-z])/i.test(header)) return;
+
+    const headerMinUnits = parseRequirementMinUnits(header);
+    const headerMinCount = parseRequirementMinCount(header);
+    const startsSelection = /(?:select|choose|plus a minimum|one of the following)/i.test(header);
+    if (courseOptions.length === 0 && startsSelection) {
+      pendingSelection = addGroup({
+        id: `${slug(header || `selection-${index}`)}-${index}`,
+        label: header.replace(/\s+Units$/i, ""),
+        kind: freeTextRows.length > 0 ? "text_rule" : headerMinUnits !== null ? "choose_units" : headerMinCount !== null ? "choose_count" : "text_rule",
+        minUnits: headerMinUnits,
+        minCount: headerMinCount,
+        rawText: [header, ...freeTextRows.map((row) => row.text)].filter(Boolean).join(" ") || null,
+        constraintOnly: false,
+        courseOptions: []
+      }, [index]);
+      return;
+    }
+
+    if (courseOptions.length > 0 && pendingSelection && isBareContinuation) {
+      pendingSelection.courseOptions.push(...courseOptions);
+      pendingSelection.rawText = [pendingSelection.rawText, header, ...freeTextRows.map((row) => row.text)].filter(Boolean).join(" ");
+      representedTableIndexes.add(index);
+      return;
+    }
+
+    const movementSelection = text.match(/Movement Based Courses:\s*Select\s+(\d+(?:\.\d+)?)\s+units[^\n]*/i)?.[0] ?? null;
+    if (courseOptions.length > 0 && /^Area\s+1:/i.test(header) && movementSelection) {
+      pendingSelection = addGroup({
+        id: `movement-based-courses-${index}`,
+        label: movementSelection,
+        kind: "choose_units",
+        minUnits: parseRequirementMinUnits(movementSelection),
+        minCount: null,
+        rawText: header,
+        constraintOnly: false,
+        courseOptions: [...courseOptions]
+      }, [index]);
+      return;
+    }
+
+    const priorGroup = tableGroups.at(-1);
+    if (courseOptions.length > 0 && isBareContinuation && priorGroup && (
+      !header
+      || /(?:semester|drawing|painting|ceramics|sculpture|digital art|photography|area\s+\d+)/i.test(header)
+    )) {
+      priorGroup.courseOptions.push(...courseOptions);
+      priorGroup.rawText = [priorGroup.rawText, header, ...freeTextRows.map((row) => row.text)].filter(Boolean).join(" ");
+      representedTableIndexes.add(index);
+      return;
+    }
+
+    pendingSelection = null;
 
     const alternativeSets = [];
     const fixedOptions = [];
@@ -287,11 +389,29 @@ function parseRequirementGroups($, text) {
       else fixedOptions.push(row.option);
       rowIndex += 1;
     }
-    const freeTextRows = rows.filter((row) => row.type === "text");
-    const headerMinUnits = parseRequirementMinUnits(header);
     const complexText = [header, ...freeTextRows.map((row) => row.text)].join(" ");
+    const explicitlySelects = /(selective|elective|choose|\bselect\b|selection|minimum|at least)/i.test(header);
+    const isSelection = explicitlySelects || (
+      /(from the following|or more units|complete\s+\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?\s+units?\s+from)/i.test(header)
+      && !/^(?:complete\s+)?(?:required\s+)?core/i.test(header)
+    );
+
+    if (courseOptions.length > 0 && isSelection && !/(?:any .*list|not already (?:used|chosen)|famil(?:y|ies))/i.test(complexText)) {
+      addGroup({
+        id: `${slug(header)}-${index}`,
+        label: header.replace(/\s+Units$/i, ""),
+        kind: headerMinUnits !== null ? "choose_units" : headerMinCount !== null ? "choose_count" : "text_rule",
+        minUnits: headerMinUnits,
+        minCount: headerMinCount,
+        rawText: freeTextRows.length > 0 ? complexText : null,
+        constraintOnly: false,
+        courseOptions
+      }, [index]);
+      return;
+    }
+
     if (courseOptions.length > 0 && (/(?:any .*list|not already (?:used|chosen)|famil(?:y|ies))/i.test(complexText) || (alternativeSets.length > 1 && freeTextRows.length > 0))) {
-      tableGroups.push({
+      addGroup({
         id: `${slug(header)}-manual-${index}`,
         label: header.replace(/\s+Units$/i, ""),
         kind: "text_rule",
@@ -300,11 +420,11 @@ function parseRequirementGroups($, text) {
         rawText: complexText,
         constraintOnly: false,
         courseOptions
-      });
+      }, [index]);
       return;
     }
     if (alternativeSets.length > 0 && /^Required Core/i.test(header)) {
-      alternativeSets.forEach((options, alternativeIndex) => tableGroups.push({
+      alternativeSets.forEach((options, alternativeIndex) => addGroup({
         id: `${slug(header)}-option-${alternativeIndex + 1}-${index}`,
         label: `${header.replace(/\s+Units$/i, "")}: option ${alternativeIndex + 1}`,
         kind: "or_group",
@@ -313,8 +433,8 @@ function parseRequirementGroups($, text) {
         rawText: header,
         constraintOnly: false,
         courseOptions: options
-      }));
-      if (fixedOptions.length > 0) tableGroups.push({
+      }, [index]));
+      if (fixedOptions.length > 0) addGroup({
         id: `${slug(header)}-fixed-${index}`,
         label: `${header.replace(/\s+Units$/i, "")}: remaining required courses`,
         kind: "all",
@@ -323,28 +443,23 @@ function parseRequirementGroups($, text) {
         rawText: header,
         constraintOnly: false,
         courseOptions: fixedOptions
-      });
+      }, [index]);
       return;
     }
     if (courseOptions.length > 0) {
-      const explicitlySelects = /(selective|elective|choose|\bselect\b|selection|minimum|at least)/i.test(header);
-      const isSelection = explicitlySelects || (
-        /(from the following|or more units|complete\s+\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?\s+units?\s+from)/i.test(header)
-        && !/^(?:complete\s+)?(?:required\s+)?core/i.test(header)
-      );
-      tableGroups.push({
+      addGroup({
         id: `${slug(header)}-${index}`,
         label: header.replace(/\s+Units$/i, ""),
-        kind: isSelection ? (headerMinUnits === null ? "text_rule" : "choose_units") : "all",
+        kind: "all",
         minUnits: headerMinUnits,
         minCount: null,
-        rawText: isSelection && headerMinUnits === null ? header : null,
+        rawText: freeTextRows.length > 0 ? complexText : null,
         constraintOnly: false,
         courseOptions
-      });
+      }, [index]);
     } else if (freeTextRows.length > 0) {
       const rawText = freeTextRows.map((row) => row.text).join(" ");
-      tableGroups.push({
+      addGroup({
         id: `${slug(header)}-${index}`,
         label: header.replace(/\s+Units$/i, ""),
         kind: "text_rule",
@@ -353,10 +468,105 @@ function parseRequirementGroups($, text) {
         rawText,
         constraintOnly: false,
         courseOptions: []
-      });
+      }, [index]);
     }
   });
-  if (tableGroups.length > 0) return tableGroups;
+
+  if (pathwayTables.length > 0) {
+    const minUnits = Math.min(...pathwayTables.map((table) => parseRequirementMinUnits(table.header)).filter((units) => units !== null));
+    addGroup({
+      id: "choose-one-official-pathway",
+      label: "Required Selective Courses: choose one official pathway",
+      kind: "text_rule",
+      minUnits: Number.isFinite(minUnits) ? minUnits : null,
+      minCount: null,
+      rawText: pathwayTables.map((table) => `${table.header}: ${table.courseOptions.map((option) => option.courseCode).join(", ")}`).join(" "),
+      constraintOnly: false,
+      courseOptions: uniqueCourseOptions(pathwayTables.flatMap((table) => table.courseOptions))
+    }, pathwayTables.map((table) => table.index));
+  }
+
+  if (nativeSpeakerTables.length > 0) {
+    const minUnits = Math.min(...nativeSpeakerTables.map((table) => parseRequirementMinUnits(table.header)).filter((units) => units !== null));
+    addGroup({
+      id: "native-or-non-native-core-pathway",
+      label: "Complete the native-speaker or non-native-speaker core pathway",
+      kind: "text_rule",
+      minUnits: Number.isFinite(minUnits) ? minUnits : null,
+      minCount: null,
+      rawText: nativeSpeakerTables.map((table) => `${table.header}: ${table.courseOptions.map((option) => option.courseCode).join(", ")}`).join(" "),
+      constraintOnly: false,
+      courseOptions: uniqueCourseOptions(nativeSpeakerTables.flatMap((table) => table.courseOptions))
+    }, nativeSpeakerTables.map((table) => table.index));
+  }
+
+  if (programCode === "interdisciplinary-studies-letters-and-science-aa") {
+    const andGroup = tableGroups.find((group) => /^AND choose/i.test(group.label));
+    const orGroup = tableGroups.find((group) => /^OR choose/i.test(group.label));
+    if (andGroup && orGroup) {
+      const firstIndex = tableGroups.indexOf(andGroup);
+      tableGroups.splice(firstIndex, 1, {
+        id: "letters-or-science-selection",
+        label: "Choose 9 units from either the Letters or Science list",
+        kind: "text_rule",
+        minUnits: 9,
+        minCount: null,
+        rawText: `${andGroup.label}: ${andGroup.courseOptions.map((option) => option.courseCode).join(", ")} ${orGroup.label}: ${orGroup.courseOptions.map((option) => option.courseCode).join(", ")}`,
+        constraintOnly: false,
+        courseOptions: uniqueCourseOptions([...andGroup.courseOptions, ...orGroup.courseOptions])
+      });
+      tableGroups.splice(tableGroups.indexOf(orGroup), 1);
+    }
+  }
+
+  if (programCode === "interdisciplinary-studies-natural-science-and-mathematics-aa") {
+    const introductory = tableGroups.find((group) => /^I\./.test(group.label));
+    if (introductory) introductory.rawText = `${introductory.rawText ?? introductory.label} At least one introductory or advanced course must include a laboratory experience.`;
+  }
+
+  const minimumMajorUnits = Number(totalMajorUnitsText.match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
+  const summaryGroup = tableGroups[0];
+  if (summaryGroup?.kind === "all" && summaryGroup.minUnits === minimumMajorUnits && tableGroups.length > 1) {
+    const summaryCodes = new Set(summaryGroup.courseOptions.map((option) => option.courseCode));
+    const laterGroupsAreBreakdowns = tableGroups.slice(1).every((group) => group.courseOptions.every((option) => summaryCodes.has(option.courseCode)));
+    if (laterGroupsAreBreakdowns) tableGroups.splice(1);
+  }
+
+  if (tableGroups.length === 1 && tableGroups[0].kind === "text_rule" && tableGroups[0].minUnits === null && minimumMajorUnits > 0) {
+    tableGroups[0].minUnits = minimumMajorUnits;
+    if (tableGroups[0].courseOptions.length > 0 && /selected from at least \d+ disciplines/i.test(tableGroups[0].label)) {
+      tableGroups[0].kind = "choose_units";
+    }
+  }
+  const unresolvedUnitGroups = tableGroups.filter((group) => !group.constraintOnly && group.kind === "text_rule" && group.minUnits === null);
+  if (unresolvedUnitGroups.length === 1 && minimumMajorUnits > 0) {
+    const knownUnits = tableGroups
+      .filter((group) => group !== unresolvedUnitGroups[0] && !group.constraintOnly)
+      .reduce((sum, group) => sum + Number(group.minUnits ?? 0), 0);
+    if (knownUnits < minimumMajorUnits) unresolvedUnitGroups[0].minUnits = minimumMajorUnits - knownUnits;
+  }
+
+  if (tableGroups.length > 0) {
+    const requiredTables = sourceTables.filter((table) => !ignoredTableIndexes.has(table.index));
+    const sourceCourseCodes = uniqueCourseOptions(requiredTables.flatMap((table) => table.courseOptions)).map((option) => option.courseCode);
+    const representedCourseCodes = new Set(tableGroups.flatMap((group) => group.courseOptions.map((option) => option.courseCode)));
+    const missingCourseCodes = sourceCourseCodes.filter((courseCode) => !representedCourseCodes.has(courseCode));
+    const unrepresentedTableHeaders = requiredTables
+      .filter((table) => !representedTableIndexes.has(table.index))
+      .map((table) => table.header || `Table ${table.index + 1}`);
+    return {
+      groups: tableGroups,
+      audit: {
+        sourceTableCount: sourceTables.length,
+        requiredTableCount: requiredTables.length,
+        ignoredTableCount: ignoredTableIndexes.size,
+        sourceCourseOptionCount: sourceCourseCodes.length,
+        representedCourseOptionCount: representedCourseCodes.size,
+        missingCourseCodes,
+        unrepresentedTableHeaders
+      }
+    };
+  }
 
   const groups = [];
   const lines = text.split(/\n+/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -384,7 +594,30 @@ function parseRequirementGroups($, text) {
     }
   }
   if (current) groups.push(current);
-  return groups;
+  return {
+    groups,
+    audit: {
+      sourceTableCount: 0,
+      requiredTableCount: 0,
+      ignoredTableCount: 0,
+      sourceCourseOptionCount: 0,
+      representedCourseOptionCount: groups.flatMap((group) => group.courseOptions).length,
+      missingCourseCodes: [],
+      unrepresentedTableHeaders: []
+    }
+  };
+}
+
+function parseRequirementMinCount(value) {
+  const numeric = value.match(/(?:select|choose|complete).*?(\d+)\s+(?:additional\s+)?courses?/i)?.[1];
+  if (numeric) return Number(numeric);
+  const words = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const word = value.match(/(?:select|choose|complete).*?\b(one|two|three|four|five)\b\s+(?:additional\s+)?(?:of the following\s+)?courses?/i)?.[1]?.toLowerCase();
+  return word ? words[word] : /(?:select|choose).*?one of the following/i.test(value) ? 1 : null;
+}
+
+function uniqueCourseOptions(options) {
+  return options.filter((option, index) => options.findIndex((candidate) => candidate.courseCode === option.courseCode) === index);
 }
 
 function normalizeCourseId(input) {
@@ -417,8 +650,12 @@ function attributesFromText(value) {
 }
 
 function parseRequirementMinUnits(value) {
+  const areaTotal = value.match(/from each of\s+\d+\s+different areas?.*?\((\d+(?:\.\d+)?)\s*units?\)/i)?.[1];
+  if (areaTotal) return Number(areaTotal);
   const match = value.match(/(\d+(?:\.\d+)?)(?:\s*(?:-|or)\s*(?:more\s*)?(?:\d+(?:\.\d+)?)?)?\s*units?\b/i);
-  return match ? Number(match[1]) : null;
+  if (match) return Number(match[1]);
+  const word = value.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|eighteen)\s+units?\b/i)?.[1]?.toLowerCase();
+  return word ? ({ one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, eighteen: 18 })[word] : null;
 }
 
 function slug(value) {

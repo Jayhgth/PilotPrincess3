@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 
 const catalog = JSON.parse(await readFile("supabase/catalog/smccd-2025-2026.json", "utf8"));
 const equivalencies = JSON.parse(await readFile("supabase/catalog/dtech-smccd-equivalencies-2021.json", "utf8"));
+const localGe = JSON.parse(await readFile("supabase/catalog/smccd-local-ge-2025-2026.json", "utf8"));
 const collegeCodes = new Set(["CSM", "SKY", "CAN"]);
 const errors = [];
 const courseIds = new Set();
@@ -64,6 +65,31 @@ for (const program of catalog.programs) {
     if (typeof requirement.constraintOnly !== "boolean") errors.push(`Requirement ${id}:${requirement.id} is missing constraintOnly.`);
     if (/(?:not required|additional recommended)/i.test(requirement.label)) errors.push(`Program ${id} treats a recommended course list as required.`);
   }
+  if (!program.requirementAudit) errors.push(`Program ${id} has no source-table audit.`);
+  else {
+    if (program.requirementAudit.missingCourseCodes.length > 0) errors.push(`Program ${id} omits official course options: ${program.requirementAudit.missingCourseCodes.join(", ")}.`);
+    if (program.requirementAudit.unrepresentedTableHeaders.length > 0) errors.push(`Program ${id} omits official requirement tables: ${program.requirementAudit.unrepresentedTableHeaders.join(" | ")}.`);
+    if (program.requirementAudit.requiredTableCount + program.requirementAudit.ignoredTableCount !== program.requirementAudit.sourceTableCount) {
+      errors.push(`Program ${id} has an inconsistent source-table audit.`);
+    }
+  }
+}
+
+if (localGe.sourceYear !== catalog.catalogYear) errors.push("Local GE roster year must match the SMCCD catalog year.");
+if (!localGe.reciprocitySource?.includes("transferrequirements.php")) errors.push("Local GE data is missing the official district reciprocity source.");
+for (const [collegeCode, college] of Object.entries(localGe.colleges)) {
+  const expectedAreas = collegeCode === "CAN" ? ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B"] : ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B", "8"];
+  const actualAreas = Object.keys(college.areas);
+  for (const area of expectedAreas) {
+    if (!actualAreas.includes(area) || college.areas[area].courseCodes.length === 0) errors.push(`${collegeCode} official GE Area ${area} is empty or missing.`);
+    for (const courseCode of college.areas[area]?.courseCodes ?? []) {
+      if (!courseIds.has(`${collegeCode}:${courseCode}`)) errors.push(`${collegeCode} GE Area ${area} references missing course ${courseCode}.`);
+    }
+  }
+}
+if (localGe.colleges.CSM.areas["4"].courseCodes.length !== 71) errors.push("CSM Area 4 must preserve all 71 official Social & Behavioral Sciences courses.");
+for (const courseCode of ["ANTH 180", "HIST 101", "POLS C1000", "PSYC 410", "SOCI 160"]) {
+  if (!localGe.colleges.CSM.areas["4"].courseCodes.includes(courseCode)) errors.push(`CSM Area 4 is missing ${courseCode}.`);
 }
 
 const physicalScience = catalog.programs.find((program) => program.collegeCode === "CSM" && program.programCode === "physical-science-as");
@@ -100,6 +126,21 @@ if (engineering?.requirementGroups[0]?.kind !== "choose_units" || engineering.re
 const skylineDance = catalog.programs.find((program) => program.collegeCode === "SKY" && program.programCode === "dance-aa");
 if (skylineDance?.requirementGroups[0]?.kind !== "text_rule") {
   errors.push("Skyline Dance must keep its nested list and OR structure in manual review instead of flattening it.");
+}
+
+const stem = catalog.programs.find((program) => program.collegeCode === "CSM" && program.programCode === "interdisciplinary-studies-stem-aa");
+if (stem?.requirementGroups.length !== 1 || stem.requirementGroups[0]?.kind !== "choose_units" || stem.requirementGroups[0]?.minUnits !== 18 || stem.requirementGroups[0]?.courseOptions.length < 100) {
+  errors.push("CSM Interdisciplinary Studies: STEM must remain one 18-unit, three-discipline selection pool.");
+}
+
+const naturalMath = catalog.programs.find((program) => program.collegeCode === "CAN" && program.programCode === "interdisciplinary-studies-natural-science-and-mathematics-aa");
+if (naturalMath?.requirementGroups.map((requirement) => requirement.minUnits).join(",") !== "9,3,6") {
+  errors.push("Cañada Natural Science and Mathematics must preserve its 9-unit science, 3-unit math, and 6-unit advanced sequence.");
+}
+
+const canadaSocial = catalog.programs.find((program) => program.collegeCode === "CAN" && program.programCode === "interdisciplinary-studies-social-and-behavioral-sciences-aa");
+if (canadaSocial?.requirementGroups[0]?.kind !== "choose_units" || canadaSocial.requirementGroups[0]?.minUnits !== 18 || canadaSocial.requirementGroups[0]?.courseOptions.length !== 37) {
+  errors.push("Cañada Social and Behavioral Sciences must preserve all 37 options and its 18-unit/four-discipline rule.");
 }
 
 if (!equivalencies.source_url?.includes("1DShfEovBYe-N9VlR1QM6Pyy3pmJ4cMMc6bE91QUzLIw")) {
