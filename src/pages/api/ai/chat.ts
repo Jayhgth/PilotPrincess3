@@ -6,8 +6,9 @@ import { z } from "zod";
 import { assistantImageExtension, MAX_ASSISTANT_ATTACHMENTS, safeAssistantImageName, validateAssistantImage } from "@/lib/ai-attachments";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import type { AiMessage } from "@/lib/models";
-import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat } from "@/server/codex";
-import { executeAssistantReadTool } from "@/server/ai-tools";
+import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat, type AssistantRecentChange, type AssistantRecentToolEvidence } from "@/server/codex";
+import { assistantToolLabel, executeAssistantReadTool } from "@/server/ai-tools";
+import { assistantUndoAvailability } from "@/server/assistant-undo";
 import { retrieveAssistantKnowledge, type AssistantKnowledgeChunk } from "@/server/ai-knowledge";
 import { persistAssistantMemoryUpdates, retrieveAssistantMemories, type AssistantMemory } from "@/server/ai-memory";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
@@ -23,6 +24,17 @@ const requestSchema = z.object({
 }).superRefine((value, context) => {
   if (JSON.stringify(value.pageContext).length > 12_000) context.addIssue({ code: "custom", message: "The page context is too large." });
 });
+
+function boundedToolEvidence(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined || typeof value === "number" || typeof value === "boolean") return value ?? null;
+  if (typeof value === "string") return value.length > 400 ? `${value.slice(0, 397)}…` : value;
+  if (depth >= 3) return Array.isArray(value) ? `[${value.length} items]` : "[details omitted]";
+  if (Array.isArray(value)) return value.slice(0, 12).map((item) => boundedToolEvidence(item, depth + 1));
+  if (typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, 16).map(([key, item]) => [key, boundedToolEvidence(item, depth + 1)]));
+  }
+  return String(value);
+}
 
 export const POST: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
@@ -108,9 +120,66 @@ export const POST: APIRoute = async ({ request }) => {
     return jsonError(error instanceof Error ? error.message : "The images could not be uploaded.", 500);
   }
 
-  const historyResult = await auth.supabase.from("ai_messages").select("*").eq("conversation_id", parsed.data.conversationId).neq("id", userMessageResult.data.id).order("created_at", { ascending: false }).limit(24);
+  const [historyResult, toolHistoryResult] = await Promise.all([
+    auth.supabase.from("ai_messages").select("*").eq("conversation_id", parsed.data.conversationId).neq("id", userMessageResult.data.id).order("created_at", { ascending: false }).limit(24),
+    auth.supabase.from("ai_tool_calls").select("id,tool_name,result,completed_at,mutates_data").eq("conversation_id", parsed.data.conversationId).eq("user_id", auth.user.id).eq("status", "completed").order("completed_at", { ascending: false }).limit(24)
+  ]);
   if (historyResult.error) return jsonError(historyResult.error.message, 500);
-  const history = ([...(historyResult.data ?? [])].reverse() as unknown as AiMessage[]).map((message) => ({ role: message.role, content: message.content }));
+  if (toolHistoryResult.error) return jsonError(toolHistoryResult.error.message, 500);
+  const history = ([...(historyResult.data ?? [])].reverse() as unknown as AiMessage[]).map((message) => {
+    const context = message.page_context && typeof message.page_context === "object" && !Array.isArray(message.page_context)
+      ? message.page_context as Record<string, unknown>
+      : {};
+    const data = context.data && typeof context.data === "object" && !Array.isArray(context.data)
+      ? context.data as Record<string, unknown>
+      : null;
+    const actionContext = message.role === "tool" && typeof context.tool_call_id === "string" && typeof context.tool_name === "string"
+      ? {
+          toolCallId: context.tool_call_id,
+          toolName: context.tool_name,
+          data,
+          undoAvailable: context.undo_available === true,
+          undoneAt: typeof context.undone_at === "string" ? context.undone_at : null
+        }
+      : undefined;
+    return { role: message.role, content: message.content, actionContext };
+  });
+  const recentChanges = (toolHistoryResult.data ?? []).flatMap((toolCall): AssistantRecentChange[] => {
+    const result = toolCall.result && typeof toolCall.result === "object" && !Array.isArray(toolCall.result)
+      ? toolCall.result as Record<string, unknown>
+      : null;
+    if (!toolCall.mutates_data || !result || !("undo" in result)) return [];
+    const availability = assistantUndoAvailability(result);
+    const data = result.data && typeof result.data === "object" && !Array.isArray(result.data)
+      ? sanitizeCodexValue(result.data) as Record<string, unknown>
+      : null;
+    return [{
+      toolCallId: toolCall.id,
+      toolName: toolCall.tool_name,
+      label: assistantToolLabel(toolCall.tool_name),
+      summary: sanitizeCodexText(String(result.summary ?? assistantToolLabel(toolCall.tool_name)), 500),
+      data,
+      completedAt: toolCall.completed_at ?? "",
+      undoAvailable: availability.available,
+      undoneAt: availability.undoneAt,
+      undoExpiresAt: availability.expiresAt
+    }];
+  });
+  const recentToolEvidence = (toolHistoryResult.data ?? []).flatMap((toolCall): AssistantRecentToolEvidence[] => {
+    const result = toolCall.result && typeof toolCall.result === "object" && !Array.isArray(toolCall.result)
+      ? toolCall.result as Record<string, unknown>
+      : null;
+    if (!result) return [];
+    return [{
+      toolCallId: toolCall.id,
+      toolName: toolCall.tool_name,
+      label: assistantToolLabel(toolCall.tool_name),
+      summary: sanitizeCodexText(String(result.summary ?? assistantToolLabel(toolCall.tool_name)), 500),
+      data: boundedToolEvidence(result.data),
+      completedAt: toolCall.completed_at ?? "",
+      mutatesData: toolCall.mutates_data === true
+    }];
+  });
   const encoder = new TextEncoder();
   const runController = new AbortController();
   const signal = AbortSignal.any([request.signal, runController.signal]);
@@ -202,6 +271,8 @@ export const POST: APIRoute = async ({ request }) => {
           reviewMode: preferences.reviewMode,
           knowledge,
           memories,
+          recentChanges,
+          recentToolEvidence,
           signal,
           executeReadTool: (name, argumentsValue) => executeAssistantReadTool(auth.supabase, auth.user.id, name, argumentsValue),
           onSdkEvent: (event, iteration) => {

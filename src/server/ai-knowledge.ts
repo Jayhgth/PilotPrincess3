@@ -10,7 +10,8 @@ const CONTEXT_TAGS = [
   "college",
   "smccd",
   "settings",
-  "overview"
+  "overview",
+  "history"
 ] as const;
 
 export interface AssistantKnowledgeChunk {
@@ -40,6 +41,7 @@ export function assistantKnowledgeTags(userMessage: string, pageContext: Record<
   }
   if (includesAny(value, [/setting/, /preference/, /review mode/])) tags.add("settings");
   if (includesAny(value, [/overview/, /dashboard/, /current path/])) tags.add("overview");
+  if (includesAny(value, [/\bundo\b/, /\brevert\b/, /\brestore\b/, /bring.*back/, /previous change/, /last change/])) tags.add("history");
   return [...tags].filter((tag) => (CONTEXT_TAGS as readonly string[]).includes(tag));
 }
 

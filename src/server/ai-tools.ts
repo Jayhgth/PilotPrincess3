@@ -46,6 +46,7 @@ import { buildTranscriptAudit } from "@/server/assistant-audits";
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { evaluateGpaScenario } from "@/lib/gpa-planner";
 import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
+import { undoAssistantToolCall } from "@/server/assistant-undo";
 
 const courseStatusSchema = z.enum(["current", "planned"]);
 const termSchema = z.enum(["fall", "spring", "summer", "full_year"]);
@@ -111,6 +112,7 @@ const toolArgumentSchemas = {
     award_type: z.enum(["AA", "AS", "all"]).default("all")
   }),
   set_current_school: z.object({ school_id: z.uuid() }),
+  undo_change: z.object({ tool_call_id: z.uuid() }),
   add_course_schedule: z.object({
     course_ids: z.array(z.uuid()).min(1).max(24)
       .refine((ids) => new Set(ids).size === ids.length, "Course IDs must be unique."),
@@ -243,6 +245,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
   { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
   { name: "set_current_school", mutatesData: true, description: "Propose changing the student's selected California public or charter high school after search_california_high_schools returns its exact ID. Existing plan rows are retained; school-specific catalog and graduation evidence refresh to the new school.", arguments: '{"school_id":"uuid"}' },
+  { name: "undo_change", mutatesData: true, description: "Undo one exact applied change from this conversation using its private stored inverse. Use only a tool_call_id supplied by the recent conversation change ledger; never reconstruct deleted data from the current plan.", arguments: '{"tool_call_id":"uuid"}' },
   { name: "add_course_schedule", mutatesData: true, description: "Propose adding the exact complete-plan batch returned by get_course_schedule_options. Pass the same interests, rigor, workload cap, and unit-limit choice so revalidation is identical.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean,"interests":["string"],"rigor":"balanced|advanced|lighter","max_courses_per_term":number|null}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_high_school_course", mutatesData: true, description: "Propose adding one approved course from the student's selected high-school catalog to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
@@ -294,6 +297,7 @@ export function assistantToolLabel(name: string) {
     get_college_goal: "Read college goal",
     search_smccd_programs: "Search college programs",
     set_current_school: "Change selected school",
+    undo_change: "Undo previous change",
     add_course_schedule: "Add course schedule",
     add_dtech_course: "Add high school course",
     add_high_school_course: "Add high school course",
@@ -1254,8 +1258,25 @@ export async function executeAssistantMutationTool(
   supabase: SupabaseClient,
   userId: string,
   name: AssistantToolName,
-  argumentsValue: Record<string, unknown>
+  argumentsValue: Record<string, unknown>,
+  context: { conversationId?: string } = {}
 ): Promise<AssistantToolResult> {
+  if (name === "undo_change") {
+    const args = toolArgumentSchemas.undo_change.parse(argumentsValue);
+    if (!context.conversationId) throw new Error("Pilot can only undo a change from the active conversation.");
+    const result = await undoAssistantToolCall({
+      supabase,
+      userId,
+      toolCallId: args.tool_call_id,
+      conversationId: context.conversationId
+    });
+    return {
+      summary: result.summary,
+      data: { undone_tool: assistantToolLabel(result.toolName) },
+      changed: { entity: "ai_tool_call", id: result.toolCallId }
+    };
+  }
+
   const workspace = await loadAssistantWorkspace(supabase, userId);
 
   if (name === "set_current_school") {

@@ -64,7 +64,8 @@ Write tools may prepare these changes:
 - update ordinary student and planning settings plus the connected Pilot model, reasoning, and review preference, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
 - save a named snapshot, update a student-confirmed SMCCD Area 7A completion, and record Skyline's manually completed information-literacy tutorial or equivalent;
-- select or clear an associate-degree goal.
+- select or clear an associate-degree goal; and
+- undo an eligible applied change from the current conversation by its exact action identifier and stored inverse.
 
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
 
@@ -81,7 +82,7 @@ Schedule generation retains all existing active rows, restores the verified stan
 
 ## Retrieved application guidance
 
-Each Pilot turn retrieves a bounded set of active guidance chunks from Supabase before Codex runs. Retrieval combines PostgreSQL full-text relevance with an allowlisted set of page and intent tags; required role and answer-contract chunks are always included. The runtime passes chunk title, content, durable source path, and match reason to Codex, and records only retrieval metadata in the visible event stream. These chunks define product terminology and behavior but never substitute for student-record evidence, which still comes exclusively from validated read tools. Retrieval failure is recorded and falls back to the built-in safety and tool rules rather than blocking deterministic planning.
+Each Pilot turn retrieves a bounded set of active guidance chunks from Supabase before Codex runs. Retrieval combines PostgreSQL full-text relevance with an allowlisted set of page and intent tags; required role, answer-contract, and thread-action chunks are always included. The runtime passes chunk title, content, durable source path, and match reason to Codex, and records only retrieval metadata in the visible event stream. These chunks define product terminology and behavior but never substitute for student-record evidence, which still comes exclusively from validated read tools. Retrieval failure is recorded and falls back to the built-in safety and tool rules rather than blocking deterministic planning.
 
 ## Lightweight student memory
 
@@ -106,6 +107,8 @@ Structured questions are stored in the assistant message's bounded `page_context
 Queued follow-ups also remain browser-memory-only until their turn starts. Their text and image previews stay local while waiting; removing a queued message revokes its local image previews. **Steer** cancels the active request, records that cancellation, moves the selected follow-up to the front, and then starts it as a normal persisted turn. It does not inject text into an already-running model response or bypass the normal tool approval boundary.
 
 After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Every applied write must also store a private server-side inverse; execution rejects a mutation that lacks one. The receipt places **Undo change** inside the receipt for 15 minutes. Undo re-authenticates the student, validates the stored inverse and time window, reapplies normal RLS ownership, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. This is evidence of an application-side mutation, not a claim made by the model.
+
+Completed read and write tools form a bounded per-conversation evidence ledger. Subsequent turns receive recent public tool names, summaries, and size-limited result data so references to app information retain context; Pilot refreshes that historical evidence through the owning read tool whenever current state matters. Applied writes additionally provide their stable action identifier and current undo state, while private inverse payloads remain server-only. Referential requests such as “undo that” or “bring them back” deterministically select an eligible action and execute its stored inverse through the same review and RLS boundaries. Pilot never tries to recover removed records by querying only the current plan.
 
 Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from the Pilot Assistant section in Settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
 

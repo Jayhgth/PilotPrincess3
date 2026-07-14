@@ -215,6 +215,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_college_goal: "Degree bookmarks",
   search_smccd_programs: "College programs",
   set_current_school: "Change selected school",
+  undo_change: "Undo previous change",
   add_course_schedule: "Add course schedule",
   add_dtech_course: "Add high school course",
   add_smccd_course: "Add college course",

@@ -484,9 +484,38 @@ export async function runCodexStructuredStream<T>(
   }
 }
 
-interface AssistantChatHistoryMessage {
+export interface AssistantChatHistoryMessage {
   role: "user" | "assistant" | "tool";
   content: string;
+  actionContext?: {
+    toolCallId: string;
+    toolName: string;
+    data: Record<string, unknown> | null;
+    undoAvailable: boolean;
+    undoneAt: string | null;
+  };
+}
+
+export interface AssistantRecentChange {
+  toolCallId: string;
+  toolName: string;
+  label: string;
+  summary: string;
+  data: Record<string, unknown> | null;
+  completedAt: string;
+  undoAvailable: boolean;
+  undoneAt: string | null;
+  undoExpiresAt: string | null;
+}
+
+export interface AssistantRecentToolEvidence {
+  toolCallId: string;
+  toolName: string;
+  label: string;
+  summary: string;
+  data: unknown;
+  completedAt: string;
+  mutatesData: boolean;
 }
 
 interface AssistantChatToolActivity {
@@ -523,6 +552,8 @@ export interface AssistantChatOptions {
   reviewMode: AiReviewMode;
   knowledge?: AssistantKnowledgeChunk[];
   memories?: AssistantMemory[];
+  recentChanges?: AssistantRecentChange[];
+  recentToolEvidence?: AssistantRecentToolEvidence[];
   signal?: AbortSignal;
   timeoutMs?: number;
   executeReadTool: (name: AssistantToolName, argumentsValue: Record<string, unknown>) => Promise<AssistantToolResult>;
@@ -712,7 +743,12 @@ function addUsage(current: Usage | null, next: Usage): Usage {
 }
 
 export function assistantConversationPrompt(options: AssistantChatOptions) {
-  const history = options.history.slice(-24).map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
+  const history = options.history.slice(-24).map((message) => {
+    const actionContext = message.actionContext
+      ? `\nACTION CONTEXT: ${JSON.stringify(message.actionContext)}`
+      : "";
+    return `${message.role.toUpperCase()}: ${message.content}${actionContext}`;
+  }).join("\n\n");
   const knowledge = (options.knowledge ?? []).map((chunk) => ({
     id: chunk.id,
     title: chunk.title,
@@ -741,6 +777,8 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "When the student explicitly asks to change app data, use the available mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, or ask them for an internal record ID. You may prepare up to eight exact related changes in one turn. Pilot covers normal student settings and selected school, courses and course variables, schedule placement and canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, enrollment preference, and plan snapshots. Search first when an exact school, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
     "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and Auto-review will deny it.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
+    "Treat structured ACTION CONTEXT and the recent conversation change ledger as canonical thread history. When the student asks to undo, restore, revert, or bring back a recent applied change, call undo_change with that exact tool_call_id. Never query the current plan to reconstruct deleted rows, and never claim there is nothing to restore merely because the current records no longer contain the deleted data.",
+    "Use recent conversation tool evidence to understand follow-up references to app data already read in this thread. It is bounded historical evidence, not guaranteed current state: reuse it for conversational continuity, but refresh through the owning read tool before a new answer or write when the underlying record may have changed.",
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will autonomously apply an exact approved proposal or decline it; it will not ask the student to confirm." : "Manual. The student must approve every proposed change."}`,
     "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
@@ -755,13 +793,73 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     memories.length
       ? `Retrieved lightweight student memory (personalization context only):\n${JSON.stringify(memories)}`
       : "No relevant lightweight student memory was retrieved for this turn.",
+    options.recentChanges?.length
+      ? `Recent conversation change ledger (canonical action history; private inverse payloads are intentionally omitted):\n${JSON.stringify(options.recentChanges)}`
+      : "No applied changes are recorded in this conversation yet.",
+    options.recentToolEvidence?.length
+      ? `Recent conversation tool evidence (bounded canonical app data already read or changed in this thread; refresh through the owning read tool when current state matters):\n${JSON.stringify(options.recentToolEvidence)}`
+      : "No prior app-tool evidence is recorded in this conversation yet.",
     `Current page context: ${JSON.stringify(options.pageContext)}`,
     history ? `Recent conversation:\n${history}` : "This is the first message in the conversation.",
     `USER: ${options.userMessage || "Please review the attached image context."}`
   ].join("\n\n");
 }
 
+export function assistantUndoIntent(userMessage: string) {
+  const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
+  return /\b(undo|revert|reverse|rollback|roll back)\b/.test(normalized)
+    || /\bbring\s+(?:it|them|em|'em|those|that|the courses|the classes)\s+back\b/.test(normalized)
+    || /\brestore\s+(?:it|them|those|that|the previous|the last|the removed|the courses|the classes)\b/.test(normalized);
+}
+
+export function selectAssistantUndoTarget(userMessage: string, changes: readonly AssistantRecentChange[]) {
+  const available = changes.filter((change) => change.undoAvailable);
+  if (!available.length) return null;
+  const ignored = new Set(["undo", "revert", "reverse", "rollback", "roll", "back", "bring", "restore", "previous", "last", "change", "changes", "that", "those", "them"]);
+  const terms = userMessage.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 3 && !ignored.has(term));
+  if (!terms.length) return available[0];
+  const ranked = available.map((change, index) => {
+    const text = `${change.toolName} ${change.label} ${change.summary} ${JSON.stringify(change.data ?? {})}`.toLowerCase();
+    return { change, index, score: terms.filter((term) => text.includes(term) || text.includes(term.slice(0, Math.max(4, term.length - 2)))).length };
+  }).sort((left, right) => right.score - left.score || left.index - right.index);
+  return ranked[0]?.score ? ranked[0].change : available[0];
+}
+
 export async function runAssistantChat(options: AssistantChatOptions): Promise<AssistantChatResult> {
+  if (assistantUndoIntent(options.userMessage)) {
+    const target = selectAssistantUndoTarget(options.userMessage, options.recentChanges ?? []);
+    if (!target) {
+      const latest = options.recentChanges?.[0];
+      const message = latest?.undoneAt
+        ? "That recent change has already been undone."
+        : latest?.undoExpiresAt && Date.parse(latest.undoExpiresAt) <= Date.now()
+          ? "The undo window for that recent change has ended."
+          : "There is no reversible applied change in this conversation yet.";
+      return { message, questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [] };
+    }
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(),
+      name: "undo_change",
+      label: assistantToolLabel("undo_change"),
+      arguments: { tool_call_id: target.toolCallId },
+      explanation: `Undo the exact recent ${target.label.toLowerCase()} requested by the student using its stored inverse.`,
+      mutatesData: true,
+      status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review"
+        ? `I found the recent ${target.label.toLowerCase()}. Auto-review will apply or decline its exact stored undo automatically.`
+        : `I found the recent ${target.label.toLowerCase()} and prepared its exact stored undo for your approval.`,
+      questions: [],
+      threadId: null,
+      usage: null,
+      latencyMs: 0,
+      model: options.model,
+      proposals: [proposal]
+    };
+  }
+
   const release = await limiter.acquire(options.signal);
   const startedAt = Date.now();
   const controller = new AbortController();

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, schedulePreview, scheduleProposalAction, scheduleResultIsComplete } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
+import { assistantUndoAvailability } from "@/server/assistant-undo";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -150,7 +151,11 @@ describe("Codex feature boundaries", () => {
 
   it("tells the assistant to read records and defer writes to the selected review mode", () => {
     const prompt = assistantConversationPrompt({
-      history: [],
+      history: [{
+        role: "tool",
+        content: "10 courses were removed from the active plan.",
+        actionContext: { toolCallId: "00000000-0000-4000-8000-000000000010", toolName: "remove_plan_courses", data: { removed_count: 10 }, undoAvailable: true, undoneAt: null }
+      }],
       userMessage: "Add a math course",
       images: [{ type: "local_image", path: "/private/tmp/schedule.png" }],
       imageNames: ["schedule.png"],
@@ -165,6 +170,26 @@ describe("Codex feature boundaries", () => {
         tags: ["schedule"],
         score: 2,
         matchReason: "text_and_context"
+      }],
+      recentChanges: [{
+        toolCallId: "00000000-0000-4000-8000-000000000010",
+        toolName: "remove_plan_courses",
+        label: "Remove courses",
+        summary: "10 courses were removed from the active plan.",
+        data: { removed_count: 10 },
+        completedAt: "2026-07-14T19:29:00.000Z",
+        undoAvailable: true,
+        undoneAt: null,
+        undoExpiresAt: "2026-07-14T19:44:00.000Z"
+      }],
+      recentToolEvidence: [{
+        toolCallId: "00000000-0000-4000-8000-000000000011",
+        toolName: "get_degree_progress",
+        label: "Degree progress",
+        summary: "Read current degree progress.",
+        data: { remaining_units: 6 },
+        completedAt: "2026-07-14T19:28:00.000Z",
+        mutatesData: false
       }],
       executeReadTool: async () => ({ summary: "ok", data: {} }),
       onSdkEvent: () => undefined,
@@ -192,6 +217,10 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("authoritative product context, not student-record evidence");
     expect(prompt).toContain("never claim workload personalization unless the student supplied workload information");
     expect(prompt).toContain("Never end with a promise such as 'I'll check'");
+    expect(prompt).toContain("ACTION CONTEXT");
+    expect(prompt).toContain("Recent conversation change ledger");
+    expect(prompt).toContain("Recent conversation tool evidence");
+    expect(prompt).toContain("never claim there is nothing to restore");
   });
 
   it("routes schedule questions to bounded application guidance tags", () => {
@@ -207,6 +236,39 @@ describe("Codex feature boundaries", () => {
       "gpa",
       "transcript"
     ]);
+    expect(assistantKnowledgeTags("Bring the previous change back", { view: "courses" })).toContain("history");
+  });
+
+  it("resolves referential undo requests against the exact recent conversation action", async () => {
+    const change: AssistantRecentChange = {
+      toolCallId: "00000000-0000-4000-8000-000000000010",
+      toolName: "remove_plan_courses",
+      label: "Remove courses",
+      summary: "10 courses were removed from the active plan.",
+      data: { removed_count: 10 },
+      completedAt: new Date().toISOString(),
+      undoAvailable: true,
+      undoneAt: null,
+      undoExpiresAt: new Date(Date.now() + 60_000).toISOString()
+    };
+    expect(assistantUndoIntent("Bring em back")).toBe(true);
+    expect(selectAssistantUndoTarget("Bring em back", [change])).toEqual(change);
+    const activities: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+    const result = await runAssistantChat({
+      history: [],
+      userMessage: "Bring em back",
+      pageContext: { view: "courses" },
+      model: "gpt-5.6-luna",
+      reviewMode: "auto_review",
+      recentChanges: [change],
+      executeReadTool: async () => { throw new Error("The current plan must not be queried for an undo."); },
+      onSdkEvent: () => undefined,
+      onToolActivity: (activity) => { activities.push({ name: activity.name, arguments: activity.arguments }); }
+    });
+    expect(activities).toEqual([{ name: "undo_change", arguments: { tool_call_id: change.toolCallId } }]);
+    expect(result.proposals[0]?.name).toBe("undo_change");
+    expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() + 60_000).toISOString() }).available).toBe(true);
+    expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() + 60_000).toISOString(), undone_at: new Date().toISOString() }).available).toBe(false);
   });
 
   it("explains schedule additions relative to the existing current plan", () => {
@@ -332,5 +394,6 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("remove_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("move_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()], status: "completed" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("search_smccd_programs", { query: "computer science", college: "CSM", award_type: "AS" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("undo_change", { tool_call_id: crypto.randomUUID() })).toMatchObject({ mutatesData: true });
   });
 });
