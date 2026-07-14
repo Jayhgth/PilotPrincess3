@@ -710,7 +710,7 @@ export default function SmccdPlanner({
                     <div className="smccd-degree-title-line">
                       <button className="smccd-degree-title-button" type="button" aria-expanded={isSelected} onClick={() => setGoalProgramId(isSelected ? "" : program.id)}>{program.title}</button>
                       <span className={`smccd-degree-award award-${program.award_type.toLowerCase()}`}>{program.award_type}</span>
-                      <button className="smccd-degree-bookmark" type="button" aria-pressed={isMarked} aria-label={isMarked ? `Remove bookmark from ${program.title}` : `Bookmark ${program.title}`} title={isMarked ? "Remove bookmark" : "Bookmark degree"} disabled={busy} onClick={() => { setGoalProgramId(program.id); if (markedGoal) void removeGoal(markedGoal); else void saveGoal(program.id); }}><BookmarkSimple size={18} weight={isMarked ? "fill" : "regular"} /></button>
+                      <button className="smccd-degree-bookmark" type="button" aria-pressed={isMarked} aria-label={isMarked ? `Remove bookmark from ${program.title}` : `Bookmark ${program.title}`} title={isMarked ? "Remove bookmark" : "Bookmark degree"} disabled={busy} onClick={(event) => { event.stopPropagation(); if (markedGoal) void removeGoal(markedGoal); else void saveGoal(program.id); }}><BookmarkSimple size={18} weight={isMarked ? "fill" : "regular"} /></button>
                     </div>
                     <p title={`${SMCCD_COLLEGE_NAMES[program.college_code]}. ${previewCodes.length ? `Core: ${previewCodes.join(", ")}` : "See catalog for course requirements."}`}>{SMCCD_COLLEGE_NAMES[program.college_code]} · {previewCodes.length ? `Core: ${previewCodes.join(", ")}` : "See catalog for course requirements."}</p>
                   </th>
