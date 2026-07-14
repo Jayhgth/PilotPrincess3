@@ -1,29 +1,16 @@
-import {
-  CheckCircleIcon as CheckCircle,
-  MinusCircleIcon as MinusCircle,
-  QuestionIcon as Question,
-  XCircleIcon as XCircle
-} from "@phosphor-icons/react";
+import { CheckCircleIcon as CheckCircle } from "@phosphor-icons/react/dist/csr/CheckCircle";
+import { MinusCircleIcon as MinusCircle } from "@phosphor-icons/react/dist/csr/MinusCircle";
+import { QuestionIcon as Question } from "@phosphor-icons/react/dist/csr/Question";
+import { XCircleIcon as XCircle } from "@phosphor-icons/react/dist/csr/XCircle";
 
 import type { PlannerPrerequisiteEvaluation } from "@/lib/prerequisites";
+import { prerequisiteDisplay } from "@/lib/prerequisite-display";
+export { prerequisiteDisplay } from "@/lib/prerequisite-display";
 import FadeContent from "@/components/reactbits/FadeContent";
 
 interface Props {
   evaluation: PlannerPrerequisiteEvaluation;
   recommendedPreparation?: readonly string[];
-}
-
-export function prerequisiteDisplay(evaluation: PlannerPrerequisiteEvaluation) {
-  if (evaluation.originalTexts.length === 0) {
-    return { label: "No prereq", tone: "none" as const };
-  }
-  if (evaluation.result.status === "satisfied") {
-    return { label: "Met", tone: "ready" as const };
-  }
-  if (evaluation.result.status === "blocked") {
-    return { label: "Not met", tone: "blocked" as const };
-  }
-  return { label: "Review", tone: "review" as const };
 }
 
 export default function PrerequisiteReadout({ evaluation, recommendedPreparation = [] }: Props) {

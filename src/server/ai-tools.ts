@@ -46,6 +46,7 @@ import { buildTranscriptAudit } from "@/server/assistant-audits";
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { evaluateGpaScenario } from "@/lib/gpa-planner";
 import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
+import { normalizeAssistantWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 import { undoAssistantToolCall } from "@/server/assistant-undo";
 
 const courseStatusSchema = z.enum(["current", "planned"]);
@@ -356,85 +357,41 @@ interface AssistantWorkspace {
   memories: Array<{ memory_key: string; content: string; tags: string[] }>;
 }
 
-function firstError(results: ReadonlyArray<{ error: { message: string } | null }>) {
-  return results.find((result) => result.error)?.error ?? null;
-}
-
 async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string): Promise<AssistantWorkspace> {
-  const [settingsResult, planResult] = await Promise.all([
-    supabase.from("student_settings").select("*").eq("id", userId).single(),
-    supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single()
-  ]);
-  const identityError = firstError([settingsResult, planResult]);
-  if (identityError) throw new Error(identityError.message);
-  const settings = settingsResult.data as unknown as StudentSettings;
-  const schoolId = settings.school_id ?? (planResult.data as unknown as FourYearPlan).school_id;
-  if (!schoolId) throw new Error("Choose a school before Pilot reads academic planning data.");
-  const schoolResult = await supabase.from("schools").select("*").eq("id", schoolId).single();
-  if (schoolResult.error) throw new Error(schoolResult.error.message);
-  const isDtech = schoolResult.data.slug === "design-tech-high-school";
-
-  const [courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, geCompletionResult, memoryResult, providerResult] = await Promise.all([
-    supabase.from("courses").select("*").eq("school_id", schoolId).eq("review_status", "approved").order("subject").order("name"),
-    supabase.from("graduation_requirements").select("*").eq("school_id", schoolId).eq("review_status", "approved").order("name"),
-    supabase.from("course_requirement_mappings").select("id,course_id,requirement_id,confidence,is_user_override,courses!inner(school_id)").eq("courses.school_id", schoolId),
-    isDtech ? supabase.from("smccd_high_school_equivalencies").select("*") : Promise.resolve({ data: [], error: null }),
-    supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
-    supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
-    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("created_at"),
-    supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
-    supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
-    supabase.from("student_prerequisite_clearances").select("*").eq("user_id", userId),
-    supabase.from("student_smccd_ge_completions").select("college_code,area").eq("user_id", userId),
-    supabase.from("ai_student_memories").select("memory_key,content,tags").eq("user_id", userId).eq("is_active", true),
-    supabase.rpc("nearby_school_providers", { target_school_id: schoolId, result_limit: 8 })
-  ]);
-  const error = firstError([courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, geCompletionResult, providerResult]);
+  const { data, error } = await supabase.rpc("get_assistant_workspace_bootstrap");
   if (error) throw new Error(error.message);
-  const selectedCourseIds = (courseResult.data ?? []).map((course) => course.id);
-  const designationResult = selectedCourseIds.length
-    ? await supabase.from("course_designations").select("id,course_id,designation,source_url,source_year,confidence,review_status").in("course_id", selectedCourseIds).eq("review_status", "approved")
-    : { data: [], error: null };
-  if (designationResult.error) throw new Error(designationResult.error.message);
-  const plan = planResult.data as unknown as FourYearPlan;
-  const versionResult = await supabase.from("plan_versions").select("*").eq("plan_id", plan.id).eq("kind", "active").single();
-  if (versionResult.error) throw new Error(versionResult.error.message);
-  const activeVersion = versionResult.data as unknown as PlanVersion;
-  const planCourseResult = await supabase.from("plan_courses").select("*").eq("plan_version_id", activeVersion.id).order("grade_level").order("sort_order");
-  if (planCourseResult.error) throw new Error(planCourseResult.error.message);
-  const planCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
-  const gpaScenarioResult = await supabase.from("student_gpa_scenario_choices").select("plan_course_id,included,expected_grade").eq("user_id", userId);
-  if (gpaScenarioResult.error) throw new Error(gpaScenarioResult.error.message);
-  const plannedSmccdIds = [...new Set(planCourses.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
-  const smccdResult = plannedSmccdIds.length
-    ? await supabase.from("smccd_courses").select("*").in("id", plannedSmccdIds)
-    : { data: [], error: null };
-  if (smccdResult.error) throw new Error(smccdResult.error.message);
+  const bootstrap = normalizeAssistantWorkspaceBootstrap(data);
+  if (!bootstrap.settings || !bootstrap.school || !bootstrap.plan || !bootstrap.active_version) {
+    throw new Error("Choose a school before Pilot reads academic planning data.");
+  }
+  if (bootstrap.settings.id !== userId) {
+    throw new Error("Pilot could not verify the current student workspace.");
+  }
 
   return {
-    settings,
-    school: schoolResult.data as unknown as School,
-    plan,
-    activeVersion,
-    planCourses,
-    gpaScenarioChoices: (gpaScenarioResult.data ?? []) as AssistantWorkspace["gpaScenarioChoices"],
-    courses: (courseResult.data ?? []) as unknown as Course[],
-    requirements: (requirementResult.data ?? []) as unknown as GraduationRequirement[],
-    mappings: (mappingResult.data ?? []) as unknown as CourseRequirementMapping[],
-    courseDesignations: (designationResult.data ?? []) as unknown as CourseDesignation[],
-    nearbyProviders: (providerResult.data ?? []) as AssistantWorkspace["nearbyProviders"],
-    equivalencies: (equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[],
-    plannedSmccdCourses: (smccdResult.data ?? []) as unknown as SmccdCourse[],
-    sources: (sourceResult.data ?? []) as unknown as OfficialSource[],
-    transcriptReviewItems: (reviewResult.data ?? []) as unknown as CatalogReviewItem[],
-    collegeGoals: (goalResult.data ?? []) as unknown as StudentSmccdGoal[],
-    enrollmentPolicies: (policyResult.data ?? []) as unknown as EnrollmentPolicy[],
-    enrollmentPreference: preferenceResult.data
-      ? preferenceResult.data as unknown as StudentEnrollmentPreference
+    settings: bootstrap.settings,
+    school: bootstrap.school,
+    plan: bootstrap.plan,
+    activeVersion: bootstrap.active_version,
+    planCourses: bootstrap.plan_courses,
+    gpaScenarioChoices: bootstrap.gpa_scenario_choices,
+    courses: bootstrap.courses,
+    requirements: bootstrap.requirements,
+    mappings: bootstrap.mappings,
+    courseDesignations: bootstrap.course_designations,
+    nearbyProviders: bootstrap.nearby_providers,
+    equivalencies: bootstrap.equivalencies,
+    plannedSmccdCourses: bootstrap.planned_smccd_courses,
+    sources: bootstrap.transcript_sources,
+    transcriptReviewItems: bootstrap.transcript_review_items,
+    collegeGoals: bootstrap.degree_goals,
+    enrollmentPolicies: bootstrap.enrollment_policies,
+    enrollmentPreference: bootstrap.enrollment_preference
+      ? bootstrap.enrollment_preference
       : defaultEnrollmentPreference(userId),
-    prerequisiteClearances: (clearanceResult.data ?? []) as unknown as SmccdPrerequisiteClearance[],
-    manualSmccdCompletions: (geCompletionResult.data ?? []) as AssistantWorkspace["manualSmccdCompletions"],
-    memories: memoryResult.error ? [] : (memoryResult.data ?? []) as Array<{ memory_key: string; content: string; tags: string[] }>
+    prerequisiteClearances: bootstrap.prerequisite_clearances,
+    manualSmccdCompletions: bootstrap.manual_smccd_completions,
+    memories: bootstrap.memories
   };
 }
 

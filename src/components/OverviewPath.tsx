@@ -1,9 +1,7 @@
-import {
-  ArrowRightIcon as ArrowRight,
-  BookOpenIcon as BookOpen,
-  ChartLineUpIcon as ChartLineUp,
-  GraduationCapIcon as GraduationCap
-} from "@phosphor-icons/react";
+import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
+import { BookOpenIcon as BookOpen } from "@phosphor-icons/react/dist/csr/BookOpen";
+import { ChartLineUpIcon as ChartLineUp } from "@phosphor-icons/react/dist/csr/ChartLineUp";
+import { GraduationCapIcon as GraduationCap } from "@phosphor-icons/react/dist/csr/GraduationCap";
 import type { CSSProperties, ReactNode } from "react";
 import { BentoCard, BentoGrid } from "@/components/magicui/BentoGrid";
 

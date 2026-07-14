@@ -13,7 +13,8 @@ import { Fragment, useDeferredValue, useEffect, useMemo, useState, type Syntheti
 import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
 import CourseDetailLayout from "@/components/CourseDetailLayout";
 import InstitutionMark from "@/components/InstitutionMark";
-import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
+import PrerequisiteReadout from "@/components/PrerequisiteReadout";
+import { prerequisiteDisplay } from "@/lib/prerequisite-display";
 import FadeContent from "@/components/reactbits/FadeContent";
 import {
   calculateSmccdLocalDegreeProgress,

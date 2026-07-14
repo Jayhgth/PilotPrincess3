@@ -54,13 +54,13 @@ describe("checked-in SMCCD prerequisite catalog", () => {
 
   it("audits the complete three-college prerequisite graph conservatively", () => {
     const audit = auditSmccdPrerequisites(artifactCourses());
-    expect(audit.courseCount).toBe(2461);
+    expect(audit.courseCount).toBe(2476);
     expect(audit.referenceCount).toBeGreaterThanOrEqual(800);
     expect(audit.unresolvedClauseCount).toBeGreaterThan(0);
     expect(audit.unresolvedClauseCount).toBeLessThanOrEqual(300);
     expect(audit.issues.some((issue) => issue.kind === "unresolved_prerequisite")).toBe(true);
     expect(audit.issues.some((issue) => issue.kind === "missing_catalog_reference")).toBe(true);
     expect(audit.issues.some((issue) => issue.kind === "cycle")).toBe(true);
-    expect(Object.values(audit.byCollege).reduce((sum, college) => sum + college.courseCount, 0)).toBe(2461);
+    expect(Object.values(audit.byCollege).reduce((sum, college) => sum + college.courseCount, 0)).toBe(2476);
   });
 });

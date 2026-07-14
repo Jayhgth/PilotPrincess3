@@ -1,14 +1,12 @@
 import { Button as BaseButton } from "@base-ui/react/button";
-import {
-  ArrowLeftIcon as ArrowLeft,
-  BuildingsIcon as Buildings,
-  ChatCircleDotsIcon as ChatCircleDots,
-  GearSixIcon as GearSix,
-  MoonIcon as Moon,
-  SignOutIcon as SignOut,
-  SunIcon as Sun,
-  XIcon as X
-} from "@phosphor-icons/react";
+import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react/dist/csr/ArrowLeft";
+import { BuildingsIcon as Buildings } from "@phosphor-icons/react/dist/csr/Buildings";
+import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
+import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
+import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
+import { SignOutIcon as SignOut } from "@phosphor-icons/react/dist/csr/SignOut";
+import { SunIcon as Sun } from "@phosphor-icons/react/dist/csr/Sun";
+import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import type { Icon } from "@phosphor-icons/react";
 import {
   useEffect,

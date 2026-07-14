@@ -1,19 +1,17 @@
-import {
-  ArrowClockwiseIcon as ArrowClockwise,
-  BookOpenIcon as BookOpen,
-  BuildingsIcon as Buildings,
-  ChartLineUpIcon as ChartLineUp,
-  ChatCircleDotsIcon as ChatCircleDots,
-  CheckIcon as Check,
-  FileArrowUpIcon as FileArrowUp,
-  GearSixIcon as GearSix,
-  GraduationCapIcon as GraduationCap,
-  HouseIcon as House,
-  PlusIcon as Plus,
-  ShieldCheckIcon as ShieldCheck,
-  WarningIcon as Warning,
-  XIcon as X
-} from "@phosphor-icons/react";
+import { ArrowClockwiseIcon as ArrowClockwise } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
+import { BookOpenIcon as BookOpen } from "@phosphor-icons/react/dist/csr/BookOpen";
+import { BuildingsIcon as Buildings } from "@phosphor-icons/react/dist/csr/Buildings";
+import { ChartLineUpIcon as ChartLineUp } from "@phosphor-icons/react/dist/csr/ChartLineUp";
+import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
+import { CheckIcon as Check } from "@phosphor-icons/react/dist/csr/Check";
+import { FileArrowUpIcon as FileArrowUp } from "@phosphor-icons/react/dist/csr/FileArrowUp";
+import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
+import { GraduationCapIcon as GraduationCap } from "@phosphor-icons/react/dist/csr/GraduationCap";
+import { HouseIcon as House } from "@phosphor-icons/react/dist/csr/House";
+import { PlusIcon as Plus } from "@phosphor-icons/react/dist/csr/Plus";
+import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/dist/csr/ShieldCheck";
+import { WarningIcon as Warning } from "@phosphor-icons/react/dist/csr/Warning";
+import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
 import BrandMark from "@/components/BrandMark";
@@ -52,16 +50,12 @@ import {
   visibleTranscriptUncertaintyNotes,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
-import AdminSettingsPanel from "@/components/AdminSettingsPanel";
-import CourseCatalogBrowser from "@/components/CourseCatalogBrowser";
-import CourseDetailLayout from "@/components/CourseDetailLayout";
-import CourseKanban, { type CoursePlacement } from "@/components/CourseKanban";
+import type { CoursePlacement } from "@/components/CourseKanban";
 import DashboardDegreeProgress from "@/components/DashboardDegreeProgress";
 import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
-import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
-import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
-import TranscriptCourseEditor from "@/components/TranscriptCourseEditor";
-import StudentSettingsPanel, { type StudentSettingsPatch } from "@/components/StudentSettingsPanel";
+import { prerequisiteDisplay } from "@/lib/prerequisite-display";
+import type { TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
+import type { StudentSettingsPatch } from "@/components/StudentSettingsPanel";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   CatalogReviewItem,
@@ -78,7 +72,11 @@ import type {
   School,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
+  SmccdProgram,
+  SmccdProgramRequirement,
+  SmccdRequirementCourse,
   StudentEnrollmentPreference,
+  StudentSmccdGoal,
   StudentSettings
 } from "@/lib/models";
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
@@ -87,19 +85,29 @@ import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
+import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 import AppChrome from "@/components/AppChrome";
-import GlobalAssistant from "@/components/GlobalAssistant";
 import PilotErrorBoundary from "@/components/PilotErrorBoundary";
 
 const loadOnboardingFlow = () => import("@/components/OnboardingFlow");
 const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace");
 const loadSmccdPlanner = () => import("@/components/SmccdPlanner");
 const loadGpaPlanningLab = () => import("@/components/GpaPlanningLab");
+const loadGlobalAssistant = () => import("@/components/GlobalAssistant");
 
 const OnboardingFlow = lazy(loadOnboardingFlow);
 const GraduationWorkspace = lazy(loadGraduationWorkspace);
 const SmccdPlanner = lazy(loadSmccdPlanner);
 const GpaPlanningLab = lazy(loadGpaPlanningLab);
+const GlobalAssistant = lazy(loadGlobalAssistant);
+const AdminSettingsPanel = lazy(() => import("@/components/AdminSettingsPanel"));
+const CourseCatalogBrowser = lazy(() => import("@/components/CourseCatalogBrowser"));
+const CourseDetailLayout = lazy(() => import("@/components/CourseDetailLayout"));
+const CourseKanban = lazy(() => import("@/components/CourseKanban"));
+const TranscriptAiRunDetails = lazy(() => import("@/components/TranscriptAiRunDetails"));
+const TranscriptCourseEditor = lazy(() => import("@/components/TranscriptCourseEditor"));
+const StudentSettingsPanel = lazy(() => import("@/components/StudentSettingsPanel"));
+const PrerequisiteReadout = lazy(() => import("@/components/PrerequisiteReadout"));
 
 type ViewId =
   | "dashboard"
@@ -248,6 +256,10 @@ export default function PlanningWorkspace() {
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
   const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
   const [enrollmentPreference, setEnrollmentPreference] = useState<StudentEnrollmentPreference | null>(null);
+  const [degreeGoals, setDegreeGoals] = useState<StudentSmccdGoal[]>([]);
+  const [degreePrograms, setDegreePrograms] = useState<SmccdProgram[]>([]);
+  const [degreeRequirements, setDegreeRequirements] = useState<SmccdProgramRequirement[]>([]);
+  const [degreeRequirementCourses, setDegreeRequirementCourses] = useState<SmccdRequirementCourse[]>([]);
 
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
@@ -379,80 +391,16 @@ export default function PlanningWorkspace() {
         return;
       }
       setSession(sessionData.session);
+      const { data: bootstrapData, error: bootstrapError } = await supabase.rpc("get_workspace_bootstrap");
+      if (bootstrapError) throw bootstrapError;
+      const bootstrap = normalizeWorkspaceBootstrap(bootstrapData);
       const userId = sessionData.session.user.id;
-      const [
-        settingsResult,
-        planResult,
-        reviewResult,
-        enrollmentPolicyResult,
-        enrollmentPreferenceResult,
-        adminResult
-      ] = await Promise.all([
-        supabase.from("student_settings").select("*").eq("id", userId).single(),
-        supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
-        supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-        supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
-        supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
-        supabase.rpc("is_app_admin")
-      ]);
-      const firstError = [
-        settingsResult.error,
-        planResult.error,
-        enrollmentPolicyResult.error,
-        enrollmentPreferenceResult.error
-      ].find(Boolean);
-      if (firstError) throw firstError;
-
-      const loadedPlan = planResult.data as unknown as FourYearPlan;
-      const rawSettings = settingsResult.data as unknown as StudentSettings;
-      const selectedSchoolId = rawSettings.school_id ?? loadedPlan.school_id;
-      if (!selectedSchoolId) throw new Error("Choose a California high school before opening the workspace.");
-      const [schoolResult, sourceResult, courseResult, requirementResult, mappingResult, equivalencyResult] = await Promise.all([
-        supabase.from("schools").select("*").eq("id", selectedSchoolId).single(),
-        supabase.from("official_sources").select("*").or(`school_id.eq.${selectedSchoolId},user_id.eq.${userId}`).order("is_official", { ascending: false }).order("created_at", { ascending: false }),
-        supabase.from("courses").select("*").eq("school_id", selectedSchoolId).eq("review_status", "approved").order("subject").order("name"),
-        supabase.from("graduation_requirements").select("*").eq("school_id", selectedSchoolId).eq("review_status", "approved").order("name"),
-        supabase.from("course_requirement_mappings").select("id, course_id, requirement_id, source_id, confidence, is_user_override, courses!inner(school_id)").eq("courses.school_id", selectedSchoolId),
-        supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code")
-      ]);
-      const catalogError = [
-        schoolResult.error,
-        sourceResult.error,
-        courseResult.error,
-        requirementResult.error,
-        mappingResult.error,
-        equivalencyResult.error
-      ].find(Boolean);
-      if (catalogError) throw catalogError;
-
-      const loadedCourseIds = (courseResult.data ?? []).map((course) => course.id);
-      const designationResult = loadedCourseIds.length
-        ? await supabase
-            .from("course_designations")
-            .select("id, course_id, designation, source_url, source_year, confidence, review_status")
-            .in("course_id", loadedCourseIds)
-            .eq("review_status", "approved")
-        : { data: [], error: null };
-      if (designationResult.error) throw designationResult.error;
-
-      const versionResult = await supabase
-        .from("plan_versions")
-        .select("*")
-        .eq("plan_id", loadedPlan.id)
-        .eq("kind", "active")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (versionResult.error) throw versionResult.error;
-      const loadedActiveVersion = (versionResult.data as unknown as PlanVersion[])[0] ?? null;
-      const planCourseResult = loadedActiveVersion
-        ? await supabase
-            .from("plan_courses")
-            .select("*")
-            .eq("plan_version_id", loadedActiveVersion.id)
-            .order("grade_level")
-            .order("sort_order")
-        : { data: [], error: null };
-      if (planCourseResult.error) throw planCourseResult.error;
+      const loadedPlan = bootstrap.plan;
+      const rawSettings = bootstrap.settings;
+      if (!rawSettings || !loadedPlan || !bootstrap.school) {
+        throw new Error("Choose a California high school before opening the workspace.");
+      }
+      const loadedActiveVersion = bootstrap.active_version;
 
       const loadedSettings: StudentSettings = {
         ...rawSettings,
@@ -463,51 +411,43 @@ export default function PlanningWorkspace() {
         ai_connection_approved_at: rawSettings.ai_connection_approved_at ?? null,
         ai_setup_tested_at: rawSettings.ai_setup_tested_at ?? null
       };
-      setSchool(schoolResult.data as unknown as School);
+      setSchool(bootstrap.school);
       setSettings(loadedSettings);
-      const loadedSources = (sourceResult.data ?? []) as unknown as OfficialSource[];
+      const loadedSources = bootstrap.sources;
       setSources(loadedSources);
-      setCourses((courseResult.data ?? []) as unknown as Course[]);
-      setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
-      setCourseDesignations((designationResult.data ?? []) as unknown as CourseDesignation[]);
-      setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
-      setEquivalencies(schoolResult.data.slug === "design-tech-high-school"
-        ? (equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[]
-        : []);
+      setCourses(bootstrap.courses);
+      setRequirements(bootstrap.requirements);
+      setCourseDesignations(bootstrap.course_designations);
+      setMappings(bootstrap.mappings);
+      setEquivalencies(bootstrap.equivalencies);
       setPlan(loadedPlan);
       setActiveVersion(loadedActiveVersion);
-      const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
-      const gpaScenarioResult = await supabase
-        .from("student_gpa_scenario_choices")
-        .select("plan_course_id,included,expected_grade")
-        .eq("user_id", userId);
-      if (gpaScenarioResult.error) throw gpaScenarioResult.error;
-      const plannedSmccdIds = [...new Set(loadedPlanCourses.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
-      const plannedSmccdResult = plannedSmccdIds.length > 0
-        ? await supabase.from("smccd_courses").select("*").in("id", plannedSmccdIds)
-        : { data: [], error: null };
-      if (plannedSmccdResult.error) throw plannedSmccdResult.error;
-      const loadedReviewItems = (reviewResult.data ?? []) as unknown as CatalogReviewItem[];
+      const loadedPlanCourses = bootstrap.plan_courses;
+      const loadedReviewItems = bootstrap.review_items;
       setPlanCourses(loadedPlanCourses);
-      setGpaScenarioChoices((gpaScenarioResult.data ?? []).map((choice) => ({
+      setGpaScenarioChoices(bootstrap.gpa_scenario_choices.map((choice) => ({
         planCourseId: choice.plan_course_id,
         included: choice.included,
         expectedGrade: choice.expected_grade
       })));
-      setPlannedSmccdCourses((plannedSmccdResult.data ?? []) as unknown as SmccdCourse[]);
+      setPlannedSmccdCourses(bootstrap.planned_smccd_courses);
       setReviewItems(loadedReviewItems);
-      setEnrollmentPolicies((enrollmentPolicyResult.data ?? []) as unknown as EnrollmentPolicy[]);
+      setEnrollmentPolicies(bootstrap.enrollment_policies);
       setEnrollmentPreference(
-        enrollmentPreferenceResult.data
+        bootstrap.enrollment_preference
           ? {
-              ...enrollmentPreferenceResult.data as unknown as StudentEnrollmentPreference,
+              ...bootstrap.enrollment_preference,
               limit_mode: "recommended",
               custom_unit_limit: null,
-              respect_recommended_limit: enrollmentPreferenceResult.data.respect_recommended_limit !== false
+              respect_recommended_limit: bootstrap.enrollment_preference.respect_recommended_limit !== false
             }
           : defaultEnrollmentPreference(userId)
       );
-      setIsAdmin(adminResult.data === true && !adminResult.error);
+      setIsAdmin(bootstrap.is_admin);
+      setDegreeGoals(bootstrap.degree_goals);
+      setDegreePrograms(bootstrap.degree_programs);
+      setDegreeRequirements(bootstrap.degree_requirements);
+      setDegreeRequirementCourses(bootstrap.degree_requirement_courses);
       setSelectedTranscriptIds((current) => {
         const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
         const availableIds = loadedReviewItems
@@ -540,24 +480,6 @@ export default function PlanningWorkspace() {
     const timeout = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timeout);
   }, [loadWorkspace]);
-
-  useEffect(() => {
-    if (loading || !supabase || !session) return;
-    const warmNavigation = () => {
-      void Promise.all([loadGraduationWorkspace(), loadSmccdPlanner(), loadGpaPlanningLab()]).catch(() => undefined);
-      void loadSmccdPlanner().then((module) => module.preloadSmccdPlannerData(supabase)).catch(() => undefined);
-    };
-    const idleWindow = window as unknown as {
-      requestIdleCallback?: Window["requestIdleCallback"];
-      cancelIdleCallback?: Window["cancelIdleCallback"];
-    };
-    if (idleWindow.requestIdleCallback && idleWindow.cancelIdleCallback) {
-      const idleId = idleWindow.requestIdleCallback(warmNavigation, { timeout: 1800 });
-      return () => idleWindow.cancelIdleCallback?.(idleId);
-    }
-    const timeout = globalThis.setTimeout(warmNavigation, 700);
-    return () => globalThis.clearTimeout(timeout);
-  }, [loading, session, supabase]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -1439,10 +1361,12 @@ export default function PlanningWorkspace() {
         <OverviewPath
           data={overviewData}
           degreeProgress={<DashboardDegreeProgress
-            supabase={supabase}
-            userId={session.user.id}
             planCourses={planCourses}
             plannedSmccdCourses={plannedSmccdCourses}
+            goals={degreeGoals}
+            programs={degreePrograms}
+            requirements={degreeRequirements}
+            requirementCourses={degreeRequirementCourses}
             onOpen={() => openGraduationView("degree")}
           />}
           onOpenGraduation={() => openGraduationView("diploma")}
@@ -1821,7 +1745,7 @@ export default function PlanningWorkspace() {
       >
         <Suspense fallback={<LoadingView />}>{renderView()}</Suspense>
       </AppChrome>
-      {assistantOpen && <PilotErrorBoundary onFailure={() => {
+      {assistantOpen && <Suspense fallback={null}><PilotErrorBoundary onFailure={() => {
         setAssistantOpen(false);
         notify("Pilot could not open. Your workspace is still available; try opening Pilot again.", "error");
       }}>
@@ -1835,7 +1759,7 @@ export default function PlanningWorkspace() {
           onClose={() => setAssistantOpen(false)}
           onDataChanged={refreshAfterAssistantChange}
         />
-      </PilotErrorBoundary>}
+      </PilotErrorBoundary></Suspense>}
       {toast && <div className={`toast ${toastKind}`} role={toastKind === "error" ? "alert" : "status"}>{busyLabel ? <ArrowClockwise size={16} className="spin" /> : toastKind === "success" ? <Check size={16} /> : toastKind === "error" ? <Warning size={16} /> : null}<span>{toast}</span>{toastAction && <button type="button" onClick={() => void (async () => { const action = toastAction; setToastAction(null); try { await action.run(); setToastKind("success"); setToast("Change undone."); } catch (caught) { setToastKind("error"); setToast(caught instanceof Error ? caught.message : "The change could not be undone."); } })()}>{toastAction.label}</button>}</div>}
       {busyLabel && <div className="busy-bar" role="status">{busyLabel}</div>}
       </div>

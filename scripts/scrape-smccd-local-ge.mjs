@@ -204,7 +204,7 @@ function extractCourseCodes(segment, inventory) {
     .split(/\s+/);
 
   for (let token of tokens) {
-    token = token.replace(/^[^A-Z0-9]+|[^A-Z0-9.\-]+$/gi, "");
+    token = token.replace(/^[^A-Z0-9]+|[^A-Z0-9.-]+$/gi, "");
     const candidateSubject = token.toUpperCase().replace(/\.$/, "");
     if (subjects.has(candidateSubject)) {
       subject = candidateSubject;

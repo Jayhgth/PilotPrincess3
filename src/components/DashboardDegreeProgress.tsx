@@ -1,9 +1,8 @@
-import { ArrowRightIcon as ArrowRight, BookmarkSimpleIcon as BookmarkSimple } from "@phosphor-icons/react";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
+import { BookmarkSimpleIcon as BookmarkSimple } from "@phosphor-icons/react/dist/csr/BookmarkSimple";
+import { useMemo, type CSSProperties } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import { createSmccdProgramProgressContext, calculateSmccdProgramProgressWithContext, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
-import { cachedStudentSmccdGoals, loadStudentSmccdGoals } from "@/lib/smccd-goals";
 import type {
   PlanCourse,
   SmccdCourse,
@@ -14,99 +13,32 @@ import type {
 } from "@/lib/models";
 
 interface Props {
-  supabase: SupabaseClient;
-  userId: string;
   planCourses: PlanCourse[];
   plannedSmccdCourses: SmccdCourse[];
-  onOpen: () => void;
-}
-
-interface DegreeCatalogSlice {
+  goals: StudentSmccdGoal[];
   programs: SmccdProgram[];
   requirements: SmccdProgramRequirement[];
   requirementCourses: SmccdRequirementCourse[];
+  onOpen: () => void;
 }
-
-const degreeSliceCache = new Map<string, DegreeCatalogSlice>();
-const degreeSliceRequests = new Map<string, Promise<DegreeCatalogSlice>>();
-
-async function loadDegreeSlice(supabase: SupabaseClient, programIds: string[]) {
-  const key = [...programIds].sort().join(":");
-  const cached = degreeSliceCache.get(key);
-  if (cached) return cached;
-  const pending = degreeSliceRequests.get(key);
-  if (pending) return pending;
-
-  const request = (async () => {
-    const [programResult, requirementResult] = await Promise.all([
-      supabase.from("smccd_programs").select("*").in("id", programIds),
-      supabase.from("smccd_program_requirements").select("*").in("program_id", programIds).order("sort_order")
-    ]);
-    const firstError = programResult.error ?? requirementResult.error;
-    if (firstError) throw firstError;
-    const requirements = (requirementResult.data ?? []) as unknown as SmccdProgramRequirement[];
-    const requirementIds = requirements.map((requirement) => requirement.id);
-    const optionResult = requirementIds.length
-      ? await supabase.from("smccd_requirement_courses").select("*").in("requirement_id", requirementIds).limit(1000)
-      : { data: [], error: null };
-    if (optionResult.error) throw optionResult.error;
-    const slice = {
-      programs: (programResult.data ?? []) as unknown as SmccdProgram[],
-      requirements,
-      requirementCourses: (optionResult.data ?? []) as unknown as SmccdRequirementCourse[]
-    };
-    degreeSliceCache.set(key, slice);
-    return slice;
-  })().finally(() => degreeSliceRequests.delete(key));
-
-  degreeSliceRequests.set(key, request);
-  return request;
-}
-
-export default function DashboardDegreeProgress({ supabase, userId, planCourses, plannedSmccdCourses, onOpen }: Props) {
-  const [goals, setGoals] = useState<StudentSmccdGoal[] | null>(() => cachedStudentSmccdGoals(userId));
-  const [catalog, setCatalog] = useState<DegreeCatalogSlice | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const loadedGoals = await loadStudentSmccdGoals(supabase, userId);
-        if (!active) return;
-        setGoals(loadedGoals);
-        if (!loadedGoals.length) {
-          setCatalog({ programs: [], requirements: [], requirementCourses: [] });
-          return;
-        }
-        const loadedCatalog = await loadDegreeSlice(supabase, loadedGoals.map((goal) => goal.program_id));
-        if (active) setCatalog(loadedCatalog);
-      } catch (caught) {
-        if (active) setError(caught instanceof Error ? caught.message : "Degree progress could not be loaded.");
-      }
-    })();
-    return () => { active = false; };
-  }, [supabase, userId]);
+export default function DashboardDegreeProgress({ planCourses, plannedSmccdCourses, goals, programs, requirements, requirementCourses, onOpen }: Props) {
 
   const rows = useMemo(() => {
-    if (!catalog || !goals) return [];
     const progressContext = createSmccdProgramProgressContext(
-      catalog.requirements,
-      catalog.requirementCourses,
+      requirements,
+      requirementCourses,
       planCourses,
       plannedSmccdCourses
     );
-    const programById = new Map(catalog.programs.map((program) => [program.id, program]));
+    const programById = new Map(programs.map((program) => [program.id, program]));
     return goals.flatMap((goal) => {
       const program = programById.get(goal.program_id);
       if (!program) return [];
       const progress = calculateSmccdProgramProgressWithContext(program, progressContext);
       return [{ program, progress }];
     }).slice(0, 3);
-  }, [catalog, goals, planCourses, plannedSmccdCourses]);
+  }, [goals, planCourses, plannedSmccdCourses, programs, requirementCourses, requirements]);
 
-  if (error) return <div className="degree-dashboard-state error"><strong>Degree progress unavailable</strong><button type="button" onClick={onOpen}>Open degrees <ArrowRight size={14} /></button></div>;
-  if (!catalog || !goals) return <div className="degree-dashboard-loading" aria-label="Loading degree progress"><span /><span /><span /></div>;
   if (!goals.length) return <div className="degree-dashboard-state"><BookmarkSimple size={20} aria-hidden /><strong>No degrees bookmarked</strong><button type="button" onClick={onOpen}>Browse degrees <ArrowRight size={14} /></button></div>;
 
   return <div className="degree-dashboard-chart" role="img" aria-label={rows.map(({ program, progress }) => `${program.title}: ${progress.majorPercent}% complete`).join(". ")}>
