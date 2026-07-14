@@ -205,17 +205,17 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("create a dashboard-style report or table");
     expect(prompt).toContain("Default to one to three short sentences");
     expect(prompt).toContain("Keep assistant_message under 900 characters");
-    expect(prompt).toContain("use the available mutating tool");
+    expect(prompt).toContain("use the mutating tool that owns that data");
     expect(prompt).toContain("include only arguments needed for the student's explicit request");
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
-    expect(prompt).toContain("Show the exact returned courses before any proposal");
+    expect(prompt).toContain("Show exact courses before any proposal");
     expect(prompt).toContain("current four-year plan");
     expect(prompt).toContain("Never call a partial result complete");
     expect(prompt).toContain("Schedule generation evidence contract");
     expect(prompt).toContain("authoritative product context, not student-record evidence");
-    expect(prompt).toContain("never claim workload personalization unless the student supplied workload information");
+    expect(prompt).toContain("claim workload personalization without student-supplied context");
     expect(prompt).toContain("Never end with a promise such as 'I'll check'");
     expect(prompt).toContain("ACTION CONTEXT");
     expect(prompt).toContain("Recent conversation change ledger");
@@ -268,6 +268,7 @@ describe("Codex feature boundaries", () => {
     expect(activities).toEqual([{ name: "undo_change", arguments: { tool_call_id: change.toolCallId } }]);
     expect(result.proposals[0]?.name).toBe("undo_change");
     expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() + 60_000).toISOString() }).available).toBe(true);
+    expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() - 60_000).toISOString() }).available).toBe(true);
     expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() + 60_000).toISOString(), undone_at: new Date().toISOString() }).available).toBe(false);
   });
 
@@ -325,13 +326,24 @@ describe("Codex feature boundaries", () => {
   it("builds policy-backed schedule options before asking about the default-on unit limit", () => {
     expect(requiredAssistantEvidenceRead("Suggest a schedule for me.")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true }
+      arguments: { respect_recommended_limit: true, rigor: "balanced", objectives: ["complete_diploma"] }
     });
     expect(requiredAssistantEvidenceRead("Generate a four-year course plan for me")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true }
+      arguments: { respect_recommended_limit: true, rigor: "balanced", objectives: ["complete_diploma"] }
     });
-    expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toBeNull();
+    expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true, rigor: "balanced", objectives: ["complete_diploma"] }
+    });
+    expect(requiredAssistantEvidenceRead("Create a full schedule starting from 10th grade for the highest GPA and most degrees in my major")).toEqual({
+      name: "get_academic_context",
+      arguments: {
+        include_transcript_review: false,
+        planning_start_grade: 10,
+        planning_objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"]
+      }
+    });
     expect(requiredAssistantEvidenceRead("Here are my answers:\n- **Keep college coursework within the 11-unit per-term district planning limit?** Yes (Recommended)")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true }
@@ -345,9 +357,30 @@ describe("Codex feature boundaries", () => {
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "add_schedule", accepted: false });
     expect(parseScheduleAnswer("Here are my answers:\n- **Add these proposed courses to your current four-year plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
     expect(scheduleProposalAction("auto_review", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
-    expect(scheduleProposalAction("manual", "Suggest a schedule for me.")).toEqual({ kind: "ask" });
+    expect(scheduleProposalAction("manual", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
     expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "decline" });
     expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Keep college coursework within the district limit?** No")).toEqual({ kind: "propose", respectRecommendedLimit: false });
+  });
+
+  it("uses one cross-feature operation when schedule and degree bookmarks are cleared together", () => {
+    expect(requiredAssistantEvidenceRead("Clear my whole schedule and all degree bookmarks")).toEqual({
+      name: "get_academic_context",
+      arguments: { include_transcript_review: false }
+    });
+    expect(parseAssistantToolCall("clear_academic_plan", { courses: true, degree_bookmarks: true, gpa_scenario: false })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("get_academic_context", { include_transcript_review: true })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("add_academic_courses", {
+      entries: [{ source: "smccd", course_id: "SKY-MATH-251", status: "planned", grade_level: 11, term: "fall" }],
+      respect_recommended_limit: true
+    })).toMatchObject({ mutatesData: true });
+    expect(requiredAssistantEvidenceRead("Remove my computer science degree bookmark")).toBeNull();
+    expect(requiredAssistantEvidenceRead("Create a schedule without deleting my degree bookmarks")).toEqual({
+      name: "get_academic_context",
+      arguments: {
+        include_transcript_review: false,
+        planning_objectives: ["complete_diploma"]
+      }
+    });
   });
 
   it("rejects ungrounded promises to inspect app data later", () => {

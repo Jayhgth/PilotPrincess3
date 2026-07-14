@@ -41,5 +41,11 @@ describe("assistant chat helpers", () => {
       { label: "d.tech equivalency reviewed", value: "Yes" },
       { label: "Courses removed", value: "1" }
     ]);
+    expect(changeDetailsFromContext({ data: { courses_removed: 10, transcript_courses_retained: 50, degree_bookmarks_removed: 3, gpa_assumptions_removed: 8 } })).toEqual([
+      { label: "Courses removed", value: "10" },
+      { label: "Transcript courses kept", value: "50" },
+      { label: "Degree bookmarks removed", value: "3" },
+      { label: "GPA assumptions removed", value: "8" }
+    ]);
   });
 });

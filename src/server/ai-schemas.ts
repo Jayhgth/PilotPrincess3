@@ -174,6 +174,7 @@ export const parsedTranscriptJsonSchema = {
 
 const assistantToolNames = [
   "get_student_overview",
+  "get_academic_context",
   "list_plan_courses",
   "search_course_catalog",
   "get_graduation_progress",
@@ -193,6 +194,7 @@ const assistantToolNames = [
   "add_dtech_course",
   "add_high_school_course",
   "add_smccd_course",
+  "add_academic_courses",
   "move_plan_course",
   "move_plan_courses",
   "remove_plan_course",
@@ -206,7 +208,8 @@ const assistantToolNames = [
   "create_plan_snapshot",
   "set_smccd_ge_completion",
   "set_college_goal",
-  "clear_college_goal"
+  "clear_college_goal",
+  "clear_academic_plan"
 ] as const;
 
 export const ASSISTANT_MESSAGE_MAX_LENGTH = 900;

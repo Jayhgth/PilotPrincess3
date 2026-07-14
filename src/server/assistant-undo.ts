@@ -19,6 +19,13 @@ const undoSchema = z.discriminatedUnion("kind", [
     plan_rows: z.array(rowSchema).max(40),
     inserted_plan_course_ids: z.array(z.uuid()).max(40),
     summary: z.string().min(1).max(500)
+  }),
+  z.object({
+    kind: z.literal("restore_academic_plan"),
+    plan_rows: z.array(rowSchema).max(200),
+    goal_rows: z.array(rowSchema).max(200),
+    gpa_rows: z.array(rowSchema).max(200),
+    summary: z.string().min(1).max(500)
   })
 ]);
 
@@ -38,17 +45,14 @@ function pickRow(row: Record<string, unknown>, keys: readonly string[], userId: 
   return Object.fromEntries(keys.filter((key) => key in row).map((key) => [key, row[key]]));
 }
 
-export function assistantUndoAvailability(resultValue: unknown, now = Date.now()) {
+export function assistantUndoAvailability(resultValue: unknown) {
   const result = resultValue && typeof resultValue === "object" && !Array.isArray(resultValue)
     ? resultValue as Record<string, unknown>
     : {};
   return {
-    available: !result.undone_at
-      && typeof result.undo_expires_at === "string"
-      && Date.parse(result.undo_expires_at) > now
-      && undoSchema.safeParse(result.undo).success,
+    available: !result.undone_at && undoSchema.safeParse(result.undo).success,
     undoneAt: typeof result.undone_at === "string" ? result.undone_at : null,
-    expiresAt: typeof result.undo_expires_at === "string" ? result.undo_expires_at : null
+    expiresAt: null
   };
 }
 
@@ -71,7 +75,6 @@ export async function undoAssistantToolCall(options: {
     ? toolCall.result as Record<string, unknown>
     : {};
   if (result.undone_at) throw new Error("This change has already been undone.");
-  if (typeof result.undo_expires_at !== "string" || Date.parse(result.undo_expires_at) <= Date.now()) throw new Error("The undo window for this change has ended.");
   const undo = undoSchema.safeParse(result.undo);
   if (!undo.success) throw new Error("This change does not have a safe undo action.");
 
@@ -149,6 +152,21 @@ export async function undoAssistantToolCall(options: {
       }
       const reviewRestoration = await options.supabase.from("catalog_review_items").update({ corrected_payload: undo.data.corrected_payload, status: undo.data.status }).eq("id", undo.data.review_item_id).eq("user_id", options.userId);
       if (reviewRestoration.error) throw new Error(reviewRestoration.error.message);
+    } else if (undo.data.kind === "restore_academic_plan") {
+      const planRows = undo.data.plan_rows.map((row) => pickRow(row, RESTORABLE_KEYS.plan_courses, options.userId));
+      const goalRows = undo.data.goal_rows.map((row) => pickRow(row, RESTORABLE_KEYS.student_smccd_goals, options.userId));
+      const gpaRows = undo.data.gpa_rows.map((row) => ({
+        user_id: options.userId,
+        plan_course_id: z.uuid().parse(row.plan_course_id),
+        included: z.boolean().parse(row.included),
+        expected_grade: z.enum(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]).nullable().parse(row.expected_grade)
+      }));
+      const restoration = await options.supabase.rpc("restore_pilot_academic_plan", {
+        p_plan_rows: planRows,
+        p_goal_rows: goalRows,
+        p_gpa_rows: gpaRows
+      });
+      if (restoration.error) throw new Error(restoration.error.message);
     }
 
     const undoneAt = new Date().toISOString();

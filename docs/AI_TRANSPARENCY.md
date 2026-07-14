@@ -31,6 +31,7 @@ Raw JSON, validation internals, event names, model protocol fields, and hidden c
 Read tools may run automatically after a student sends a message:
 
 - a compact inventory of available student-owned records;
+- one bounded cross-feature academic workspace read containing ordinary profile settings, the active plan, GPA assumptions, degree bookmarks, enrollment preference, prerequisite evidence, and optional transcript-review rows;
 - student overview;
 - Done, In progress, and Planned courses;
 - active California public and charter high-school search for an exact selected-school change;
@@ -52,7 +53,7 @@ Read tools may run automatically after a student sends a message:
 Write tools may prepare these changes:
 
 - add a selected-school or SMCCD course;
-- add an exact schedule batch after showing the returned courses; Supervised mode requires a structured Yes answer, while Auto-review sends the safe-limit batch directly to its independent reviewer;
+- add an exact schedule batch after showing the returned courses; the ordinary Supervised change card is the lightweight double-check, while Auto-review sends the same safe-limit batch directly to its independent reviewer;
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
 - edit placement, grade, credits, units, notes, and weighting on an unlocked plan course; GPA always recalculates from these course variables rather than accepting a hardcoded GPA value;
 - apply the same canonical course-board sort as the Courses page;
@@ -64,8 +65,9 @@ Write tools may prepare these changes:
 - update ordinary student and planning settings plus the connected Pilot model, reasoning, and review preference, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
 - save a named snapshot, update a student-confirmed SMCCD Area 7A completion, and record Skyline's manually completed information-literacy tutorial or equivalent;
-- select or clear an associate-degree goal; and
-- undo an eligible applied change from the current conversation by its exact action identifier and stored inverse.
+- select or clear an associate-degree goal;
+- clear editable schedule rows, degree bookmarks, and GPA assumptions as one compound action while retaining transcript-backed evidence; and
+- undo an applied change from the current conversation by its exact action identifier and durable stored inverse.
 
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
 
@@ -78,7 +80,7 @@ The read surface covers student-facing academic planning data, not arbitrary dat
 
 Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent triggers the deterministic evidence tool before the model answers, so Pilot cannot return a placeholder such as “I’m checking” without doing the check. Pilot must lead with that verdict, compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. A `needs_review` status alone is not an error, and a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows cannot be moved or deleted as ordinary plan rows. An explicit correction instead preserves the imported proposal, stores a separate corrected payload and reason, and updates its linked completed course; weighting corrections use that explicit reviewed value and GPA then recalculates normally.
 
-Schedule generation retains all existing active rows, restores the verified standard grade-level flow, and then fills remaining tracked graduation gaps with eligible catalog courses. It validates grade availability and prerequisites, balances semester placement, respects the chosen college-unit boundary, and can apply explicit or remembered interests, rigor, and maximum-course constraints. The output reports how many existing courses remain and explains every exact addition. A batch with remaining gaps is labeled partial and is not proposed or sent to Auto-review, so an incomplete result cannot silently change the plan. Supervised mode uses one lightweight in-chat double-check before adding a complete batch; Auto-review sends the same exact batch to its independent reviewer. Pilot attempts the full request unless the student explicitly narrows its scope.
+Schedule generation retains all existing active rows, restores the verified standard grade-level flow, and then fills remaining tracked graduation gaps with eligible catalog courses. It validates grade availability and cross-college prerequisites, balances semester placement, respects the chosen college-unit boundary, and can apply explicit or remembered interests, rigor, major/degree goals, and maximum-course constraints. Every verified college course is weighted for d.tech GPA; a high-school course is weighted only when its approved evidence says so. College units remain distinct from d.tech credits, and a college course contributes to a high-school requirement only through a verified equivalency. The output reports how many existing courses remain and explains every exact addition. A batch with remaining gaps is labeled partial and is not proposed or sent to Auto-review, so an incomplete result cannot silently change the plan. Supervised mode uses one lightweight in-chat double-check before adding a complete batch; Auto-review sends the same exact batch to its independent reviewer. Pilot attempts the full request unless the student explicitly narrows its scope.
 
 ## Retrieved application guidance
 
@@ -106,7 +108,7 @@ Structured questions are stored in the assistant message's bounded `page_context
 
 Queued follow-ups also remain browser-memory-only until their turn starts. Their text and image previews stay local while waiting; removing a queued message revokes its local image previews. **Steer** cancels the active request, records that cancellation, moves the selected follow-up to the front, and then starts it as a normal persisted turn. It does not inject text into an already-running model response or bypass the normal tool approval boundary.
 
-After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Every applied write must also store a private server-side inverse; execution rejects a mutation that lacks one. The receipt places **Undo change** inside the receipt for 15 minutes. Undo re-authenticates the student, validates the stored inverse and time window, reapplies normal RLS ownership, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. This is evidence of an application-side mutation, not a claim made by the model.
+After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Every applied write must also store a durable private server-side inverse; execution rejects a mutation that lacks one. The receipt keeps **Undo change** available until the action is undone or a later conflicting edit makes restoration unsafe. Undo re-authenticates the student, validates the stored inverse, reapplies normal RLS ownership, refuses to overwrite newer conflicting course data, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. Compound changes keep all removed academic records in one inverse. This is evidence of an application-side mutation, not a claim made by the model.
 
 Completed read and write tools form a bounded per-conversation evidence ledger. Subsequent turns receive recent public tool names, summaries, and size-limited result data so references to app information retain context; Pilot refreshes that historical evidence through the owning read tool whenever current state matters. Applied writes additionally provide their stable action identifier and current undo state, while private inverse payloads remain server-only. Referential requests such as “undo that” or “bring them back” deterministically select an eligible action and execute its stored inverse through the same review and RLS boundaries. Pilot never tries to recover removed records by querying only the current plan.
 

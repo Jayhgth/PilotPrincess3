@@ -6,7 +6,7 @@ import { z } from "zod";
 import { assistantImageExtension, MAX_ASSISTANT_ATTACHMENTS, safeAssistantImageName, validateAssistantImage } from "@/lib/ai-attachments";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import type { AiMessage } from "@/lib/models";
-import { CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat, type AssistantRecentChange, type AssistantRecentToolEvidence } from "@/server/codex";
+import { assistantUndoIntent, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, runAssistantChat, type AssistantRecentChange, type AssistantRecentToolEvidence } from "@/server/codex";
 import { assistantToolLabel, executeAssistantReadTool } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 import { retrieveAssistantKnowledge, type AssistantKnowledgeChunk } from "@/server/ai-knowledge";
@@ -120,9 +120,10 @@ export const POST: APIRoute = async ({ request }) => {
     return jsonError(error instanceof Error ? error.message : "The images could not be uploaded.", 500);
   }
 
+  const toolHistoryLimit = assistantUndoIntent(parsed.data.message) ? 120 : 32;
   const [historyResult, toolHistoryResult] = await Promise.all([
     auth.supabase.from("ai_messages").select("*").eq("conversation_id", parsed.data.conversationId).neq("id", userMessageResult.data.id).order("created_at", { ascending: false }).limit(24),
-    auth.supabase.from("ai_tool_calls").select("id,tool_name,result,completed_at,mutates_data").eq("conversation_id", parsed.data.conversationId).eq("user_id", auth.user.id).eq("status", "completed").order("completed_at", { ascending: false }).limit(24)
+    auth.supabase.from("ai_tool_calls").select("id,tool_name,result,completed_at,mutates_data").eq("conversation_id", parsed.data.conversationId).eq("user_id", auth.user.id).eq("status", "completed").order("completed_at", { ascending: false }).limit(toolHistoryLimit)
   ]);
   if (historyResult.error) return jsonError(historyResult.error.message, 500);
   if (toolHistoryResult.error) return jsonError(toolHistoryResult.error.message, 500);

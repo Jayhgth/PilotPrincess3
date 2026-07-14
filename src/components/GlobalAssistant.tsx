@@ -180,14 +180,7 @@ function ChangeReceipt({ message, busy, onUndo }: { message: AiMessage; busy: bo
   const details = changeDetailsFromContext(message.page_context);
   const toolName = String(message.page_context.tool_name ?? "student data");
   const undone = typeof message.page_context.undone_at === "string";
-  const undoExpiresAt = typeof message.page_context.undo_expires_at === "string" ? Date.parse(message.page_context.undo_expires_at) : 0;
-  const [undoWindowOpen, setUndoWindowOpen] = useState(true);
-  useEffect(() => {
-    const remaining = undoExpiresAt - Date.now();
-    const timeout = window.setTimeout(() => setUndoWindowOpen(false), Math.max(0, remaining));
-    return () => window.clearTimeout(timeout);
-  }, [undoExpiresAt]);
-  const canUndo = message.page_context.undo_available === true && typeof message.page_context.tool_call_id === "string" && undoWindowOpen && !undone;
+  const canUndo = message.page_context.undo_available === true && typeof message.page_context.tool_call_id === "string" && !undone;
   return <FadeContent className={`${styles.changeReceipt} ${undone ? styles.changeUndone : ""}`} duration={0.16}>
     <div><CheckCircle size={16} weight="fill" /><span><strong>{undone ? "Change undone" : "Change applied"}</strong><small>{friendlyToolLabel(toolName)}</small></span></div>
     <p>{message.content}</p>
@@ -198,6 +191,7 @@ function ChangeReceipt({ message, busy, onUndo }: { message: AiMessage; busy: bo
 
 const TOOL_LABELS: Record<string, string> = {
   get_student_overview: "Student overview",
+  get_academic_context: "Academic workspace",
   list_plan_courses: "Course plan",
   search_california_high_schools: "California high schools",
   search_course_catalog: "Course catalog",
@@ -219,6 +213,7 @@ const TOOL_LABELS: Record<string, string> = {
   add_course_schedule: "Add course schedule",
   add_dtech_course: "Add high school course",
   add_smccd_course: "Add college course",
+  add_academic_courses: "Add academic course plan",
   move_plan_course: "Move course",
   move_plan_courses: "Move courses",
   remove_plan_course: "Remove course",
@@ -234,7 +229,8 @@ const TOOL_LABELS: Record<string, string> = {
   create_plan_snapshot: "Save plan snapshot",
   set_smccd_ge_completion: "Update college degree completion",
   set_college_goal: "Bookmark degree",
-  clear_college_goal: "Remove degree bookmark"
+  clear_college_goal: "Remove degree bookmark",
+  clear_academic_plan: "Clear academic plan"
 };
 
 function friendlyToolLabel(name: string) {

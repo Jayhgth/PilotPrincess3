@@ -642,6 +642,14 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   if (/\b(nearby|closest|near me|local)\b/.test(normalized) && /\b(college|provider|dual enrollment)\b/.test(normalized)) {
     return { name: "get_nearby_education_providers", arguments: {} };
   }
+  const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
+    && !/\b(without|do not|don't|dont|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
+  const clearsScheduleArea = /\b(schedule|plan|courses|classes)\b/.test(normalized);
+  const clearsDegreeArea = /\b(degree|bookmark|goal)s?\b/.test(normalized);
+  const clearsAll = /\b(all|every|whole|entire)\b/.test(normalized);
+  if (clearing && clearsDegreeArea && (clearsScheduleArea || clearsAll)) {
+    return { name: "get_academic_context", arguments: { include_transcript_review: false } };
+  }
 
   const scheduleGenerationIntent = /\b(generate|build|create|make|draft|suggest|plan|recommend)\b/.test(normalized)
     && (
@@ -649,8 +657,35 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
       || /\b(plan|schedule)\s+(courses|classes)\b/.test(normalized)
       || (/\bschedule\b/.test(normalized) && !/\b(meeting|appointment|calendar|study|homework|workout|sleep)\b/.test(normalized))
     );
-  const schedulePreferenceIntent = /\b(prefer|interest|focus|avoid|rigor|advanced|honors?|lighter|easier|harder|max(?:imum)?|no more than|workload|college|dual|concurrent|without|only)\b/.test(normalized);
-  if (scheduleGenerationIntent && !schedulePreferenceIntent) return { name: "get_course_schedule_options", arguments: { respect_recommended_limit: true } };
+  if (scheduleGenerationIntent) {
+    const startGrade = normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/)?.[1];
+    const objectives = [
+      "complete_diploma",
+      ...(/\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
+      ...(/\b(most|multiple|maximize)\b.*\b(degree|degrees)\b|\bdegree overlap\b/.test(normalized) ? ["maximize_degree_overlap"] : []),
+      ...(/\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
+    ];
+    const crossFeaturePlan = /\b(college|concurrent|dual|degree|degrees|major|gpa)\b/.test(normalized);
+    if (crossFeaturePlan) {
+      return {
+        name: "get_academic_context",
+        arguments: {
+          include_transcript_review: false,
+          planning_objectives: objectives,
+          ...(startGrade ? { planning_start_grade: Number(startGrade) } : {})
+        }
+      };
+    }
+    return {
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: objectives.includes("maximize_weighted_gpa") ? "advanced" : "balanced",
+        objectives,
+        ...(startGrade ? { start_grade: Number(startGrade) } : {})
+      }
+    };
+  }
   const scheduleAnswer = parseScheduleAnswer(userMessage);
   if (scheduleAnswer) {
     return {
@@ -676,12 +711,10 @@ export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null 
   return null;
 }
 
-export function scheduleProposalAction(reviewMode: AiReviewMode, userMessage: string): ScheduleProposalAction {
+export function scheduleProposalAction(_reviewMode: AiReviewMode, userMessage: string): ScheduleProposalAction {
   const answer = parseScheduleAnswer(userMessage);
   if (!answer) {
-    return reviewMode === "auto_review"
-      ? { kind: "propose", respectRecommendedLimit: true }
-      : { kind: "ask" };
+    return { kind: "propose", respectRecommendedLimit: true };
   }
   if (answer.kind === "add_schedule") {
     return answer.accepted
@@ -771,16 +804,17 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     options.images?.length
       ? `The student explicitly attached ${options.images.length} ${options.images.length === 1 ? "image" : "images"}: ${(options.imageNames ?? []).join(", ") || "unnamed image"}. Use visible image content only as context for this turn. Describe uncertainty when text or details are unclear, and do not infer unsupported student records.`
       : "No image was attached to this turn.",
-    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover the supported academic-planning domains listed below; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting a change to the current four-year plan. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
-    "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Translate explicitly stated interests, rigor, and maximum courses per term into that tool's arguments; otherwise use retrieved explicit memories or the balanced defaults. Attempt the complete request unless the student narrows it. Show the exact returned courses before any proposal. Treat the active course rows as the student's current four-year plan: say how many existing courses are retained, separate them from new additions, explain why each addition was selected, and name any graduation gaps that remain afterward. One addition may be sufficient only when the existing plan supplies the rest; explain that instead of presenting one class as the whole schedule. Never call a partial result complete. Ask about the displayed per-term unit limit only when the returned additions include college coursework; otherwise ask whether to add the shown additions. Put the safe Yes option first and label it recommended. Never exceed absolute_max_units, and never claim workload personalization unless the student supplied workload information in this conversation or an explicit retrieved memory.",
+    "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
+    "Apply the app's deterministic academic rules exactly. Every verified college course is weighted for d.tech GPA even if its imported is_weighted flag is false; a high-school course is weighted only when its approved catalog/evidence says so. College units and d.tech transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college; evaluate CSM, Skyline, and Cañada with their own official patterns. Check cross-college prerequisite equivalence by normalized course identity and verified evidence.",
+    "For a diploma-focused course plan, call get_course_schedule_options with respect_recommended_limit true first. For a cross-feature plan involving college coursework, GPA optimization, degrees, or a major, start with get_academic_context, then use graduation, GPA, enrollment, degree, catalog, and prerequisite reads as needed and apply the exact mixed result with add_academic_courses. Translate explicitly stated starting grade, interests, rigor, objectives, and maximum courses per term into tool arguments; otherwise use retrieved explicit memories or balanced defaults. Attempt the complete request unless the student narrows it. Show exact courses before any proposal, retain existing rows, explain every addition and goal overlap, and name remaining gaps. Never call a partial result complete, exceed absolute_max_units, or claim workload personalization without student-supplied context. The normal change card is the lightweight confirmation; do not add a redundant question before it.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
-    "When the student explicitly asks to change app data, use the available mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, or ask them for an internal record ID. You may prepare up to eight exact related changes in one turn. Pilot covers normal student settings and selected school, courses and course variables, schedule placement and canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, enrollment preference, and plan snapshots. Search first when an exact school, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
+    "When the student explicitly asks to change app data, use the mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, ask for an internal record ID, or silently truncate a large request. Prefer a batch or cross-feature tool so the full request is one coherent action. Pilot covers normal student settings and selected school, all editable course variables and schedule placement, canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, enrollment preference, plan snapshots, and cross-feature academic-plan clearing/restoration. Search first when an exact school, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
     "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and Auto-review will deny it.",
     "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
-    "Treat structured ACTION CONTEXT and the recent conversation change ledger as canonical thread history. When the student asks to undo, restore, revert, or bring back a recent applied change, call undo_change with that exact tool_call_id. Never query the current plan to reconstruct deleted rows, and never claim there is nothing to restore merely because the current records no longer contain the deleted data.",
+    "Treat structured ACTION CONTEXT and the recent conversation change ledger as canonical thread history. Applied actions keep a durable private inverse; there is no arbitrary time window. When the student asks to undo, restore, revert, or bring back an applied change, call undo_change with that exact tool_call_id. Never query the current plan to reconstruct deleted rows, and never claim there is nothing to restore merely because current records no longer contain the deleted data. If a later conflicting edit makes restoration unsafe, report that exact conflict instead of overwriting newer data.",
     "Use recent conversation tool evidence to understand follow-up references to app data already read in this thread. It is bounded historical evidence, not guaranteed current state: reuse it for conversational continuity, but refresh through the owning read tool before a new answer or write when the underlying record may have changed.",
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will autonomously apply an exact approved proposal or decline it; it will not ask the student to confirm." : "Manual. The student must approve every proposed change."}`,
-    "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
+    "A write may follow a completed read in the same turn when the read supplies the exact IDs and evidence needed for the student's explicit request. Never combine an unverified guess with a mutation.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
     "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
     "Never end with a promise such as 'I'll check' or 'let me look' without actually calling the relevant read tool in the same turn. If no tool can perform the promised work, state that limitation directly.",
@@ -832,9 +866,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       const latest = options.recentChanges?.[0];
       const message = latest?.undoneAt
         ? "That recent change has already been undone."
-        : latest?.undoExpiresAt && Date.parse(latest.undoExpiresAt) <= Date.now()
-          ? "The undo window for that recent change has ended."
-          : "There is no reversible applied change in this conversation yet.";
+        : "There is no reversible applied change in this conversation yet.";
       return { message, questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [] };
     }
     const proposal: AssistantChatToolActivity = {
@@ -903,6 +935,35 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       try {
         const result = await options.executeReadTool(requiredRead.name, requiredRead.arguments);
         await options.onToolActivity({ ...activity, status: "completed", result });
+        if (requiredRead.name === "get_academic_context" && result.data && typeof result.data === "object" && !Array.isArray(result.data)
+          && /\b(clear|empty|wipe|remove|delete)\b/.test(options.userMessage.toLowerCase())
+          && !/\b(without|do not|don't|dont|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(options.userMessage.toLowerCase())) {
+          const normalized = options.userMessage.toLowerCase();
+          const clearsCourses = /\b(schedule|plan|courses|classes)\b/.test(normalized);
+          const clearsGoals = /\b(degree|bookmark|goal)s?\b/.test(normalized);
+          const clearsGpa = /\b(gpa|grade assumptions?|calculator)\b/.test(normalized);
+          const proposal: AssistantChatToolActivity = {
+            id: crypto.randomUUID(),
+            name: "clear_academic_plan",
+            label: assistantToolLabel("clear_academic_plan"),
+            arguments: { courses: clearsCourses, degree_bookmarks: clearsGoals, gpa_scenario: clearsGpa },
+            explanation: "Clear the requested student-owned academic areas as one durable reversible action while retaining transcript-backed evidence.",
+            mutatesData: true,
+            status: "pending_confirmation"
+          };
+          await options.onToolActivity(proposal);
+          return {
+            message: options.reviewMode === "auto_review"
+              ? "I found the requested academic areas. Auto-review will apply or decline one exact clear operation; transcript-backed courses stay intact, and the complete removed state remains restorable as one change."
+              : "I prepared one exact clear operation for the requested academic areas. Transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
+            questions: [],
+            threadId: thread.id,
+            usage,
+            latencyMs: Date.now() - startedAt,
+            model,
+            proposals: [proposal]
+          };
+        }
         if (requiredRead.name === "list_plan_courses" && Array.isArray(result.data)) {
           const normalized = options.userMessage.toLowerCase();
           const courseBatch = requestedCourseBatch(normalized);
@@ -1079,7 +1140,15 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             id: crypto.randomUUID(),
             name: "add_course_schedule",
             label: assistantToolLabel("add_course_schedule"),
-            arguments: { course_ids: ids, respect_recommended_limit: respectsLimit },
+            arguments: {
+              course_ids: ids,
+              respect_recommended_limit: respectsLimit,
+              interests: requiredRead.arguments.interests ?? [],
+              rigor: requiredRead.arguments.rigor ?? "balanced",
+              max_courses_per_term: requiredRead.arguments.max_courses_per_term ?? null,
+              ...(requiredRead.arguments.start_grade ? { start_grade: requiredRead.arguments.start_grade } : {}),
+              objectives: requiredRead.arguments.objectives ?? ["complete_diploma"]
+            },
             explanation: `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
             mutatesData: true,
             status: "pending_confirmation"

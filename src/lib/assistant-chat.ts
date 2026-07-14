@@ -104,7 +104,14 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   sorted_count: "Courses reordered",
   updated_count: "Courses updated",
   removed_count: "Courses removed",
-  moved_count: "Courses moved"
+  moved_count: "Courses moved",
+  added_count: "Courses added",
+  high_school_count: "High school courses",
+  college_count: "College courses",
+  courses_removed: "Courses removed",
+  transcript_courses_retained: "Transcript courses kept",
+  degree_bookmarks_removed: "Degree bookmarks removed",
+  gpa_assumptions_removed: "GPA assumptions removed"
 };
 
 function readableValue(value: unknown): string | null {
