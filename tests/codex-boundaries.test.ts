@@ -172,6 +172,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Default to one to three short sentences");
     expect(prompt).toContain("Keep assistant_message under 900 characters");
     expect(prompt).toContain("use the available mutating tool");
+    expect(prompt).toContain("include only arguments needed for the student's explicit request");
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
