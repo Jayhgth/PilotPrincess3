@@ -77,6 +77,28 @@ for (const program of catalog.programs) {
 
 if (localGe.sourceYear !== catalog.catalogYear) errors.push("Local GE roster year must match the SMCCD catalog year.");
 if (!localGe.reciprocitySource?.includes("transferrequirements.php")) errors.push("Local GE data is missing the official district reciprocity source.");
+const expectedPatterns = {
+  CSM: { minimumGeUnits: 27, areaCount: 10, graduationRequirements: ["information_literacy"] },
+  SKY: { minimumGeUnits: 24, areaCount: 9, graduationRequirements: ["information_literacy", "american_history_institutions"] },
+  CAN: { minimumGeUnits: 25, areaCount: 9, graduationRequirements: [] }
+};
+for (const [collegeCode, expected] of Object.entries(expectedPatterns)) {
+  const pattern = localGe.patterns?.[collegeCode];
+  if (!pattern) {
+    errors.push(`${collegeCode} is missing its local degree pattern definition.`);
+    continue;
+  }
+  const definedUnits = pattern.areaOrder.reduce((sum, area) => sum + Number(pattern.areaDefinitions[area]?.requiredUnits ?? 0), 0);
+  if (pattern.minimumGeUnits !== expected.minimumGeUnits || definedUnits !== expected.minimumGeUnits) errors.push(`${collegeCode} local GE must total exactly ${expected.minimumGeUnits} units.`);
+  if (pattern.areaOrder.length !== expected.areaCount) errors.push(`${collegeCode} local GE must have ${expected.areaCount} separately evaluated areas.`);
+  if (pattern.graduationRequirements.map((requirement) => requirement.id).join(",") !== expected.graduationRequirements.join(",")) errors.push(`${collegeCode} has incorrect separate graduation requirements.`);
+  for (const requirement of pattern.graduationRequirements) {
+    for (const courseId of requirement.courseIds ?? []) if (!courseIds.has(courseId)) errors.push(`${collegeCode} ${requirement.id} references missing course ${courseId}.`);
+  }
+}
+if (localGe.patterns.SKY.areaOrder.includes("8")) errors.push("Skyline American History & Institutions must remain separate from its 24-unit GE pattern.");
+if (!localGe.patterns.CSM.areaOrder.includes("8")) errors.push("CSM Area 8 must remain inside its 27-unit GE pattern.");
+if (!localGe.patterns.CAN.areaDefinitions["5"]?.requiresLab) errors.push("Cañada Area 5 must retain its lab requirement.");
 for (const [collegeCode, college] of Object.entries(localGe.colleges)) {
   const expectedAreas = collegeCode === "CAN" ? ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B"] : ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B", "8"];
   const actualAreas = Object.keys(college.areas);

@@ -1547,7 +1547,7 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-degree-analysis-header p { max-width: 650px; margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .smccd-degree-analysis-header > a { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 0 10px; font-size: var(--type-supporting); font-weight: 700; text-decoration: none; white-space: nowrap; }
 .smccd-degree-analysis-header > a:hover { background: var(--surface-muted); }
-.smccd-degree-analysis-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 0; }
+.smccd-degree-analysis-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin: 0; }
 .smccd-degree-analysis-summary > div { border-top: 1px solid var(--line); padding-top: 10px; }
 .smccd-degree-analysis-summary dt { margin: 0 0 5px; color: var(--ink-faint); font-size: 12px; font-weight: 700; }
 .smccd-degree-analysis-summary dd { margin: 0; font-size: var(--type-body); font-weight: 700; }
@@ -1588,6 +1588,9 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .smccd-ge-manual-checkbox { width: 18px; height: 18px; min-height: 18px; margin: 2px 0 0; border-radius: 4px; padding: 0; accent-color: var(--success); }
 .smccd-ge-row h4 { margin: 0 0 5px; font-size: var(--type-body); font-weight: 650; line-height: var(--leading-body); }
 .smccd-ge-row p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.smccd-ge-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line-strong); padding-top: 14px; }
+.smccd-ge-section-heading h4 { margin: 0; font-size: var(--type-body); font-weight: 650; }
+.smccd-ge-section-heading p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); }
 .smccd-ge-courses { display: flex; flex-wrap: wrap; align-content: start; justify-content: flex-end; gap: 7px; }
 .smccd-ge-courses span { border: 1px solid var(--line); border-radius: 7px; color: var(--ink-soft); padding: 5px 7px; font-size: 12px; line-height: 1.2; }
 .smccd-ge-courses span.completed { border-color: color-mix(in srgb, var(--success) 28%, var(--line)); background: var(--success-soft); color: var(--success); }

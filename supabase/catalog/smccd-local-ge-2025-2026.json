@@ -1,6 +1,289 @@
 {
   "sourceYear": "2025-2026",
   "reciprocitySource": "https://catalog.skylinecollege.edu/current/generaldegreerequirements/transferrequirements.php",
+  "patterns": {
+    "CSM": {
+      "label": "College of San Mateo local AA/AS GE",
+      "minimumGeUnits": 27,
+      "areaOrder": [
+        "1A",
+        "1B",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7A",
+        "7B",
+        "8"
+      ],
+      "areaDefinitions": {
+        "2": {
+          "label": "Area 2",
+          "description": "Mathematics & Quantitative Reasoning",
+          "requiredUnits": 3,
+          "minimumGrade": "c"
+        },
+        "3": {
+          "label": "Area 3",
+          "description": "Arts & Humanities",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "4": {
+          "label": "Area 4",
+          "description": "Social & Behavioral Sciences",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "5": {
+          "label": "Area 5",
+          "description": "Natural Sciences",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "6": {
+          "label": "Area 6",
+          "description": "Ethnic Studies",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "8": {
+          "label": "Area 8",
+          "description": "American History & Institutions and California Government",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "1A": {
+          "label": "Area 1A",
+          "description": "English Composition",
+          "requiredUnits": 3,
+          "minimumGrade": "c"
+        },
+        "1B": {
+          "label": "Area 1B",
+          "description": "Oral Communication & Critical Thinking",
+          "requiredUnits": 3,
+          "minimumGrade": "c"
+        },
+        "7A": {
+          "label": "Area 7A",
+          "description": "Wellness & Kinesiology Activity",
+          "requiredUnits": 1,
+          "minimumGrade": "degree"
+        },
+        "7B": {
+          "label": "Area 7B",
+          "description": "Additional Area 7 units",
+          "requiredUnits": 2,
+          "minimumGrade": "degree"
+        }
+      },
+      "graduationRequirements": [
+        {
+          "id": "information_literacy",
+          "label": "Information Literacy",
+          "description": "Complete an approved CSM information-literacy course or a district-recognized equivalent.",
+          "courseIds": [
+            "CSM:ENGL C1000",
+            "CSM:ENGL C1000E",
+            "SKY:ENGL C1000",
+            "SKY:ENGL C1000E",
+            "CSM:LIBR 100",
+            "CSM:CIS 110",
+            "CSM:DGME 100",
+            "CSM:DGME 102",
+            "CSM:MATH 145",
+            "CSM:NURS 242",
+            "CAN:LIBR 100"
+          ],
+          "minimumGrade": "c",
+          "allowsGeReuse": true,
+          "manualCompletion": false
+        }
+      ]
+    },
+    "SKY": {
+      "label": "Skyline College local AA/AS GE",
+      "minimumGeUnits": 24,
+      "areaOrder": [
+        "1A",
+        "1B",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7A",
+        "7B"
+      ],
+      "areaDefinitions": {
+        "2": {
+          "label": "Area 2",
+          "description": "Mathematics & Quantitative Reasoning",
+          "requiredUnits": 3,
+          "minimumGrade": "c_minus"
+        },
+        "3": {
+          "label": "Area 3",
+          "description": "Arts & Humanities",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "4": {
+          "label": "Area 4",
+          "description": "Social & Behavioral Sciences",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "5": {
+          "label": "Area 5",
+          "description": "Natural Sciences",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "6": {
+          "label": "Area 6",
+          "description": "Ethnic Studies",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "1A": {
+          "label": "Area 1A",
+          "description": "English Composition",
+          "requiredUnits": 3,
+          "minimumGrade": "c_minus"
+        },
+        "1B": {
+          "label": "Area 1B",
+          "description": "Oral Communication & Critical Thinking",
+          "requiredUnits": 3,
+          "minimumGrade": "c_minus"
+        },
+        "7A": {
+          "label": "Area 7A",
+          "description": "Kinesiology Activity",
+          "requiredUnits": 1,
+          "minimumGrade": "degree"
+        },
+        "7B": {
+          "label": "Area 7B",
+          "description": "Additional Area 7 units",
+          "requiredUnits": 2,
+          "minimumGrade": "degree"
+        }
+      },
+      "graduationRequirements": [
+        {
+          "id": "information_literacy",
+          "label": "Information Literacy",
+          "description": "Complete Skyline ENGL C1000/C1000E, the Skyline tutorial, or an equivalent information-literacy requirement.",
+          "courseIds": [
+            "CSM:ENGL C1000",
+            "CSM:ENGL C1000E",
+            "SKY:ENGL C1000",
+            "SKY:ENGL C1000E",
+            "CSM:LIBR 100",
+            "CSM:CIS 110",
+            "CSM:DGME 100",
+            "CSM:DGME 102",
+            "CSM:MATH 145",
+            "CSM:NURS 242",
+            "CAN:LIBR 100"
+          ],
+          "minimumGrade": "c",
+          "courseGradeMinimums": {
+            "SKY:ENGL C1000": "c_minus",
+            "SKY:ENGL C1000E": "c_minus"
+          },
+          "allowsGeReuse": true,
+          "manualCompletion": true
+        },
+        {
+          "id": "american_history_institutions",
+          "label": "American History & Institutions",
+          "description": "Complete one approved US history, Constitution, or California government course.",
+          "evidenceArea": "8",
+          "minimumGrade": "degree",
+          "allowsGeReuse": true,
+          "manualCompletion": false
+        }
+      ]
+    },
+    "CAN": {
+      "label": "Cañada College local AA/AS GE",
+      "minimumGeUnits": 25,
+      "areaOrder": [
+        "1A",
+        "1B",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7A",
+        "7B"
+      ],
+      "areaDefinitions": {
+        "2": {
+          "label": "Area 2",
+          "description": "Mathematics & Quantitative Reasoning",
+          "requiredUnits": 3,
+          "minimumGrade": "c"
+        },
+        "3": {
+          "label": "Area 3",
+          "description": "Arts & Humanities",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "4": {
+          "label": "Area 4",
+          "description": "Social & Behavioral Sciences",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "5": {
+          "label": "Area 5",
+          "description": "Natural Science with Lab",
+          "requiredUnits": 4,
+          "minimumGrade": "degree",
+          "requiresLab": true
+        },
+        "6": {
+          "label": "Area 6",
+          "description": "Ethnic Studies",
+          "requiredUnits": 3,
+          "minimumGrade": "degree"
+        },
+        "1A": {
+          "label": "Area 1A",
+          "description": "English Composition",
+          "requiredUnits": 3,
+          "minimumGrade": "c"
+        },
+        "1B": {
+          "label": "Area 1B",
+          "description": "Oral Communication & Critical Thinking",
+          "requiredUnits": 3,
+          "minimumGrade": "c"
+        },
+        "7A": {
+          "label": "Area 7A",
+          "description": "Physical Education Activity",
+          "requiredUnits": 1,
+          "minimumGrade": "degree"
+        },
+        "7B": {
+          "label": "Area 7B",
+          "description": "Additional Area 7 units",
+          "requiredUnits": 2,
+          "minimumGrade": "degree"
+        }
+      },
+      "graduationRequirements": []
+    }
+  },
   "colleges": {
     "CSM": {
       "sourceUrl": "https://collegeofsanmateo.edu/forms/docs/counseling/AAAS_DegreeWorksheet_25-26.pdf",

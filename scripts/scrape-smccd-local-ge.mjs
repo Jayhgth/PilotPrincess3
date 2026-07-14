@@ -11,6 +11,87 @@ const sources = {
   SKY: "https://catalog.skylinecollege.edu/current/generaldegreerequirements/associatestable.php"
 };
 const reciprocitySource = "https://catalog.skylinecollege.edu/current/generaldegreerequirements/transferrequirements.php";
+const commonAreaDefinitions = {
+  "1A": { label: "Area 1A", description: "English Composition", requiredUnits: 3, minimumGrade: "c" },
+  "1B": { label: "Area 1B", description: "Oral Communication & Critical Thinking", requiredUnits: 3, minimumGrade: "c" },
+  "2": { label: "Area 2", description: "Mathematics & Quantitative Reasoning", requiredUnits: 3, minimumGrade: "c" },
+  "3": { label: "Area 3", description: "Arts & Humanities", requiredUnits: 3, minimumGrade: "degree" },
+  "4": { label: "Area 4", description: "Social & Behavioral Sciences", requiredUnits: 3, minimumGrade: "degree" },
+  "6": { label: "Area 6", description: "Ethnic Studies", requiredUnits: 3, minimumGrade: "degree" },
+  "7A": { label: "Area 7A", description: "Kinesiology Activity", requiredUnits: 1, minimumGrade: "degree" },
+  "7B": { label: "Area 7B", description: "Additional Area 7 units", requiredUnits: 2, minimumGrade: "degree" }
+};
+const informationLiteracyCourseIds = [
+  "CSM:ENGL C1000", "CSM:ENGL C1000E", "SKY:ENGL C1000", "SKY:ENGL C1000E", "CSM:LIBR 100",
+  "CSM:CIS 110", "CSM:DGME 100", "CSM:DGME 102", "CSM:MATH 145", "CSM:NURS 242", "CAN:LIBR 100"
+];
+const patterns = {
+  CSM: {
+    label: "College of San Mateo local AA/AS GE",
+    minimumGeUnits: 27,
+    areaOrder: ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B", "8"],
+    areaDefinitions: {
+      ...commonAreaDefinitions,
+      "5": { label: "Area 5", description: "Natural Sciences", requiredUnits: 3, minimumGrade: "degree" },
+      "7A": { ...commonAreaDefinitions["7A"], description: "Wellness & Kinesiology Activity" },
+      "8": { label: "Area 8", description: "American History & Institutions and California Government", requiredUnits: 3, minimumGrade: "degree" }
+    },
+    graduationRequirements: [{
+      id: "information_literacy",
+      label: "Information Literacy",
+      description: "Complete an approved CSM information-literacy course or a district-recognized equivalent.",
+      courseIds: informationLiteracyCourseIds,
+      minimumGrade: "c",
+      allowsGeReuse: true,
+      manualCompletion: false
+    }]
+  },
+  SKY: {
+    label: "Skyline College local AA/AS GE",
+    minimumGeUnits: 24,
+    areaOrder: ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B"],
+    areaDefinitions: {
+      ...commonAreaDefinitions,
+      "1A": { ...commonAreaDefinitions["1A"], minimumGrade: "c_minus" },
+      "1B": { ...commonAreaDefinitions["1B"], minimumGrade: "c_minus" },
+      "2": { ...commonAreaDefinitions["2"], minimumGrade: "c_minus" },
+      "5": { label: "Area 5", description: "Natural Sciences", requiredUnits: 3, minimumGrade: "degree" },
+      "7A": { ...commonAreaDefinitions["7A"], description: "Kinesiology Activity" }
+    },
+    graduationRequirements: [
+      {
+        id: "information_literacy",
+        label: "Information Literacy",
+        description: "Complete Skyline ENGL C1000/C1000E, the Skyline tutorial, or an equivalent information-literacy requirement.",
+        courseIds: informationLiteracyCourseIds,
+        minimumGrade: "c",
+        courseGradeMinimums: { "SKY:ENGL C1000": "c_minus", "SKY:ENGL C1000E": "c_minus" },
+        allowsGeReuse: true,
+        manualCompletion: true
+      },
+      {
+        id: "american_history_institutions",
+        label: "American History & Institutions",
+        description: "Complete one approved US history, Constitution, or California government course.",
+        evidenceArea: "8",
+        minimumGrade: "degree",
+        allowsGeReuse: true,
+        manualCompletion: false
+      }
+    ]
+  },
+  CAN: {
+    label: "Cañada College local AA/AS GE",
+    minimumGeUnits: 25,
+    areaOrder: ["1A", "1B", "2", "3", "4", "5", "6", "7A", "7B"],
+    areaDefinitions: {
+      ...commonAreaDefinitions,
+      "5": { label: "Area 5", description: "Natural Science with Lab", requiredUnits: 4, minimumGrade: "degree", requiresLab: true },
+      "7A": { ...commonAreaDefinitions["7A"], description: "Physical Education Activity" }
+    },
+    graduationRequirements: []
+  }
+};
 
 const catalog = JSON.parse(await readFile(CATALOG, "utf8"));
 const inventories = new Map(["CSM", "SKY", "CAN"].map((collegeCode) => [
@@ -74,6 +155,7 @@ rosters.CAN["5"].labCourseCodes = [
 const output = {
   sourceYear: SOURCE_YEAR,
   reciprocitySource,
+  patterns,
   colleges: Object.fromEntries(Object.entries(rosters).map(([collegeCode, areas]) => [collegeCode, {
     sourceUrl: sources[collegeCode],
     areas

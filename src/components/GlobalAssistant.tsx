@@ -225,7 +225,7 @@ const TOOL_LABELS: Record<string, string> = {
   correct_transcript_course: "Correct transcript course",
   save_prerequisite_evidence: "Submit prerequisite evidence",
   create_plan_snapshot: "Save plan snapshot",
-  set_smccd_ge_completion: "Update college GE completion",
+  set_smccd_ge_completion: "Update college degree completion",
   set_college_goal: "Bookmark degree",
   clear_college_goal: "Remove degree bookmark"
 };

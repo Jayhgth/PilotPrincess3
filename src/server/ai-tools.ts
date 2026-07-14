@@ -38,7 +38,7 @@ import {
   requirementsForSettings,
   schoolYearForGrade
 } from "@/lib/planning";
-import { calculateSmccdProgramProgress } from "@/lib/smccd";
+import { calculateSmccdLocalDegreeProgress, calculateSmccdProgramProgressWithContext, createSmccdProgramProgressContext } from "@/lib/smccd";
 import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode, transcriptPlanCourseDraft } from "@/lib/transcript";
 import type { TranscriptCoursePayload } from "@/lib/transcript";
@@ -190,7 +190,7 @@ const toolArgumentSchemas = {
     source_url: z.url().max(1000).nullable().default(null)
   }),
   create_plan_snapshot: z.object({ label: z.string().trim().min(1).max(100) }),
-  set_smccd_ge_completion: z.object({ college_code: z.enum(["CSM", "SKY", "CAN"]), completed: z.boolean() }),
+  set_smccd_ge_completion: z.object({ college_code: z.enum(["CSM", "SKY", "CAN"]), requirement: z.enum(["7A", "information_literacy"]).default("7A"), completed: z.boolean() }),
   set_college_goal: z.object({ program_id: z.string().trim().min(1).max(180), notes: z.string().trim().max(1200).default("") }),
   clear_college_goal: z.object({ program_id: z.string().trim().min(1).max(180) })
 } as const;
@@ -234,7 +234,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "correct_transcript_course", mutatesData: true, description: "Propose an exact correction to imported transcript evidence and its linked completed plan row while preserving the original proposed payload and correction reason.", arguments: '{"review_item_id":"uuid","letter_grade":"string|null","credits":number,"weighted":boolean,"grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","reason":"string"}' },
   { name: "save_prerequisite_evidence", mutatesData: true, description: "Submit placement, equivalency, challenge, approval, admission, or audition evidence for independent verification. Pilot cannot mark institutional evidence approved.", arguments: '{"target_course_id":"string","clearance_type":"placement|approved_equivalency|prerequisite_challenge|instructor_approval|program_admission|audition_or_portfolio","authority":"string","evidence_summary":"string","source_url":"url|null"}' },
   { name: "create_plan_snapshot", mutatesData: true, description: "Create a named snapshot copy of the current four-year plan for comparison or rollback reference.", arguments: '{"label":"string"}' },
-  { name: "set_smccd_ge_completion", mutatesData: true, description: "Mark or unmark the student-confirmed SMCCD Area 7A physical-education completion for one college pattern.", arguments: '{"college_code":"CSM|SKY|CAN","completed":boolean}' },
+  { name: "set_smccd_ge_completion", mutatesData: true, description: "Mark or unmark a supported manual local-degree completion: Area 7A for any college pattern, or Skyline's information-literacy tutorial/equivalent.", arguments: '{"college_code":"CSM|SKY|CAN","requirement":"7A|information_literacy","completed":boolean}' },
   { name: "set_college_goal", mutatesData: true, description: "Propose bookmarking one SMCCD AA or AS degree. Existing bookmarks remain marked.", arguments: '{"program_id":"string","notes":"string"}' },
   { name: "clear_college_goal", mutatesData: true, description: "Propose removing one SMCCD degree bookmark.", arguments: '{"program_id":"string"}' }
 ];
@@ -280,7 +280,7 @@ export function assistantToolLabel(name: string) {
     correct_transcript_course: "Correct transcript course",
     save_prerequisite_evidence: "Submit prerequisite evidence",
     create_plan_snapshot: "Save plan snapshot",
-    set_smccd_ge_completion: "Update college GE completion",
+    set_smccd_ge_completion: "Update college degree completion",
     set_college_goal: "Set college goal",
     clear_college_goal: "Clear college goal"
   } as Record<string, string>)[name] ?? name.replaceAll("_", " ");
@@ -316,6 +316,7 @@ interface AssistantWorkspace {
   enrollmentPolicies: EnrollmentPolicy[];
   enrollmentPreference: StudentEnrollmentPreference;
   prerequisiteClearances: SmccdPrerequisiteClearance[];
+  manualSmccdCompletions: Array<{ college_code: SmccdCourse["college_code"]; area: "7A" | "information_literacy" }>;
   memories: Array<{ memory_key: string; content: string; tags: string[] }>;
 }
 
@@ -337,7 +338,7 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
   if (schoolResult.error) throw new Error(schoolResult.error.message);
   const isDtech = schoolResult.data.slug === "design-tech-high-school";
 
-  const [courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, memoryResult, providerResult] = await Promise.all([
+  const [courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, geCompletionResult, memoryResult, providerResult] = await Promise.all([
     supabase.from("courses").select("*").eq("school_id", schoolId).eq("review_status", "approved").order("subject").order("name"),
     supabase.from("graduation_requirements").select("*").eq("school_id", schoolId).eq("review_status", "approved").order("name"),
     supabase.from("course_requirement_mappings").select("id,course_id,requirement_id,confidence,is_user_override,courses!inner(school_id)").eq("courses.school_id", schoolId),
@@ -348,10 +349,11 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
     supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
     supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
     supabase.from("student_prerequisite_clearances").select("*").eq("user_id", userId),
+    supabase.from("student_smccd_ge_completions").select("college_code,area").eq("user_id", userId),
     supabase.from("ai_student_memories").select("memory_key,content,tags").eq("user_id", userId).eq("is_active", true),
     supabase.rpc("nearby_school_providers", { target_school_id: schoolId, result_limit: 8 })
   ]);
-  const error = firstError([courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, providerResult]);
+  const error = firstError([courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, geCompletionResult, providerResult]);
   if (error) throw new Error(error.message);
   const selectedCourseIds = (courseResult.data ?? []).map((course) => course.id);
   const designationResult = selectedCourseIds.length
@@ -392,6 +394,7 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
       ? preferenceResult.data as unknown as StudentEnrollmentPreference
       : defaultEnrollmentPreference(userId),
     prerequisiteClearances: (clearanceResult.data ?? []) as unknown as SmccdPrerequisiteClearance[],
+    manualSmccdCompletions: (geCompletionResult.data ?? []) as AssistantWorkspace["manualSmccdCompletions"],
     memories: memoryResult.error ? [] : (memoryResult.data ?? []) as Array<{ memory_key: string; content: string; tags: string[] }>
   };
 }
@@ -1059,7 +1062,12 @@ export async function executeAssistantReadTool(
     const catalogCourses = catalogResults.flatMap((result) => result.data ?? []) as unknown as SmccdCourse[];
     const courseMapById = new Map<string, SmccdCourse>();
     for (const course of [...workspace.plannedSmccdCourses, ...catalogCourses]) courseMapById.set(course.id, course);
-    const progress = calculateSmccdProgramProgress(program, requirements, options, workspace.planCourses, [...courseMapById.values()]);
+    const progressContext = createSmccdProgramProgressContext(requirements, options, workspace.planCourses, [...courseMapById.values()]);
+    const progress = calculateSmccdProgramProgressWithContext(program, progressContext);
+    const manualCompletions = new Set(workspace.manualSmccdCompletions
+      .filter((completion) => completion.college_code === program.college_code || completion.area === "information_literacy")
+      .map((completion) => completion.area));
+    const localDegreeProgress = calculateSmccdLocalDegreeProgress(progressContext, program.college_code, manualCompletions);
     return {
       summary: `Read requirement evidence for ${program.title}.`,
       data: {
@@ -1084,7 +1092,33 @@ export async function executeAssistantReadTool(
           missing_summary: item.missingSummary,
           manual_review_reason: item.manualReviewReason
         })),
-        boundary: "This is parsed major-requirement evidence, not final degree eligibility. General education, residency, substitutions, and counselor approval remain separate."
+        local_degree_pattern: {
+          college_code: localDegreeProgress.collegeCode,
+          pattern: localDegreeProgress.patternLabel,
+          minimum_ge_units: localDegreeProgress.minimumGeUnits,
+          ge_areas: localDegreeProgress.geAreas.map((area) => ({
+            area: area.area,
+            description: area.description,
+            status: area.status,
+            completed_course_codes: area.completedCourseCodes,
+            projected_course_codes: area.projectedCourseCodes,
+            completed_units: area.completedUnits,
+            projected_units: area.projectedUnits,
+            required_units: area.requiredUnits,
+            reciprocity_applied: area.reciprocityApplied,
+            missing_summary: area.missingSummary
+          })),
+          separate_graduation_requirements: localDegreeProgress.graduationRequirements.map((requirement) => ({
+            requirement: requirement.id,
+            label: requirement.label,
+            status: requirement.status,
+            completed_course_codes: requirement.completedCourseCodes,
+            projected_course_codes: requirement.projectedCourseCodes,
+            manually_completed: requirement.manuallyCompleted,
+            missing_summary: requirement.missingSummary
+          }))
+        },
+        boundary: "This is deterministic major, local-GE, and separate graduation-requirement evidence for the awarding college. Residency, catalog-right exceptions, substitutions, and final counselor approval remain separate."
       }
     };
   }
@@ -1586,17 +1620,21 @@ export async function executeAssistantMutationTool(
 
   if (name === "set_smccd_ge_completion") {
     const args = toolArgumentSchemas.set_smccd_ge_completion.parse(argumentsValue);
+    if (args.requirement === "information_literacy" && args.college_code !== "SKY") {
+      throw new Error("Manual information-literacy completion is supported only for Skyline's tutorial or equivalent requirement.");
+    }
     if (args.completed) {
-      const { error } = await supabase.from("student_smccd_ge_completions").upsert({ user_id: userId, college_code: args.college_code, area: "7A", completion_source: "manual" }, { onConflict: "user_id,college_code,area" });
+      const { error } = await supabase.from("student_smccd_ge_completions").upsert({ user_id: userId, college_code: args.college_code, area: args.requirement, completion_source: "manual" }, { onConflict: "user_id,college_code,area" });
       if (error) throw new Error(error.message);
     } else {
-      const { error } = await supabase.from("student_smccd_ge_completions").delete().eq("user_id", userId).eq("college_code", args.college_code).eq("area", "7A");
+      const { error } = await supabase.from("student_smccd_ge_completions").delete().eq("user_id", userId).eq("college_code", args.college_code).eq("area", args.requirement);
       if (error) throw new Error(error.message);
     }
+    const label = args.requirement === "7A" ? "Area 7A" : "information literacy";
     return {
-      summary: `SMCCD ${args.college_code} Area 7A was ${args.completed ? "marked complete" : "marked incomplete"}.`,
-      data: { college_code: args.college_code, area: "7A", completed: args.completed },
-      changed: { entity: "student_smccd_ge_completion", id: `${userId}:${args.college_code}:7A` }
+      summary: `SMCCD ${args.college_code} ${label} was ${args.completed ? "marked complete" : "marked incomplete"}.`,
+      data: { college_code: args.college_code, area: args.requirement, completed: args.completed },
+      changed: { entity: "student_smccd_ge_completion", id: `${userId}:${args.college_code}:${args.requirement}` }
     };
   }
 

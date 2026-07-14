@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSmccdGeEvidence, calculateSmccdGeProgress, calculateSmccdProgramProgress, createSmccdProgramProgressContext, normalizeSmccdCourseCode } from "@/lib/smccd";
+import { calculateSmccdGeEvidence, calculateSmccdGeProgress, calculateSmccdLocalDegreeProgress, calculateSmccdProgramProgress, createSmccdProgramProgressContext, normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { PlanCourse, SmccdCourse, SmccdProgram, SmccdProgramRequirement, SmccdRequirementCourse } from "@/lib/models";
 
 describe("SMCCD curriculum planning", () => {
@@ -117,11 +117,21 @@ describe("SMCCD curriculum planning", () => {
   });
 
   it("uses the awarding college's local GE pattern", () => {
-    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], [], []), "CAN");
+    const context = createSmccdProgramProgressContext([], [], [], []);
+    const csm = calculateSmccdLocalDegreeProgress(context, "CSM");
+    const skyline = calculateSmccdLocalDegreeProgress(context, "SKY");
+    const canada = calculateSmccdLocalDegreeProgress(context, "CAN");
 
-    expect(progress).toHaveLength(9);
-    expect(progress.some((area) => area.area === "8")).toBe(false);
-    expect(progress.find((area) => area.area === "5")).toMatchObject({
+    expect(csm).toMatchObject({ minimumGeUnits: 27 });
+    expect(csm.geAreas).toHaveLength(10);
+    expect(csm.graduationRequirements.map((requirement) => requirement.id)).toEqual(["information_literacy"]);
+    expect(skyline).toMatchObject({ minimumGeUnits: 24 });
+    expect(skyline.geAreas).toHaveLength(9);
+    expect(skyline.geAreas.some((area) => area.area === "8")).toBe(false);
+    expect(skyline.graduationRequirements.map((requirement) => requirement.id)).toEqual(["information_literacy", "american_history_institutions"]);
+    expect(canada).toMatchObject({ minimumGeUnits: 25, graduationRequirements: [] });
+    expect(canada.geAreas).toHaveLength(9);
+    expect(canada.geAreas.find((area) => area.area === "5")).toMatchObject({
       description: "Natural Science with Lab",
       requiredUnits: 4,
       status: "missing"
@@ -250,8 +260,10 @@ describe("SMCCD curriculum planning", () => {
     expect(progress.find((area) => area.area === "5")).toMatchObject({
       status: "completed",
       requiredUnits: 4,
-      projectedUnits: 4,
-      completedCourseCodes: ["ASTR 100"]
+      projectedUnits: 3,
+      completedCourseCodes: ["ASTR 100"],
+      reciprocityApplied: true,
+      missingSummary: "Covered by SMCCCD reciprocity"
     });
   });
 
@@ -274,10 +286,39 @@ describe("SMCCD curriculum planning", () => {
     const courses = [{ ...course("HIST 201", 3), id: "SKY:HIST 201", college_code: "SKY" }] as SmccdCourse[];
     const rows = [{ smccd_course_id: "SKY:HIST 201", status: "completed", college_units: 3, letter_grade: "A" }] as PlanCourse[];
 
-    const progress = calculateSmccdGeProgress(createSmccdProgramProgressContext([], [], rows, courses), "SKY");
+    const progress = calculateSmccdLocalDegreeProgress(createSmccdProgramProgressContext([], [], rows, courses), "SKY");
 
-    expect(progress.find((area) => area.area === "8")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"] });
-    expect(progress.find((area) => area.area === "4")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"] });
+    expect(progress.graduationRequirements.find((requirement) => requirement.id === "american_history_institutions")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"], allowsGeReuse: true });
+    expect(progress.geAreas.find((area) => area.area === "4")).toMatchObject({ status: "completed", completedCourseCodes: ["HIST 201"] });
+  });
+
+  it("tracks college-specific information-literacy requirements separately from GE", () => {
+    const courses = [{ ...course("CIS 110", 3), id: "CSM:CIS 110", college_code: "CSM" }] as SmccdCourse[];
+    const rows = [{ smccd_course_id: "CSM:CIS 110", status: "completed", college_units: 3, letter_grade: "A" }] as PlanCourse[];
+    const context = createSmccdProgramProgressContext([], [], rows, courses);
+
+    const csm = calculateSmccdLocalDegreeProgress(context, "CSM");
+    const skyline = calculateSmccdLocalDegreeProgress(context, "SKY");
+    const canada = calculateSmccdLocalDegreeProgress(context, "CAN");
+
+    expect(csm.graduationRequirements[0]).toMatchObject({ id: "information_literacy", status: "completed", completedCourseCodes: ["CIS 110"] });
+    expect(skyline.graduationRequirements[0]).toMatchObject({ id: "information_literacy", status: "completed", completedCourseCodes: ["CIS 110"] });
+    expect(canada.graduationRequirements).toEqual([]);
+  });
+
+  it("keeps source-specific information-literacy grade rules", () => {
+    const courses = [
+      { ...course("CIS 110", 3), id: "CSM:CIS 110", college_code: "CSM" },
+      { ...course("ENGL C1000", 3), id: "SKY:ENGL C1000", college_code: "SKY" }
+    ] as SmccdCourse[];
+    const csmCourse = [{ smccd_course_id: "CSM:CIS 110", status: "completed", college_units: 3, letter_grade: "C-" }] as PlanCourse[];
+    const skylineCourse = [{ smccd_course_id: "SKY:ENGL C1000", status: "completed", college_units: 3, letter_grade: "C-" }] as PlanCourse[];
+
+    const csmEvidence = calculateSmccdLocalDegreeProgress(createSmccdProgramProgressContext([], [], csmCourse, courses), "SKY");
+    const skylineEvidence = calculateSmccdLocalDegreeProgress(createSmccdProgramProgressContext([], [], skylineCourse, courses), "SKY");
+
+    expect(csmEvidence.graduationRequirements[0]).toMatchObject({ status: "missing" });
+    expect(skylineEvidence.graduationRequirements[0]).toMatchObject({ status: "completed", completedCourseCodes: ["ENGL C1000"] });
   });
 
   it("enforces a discipline condition alongside the unit total", () => {

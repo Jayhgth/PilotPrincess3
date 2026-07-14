@@ -16,7 +16,7 @@ import InstitutionMark from "@/components/InstitutionMark";
 import PrerequisiteReadout, { prerequisiteDisplay } from "@/components/PrerequisiteReadout";
 import FadeContent from "@/components/reactbits/FadeContent";
 import {
-  calculateSmccdGeProgress,
+  calculateSmccdLocalDegreeProgress,
   calculateSmccdProgramProgressWithContext,
   createSmccdProgramProgressContext,
   normalizeSmccdCourseCode,
@@ -24,7 +24,7 @@ import {
   SMCCD_LOCAL_GE_SOURCE_URLS,
   SMCCD_COLLEGE_NAMES
 } from "@/lib/smccd";
-import type { SmccdGeProgress, SmccdProgramProgress } from "@/lib/smccd";
+import type { SmccdLocalDegreeProgress, SmccdProgramProgress } from "@/lib/smccd";
 import { schoolYearForGrade, selectedPlanGrades } from "@/lib/planning";
 import { createSmccdPlannerPrerequisiteEvaluator } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
@@ -67,7 +67,7 @@ type SmccdSection = "courses" | "degree" | "general_education";
 interface SmccdGeCompletion {
   user_id: string;
   college_code: SmccdCourse["college_code"];
-  area: "7A";
+  area: "7A" | "information_literacy";
   completion_source: "manual";
 }
 
@@ -378,19 +378,20 @@ export default function SmccdPlanner({
         calculateSmccdProgramProgressWithContext(program, progressContext)
       ]));
   }, [programs, progressContext, surface]);
-  const geProgressByCollege = useMemo(() => new Map<SmccdCourse["college_code"], SmccdGeProgress[]>(
+  const localDegreeProgressByCollege = useMemo(() => new Map<SmccdCourse["college_code"], SmccdLocalDegreeProgress>(
     surface === "courses" || !progressContext ? [] : (["CSM", "SKY", "CAN"] as const).map((collegeCode) => [
       collegeCode,
-      calculateSmccdGeProgress(
+      calculateSmccdLocalDegreeProgress(
         progressContext,
         collegeCode,
-        new Set(geCompletions.filter((completion) => completion.college_code === collegeCode).map((completion) => completion.area))
+        new Set(geCompletions.filter((completion) => completion.college_code === collegeCode || completion.area === "information_literacy").map((completion) => completion.area))
       )
     ])
   ), [geCompletions, progressContext, surface]);
   const selectedProgram = programs.find((program) => program.id === goalProgramId) ?? null;
   const generalEducationCollege = surface === "general_education" ? geCollegeCode : selectedProgram?.college_code ?? "CSM";
-  const generalEducationProgress = geProgressByCollege.get(generalEducationCollege) ?? [];
+  const generalEducationPattern = localDegreeProgressByCollege.get(generalEducationCollege) ?? null;
+  const generalEducationProgress = generalEducationPattern?.geAreas ?? [];
   const deferredProgramSearch = useDeferredValue(programSearch);
   const visiblePrograms = useMemo(() => {
     if (surface !== "degree") return [];
@@ -398,11 +399,11 @@ export default function SmccdPlanner({
     return programs
       .map((program) => ({ program, progress: programProgress.get(program.id)! }))
       .filter((row) => !query || `${row.program.title} ${row.program.award_type} ${SMCCD_COLLEGE_NAMES[row.program.college_code]}`.toLowerCase().includes(query))
-      .sort((a, b) => smccdDegreeOverallPercent(b.progress, geProgressByCollege.get(b.program.college_code) ?? []) - smccdDegreeOverallPercent(a.progress, geProgressByCollege.get(a.program.college_code) ?? [])
+      .sort((a, b) => smccdDegreeOverallPercent(b.progress, localDegreeProgressByCollege.get(b.program.college_code)!) - smccdDegreeOverallPercent(a.progress, localDegreeProgressByCollege.get(a.program.college_code)!)
         || b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
         || a.program.title.localeCompare(b.program.title))
       .slice(0, 60);
-  }, [deferredProgramSearch, geProgressByCollege, programProgress, programs, surface]);
+  }, [deferredProgramSearch, localDegreeProgressByCollege, programProgress, programs, surface]);
   const renderedPrograms = visiblePrograms.slice(0, programRenderLimit);
   useEffect(() => {
     if (surface !== "degree" || visiblePrograms.length <= 24) return;
@@ -585,8 +586,9 @@ export default function SmccdPlanner({
     setBusy(false);
   }
 
-  async function toggleManualPeCompletion() {
-    const existing = geCompletions.find((completion) => completion.college_code === geCollegeCode && completion.area === "7A");
+  async function toggleManualDegreeCompletion(area: "7A" | "information_literacy") {
+    const completionCollege = area === "information_literacy" ? "SKY" : geCollegeCode;
+    const existing = geCompletions.find((completion) => completion.college_code === completionCollege && completion.area === area);
     setBusy(true);
     setError(null);
     try {
@@ -594,33 +596,33 @@ export default function SmccdPlanner({
         const { error: deleteError } = await supabase.from("student_smccd_ge_completions")
           .delete()
           .eq("user_id", session.user.id)
-          .eq("college_code", geCollegeCode)
-          .eq("area", "7A");
+          .eq("college_code", completionCollege)
+          .eq("area", area);
         if (deleteError) throw deleteError;
         setGeCompletions((current) => {
           const next = current.filter((completion) => completion !== existing);
           geCompletionsCache.set(session.user.id, next);
           return next;
         });
-        setNotice("Manual PE completion removed.");
+        setNotice(area === "7A" ? "Manual PE completion removed." : "Information-literacy confirmation removed.");
       } else {
         const completion: SmccdGeCompletion = {
           user_id: session.user.id,
-          college_code: geCollegeCode,
-          area: "7A",
+          college_code: completionCollege,
+          area,
           completion_source: "manual"
         };
         const { error: insertError } = await supabase.from("student_smccd_ge_completions").upsert(completion, { onConflict: "user_id,college_code,area" });
         if (insertError) throw insertError;
         setGeCompletions((current) => {
-          const next = [...current.filter((item) => !(item.college_code === geCollegeCode && item.area === "7A")), completion];
+          const next = [...current.filter((item) => !(item.college_code === completionCollege && item.area === area)), completion];
           geCompletionsCache.set(session.user.id, next);
           return next;
         });
-        setNotice("PE marked complete for this college pattern.");
+        setNotice(area === "7A" ? "PE marked complete for this college pattern." : "Skyline information literacy marked complete.");
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "PE completion could not be updated.");
+      setError(caught instanceof Error ? caught.message : "The manual degree completion could not be updated.");
     } finally {
       setBusy(false);
     }
@@ -700,9 +702,11 @@ export default function SmccdPlanner({
               const markedGoal = goals.find((goal) => goal.program_id === program.id);
               const isMarked = Boolean(markedGoal);
               const isSelected = goalProgramId === program.id;
-              const geProgress = geProgressByCollege.get(program.college_code) ?? [];
+              const localDegreeProgress = localDegreeProgressByCollege.get(program.college_code)!;
+              const geProgress = localDegreeProgress.geAreas;
               const geSatisfied = geProgress.filter((area) => area.status === "completed" || area.status === "planned").length;
-              const overallPercent = smccdDegreeOverallPercent(programResult, geProgress);
+              const graduationSatisfied = localDegreeProgress.graduationRequirements.filter((requirement) => requirement.status === "completed" || requirement.status === "planned").length;
+              const overallPercent = smccdDegreeOverallPercent(programResult, localDegreeProgress);
               const previewCodes = [...new Set(programResult.requirements.flatMap((item) => item.optionCourseCodes))].slice(0, 4);
               return <Fragment key={program.id}>
                 <tr className={`${isSelected ? `selected award-${program.award_type.toLowerCase()}` : ""} ${isMarked ? "marked" : ""}`}>
@@ -726,6 +730,7 @@ export default function SmccdPlanner({
                     <div><dt>Major Units</dt><dd className={programResult.projectedMajorUnits >= programResult.requiredMajorUnits ? "complete" : ""}>{formatPlannerNumber(programResult.projectedMajorUnits)} / {formatPlannerNumber(programResult.requiredMajorUnits)}</dd></div>
                     <div><dt>Degree Units</dt><dd className={programResult.projectedDegreeApplicableUnits >= programResult.totalDegreeUnits ? "complete" : ""}>{formatPlannerNumber(programResult.projectedDegreeApplicableUnits)} / {formatPlannerNumber(programResult.totalDegreeUnits)}</dd></div>
                     <div><dt>GE Areas</dt><dd className={geSatisfied >= geProgress.length ? "complete" : ""}>{geSatisfied} / {geProgress.length}</dd></div>
+                    <div><dt>Other Requirements</dt><dd className={graduationSatisfied >= localDegreeProgress.graduationRequirements.length ? "complete" : ""}>{localDegreeProgress.graduationRequirements.length ? `${graduationSatisfied} / ${localDegreeProgress.graduationRequirements.length}` : "None"}</dd></div>
                     <div><dt>Requirements</dt><dd className={programResult.satisfiedRequirements >= programResult.totalRequirements ? "complete" : ""}>{programResult.satisfiedRequirements} / {programResult.totalRequirements}</dd></div>
                   </dl>
                   <div className="smccd-degree-requirements">{programResult.requirements.map((item) => {
@@ -748,18 +753,18 @@ export default function SmccdPlanner({
 
       {surface === "general_education" && <section className="content-section smccd-goal-section smccd-ge-page smccd-degree-transition">
         <header className="section-heading smccd-ge-page-heading">
-          <div><h2>College gen-ed</h2><p>Local AA and AS requirements matched against the active plan and transcript.</p></div>
+          <div><h2>College gen-ed</h2><p>Each college's local AA and AS pattern is evaluated separately.</p></div>
           <label><span className="sr-only">College pattern</span><select value={geCollegeCode} onChange={(event) => setGeCollegeCode(event.target.value as SmccdCourse["college_code"])}><option value="CSM">College of San Mateo</option><option value="SKY">Skyline College</option><option value="CAN">Cañada College</option></select></label>
         </header>
         <section className="smccd-general-education" aria-labelledby="smccd-general-education-title">
-          <header><div><h3 id="smccd-general-education-title">{SMCCD_COLLEGE_NAMES[generalEducationCollege]} gen-ed requirements</h3><p>Communication, physical activity, and every other local requirement remain visible.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} covered</span></header>
+          <header><div><h3 id="smccd-general-education-title">{SMCCD_COLLEGE_NAMES[generalEducationCollege]} gen-ed requirements</h3><p>{generalEducationPattern?.minimumGeUnits ?? 0} units in this college's local pattern.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} GE areas covered</span></header>
           <div className="smccd-ge-list">{generalEducationProgress.map((area) => {
             const planned = area.projectedCourseCodes.filter((code) => !area.completedCourseCodes.includes(code));
             const isSatisfied = area.status === "completed" || area.status === "planned";
             const examples = area.eligibleCourseCodes.slice(0, 8);
             return <article className="smccd-ge-row" key={area.area}>
               {area.area === "7A"
-                ? <input className="smccd-ge-manual-checkbox" type="checkbox" checked={isSatisfied} disabled={busy || (isSatisfied && !area.manuallyCompleted)} onChange={() => void toggleManualPeCompletion()} aria-label="Physical education requirement completed" title={isSatisfied && !area.manuallyCompleted ? "Covered by a course in the plan" : "Confirm physical education completion"} />
+                ? <input className="smccd-ge-manual-checkbox" type="checkbox" checked={isSatisfied} disabled={busy || (isSatisfied && !area.manuallyCompleted)} onChange={() => void toggleManualDegreeCompletion("7A")} aria-label="Physical education requirement completed" title={isSatisfied && !area.manuallyCompleted ? "Covered by a course in the plan" : "Confirm physical education completion"} />
                 : <span className={`smccd-ge-check ${area.status === "completed" ? "completed" : area.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${area.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>}
               <div><h4>{area.label}: {area.description}</h4><p>{examples.length ? `Courses include ${examples.join(", ")}${area.eligibleCourseCodes.length > examples.length ? ", and more." : "."}` : area.missingSummary}</p></div>
               <div className="smccd-ge-courses">
@@ -768,7 +773,25 @@ export default function SmccdPlanner({
               </div>
             </article>;
           })}</div>
-          <footer><Warning size={15} /><p>Official district reciprocity carries source-college GE credit across Cañada, CSM, and Skyline. Courses otherwise fill one local GE area at a time; catalog rights, waivers, substitutions, residency, and final award review remain official processes.</p><a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">Official 2025-2026 pattern <ArrowSquareOut size={13} /></a></footer>
+          {generalEducationPattern?.graduationRequirements.length ? <>
+            <div className="smccd-ge-section-heading"><h4>Separate graduation requirements</h4><p>These are outside the {generalEducationPattern.minimumGeUnits}-unit GE pattern.</p></div>
+            <div className="smccd-ge-list">{generalEducationPattern.graduationRequirements.map((requirement) => {
+              const planned = requirement.projectedCourseCodes.filter((code) => !requirement.completedCourseCodes.includes(code));
+              const isSatisfied = requirement.status === "completed" || requirement.status === "planned";
+              const examples = requirement.eligibleCourseCodes.slice(0, 8);
+              return <article className="smccd-ge-row" key={requirement.id}>
+                {requirement.manualCompletionAvailable
+                  ? <input className="smccd-ge-manual-checkbox" type="checkbox" checked={isSatisfied} disabled={busy || (isSatisfied && !requirement.manuallyCompleted)} onChange={() => void toggleManualDegreeCompletion("information_literacy")} aria-label={`${requirement.label} completed`} title={isSatisfied && !requirement.manuallyCompleted ? "Covered by coursework" : "Confirm completion"} />
+                  : <span className={`smccd-ge-check ${requirement.status === "completed" ? "completed" : requirement.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${requirement.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>}
+                <div><h4>{requirement.label}</h4><p>{examples.length ? `Courses include ${examples.join(", ")}${requirement.eligibleCourseCodes.length > examples.length ? ", and more." : "."}` : requirement.description}</p></div>
+                <div className="smccd-ge-courses">
+                  {requirement.completedCourseCodes.map((code) => <span className="completed" key={`completed-${requirement.id}-${code}`}>{code}</span>)}
+                  {planned.map((code) => <span className="planned" key={`planned-${requirement.id}-${code}`}>{code}</span>)}
+                </div>
+              </article>;
+            })}</div>
+          </> : null}
+          <footer><Warning size={15} /><p>Each college keeps its own local pattern. District reciprocity can carry qualifying source-college credit into the corresponding requirement, but it does not replace the selected college's GE structure or separate graduation requirements.</p><a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">Official 2025-2026 pattern <ArrowSquareOut size={13} /></a></footer>
         </section>
       </section>}
 

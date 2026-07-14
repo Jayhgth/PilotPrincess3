@@ -45,7 +45,7 @@ Read tools may run automatically after a student sends a message:
 - a transcript evidence audit that compares printed GPA/credit totals, bounded source text, parsed rows, review decisions, catalog matches, and imported plan rows;
 - the selected associate-degree goal;
 - official SMCCD associate-program search by name, code, college, and award type; and
-- deterministic selected-degree requirement progress.
+- deterministic selected-degree major, awarding-college GE, and separate graduation-requirement progress.
 
 Write tools may prepare these changes:
 
@@ -58,7 +58,7 @@ Write tools may prepare these changes:
 - submit an exact evidence-backed shared school-data correction as pending; only an application administrator can publish it;
 - update ordinary student and planning settings, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
-- save a named snapshot of the current plan and update the student-confirmed SMCCD Area 7A completion;
+- save a named snapshot, update a student-confirmed SMCCD Area 7A completion, and record Skyline's manually completed information-literacy tutorial or equivalent;
 - select or clear an associate-degree goal.
 
 Every write is an exact proposal first. The chat composer exposes two persisted review modes:
