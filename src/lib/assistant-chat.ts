@@ -87,6 +87,9 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   plan_end_grade: "Plan ends",
   tracker_mode: "Tracker mode",
   tracked_requirement_areas: "Tracked areas",
+  ai_model: "Pilot model",
+  ai_reasoning_effort: "Reasoning effort",
+  ai_review_mode: "Change review",
   credits: "Credits",
   college_units: "College units",
   is_weighted: "Weighted",
@@ -95,7 +98,13 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   authority: "Evidence authority",
   verification_status: "Verification",
   area: "Requirement area",
-  completed: "Completed"
+  completed: "Completed",
+  school_name: "School",
+  district_name: "District",
+  sorted_count: "Courses reordered",
+  updated_count: "Courses updated",
+  removed_count: "Courses removed",
+  moved_count: "Courses moved"
 };
 
 function readableValue(value: unknown): string | null {

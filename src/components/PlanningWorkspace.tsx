@@ -477,6 +477,11 @@ export default function PlanningWorkspace() {
       setPlan(loadedPlan);
       setActiveVersion(loadedActiveVersion);
       const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
+      const gpaScenarioResult = await supabase
+        .from("student_gpa_scenario_choices")
+        .select("plan_course_id,included,expected_grade")
+        .eq("user_id", userId);
+      if (gpaScenarioResult.error) throw gpaScenarioResult.error;
       const plannedSmccdIds = [...new Set(loadedPlanCourses.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
       const plannedSmccdResult = plannedSmccdIds.length > 0
         ? await supabase.from("smccd_courses").select("*").in("id", plannedSmccdIds)
@@ -484,6 +489,11 @@ export default function PlanningWorkspace() {
       if (plannedSmccdResult.error) throw plannedSmccdResult.error;
       const loadedReviewItems = (reviewResult.data ?? []) as unknown as CatalogReviewItem[];
       setPlanCourses(loadedPlanCourses);
+      setGpaScenarioChoices((gpaScenarioResult.data ?? []).map((choice) => ({
+        planCourseId: choice.plan_course_id,
+        included: choice.included,
+        expectedGrade: choice.expected_grade
+      })));
       setPlannedSmccdCourses((plannedSmccdResult.data ?? []) as unknown as SmccdCourse[]);
       setReviewItems(loadedReviewItems);
       setEnrollmentPolicies((enrollmentPolicyResult.data ?? []) as unknown as EnrollmentPolicy[]);
@@ -1638,7 +1648,18 @@ export default function PlanningWorkspace() {
       equivalencies={equivalencies}
       choices={gpaScenarioChoices}
       onOpenCourses={() => openCourses("mine")}
-      onChoicesChange={setGpaScenarioChoices}
+      onChoicesChange={(choices) => {
+        setGpaScenarioChoices(choices);
+        if (!supabase || !session) return;
+        void supabase.from("student_gpa_scenario_choices").upsert(choices.map((choice) => ({
+          user_id: session.user.id,
+          plan_course_id: choice.planCourseId,
+          included: choice.included,
+          expected_grade: choice.expectedGrade
+        })), { onConflict: "user_id,plan_course_id" }).then(({ error }) => {
+          if (error) notify(`GPA assumptions could not be saved: ${error.message}`, "error");
+        });
+      }}
       onScenarioChange={setGpaScenarioContext}
     /></div>;
   }

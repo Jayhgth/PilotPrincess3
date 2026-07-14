@@ -559,6 +559,50 @@ function requestedBulkCourseMove(normalized: string): { source: PlanCourseStatus
   return { source, target };
 }
 
+interface CourseBatchRequest {
+  kind: "remove" | "move";
+  filters: Record<string, unknown>;
+  target?: PlanCourseStatus;
+}
+
+function schedulePeriodFilters(normalized: string) {
+  const filters: Record<string, unknown> = {};
+  const explicitYear = normalized.match(/\b(20\d{2})\s*[-–]\s*(20\d{2})\b/);
+  const period = normalized.match(/\b(fall|spring|summer)\s+(20\d{2})\b/);
+  if (period) {
+    const term = period[1] as "fall" | "spring" | "summer";
+    const year = Number(period[2]);
+    filters.term = term;
+    filters.include_full_year = term === "fall" || term === "spring";
+    filters.school_year = term === "fall" ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+  } else if (explicitYear) {
+    filters.school_year = `${explicitYear[1]}-${explicitYear[2]}`;
+  }
+  const grade = normalized.match(/\bgrade\s*(9|10|11|12)\b/);
+  if (grade) filters.grade_level = Number(grade[1]);
+  return filters;
+}
+
+function requestedCourseBatch(normalized: string): CourseBatchRequest | null {
+  const hasException = /\b(except|excluding|other than|but\s+keep|not)\b/.test(normalized);
+  if (hasException) return null;
+  const allCourses = /\b(all|every|each)\b/.test(normalized) && /\b(course|courses|class|classes)\b/.test(normalized);
+  const clearSchedule = /\b(clear|empty|wipe)\b/.test(normalized) && /\b(schedule|plan|courses|classes)\b/.test(normalized);
+  const removal = /\b(remove|delete|drop|clear|empty|wipe)\b/.test(normalized) && (allCourses || clearSchedule);
+  const filters = schedulePeriodFilters(normalized);
+  const status = /\b(in[ -]?progress|current)\b/.test(normalized)
+    ? "current"
+    : /\b(planned|future)\b/.test(normalized)
+      ? "planned"
+      : /\b(done|completed|finished)\b/.test(normalized)
+        ? "completed"
+        : "all";
+  filters.status = status;
+  if (removal) return { kind: "remove", filters };
+  const move = allCourses ? requestedBulkCourseMove(normalized) : null;
+  return move ? { kind: "move", filters: { ...filters, status: move.source }, target: move.target } : null;
+}
+
 export function requiredAssistantEvidenceRead(userMessage: string): { name: AssistantToolName; arguments: Record<string, unknown> } | null {
   const normalized = userMessage.toLowerCase();
   const transcript = /trans(?:cript|cipt)/.test(normalized);
@@ -584,21 +628,8 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     };
   }
 
-  const bulkCourseTarget = /\b(all|every|each)\b/.test(normalized) && /\b(course|courses|class|classes)\b/.test(normalized);
-  const courseChangeIntent = /\b(remove|delete|drop)\b/.test(normalized);
-  const hasBulkException = /\b(except|excluding|other than|but\s+keep|not)\b/.test(normalized);
-  if (bulkCourseTarget && courseChangeIntent && !hasBulkException) {
-    const status = /\b(in[ -]?progress|current)\b/.test(normalized)
-      ? "current"
-      : /\b(planned|future)\b/.test(normalized)
-        ? "planned"
-        : /\b(done|completed|finished)\b/.test(normalized)
-          ? "completed"
-          : "all";
-    return { name: "list_plan_courses", arguments: { status } };
-  }
-  const courseMove = bulkCourseTarget && !hasBulkException ? requestedBulkCourseMove(normalized) : null;
-  if (courseMove) return { name: "list_plan_courses", arguments: { status: courseMove.source } };
+  const courseBatch = requestedCourseBatch(normalized);
+  if (courseBatch) return { name: "list_plan_courses", arguments: courseBatch.filters };
 
   return null;
 }
@@ -707,9 +738,9 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover the supported academic-planning domains listed below; get_student_data_inventory can locate the right domain. Do not guess current records or ask the student to manually inspect data a tool can read. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation and prerequisites before suggesting a change to the current four-year plan. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "For a request to generate a course plan or schedule, call get_course_schedule_options with respect_recommended_limit true first. Translate explicitly stated interests, rigor, and maximum courses per term into that tool's arguments; otherwise use retrieved explicit memories or the balanced defaults. Attempt the complete request unless the student narrows it. Show the exact returned courses before any proposal. Treat the active course rows as the student's current four-year plan: say how many existing courses are retained, separate them from new additions, explain why each addition was selected, and name any graduation gaps that remain afterward. One addition may be sufficient only when the existing plan supplies the rest; explain that instead of presenting one class as the whole schedule. Never call a partial result complete. Ask about the displayed per-term unit limit only when the returned additions include college coursework; otherwise ask whether to add the shown additions. Put the safe Yes option first and label it recommended. Never exceed absolute_max_units, and never claim workload personalization unless the student supplied workload information in this conversation or an explicit retrieved memory.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
-    "When the student explicitly asks to change supported app data, use the available mutating tool after reading any IDs or facts you need. Do not merely explain where the student could make the change. You may prepare up to eight exact related changes in one turn. This includes normal student settings, courses and course variables, schedule placement, degree goals, reviewed transcript corrections, and prerequisite-evidence submissions. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. If a selected-school correction needs the school's stable ID, call get_student_data_inventory and continue from its result; never ask the student for an internal record ID. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
+    "When the student explicitly asks to change app data, use the available mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, or ask them for an internal record ID. You may prepare up to eight exact related changes in one turn. Pilot covers normal student settings and selected school, courses and course variables, schedule placement and canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, enrollment preference, and plan snapshots. Search first when an exact school, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
     "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and Auto-review will deny it.",
-    "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran.",
+    "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
     `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will autonomously apply an exact approved proposal or decline it; it will not ask the student to confirm." : "Manual. The student must approve every proposed change."}`,
     "Do not call read and mutating tools in the same response. Read first, inspect the result, then propose a write in a later response if the student asked for one.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
@@ -776,11 +807,15 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         await options.onToolActivity({ ...activity, status: "completed", result });
         if (requiredRead.name === "list_plan_courses" && Array.isArray(result.data)) {
           const normalized = options.userMessage.toLowerCase();
-          const courseMove = requestedBulkCourseMove(normalized);
+          const courseBatch = requestedCourseBatch(normalized);
+          const courseMove = courseBatch?.kind === "move" && courseBatch.target
+            ? { target: courseBatch.target }
+            : null;
           const allRows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
           const rows = courseMove ? allRows.filter((row) => row.status !== courseMove.target) : allRows;
           const locked = rows.filter((row) => row.transcript_locked === true);
-          const ids = rows.map((row) => row.plan_course_id).filter((id): id is string => typeof id === "string");
+          const editableRows = rows.filter((row) => row.transcript_locked !== true);
+          const ids = editableRows.map((row) => row.plan_course_id).filter((id): id is string => typeof id === "string");
           const statusLabel = requiredRead.arguments.status === "current"
             ? "In progress"
             : requiredRead.arguments.status === "planned"
@@ -801,12 +836,25 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          if (locked.length || ids.length !== rows.length || ids.length > 40) {
-            const reason = ids.length > 40
-              ? "the request contains more than the 40-course batch limit"
-              : `${locked.length || rows.length - ids.length} ${locked.length === 1 ? "record is" : "records are"} transcript-backed or missing a stable plan ID`;
+          if (ids.length !== editableRows.length || ids.length > 160) {
+            const reason = ids.length > 160
+              ? "the request contains more than the 160-course batch limit"
+              : `${editableRows.length - ids.length} ${editableRows.length - ids.length === 1 ? "record is" : "records are"} missing a stable plan ID`;
             return {
               message: `I could not ${courseMove ? "move" : "remove"} all ${statusLabel} courses because ${reason}.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: []
+            };
+          }
+          if (!ids.length) {
+            return {
+              message: locked.length
+                ? `${locked.length} matching ${locked.length === 1 ? "course is" : "courses are"} transcript-backed, so ${locked.length === 1 ? "it" : "they"} cannot be removed from the schedule. Use transcript correction if the imported evidence is wrong.`
+                : `You do not have any editable ${statusLabel} courses for that schedule period.`,
               questions: [],
               threadId: thread.id,
               usage,
@@ -829,8 +877,8 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             await options.onToolActivity(proposal);
             return {
               message: options.reviewMode === "auto_review"
-                ? `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact move to ${targetLabel} automatically.`
-                : `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"} and prepared one exact move to ${targetLabel} for your approval.`,
+                ? `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact move to ${targetLabel} automatically.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`
+                : `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared one exact move to ${targetLabel} for your approval.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
               questions: [],
               threadId: thread.id,
               usage,
@@ -844,15 +892,15 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             name: "remove_plan_courses",
             label: assistantToolLabel("remove_plan_courses"),
             arguments: { plan_course_ids: ids },
-            explanation: `Remove all ${rows.length} ${statusLabel} courses requested by the student.`,
+            explanation: `Remove the ${ids.length} editable ${statusLabel} courses in the exact schedule scope requested by the student.`,
             mutatesData: true,
             status: "pending_confirmation"
           };
           await options.onToolActivity(proposal);
           return {
             message: options.reviewMode === "auto_review"
-              ? `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact batch removal automatically.`
-              : `I found ${rows.length} ${statusLabel} ${rows.length === 1 ? "course" : "courses"} and prepared one exact batch removal for your approval.`,
+              ? `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact batch removal automatically.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`
+              : `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared one exact batch removal for your approval.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
             questions: [],
             threadId: thread.id,
             usage,

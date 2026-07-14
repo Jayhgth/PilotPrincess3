@@ -107,9 +107,10 @@ export const POST: APIRoute = async ({ request }) => {
   if (!claimResult.data) return jsonError("This tool request has already been handled.", 409);
   try {
     const result = await executeAssistantMutationTool(auth.supabase, auth.user.id, validated.name, validated.arguments);
+    if (!result.undo) throw new Error("Pilot refused to apply a change that did not include a safe undo action.");
     const completedAt = new Date().toISOString();
-    const undoExpiresAt = result.undo ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
-    const storedResult = { ...result, ...(undoExpiresAt ? { undo_expires_at: undoExpiresAt } : {}), ...(review ? { auto_review: review } : {}) };
+    const undoExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const storedResult = { ...result, undo_expires_at: undoExpiresAt, ...(review ? { auto_review: review } : {}) };
     const publicResult = { summary: result.summary, data: result.data, changed: result.changed ?? null, ...(review ? { auto_review: review } : {}) };
     const { data, error } = await auth.supabase.from("ai_tool_calls").update({
       status: "completed",
@@ -124,7 +125,7 @@ export const POST: APIRoute = async ({ request }) => {
         turn_id: toolCall.turn_id,
         role: "tool",
         content: sanitizeCodexText(result.summary, 2000),
-        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, auto_review: review, undo_available: Boolean(result.undo), undo_expires_at: undoExpiresAt }
+        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, auto_review: review, undo_available: true, undo_expires_at: undoExpiresAt }
       }),
       recordEvent("tool.completed", await nextSequence(), { toolCall: { ...data, result: publicResult }, review }),
       auth.supabase.from("ai_conversations").update({ updated_at: completedAt }).eq("id", toolCall.conversation_id)

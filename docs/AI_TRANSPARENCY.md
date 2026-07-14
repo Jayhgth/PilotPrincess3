@@ -33,11 +33,13 @@ Read tools may run automatically after a student sends a message:
 - a compact inventory of available student-owned records;
 - student overview;
 - Done, In progress, and Planned courses;
+- active California public and charter high-school search for an exact selected-school change;
 - eligible selected-school and SMCCD catalog search;
 - official selected-school diploma evidence, including explicit unavailable or unverified state;
 - nearby community-college providers derived from the selected school's public address;
 - course-level GPA inclusion and weighting evidence;
 - current-four-year-plan GPA scenario arithmetic and the all-A ceiling;
+- saved GPA-planner inclusion and expected-grade assumptions;
 - source-backed concurrent and dual-enrollment limits with term totals;
 - deterministic schedule options from the current plan, approved catalog, open planning years, and provider limit;
 - official prerequisite evaluation plus the student's submitted clearance evidence and independent verification state;
@@ -53,10 +55,13 @@ Write tools may prepare these changes:
 - add an exact schedule batch after showing the returned courses; Supervised mode requires a structured Yes answer, while Auto-review sends the safe-limit batch directly to its independent reviewer;
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
 - edit placement, grade, credits, units, notes, and weighting on an unlocked plan course; GPA always recalculates from these course variables rather than accepting a hardcoded GPA value;
+- apply the same canonical course-board sort as the Courses page;
+- save GPA-planner assumptions without changing transcript grades or course evidence;
 - correct an imported transcript course while preserving the original parsed payload, the exact corrected payload, and a student-provided reason;
 - submit prerequisite, placement, equivalency, challenge, approval, admission, audition, or portfolio evidence as pending; Pilot cannot approve institutional evidence;
 - submit an exact evidence-backed shared school-data correction as pending; only an application administrator can publish it;
-- update ordinary student and planning settings, excluding AI consent, authentication, account lifecycle, and administrator state;
+- change the selected public or charter high school while retaining existing plan rows;
+- update ordinary student and planning settings plus the connected Pilot model, reasoning, and review preference, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
 - save a named snapshot, update a student-confirmed SMCCD Area 7A completion, and record Skyline's manually completed information-literacy tutorial or equivalent;
 - select or clear an associate-degree goal.
@@ -100,11 +105,11 @@ Structured questions are stored in the assistant message's bounded `page_context
 
 Queued follow-ups also remain browser-memory-only until their turn starts. Their text and image previews stay local while waiting; removing a queued message revokes its local image previews. **Steer** cancels the active request, records that cancellation, moves the selected follow-up to the front, and then starts it as a normal persisted turn. It does not inject text into an already-running model response or bypass the normal tool approval boundary.
 
-After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Reversible writes also store a private server-side inverse and place **Undo change** inside the receipt for 15 minutes. Undo re-authenticates the student, validates the stored inverse and time window, reapplies normal RLS ownership, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. This is evidence of an application-side mutation, not a claim made by the model.
+After an approved mutation runs, the tool outcome stores a concise summary plus the validated fields returned by the server tool. The rail renders that as a **Change applied** receipt. Student-facing details use an allowlist, so internal row IDs, repeated counts, and raw restoration payloads are not shown. Every applied write must also store a private server-side inverse; execution rejects a mutation that lacks one. The receipt places **Undo change** inside the receipt for 15 minutes. Undo re-authenticates the student, validates the stored inverse and time window, reapplies normal RLS ownership, records the reversal, refreshes canonical product data, and turns the same receipt into **Change undone**. This is evidence of an application-side mutation, not a claim made by the model.
 
 Archiving records `archived_at` and immediately removes the conversation from active history. The student can restore it from the Pilot Assistant section in Settings for 14 days. Expired archives are purged when the archive is accessed; private attachment objects are removed before the conversation row, whose cascade deletes messages, events, tool calls, and attachment records. Per-user RLS applies to archive, restore, and cleanup.
 
-Bulk plan-change language such as “remove all my in progress classes” or “mark all my planned classes in progress” triggers a deterministic `list_plan_courses` read for the requested source state before Codex responds. Pilot uses the returned stable IDs in one bounded batch proposal instead of relying on conversational memory; transcript-backed courses retain their normal protections.
+Bulk and scoped plan-change language such as “remove all my in progress classes,” “mark all my planned classes in progress,” or “clear my schedule for fall 2026” triggers a deterministic `list_plan_courses` read before Codex responds. Term-and-year requests resolve to the owning academic year and include full-year courses that occupy fall or spring. Pilot uses the returned stable IDs in one bounded batch proposal instead of relying on conversational memory; transcript-backed courses retain their normal protections and are explicitly reported as unchanged.
 
 ## t3code and SDK boundary
 

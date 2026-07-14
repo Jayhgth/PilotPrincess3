@@ -103,6 +103,10 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("correct_transcript_course", { review_item_id: "00000000-0000-4000-8000-000000000002", weighted: true, reason: "The transcript marks this as honors." })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("save_prerequisite_evidence", { target_course_id: "CSM:MATH 200", clearance_type: "placement", authority: "SMCCD placement", evidence_summary: "Placed into MATH 200", source_url: null })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_smccd_ge_completion", { college_code: "SKY", requirement: "information_literacy", completed: true })).toMatchObject({ mutatesData: true, arguments: { requirement: "information_literacy" } });
+    expect(parseAssistantToolCall("search_california_high_schools", { query: "Design Tech" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("set_current_school", { school_id: crypto.randomUUID() })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("sort_plan_courses", {})).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("update_gpa_scenario", { choices: [{ plan_course_id: crypto.randomUUID(), included: true, expected_grade: "A" }] })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_course_schedule", { course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_high_school_course", { course_id: "00000000-0000-4000-8000-000000000001", status: "planned", grade_level: 12, term: "fall" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
@@ -309,6 +313,18 @@ describe("Codex feature boundaries", () => {
     expect(requiredAssistantEvidenceRead("Move all courses to planned")).toEqual({
       name: "list_plan_courses",
       arguments: { status: "all" }
+    });
+    expect(requiredAssistantEvidenceRead("Clear my schedule for fall 2026")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "all", term: "fall", include_full_year: true, school_year: "2026-2027" }
+    });
+    expect(requiredAssistantEvidenceRead("Empty my spring 2027 schedule")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "all", term: "spring", include_full_year: true, school_year: "2026-2027" }
+    });
+    expect(requiredAssistantEvidenceRead("Wipe the grade 11 plan")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "all", grade_level: 11 }
     });
     expect(requiredAssistantEvidenceRead("Remove all classes except Economics")).toBeNull();
     expect(requiredAssistantEvidenceRead("Move all classes but keep Government current")).toBeNull();
