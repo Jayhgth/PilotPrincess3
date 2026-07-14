@@ -49,7 +49,7 @@ function renderBoard(rows: PlanCourse[], gradeLevel: PlanCourse["grade_level"] =
     smccdCourses: [],
     settings: { grade_level: gradeLevel, graduation_year: 2027 } as StudentSettings,
     busy: false,
-    onMove: () => undefined,
+    onMove: () => true,
     onRemove: () => undefined,
     onSort: () => undefined,
     onGeneratePlan: () => undefined

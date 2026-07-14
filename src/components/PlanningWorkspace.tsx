@@ -81,7 +81,7 @@ import type {
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
-import { evaluateDtechPlannerPrerequisites } from "@/lib/prerequisites";
+import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import AppChrome from "@/components/AppChrome";
@@ -787,10 +787,43 @@ export default function PlanningWorkspace() {
   }
 
   function movePlanCourse(row: PlanCourse, placement: CoursePlacement) {
-    if (!settings || !supabase) return;
+    if (!settings || !supabase) return false;
     if (row.source_review_item_id || row.status === "completed") {
       notify("Completed and transcript-backed courses stay locked in their recorded term.");
-      return;
+      return false;
+    }
+    const dtechCourse = row.course_id ? courseMap.get(row.course_id) : null;
+    if (dtechCourse && !dtechCourse.grade_levels.includes(placement.gradeLevel)) {
+      notify(`${dtechCourse.name} is not offered for grade ${placement.gradeLevel}.`);
+      return false;
+    }
+    if (dtechCourse) {
+      const evaluation = evaluateDtechPlannerPrerequisites(
+        dtechCourse,
+        { gradeLevel: placement.gradeLevel, term: placement.term, instanceId: row.id },
+        courses,
+        planCourses,
+        plannedSmccdCourses,
+        equivalencies
+      );
+      if (evaluation.result.status === "blocked") {
+        notify("That year would place this course before its prerequisite.");
+        return false;
+      }
+    }
+    const smccdCourse = row.smccd_course_id ? plannedSmccdCourses.find((course) => course.id === row.smccd_course_id) : null;
+    if (smccdCourse) {
+      const evaluation = evaluateSmccdPlannerPrerequisites(
+        smccdCourse,
+        { gradeLevel: placement.gradeLevel, term: placement.term, instanceId: row.id },
+        plannedSmccdCourses,
+        planCourses,
+        courses
+      );
+      if (evaluation.result.status === "blocked") {
+        notify("That year would place this course before its prerequisite.");
+        return false;
+      }
     }
     const previousRows = planCourses;
     const orderById = new Map(placement.orderedCourseIds.map((id, index) => [id, index]));
@@ -820,7 +853,7 @@ export default function PlanningWorkspace() {
         || previous.user_edited !== candidate.user_edited
       );
     });
-    if (changedRows.length === 0) return;
+    if (changedRows.length === 0) return false;
 
     setPlanCourses(nextRows);
     void runAction(`Moving ${courseDisplayName(row, courseMap)}`, async () => {
@@ -884,6 +917,7 @@ export default function PlanningWorkspace() {
         setPlanCourses((current) => current.map((candidate) => restoreById.get(candidate.id) ?? candidate));
       });
     });
+    return true;
   }
 
   function sortPlanCourses() {

@@ -75,7 +75,7 @@ interface CourseKanbanProps {
   smccdCourses: SmccdCourse[];
   settings: StudentSettings;
   busy: boolean;
-  onMove: (row: PlanCourse, placement: CoursePlacement) => void;
+  onMove: (row: PlanCourse, placement: CoursePlacement) => boolean;
   onRemove: (id: string) => void;
   onSort: () => void;
   onGeneratePlan: () => void;
@@ -222,7 +222,6 @@ function GradeTab({
   const acceptsActive = Boolean(activeRow);
   const { setNodeRef, isOver } = useDroppable({
     id: `grade-${grade}`,
-    disabled: !acceptsActive,
     data: { type: "year", gradeLevel: grade }
   });
   return <button
@@ -362,8 +361,8 @@ export default function CourseKanban(props: CourseKanbanProps) {
     const orderChanged = orderedCourseIds.length !== destinationIds.length
       || orderedCourseIds.some((id, index) => destinationIds[index] !== id);
     if (row.grade_level === destination.gradeLevel && row.term === term && row.status === status && !orderChanged) return;
-    setSelectedGrade(destination.gradeLevel);
-    props.onMove(row, { gradeLevel: destination.gradeLevel, term, status, orderedCourseIds });
+    const moved = props.onMove(row, { gradeLevel: destination.gradeLevel, term, status, orderedCourseIds });
+    setSelectedGrade(moved ? destination.gradeLevel : row.grade_level);
   }
 
   return (
