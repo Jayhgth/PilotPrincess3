@@ -782,41 +782,104 @@ export default function PlanningWorkspace() {
     });
   }
 
-  async function updatePlanCourse(id: string, patch: Partial<PlanCourse>) {
-    if (!supabase) return;
-    const previous = planCourses.find((row) => row.id === id);
-    if (!previous) return;
-    const updated = await runAction("Updating course", async () => {
-      const safePatch = { ...patch, user_edited: true };
-      const { error } = await supabase.from("plan_courses").update(safePatch).eq("id", id);
-      if (error) throw error;
-      setPlanCourses((current) => current.map((row) => (row.id === id ? { ...row, ...safePatch } : row)));
-      await logEvent("plan_edited", { plan_course_id: id });
-      return true;
-    });
-    if (updated) notifyUndo("Course updated.", async () => {
-      const { id: _id, ...restore } = previous;
-      const { error } = await supabase.from("plan_courses").update(restore).eq("id", id);
-      if (error) throw error;
-      setPlanCourses((current) => current.map((row) => row.id === id ? previous : row));
-    });
-  }
-
   function movePlanCourse(row: PlanCourse, placement: CoursePlacement) {
-    if (!settings) return;
+    if (!settings || !supabase) return;
     if (row.source_review_item_id || row.status === "completed" || row.grade_level < Number(settings.grade_level ?? 9)) {
       notify("Completed and transcript-backed courses stay locked in their recorded term.");
       return;
     }
-    const patch: Partial<PlanCourse> = {
+    const previousRows = planCourses;
+    const orderById = new Map(placement.orderedCourseIds.map((id, index) => [id, index]));
+    const activePatch: Partial<PlanCourse> = {
       status: placement.status,
       grade_level: placement.gradeLevel,
       school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, placement.gradeLevel),
       term: placement.term,
-      sort_order: planCourses.filter((candidate) => candidate.grade_level === placement.gradeLevel && candidate.term === placement.term).length,
+      sort_order: orderById.get(row.id) ?? placement.orderedCourseIds.length,
       ...(placement.status === "completed" ? {} : { letter_grade: null })
     };
-    void updatePlanCourse(row.id, patch);
+    const nextRows = previousRows.map((candidate) => {
+      const sortOrder = orderById.get(candidate.id);
+      if (candidate.id === row.id) return { ...candidate, ...activePatch, user_edited: true };
+      return sortOrder === undefined ? candidate : { ...candidate, sort_order: sortOrder };
+    });
+    const previousById = new Map(previousRows.map((candidate) => [candidate.id, candidate]));
+    const changedRows = nextRows.filter((candidate) => {
+      const previous = previousById.get(candidate.id);
+      return previous && (
+        previous.grade_level !== candidate.grade_level
+        || previous.school_year !== candidate.school_year
+        || previous.term !== candidate.term
+        || previous.status !== candidate.status
+        || previous.sort_order !== candidate.sort_order
+        || previous.letter_grade !== candidate.letter_grade
+        || previous.user_edited !== candidate.user_edited
+      );
+    });
+    if (changedRows.length === 0) return;
+
+    setPlanCourses(nextRows);
+    void runAction(`Moving ${courseDisplayName(row, courseMap)}`, async () => {
+      const results = await Promise.all(changedRows.map((candidate) => supabase.from("plan_courses").update({
+        grade_level: candidate.grade_level,
+        school_year: candidate.school_year,
+        term: candidate.term,
+        status: candidate.status,
+        sort_order: candidate.sort_order,
+        letter_grade: candidate.letter_grade,
+        user_edited: candidate.user_edited
+      }).eq("id", candidate.id)));
+      const error = results.find((result) => result.error)?.error;
+      if (error) {
+        await Promise.all(changedRows.flatMap((candidate) => {
+          const previous = previousById.get(candidate.id);
+          return previous ? [supabase.from("plan_courses").update({
+            grade_level: previous.grade_level,
+            school_year: previous.school_year,
+            term: previous.term,
+            status: previous.status,
+            sort_order: previous.sort_order,
+            letter_grade: previous.letter_grade,
+            user_edited: previous.user_edited
+          }).eq("id", previous.id)] : [];
+        }));
+        throw error;
+      }
+      void logEvent("plan_edited", {
+        action: "move_course",
+        plan_course_id: row.id,
+        grade_level: placement.gradeLevel,
+        term: placement.term
+      });
+      return true;
+    }).then((succeeded) => {
+      if (!succeeded) {
+        setPlanCourses(previousRows);
+        return;
+      }
+      const placementTerm = placement.term === "full_year"
+        ? "full year"
+        : `${placement.term.charAt(0).toUpperCase()}${placement.term.slice(1)}`;
+      notifyUndo(`${courseDisplayName(row, courseMap)} moved to Grade ${placement.gradeLevel}, ${placementTerm}.`, async () => {
+        const restoreRows = changedRows.flatMap((candidate) => {
+          const previous = previousById.get(candidate.id);
+          return previous ? [previous] : [];
+        });
+        const results = await Promise.all(restoreRows.map((candidate) => supabase.from("plan_courses").update({
+          grade_level: candidate.grade_level,
+          school_year: candidate.school_year,
+          term: candidate.term,
+          status: candidate.status,
+          sort_order: candidate.sort_order,
+          letter_grade: candidate.letter_grade,
+          user_edited: candidate.user_edited
+        }).eq("id", candidate.id)));
+        const error = results.find((result) => result.error)?.error;
+        if (error) throw error;
+        const restoreById = new Map(restoreRows.map((candidate) => [candidate.id, candidate]));
+        setPlanCourses((current) => current.map((candidate) => restoreById.get(candidate.id) ?? candidate));
+      });
+    });
   }
 
   async function removePlanCourse(id: string) {

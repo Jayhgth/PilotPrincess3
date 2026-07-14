@@ -2,7 +2,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import CourseKanban from "@/components/CourseKanban";
-import { compareCourseBoardRows, courseAppearsInBoardTerm, courseBoardTermsForGrade } from "@/lib/course-board";
+import {
+  compareCourseBoardRows,
+  courseAppearsInBoardTerm,
+  courseBoardTermsForGrade,
+  orderedCourseIdsForBoardMove
+} from "@/lib/course-board";
 import type { PlanCourse, StudentSettings } from "@/lib/models";
 
 function row(id: string, name: string, gradeLevel: PlanCourse["grade_level"], status: PlanCourse["status"], term: PlanCourse["term"], overrides: Partial<PlanCourse> = {}): PlanCourse {
@@ -96,6 +101,27 @@ describe("four-year course board", () => {
       "college",
       "high-school",
       "pass-fail"
+    ]);
+  });
+
+  it("projects stable order when a course moves within or across school years", () => {
+    const algebra = row("algebra", "Algebra", 11, "current", "fall", { sort_order: 0 });
+    const english = row("english", "English", 11, "current", "fall", { sort_order: 1 });
+    const physics = row("physics", "Physics", 12, "planned", "fall", { sort_order: 0 });
+    const rows = [algebra, english, physics];
+
+    expect(orderedCourseIdsForBoardMove(rows, english.id, 11, "fall", algebra.id)).toEqual([
+      english.id,
+      algebra.id
+    ]);
+    expect(orderedCourseIdsForBoardMove(rows, physics.id, 11, "fall", algebra.id, true)).toEqual([
+      algebra.id,
+      physics.id,
+      english.id
+    ]);
+    expect(orderedCourseIdsForBoardMove(rows, algebra.id, 12, "fall", null)).toEqual([
+      physics.id,
+      algebra.id
     ]);
   });
 });

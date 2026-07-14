@@ -33,8 +33,28 @@ function boardSortGroup(row: PlanCourse) {
 }
 
 export function compareCourseBoardRows(left: PlanCourse, right: PlanCourse) {
-  return boardSortGroup(left) - boardSortGroup(right)
-    || left.sort_order - right.sort_order
+  return left.sort_order - right.sort_order
+    || boardSortGroup(left) - boardSortGroup(right)
     || (left.custom_course_name ?? "").localeCompare(right.custom_course_name ?? "")
     || left.id.localeCompare(right.id);
+}
+
+export function orderedCourseIdsForBoardMove(
+  rows: readonly PlanCourse[],
+  activeId: string,
+  gradeLevel: GradeLevel,
+  term: CourseBoardTerm,
+  overId: string | null,
+  insertAfter = false
+) {
+  const destinationIds = rows
+    .filter((row) => row.id !== activeId && row.grade_level === gradeLevel && courseAppearsInBoardTerm(row, term))
+    .sort(compareCourseBoardRows)
+    .map((row) => row.id);
+  const overIndex = overId ? destinationIds.indexOf(overId) : -1;
+  const insertionIndex = overIndex < 0
+    ? destinationIds.length
+    : Math.min(destinationIds.length, overIndex + (insertAfter ? 1 : 0));
+  destinationIds.splice(insertionIndex, 0, activeId);
+  return destinationIds;
 }
