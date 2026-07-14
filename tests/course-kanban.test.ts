@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import CourseKanban from "@/components/CourseKanban";
 import {
+  boardTermForYearDrop,
   compareCourseBoardRows,
   compareCourseBoardRowsForAutomaticSort,
   compareCourseBoardRowsForTerm,
@@ -196,5 +197,8 @@ describe("four-year course board", () => {
     expect(courseStatusForBoardMove(12, 10, "current")).toBe("current");
     expect(courseStatusForBoardMove(11, 11, "planned")).toBe("current");
     expect(courseStatusForBoardMove(10, 12, "current")).toBe("planned");
+    expect(boardTermForYearDrop("summer", 12)).toBe("fall");
+    expect(boardTermForYearDrop("summer", 11)).toBe("summer");
+    expect(boardTermForYearDrop("full_year", 12)).toBe("fall");
   });
 });

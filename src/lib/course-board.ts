@@ -33,6 +33,12 @@ export function courseStatusForBoardMove(currentGrade: GradeLevel, destinationGr
   return currentStatus;
 }
 
+export function boardTermForYearDrop(term: PlanCourse["term"], destinationGrade: GradeLevel): CourseBoardTerm {
+  if (term === "full_year") return "fall";
+  if (term === "summer" && destinationGrade === 12) return "fall";
+  return term;
+}
+
 function boardSortGroup(row: PlanCourse) {
   if (isPassFailPlanCourse(row)) return 2;
   return isCollegePlanCourse(row) ? 0 : 1;

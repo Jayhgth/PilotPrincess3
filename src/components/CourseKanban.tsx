@@ -33,6 +33,7 @@ import { useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import {
+  boardTermForYearDrop,
   compareCourseBoardRows,
   compareCourseBoardRowsForTerm,
   courseStatusForBoardMove,
@@ -218,8 +219,7 @@ function GradeTab({
   onSelect: () => void;
 }) {
   const state = grade < currentGrade ? "completed" : grade === currentGrade ? "current" : "future";
-  const acceptsActive = Boolean(activeRow)
-    && !(grade === 12 && activeRow?.term === "summer");
+  const acceptsActive = Boolean(activeRow);
   const { setNodeRef, isOver } = useDroppable({
     id: `grade-${grade}`,
     disabled: !acceptsActive,
@@ -288,7 +288,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
     () => props.rows.filter((row) => row.grade_level === selectedGrade),
     [props.rows, selectedGrade]
   );
-  const selectedYearState = selectedGrade < currentGrade ? "completed" : selectedGrade === currentGrade ? "current" : "future";
+  const selectedYearState = selectedGrade < currentGrade ? "past" : selectedGrade === currentGrade ? "current" : "future";
   const collisionDetection = useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
     if (pointerCollisions.length > 0) {
@@ -334,9 +334,9 @@ export default function CourseKanban(props: CourseKanbanProps) {
       return;
     }
     const destinationBoardTerm = destination.type === "year"
-      ? row.term === "full_year" ? "fall" : row.term
+      ? boardTermForYearDrop(row.term, destination.gradeLevel)
       : destination.term;
-    if (!destinationBoardTerm || (destination.gradeLevel === 12 && destinationBoardTerm === "summer")) {
+    if (!destinationBoardTerm) {
       setSelectedGrade(row.grade_level);
       return;
     }
