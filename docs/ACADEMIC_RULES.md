@@ -1,6 +1,6 @@
 # Academic data and rule reference
 
-Last reviewed: 2026-07-10
+Last reviewed: 2026-07-13
 
 This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, and SMCCD degree evidence.
 
@@ -56,6 +56,7 @@ Conservative policies:
 - Unknown prose does not pass.
 - A course cannot satisfy its own prerequisite unless the source explicitly defines a corequisite relationship.
 - Later courses do not back-satisfy earlier prerequisites.
+- Within SMCCD, the same normalized district course code is prerequisite evidence across Cañada, CSM, and Skyline. Campus is preserved as provenance; different course codes still require a reviewed directional equivalency.
 - Directional d.tech-to-SMCCD equivalencies are not reversed.
 - Placement, program admission, licensing, tests, work experience, portfolios, and malformed source clauses remain review items.
 

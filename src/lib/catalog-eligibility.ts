@@ -1,6 +1,6 @@
 import { courseEquivalenceKeys } from "@/lib/course-names";
+import { normalizeCollegeCourseCode, resolvePlanCollegeCourseCode } from "@/lib/college-course-identity";
 import { normalizeCourseKey } from "@/lib/prerequisites/normalize";
-import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import type { Course, GradeLevel, PlanCourse, SmccdCourse } from "@/lib/models";
 
 export type CatalogExclusionReason = "already_in_plan" | "outside_grade" | "below_math_level";
@@ -88,13 +88,6 @@ export function dtechCatalogEligibility(
   return { eligible: true };
 }
 
-function smccdPlanCode(row: PlanCourse, smccdById: ReadonlyMap<string, SmccdCourse>): string | null {
-  const catalogCode = row.smccd_course_id ? smccdById.get(row.smccd_course_id)?.course_code : null;
-  if (catalogCode) return normalizeCollegeCourseCode(catalogCode);
-  const custom = row.custom_course_name?.match(/^([A-Z]{2,8}\s+[A-Z]?\d{2,4}[A-Z]?)/i)?.[1] ?? null;
-  return custom ? normalizeCollegeCourseCode(custom) : null;
-}
-
 export interface SmccdPlanCourseIndex {
   courseIds: ReadonlySet<string>;
   normalizedCourseCodes: ReadonlySet<string>;
@@ -110,7 +103,7 @@ export function createSmccdPlanCourseIndex(
 
   for (const row of planCourses) {
     if (row.smccd_course_id) courseIds.add(row.smccd_course_id);
-    const code = smccdPlanCode(row, smccdById);
+    const code = resolvePlanCollegeCourseCode(row, smccdById);
     if (code) normalizedCourseCodes.add(code);
   }
 

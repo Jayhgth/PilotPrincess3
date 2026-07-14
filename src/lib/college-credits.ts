@@ -1,4 +1,5 @@
 import type { PlanCourse, SmccdHighSchoolEquivalency } from "@/lib/models";
+import { resolvePlanCollegeCourseCode } from "@/lib/college-course-identity";
 
 export type HighSchoolCreditBasis =
   | "stored_high_school_credits"
@@ -18,26 +19,6 @@ export const COLLEGE_HIGH_SCHOOL_CREDIT_POLICY = "Use exact d.tech equivalencies
 function positiveNumber(value: number | null | undefined) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-}
-
-export function normalizeCollegeCourseCode(value: string | null | undefined) {
-  if (!value) return null;
-  const normalized = value
-    .trim()
-    .toUpperCase()
-    .replace(/^(?:CSM|SKY|CAN):/, "")
-    .replace(/^CHINESE\b/, "CHIN")
-    .replace(/^SPANISH\b/, "SPAN")
-    .replace(/^BIOLOGY\b/, "BIOL")
-    .replace(/^CHEM\.\s*/, "CHEM ")
-    .replace(/^PHYSICS\b/, "PHYS")
-    .replace(/^ECONOMICS\b/, "ECON")
-    .replace(/^HISTORY\b/, "HIST")
-    .replace(/^POLITICAL SCIENCE\b/, "PLSC")
-    .replace(/^MUS\.\s*/, "MUS ")
-    .replace(/\s+/g, " ");
-  const match = normalized.match(/^([A-Z]{2,5})\.?\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)/);
-  return match ? `${match[1]} ${match[2]}` : null;
 }
 
 export function districtHighSchoolCreditsForCollegeUnits(collegeUnits: number | null | undefined) {
@@ -87,9 +68,7 @@ export function resolvePlanCourseHighSchoolCredits(
     };
   }
 
-  const normalizedCourseCode = normalizeCollegeCourseCode(
-    row.smccd_course_id?.split(":").at(-1) ?? row.custom_course_name
-  );
+  const normalizedCourseCode = resolvePlanCollegeCourseCode(row);
   const equivalency = normalizedCourseCode
     ? equivalencies.find((candidate) => candidate.normalized_course_code === normalizedCourseCode)
     : null;

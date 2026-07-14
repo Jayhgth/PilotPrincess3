@@ -191,6 +191,128 @@ describe("planner prerequisite adapters", () => {
     expect(evaluator(target, { gradeLevel: 11, term: "fall" }).result.status).toBe("satisfied");
   });
 
+  it("treats the same SMCCD course code as prerequisite evidence across all three colleges", () => {
+    const math252 = (["CSM", "SKY", "CAN"] as const).map((college) => smccdCourse({
+      id: `${college}:MATH 252`,
+      college_code: college,
+      course_code: "MATH 252",
+      course_number: "252",
+      subject: "MATH",
+      title: college === "CAN" ? "Analytical Geometry and Calculus II" : "Calculus with Analytic Geometry II",
+      prerequisites: []
+    }));
+    const math253 = (["CSM", "SKY", "CAN"] as const).map((college) => smccdCourse({
+      id: `${college}:MATH 253`,
+      college_code: college,
+      course_code: "MATH 253",
+      course_number: "253",
+      subject: "MATH",
+      title: college === "CAN" ? "Analytic Geometry and Calculus III" : "Calculus with Analytic Geometry III",
+      prerequisites: [college === "SKY" ? "MATH 252 or equivalent" : "MATH 252"]
+    }));
+    const skylineMath252 = planCourse({
+      id: "planned-skyline-math-252",
+      course_id: null,
+      smccd_course_id: "SKY:MATH 252",
+      custom_course_name: "MATH 252 Calculus with Analytic Geometry II",
+      grade_level: 11,
+      term: "spring",
+      status: "planned",
+      letter_grade: null,
+      source_review_item_id: null
+    });
+    const catalog = [...math252, ...math253];
+    const evaluator = createSmccdPlannerPrerequisiteEvaluator(catalog, [skylineMath252], []);
+
+    for (const target of math253) {
+      const evaluation = evaluator(target, { gradeLevel: 12, term: "fall" });
+      expect(evaluation.result.status, target.college_code).toBe("satisfied");
+    }
+    expect(evaluator(math253[0], { gradeLevel: 12, term: "fall" }).result.evidence[0])
+      .toMatchObject({ matchedBy: "code", courseInstanceId: skylineMath252.id });
+    expect(evaluator(math253[2], { gradeLevel: 12, term: "fall" }).result.evidence[0])
+      .toMatchObject({ matchedBy: "code", courseInstanceId: skylineMath252.id });
+  });
+
+  it("recovers district prerequisite identity for imported or partially loaded college rows", () => {
+    const csmMath252 = smccdCourse({
+      id: "CSM:MATH 252",
+      course_code: "MATH 252",
+      course_number: "252",
+      subject: "MATH",
+      title: "Calculus with Analytic Geometry II",
+      prerequisites: []
+    });
+    const csmMath253 = smccdCourse({
+      id: "CSM:MATH 253",
+      course_code: "MATH 253",
+      course_number: "253",
+      subject: "MATH",
+      title: "Calculus with Analytic Geometry III",
+      prerequisites: ["MATH 252"]
+    });
+    const importedSkylineMath252 = planCourse({
+      id: "imported-skyline-math-252",
+      course_id: null,
+      smccd_course_id: null,
+      college_provider_code: "SKY",
+      custom_course_name: "MATH 252 Calculus with Analytic Geometry II",
+      grade_level: 11,
+      term: "spring",
+      status: "completed",
+      letter_grade: "A"
+    });
+    const partiallyLoadedSkylineMath252 = {
+      ...importedSkylineMath252,
+      id: "partially-loaded-skyline-math-252",
+      smccd_course_id: "SKY:MATH 252"
+    };
+    const catalog = [csmMath252, csmMath253];
+
+    for (const planned of [importedSkylineMath252, partiallyLoadedSkylineMath252]) {
+      expect(plannerCourseInputs([planned], [], catalog)[0].code).toBe("MATH 252");
+      const evaluator = createSmccdPlannerPrerequisiteEvaluator(catalog, [planned], []);
+      expect(evaluator(csmMath253, { gradeLevel: 12, term: "fall" }).result.status).toBe("satisfied");
+    }
+  });
+
+  it("keeps cross-college prerequisite matches subject to planner chronology", () => {
+    const skylineMath252 = smccdCourse({
+      id: "SKY:MATH 252",
+      college_code: "SKY",
+      course_code: "MATH 252",
+      course_number: "252",
+      subject: "MATH",
+      title: "Calculus with Analytic Geometry II",
+      prerequisites: []
+    });
+    const csmMath253 = smccdCourse({
+      id: "CSM:MATH 253",
+      course_code: "MATH 253",
+      course_number: "253",
+      subject: "MATH",
+      title: "Calculus with Analytic Geometry III",
+      prerequisites: ["MATH 252"]
+    });
+    const sameTermMath252 = planCourse({
+      course_id: null,
+      smccd_course_id: skylineMath252.id,
+      grade_level: 12,
+      term: "fall",
+      status: "planned",
+      source_review_item_id: null
+    });
+    const evaluator = createSmccdPlannerPrerequisiteEvaluator(
+      [skylineMath252, csmMath253],
+      [sameTermMath252],
+      []
+    );
+
+    const evaluation = evaluator(csmMath253, { gradeLevel: 12, term: "fall" });
+    expect(evaluation.result.status).toBe("blocked");
+    expect(evaluation.result.orderingViolations).toHaveLength(1);
+  });
+
   it("uses a d.tech course for an SMCCD prerequisite only through a reviewed reverse mapping", () => {
     const algebra = dtechCourse({ id: "algebra-2", name: "Algebra 2", grade_levels: [9, 10, 11] });
     const prerequisite = smccdCourse({

@@ -7,11 +7,12 @@ import type {
   StudentSettings
 } from "@/lib/models";
 import { courseEquivalenceKeys, courseNameAliases, normalizeCourseName } from "@/lib/course-names";
-import { normalizeCollegeCourseCode, resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
+import { normalizeCollegeCourseCode } from "@/lib/college-course-identity";
+import { resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
 import { institutionKeyFromName } from "@/lib/institutions";
 import { schoolYearForGrade } from "@/lib/planning";
 
-export { normalizeCollegeCourseCode } from "@/lib/college-credits";
+export { normalizeCollegeCourseCode } from "@/lib/college-course-identity";
 
 const DTECH_INSTITUTION_PATTERN = /Design Tech High School|\bd\.?tech\b/i;
 const DTECH_CATALOG_MISS = "No exact d.tech catalog match was found.";

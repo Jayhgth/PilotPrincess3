@@ -1,4 +1,5 @@
 import { buildDtechPrerequisiteEquivalencies } from "./smccd";
+import { resolvePlanCollegeCourseCode } from "@/lib/college-course-identity";
 import { evaluateParsedPrerequisites } from "./evaluator";
 import { parsePrerequisites } from "./parser";
 import { parseSmccdCoursePrerequisites } from "./smccd";
@@ -92,10 +93,10 @@ export function plannerCourseInputs(
     const dtech = row.course_id ? dtechById.get(row.course_id) : undefined;
     const smccd = row.smccd_course_id ? smccdById.get(row.smccd_course_id) : undefined;
     const name = dtech?.name ?? (smccd ? `${smccd.course_code} ${smccd.title}` : row.custom_course_name ?? "Unidentified course");
-    const code = dtech?.course_code ?? smccd?.course_code ?? null;
+    const code = dtech?.course_code ?? resolvePlanCollegeCourseCode(row, smccdById);
     return {
       instanceId: row.id,
-      ...(dtech ? { courseId: dtech.id } : smccd ? { courseId: smccd.id } : {}),
+      ...(dtech ? { courseId: dtech.id } : row.smccd_course_id ? { courseId: row.smccd_course_id } : {}),
       code,
       name,
       ...(dtech && DTECH_PREREQUISITE_ALIASES[dtech.name]
