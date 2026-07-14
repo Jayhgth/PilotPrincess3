@@ -5,8 +5,6 @@ import {
   CheckCircleIcon as CheckCircle,
   CpuIcon as Cpu,
   FileTextIcon as FileText,
-  GraduationCapIcon as GraduationCap,
-  PathIcon as Path,
   UploadSimpleIcon as UploadSimple,
   UserCircleIcon as UserCircle,
   WarningIcon as Warning
@@ -17,15 +15,12 @@ import type {
   CatalogReviewItem,
   Course,
   CourseRequirementMapping,
-  EnrollmentPolicy,
   GradeLevel,
-  GraduationRequirement,
   PlanCourse,
   PlanVersion,
   RequirementArea,
   School,
   SmccdHighSchoolEquivalency,
-  StudentEnrollmentPreference,
   StudentSettings
 } from "@/lib/models";
 import { GRADE_LEVELS, REQUIREMENT_LABELS } from "@/lib/planning";
@@ -39,17 +34,25 @@ import BrandMark from "@/components/BrandMark";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 
-type OnboardingStage = "student" | "plan" | "requirements" | "assistant" | "transcript";
+type OnboardingStage = "student" | "assistant" | "transcript";
 
 const STAGES: Array<{ id: OnboardingStage; label: string }> = [
   { id: "student", label: "About you" },
-  { id: "plan", label: "Plan window" },
-  { id: "requirements", label: "Requirement tracker" },
   { id: "assistant", label: "Pilot Assistant" },
   { id: "transcript", label: "Transcript" }
 ];
 
 const ALL_REQUIREMENT_AREAS = Object.keys(REQUIREMENT_LABELS) as RequirementArea[];
+
+export function applyOnboardingPlanningDefaults(settings: StudentSettings, gradeLevel: GradeLevel): StudentSettings {
+  return {
+    ...settings,
+    plan_start_grade: gradeLevel,
+    plan_end_grade: 12,
+    tracker_mode: "full",
+    tracked_requirement_areas: ALL_REQUIREMENT_AREAS
+  };
+}
 
 function asNumber(value: string) {
   if (!value) return null;
@@ -71,14 +74,11 @@ interface OnboardingFlowProps {
   session: Session;
   school: School;
   settings: StudentSettings;
-  requirements: GraduationRequirement[];
   courses: Course[];
   mappings: CourseRequirementMapping[];
   equivalencies: SmccdHighSchoolEquivalency[];
   activeVersion: PlanVersion;
   existingPlanCourses: PlanCourse[];
-  enrollmentPolicies: EnrollmentPolicy[];
-  enrollmentPreference: StudentEnrollmentPreference;
   mode?: "initial" | "replay";
   onComplete: () => Promise<void>;
   onExit?: () => void;
@@ -90,14 +90,11 @@ export default function OnboardingFlow({
   session,
   school,
   settings: initialSettings,
-  requirements,
   courses,
   mappings,
   equivalencies,
   activeVersion,
   existingPlanCourses,
-  enrollmentPolicies,
-  enrollmentPreference,
   mode = "initial",
   onComplete,
   onExit,
@@ -105,18 +102,10 @@ export default function OnboardingFlow({
 }: OnboardingFlowProps) {
   const isReplay = mode === "replay";
   const [stage, setStage] = useState<OnboardingStage>("student");
-  const [settings, setSettings] = useState<StudentSettings>({
-    ...initialSettings,
-    tracker_mode: initialSettings.tracker_mode ?? "full",
-    tracked_requirement_areas: initialSettings.tracked_requirement_areas?.length
-      ? initialSettings.tracked_requirement_areas
-      : ALL_REQUIREMENT_AREAS
-  });
-  const [planYears, setPlanYears] = useState(() => {
-    const start = initialSettings.plan_start_grade ?? initialSettings.grade_level;
-    const end = initialSettings.plan_end_grade;
-    return start && end ? end - start + 1 : start ? 13 - start : 4;
-  });
+  const [settings, setSettings] = useState<StudentSettings>(() => applyOnboardingPlanningDefaults(
+    initialSettings,
+    (initialSettings.grade_level ?? initialSettings.plan_start_grade ?? 9) as GradeLevel
+  ));
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptItems, setTranscriptItems] = useState<CatalogReviewItem[]>([]);
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
@@ -128,18 +117,13 @@ export default function OnboardingFlow({
     approved: Boolean(initialSettings.ai_connection_approved_at),
     testedAt: initialSettings.ai_setup_tested_at
   });
-  const [enrollmentProgram, setEnrollmentProgram] = useState<StudentEnrollmentPreference["program_type"]>(enrollmentPreference.program_type);
   const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const stageIndex = STAGES.findIndex((candidate) => candidate.id === stage);
   const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
-  const maximumPlanYears = 13 - currentGrade;
-  const availablePlanYears = Array.from({ length: maximumPlanYears }, (_, index) => index + 1);
-  const planEndGrade = Math.min(12, currentGrade + planYears - 1) as GradeLevel;
-  const selectedRequirementCount = settings.tracker_mode === "full"
-    ? requirements.length
-    : settings.tracked_requirement_areas.length;
+  const planEndGrade = 12 as GradeLevel;
+  const planYears = 13 - currentGrade;
   const completedCourseCount = existingPlanCourses.filter((course) => course.status === "completed").length;
 
   const selectedTranscriptItems = useMemo(
@@ -159,10 +143,6 @@ export default function OnboardingFlow({
         setError("Add your name, age, current grade, and expected graduation year.");
         return false;
       }
-    }
-    if (stage === "requirements" && settings.tracker_mode === "selected" && settings.tracked_requirement_areas.length === 0) {
-      setError("Choose at least one requirement area to track.");
-      return false;
     }
     if (stage === "assistant" && aiSetup.enabled && !aiSetup.approved) {
       setError("Approve the Codex connection before continuing, or choose to continue without AI.");
@@ -222,23 +202,7 @@ export default function OnboardingFlow({
   }
 
   function changeGrade(grade: GradeLevel) {
-    const maxYears = 13 - grade;
-    setPlanYears((current) => Math.min(current, maxYears));
-    setSettings((current) => ({
-      ...current,
-      grade_level: grade,
-      plan_start_grade: grade,
-      plan_end_grade: Math.min(12, grade + Math.min(planYears, maxYears) - 1) as GradeLevel
-    }));
-  }
-
-  function toggleRequirement(area: RequirementArea) {
-    setSettings((current) => {
-      const selected = new Set(current.tracked_requirement_areas);
-      if (selected.has(area)) selected.delete(area);
-      else selected.add(area);
-      return { ...current, tracked_requirement_areas: [...selected] };
-    });
+    setSettings((current) => applyOnboardingPlanningDefaults({ ...current, grade_level: grade }, grade));
   }
 
   async function authorizedPost(path: string, body: Record<string, unknown>) {
@@ -382,7 +346,7 @@ export default function OnboardingFlow({
       }
 
       const completedSettings: StudentSettings = {
-        ...settings,
+        ...applyOnboardingPlanningDefaults(settings, currentGrade),
         school_id: school.id,
         school_confirmed: true,
         onboarding_complete: true,
@@ -390,27 +354,13 @@ export default function OnboardingFlow({
         ai_model: aiSetup.model,
         ai_reasoning_effort: "low",
         ai_connection_approved_at: aiSetup.enabled ? (settings.ai_connection_approved_at ?? new Date().toISOString()) : null,
-        ai_setup_tested_at: aiSetup.testedAt,
-        plan_start_grade: currentGrade,
-        plan_end_grade: planEndGrade,
-        tracked_requirement_areas: settings.tracker_mode === "full"
-          ? ALL_REQUIREMENT_AREAS
-          : settings.tracked_requirement_areas
+        ai_setup_tested_at: aiSetup.testedAt
       };
       const { error: settingsError } = await supabase
         .from("student_settings")
         .update(completedSettings)
         .eq("id", session.user.id);
       if (settingsError) throw settingsError;
-      const { error: enrollmentError } = await supabase.from("student_enrollment_preferences").upsert({
-        user_id: session.user.id,
-        provider_code: "SMCCD",
-        program_type: enrollmentProgram,
-        limit_mode: "recommended",
-        custom_unit_limit: null,
-        respect_recommended_limit: enrollmentPreference.respect_recommended_limit ?? true
-      }, { onConflict: "user_id,provider_code" });
-      if (enrollmentError) throw enrollmentError;
       const { error: versionError } = await supabase
         .from("plan_versions")
         .update({
@@ -468,7 +418,7 @@ export default function OnboardingFlow({
           <div className="onboarding-route-summary">
             <strong>Grade {currentGrade} to {planEndGrade}</strong>
             <span>{planYears} school {planYears === 1 ? "year" : "years"}</span>
-            <span>{selectedRequirementCount} requirement areas</span>
+            <span>Full diploma tracker</span>
             <span>{aiSetup.enabled ? (aiSetup.testedAt ? "Pilot connected" : "Pilot setup pending") : "Pilot off"}</span>
             <span>{isReplay ? `${completedCourseCount} saved courses kept` : `${selectedTranscriptIds.size} completed courses ready`}</span>
           </div>
@@ -476,7 +426,7 @@ export default function OnboardingFlow({
 
         <section className="onboarding-stage" aria-live="polite">
           {stage === "student" && <>
-            <header><UserCircle size={25} weight="duotone" /><h1>Tell us where you are now</h1><p>This anchors school years and the planning window.</p></header>
+            <header><UserCircle size={25} weight="duotone" /><h1>Tell us where you are now</h1><p>This anchors school years and plans through graduation.</p></header>
             <div className="form-grid two">
               <label className="form-field"><span>Preferred name</span><input autoFocus value={settings.preferred_name} onChange={(event) => setSettings({ ...settings, preferred_name: event.target.value })} /></label>
               <label className="form-field"><span>School</span><input value={school.name} readOnly aria-readonly="true" /></label>
@@ -486,46 +436,16 @@ export default function OnboardingFlow({
             </div>
           </>}
 
-          {stage === "plan" && <>
-            <header><Path size={25} weight="duotone" /><h1>How far ahead should we plan?</h1><p>You can expand or shorten this window later without deleting saved courses.</p></header>
-            <fieldset className="onboarding-choice-list">
-              <legend>Plan length</legend>
-              {availablePlanYears.map((years) => {
-                const endGrade = Math.min(12, currentGrade + years - 1);
-                return <label key={years} className={planYears === years ? "selected" : ""}><input type="radio" name="plan-years" value={years} checked={planYears === years} onChange={() => setPlanYears(years)} /><span><strong>{years === maximumPlanYears ? "Through graduation" : years === 1 ? "This school year" : `${years} school years`}</strong><small>Grade {currentGrade} through grade {endGrade}</small></span></label>;
-              })}
-            </fieldset>
-            <div className="onboarding-plan-line" aria-label="Selected plan grades">
-              {GRADE_LEVELS.map((grade) => <span key={grade} className={grade >= currentGrade && grade <= planEndGrade ? "included" : ""}>Grade {grade}</span>)}
-            </div>
-            <fieldset className="onboarding-choice-list enrollment-choice-list">
-              <legend>College enrollment type</legend>
-              {(["concurrent", "dual"] as const).map((programType) => {
-                const policy = enrollmentPolicies.find((candidate) => candidate.provider_code === "SMCCD" && candidate.program_type === programType);
-                return <label key={programType} className={enrollmentProgram === programType ? "selected" : ""}><input type="radio" name="onboarding-enrollment-type" checked={enrollmentProgram === programType} onChange={() => setEnrollmentProgram(programType)} /><span><strong>{programType === "concurrent" ? "Concurrent enrollment" : "Dual enrollment partnership"}</strong><small>{policy ? `${policy.recommended_max_units} units per term under the current district planning threshold.` : "District policy is not loaded."}</small></span></label>;
-              })}
-            </fieldset>
-          </>}
-
-          {stage === "requirements" && <>
-            <header><GraduationCap size={25} weight="duotone" /><h1>Choose your graduation tracker</h1><p>The full diploma view is recommended. A focused view keeps only selected areas in daily progress totals.</p></header>
-            <div className="tracker-mode-switch">
-              <label className={settings.tracker_mode === "full" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "full"} onChange={() => setSettings({ ...settings, tracker_mode: "full", tracked_requirement_areas: ALL_REQUIREMENT_AREAS })} /><span><strong>Full high school diploma</strong><small>Track all {requirements.length} official requirement areas.</small></span></label>
-              <label className={settings.tracker_mode === "selected" ? "selected" : ""}><input type="radio" name="tracker-mode" checked={settings.tracker_mode === "selected"} onChange={() => setSettings({ ...settings, tracker_mode: "selected", tracked_requirement_areas: [] })} /><span><strong>Focused tracker</strong><small>Choose the areas you want on your overview.</small></span></label>
-            </div>
-            {settings.tracker_mode === "selected" && <fieldset className="requirement-picker"><legend>Visible requirement areas</legend>{requirements.map((requirement) => <label key={requirement.id} className={settings.tracked_requirement_areas.includes(requirement.area) ? "selected" : ""}><input type="checkbox" checked={settings.tracked_requirement_areas.includes(requirement.area)} onChange={() => toggleRequirement(requirement.area)} /><span><strong>{requirement.name}</strong><small>{requirement.credits_required} credits required</small></span></label>)}</fieldset>}
-          </>}
-
           {stage === "assistant" && <>
             <header><Cpu size={25} weight="duotone" /><h1>Connect Pilot Assistant</h1><p>Choose the model, approve the data boundary, and verify the real server connection. This choice saves when you continue.</p></header>
             <CodexConnectionSetup value={aiSetup} onChange={setAiSetup} />
           </>}
 
           {stage === "transcript" && <>
-            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Replaying onboarding updates setup choices without changing saved courses." : "Upload your transcript. Nothing counts until you review and import it."}</p></header>
+            <header><FileText size={25} weight="duotone" /><h1>{isReplay ? "Keep your completed classes" : "Add completed classes"}</h1><p>{isReplay ? "Update your profile and Pilot setup without changing saved courses." : "Upload your transcript. Nothing counts until you review and import it."}</p></header>
             {isReplay ? <div className="onboarding-replay-summary">
               <CheckCircle size={20} weight="duotone" />
-              <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save the plan window and tracker choices from this walkthrough. Exit onboarding to discard them all.</p></div>
+              <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save profile and assistant changes. Exit onboarding to discard them.</p></div>
             </div> : transcriptItems.length === 0 ? <div className="transcript-entry">
               <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setTranscriptFile(event.target.files?.[0] ?? null)} /></label>
               <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel) || !transcriptFile}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>

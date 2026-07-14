@@ -660,49 +660,6 @@ input:focus, select:focus, textarea:focus {
 .onboarding-stage > header > svg { margin-bottom: 15px; color: var(--accent); }
 .onboarding-stage > header h1 { margin: 0; font-size: clamp(27px, 4vw, 36px); font-weight: 650; letter-spacing: -0.05em; line-height: 1.08; }
 .onboarding-stage > header p { max-width: 62ch; margin: 10px 0 0; color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
-.onboarding-form-stack { display: grid; gap: 24px; }
-.onboarding-form-stack > * { min-width: 0; }
-.onboarding-choice-list, .requirement-picker { display: grid; gap: 8px; margin: 0; border: 0; padding: 0; }
-.enrollment-choice-list { margin-top: 22px; }
-.onboarding-choice-list legend, .requirement-picker legend { margin-bottom: 10px; font-size: 12px; font-weight: 650; }
-.onboarding-choice-list > label,
-.tracker-mode-switch > label,
-.requirement-picker > label {
-  display: flex;
-  min-height: 62px;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  padding: 12px 14px;
-  cursor: pointer;
-}
-.onboarding-choice-list > label:hover,
-.tracker-mode-switch > label:hover,
-.requirement-picker > label:hover { border-color: var(--line-strong); }
-.onboarding-choice-list > label.selected,
-.tracker-mode-switch > label.selected,
-.requirement-picker > label.selected { border-color: var(--accent); background: var(--accent-soft); }
-.onboarding-choice-list input,
-.tracker-mode-switch input,
-.requirement-picker input { width: 16px; min-height: 16px; flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
-.onboarding-choice-list label > span,
-.tracker-mode-switch label > span,
-.requirement-picker label > span { display: grid; gap: 3px; }
-.onboarding-choice-list strong,
-.tracker-mode-switch strong,
-.requirement-picker strong { font-size: 12px; }
-.onboarding-choice-list small,
-.tracker-mode-switch small,
-.requirement-picker small { color: var(--ink-soft); font-size: 12px; line-height: 1.4; }
-.onboarding-plan-line { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 24px; border-top: 1px solid var(--line); }
-.onboarding-plan-line span { border-right: 1px solid var(--line); padding: 12px 8px; color: var(--ink-faint); font-size: 12px; text-align: center; }
-.onboarding-plan-line span:last-child { border-right: 0; }
-.onboarding-plan-line span.included { border-top: 2px solid var(--accent); margin-top: -1px; color: var(--ink); font-weight: 650; }
-.tracker-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.requirement-picker { grid-template-columns: 1fr 1fr; margin-top: 22px; }
-.requirement-picker > label { min-height: 57px; }
 .transcript-entry { display: grid; gap: 17px; }
 .transcript-drop {
   display: flex;
@@ -1962,31 +1919,6 @@ textarea,
 .onboarding-stage { width: min(100%, 840px); padding-top: 48px; }
 .onboarding-stage > header { margin-bottom: 32px; border-bottom: 0; padding-bottom: 0; }
 .onboarding-stage > header > svg { display: none; }
-.onboarding-form-stack { gap: 32px; }
-.onboarding-choice-list > label,
-.tracker-mode-switch > label,
-.requirement-picker > label {
-  border-color: transparent;
-  background: var(--surface);
-}
-.onboarding-choice-list > label:hover,
-.tracker-mode-switch > label:hover,
-.requirement-picker > label:hover { border-color: transparent; background: var(--surface-muted); }
-.onboarding-choice-list > label.selected,
-.tracker-mode-switch > label.selected,
-.requirement-picker > label.selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.onboarding-choice-list strong,
-.tracker-mode-switch strong,
-.requirement-picker strong { font-size: var(--type-body); line-height: var(--leading-body); }
-.onboarding-choice-list small,
-.tracker-mode-switch small,
-.requirement-picker small { font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.onboarding-plan-line { gap: 4px; border-top: 0; }
-.onboarding-plan-line span { border-right: 0; border-radius: 6px; background: var(--surface-muted); font-size: var(--type-supporting); }
-.onboarding-plan-line span.included { margin-top: 0; border-top: 0; background: var(--accent-soft); box-shadow: inset 0 -2px var(--accent); }
 .onboarding-actions { margin-top: 32px; border-top: 0; padding-top: 0; }
 
 .secondary-summary {
@@ -2140,8 +2072,6 @@ textarea,
   .onboarding-progress li > span { width: 22px; height: 22px; }
   .onboarding-stage { padding: 28px 16px 44px; }
   .onboarding-stage > header { margin-bottom: 22px; padding-bottom: 20px; }
-  .onboarding-form-stack { gap: 20px; }
-  .tracker-mode-switch, .requirement-picker { grid-template-columns: 1fr; }
   .transcript-review-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .page-header { display: grid; min-height: 0; gap: 16px; }
   .page-actions { width: 100%; overflow-x: auto; }
@@ -2268,7 +2198,6 @@ textarea,
 @media (max-width: 480px) {
   .onboarding-topbar { padding-inline: 13px; }
   .onboarding-stage .form-grid.two { grid-template-columns: 1fr; }
-  .onboarding-plan-line span { padding-inline: 3px; font-size: 12px; }
   .transcript-course-list label { grid-template-columns: auto minmax(0, 1fr); }
   .transcript-course-list em { grid-column: 2; }
   .app-content { padding-inline: 13px; }

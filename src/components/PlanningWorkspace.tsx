@@ -1286,14 +1286,11 @@ export default function PlanningWorkspace() {
           session={session}
           school={school}
           settings={settings}
-          requirements={requirements}
           courses={courses}
           mappings={mappings}
           equivalencies={equivalencies}
           activeVersion={activeVersion}
           existingPlanCourses={planCourses}
-          enrollmentPolicies={enrollmentPolicies}
-          enrollmentPreference={enrollmentPreference ?? defaultEnrollmentPreference(session.user.id)}
           mode={replayingOnboarding ? "replay" : "initial"}
           onComplete={async () => {
             await refreshWorkspaceSilently();

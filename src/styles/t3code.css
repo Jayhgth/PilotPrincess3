@@ -79,8 +79,6 @@
 .t3code-app .onboarding-progress { min-height: calc(100dvh - 52px); border-right: 1px solid var(--line); padding: 28px 18px 80px; }
 .t3code-app .onboarding-stage { width: min(100%, 920px); min-width: 0; padding: 48px 48px 80px; }
 .t3code-app .onboarding-stage > header h1 { color: var(--ink); font-size: 28px; font-weight: 600; }
-.t3code-app .onboarding-choice-list > label,
-.t3code-app .tracker-mode-switch > label { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 
 .magic-bento-grid { display: grid; width: 100%; gap: 12px; }
 .magic-bento-card { position: relative; display: flex; min-width: 0; overflow: hidden; isolation: isolate; flex-direction: column; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: 0 1px 2px rgb(0 0 0 / 3%); transition: border-color 220ms ease, box-shadow 220ms ease; }
