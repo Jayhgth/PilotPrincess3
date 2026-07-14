@@ -177,7 +177,6 @@ const assistantToolNames = [
   "list_plan_courses",
   "search_course_catalog",
   "get_graduation_progress",
-  "get_academic_framework_progress",
   "get_nearby_education_providers",
   "get_transcript_sources",
   "get_student_data_inventory",

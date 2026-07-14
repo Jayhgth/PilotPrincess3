@@ -1,16 +1,13 @@
 import {
   ArrowSquareOutIcon as ArrowSquareOut,
   BookOpenIcon as BookOpen,
-  BuildingsIcon as Buildings,
-  WarningIcon as Warning
+  WarningIcon as Warning,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import WorkspaceTabs from "@/components/WorkspaceTabs";
-import type { AcademicFrameworkProgress } from "@/lib/academic-frameworks";
 import type {
-  AcademicFrameworkConstraint,
   PlanCourse,
   RequirementCourseEvidence,
   RequirementProgress,
@@ -27,8 +24,6 @@ function graduationViewFromLocation() {
 
 interface Props {
   progress: RequirementProgress[];
-  academicProgress: AcademicFrameworkProgress[];
-  academicConstraints: AcademicFrameworkConstraint[];
   school: School;
   onFindDtechCourses: (area: RequirementProgress["requirement"]["area"]) => void;
   degreePlanner: ReactNode;
@@ -39,8 +34,6 @@ const DTECH_REQUIREMENTS_URL = "https://docs.google.com/document/d/1N351ZQzwGakG
 
 export default function GraduationWorkspace({
   progress,
-  academicProgress,
-  academicConstraints,
   school,
   onFindDtechCourses,
   degreePlanner,
@@ -84,8 +77,6 @@ export default function GraduationWorkspace({
       <div className="graduation-view-transition">
         {view === "diploma" && <DiplomaView
           progress={progress}
-          academicProgress={academicProgress}
-          academicConstraints={academicConstraints}
           school={school}
           selectedId={selectedDiplomaId || firstDiplomaGap?.requirement.id || ""}
           onSelect={setSelectedDiplomaId}
@@ -100,31 +91,17 @@ export default function GraduationWorkspace({
 
 function DiplomaView({
   progress,
-  academicProgress,
-  academicConstraints,
   school,
   selectedId,
   onSelect,
   onFindCourses
 }: {
   progress: RequirementProgress[];
-  academicProgress: AcademicFrameworkProgress[];
-  academicConstraints: AcademicFrameworkConstraint[];
   school: School;
   selectedId: string;
   onSelect: (id: string) => void;
   onFindCourses: Props["onFindDtechCourses"];
 }) {
-  const localFramework = academicProgress.find((item) => item.framework.framework_type === "local_graduation") ?? null;
-  const stateFramework = academicProgress.find((item) => item.framework.framework_type === "state_graduation") ?? null;
-  const agFramework = academicProgress.find((item) => item.framework.framework_type === "uc_ag") ?? null;
-  const availableLayers = [
-    ...(progress.length ? [{ id: "local", label: "School diploma" }] : []),
-    ...(stateFramework ? [{ id: "state", label: "California minimum" }] : []),
-    ...(agFramework ? [{ id: "ag", label: "UC A–G" }] : [])
-  ];
-  const [layer, setLayer] = useState(() => progress.length ? "local" : stateFramework ? "state" : "ag");
-  const activeFramework = layer === "state" ? stateFramework : layer === "ag" ? agFramework : localFramework;
   const required = progress.reduce((sum, item) => sum + Number(item.requirement.credits_required), 0);
   const completed = progress.reduce((sum, item) => sum + Math.min(item.completedCredits, Number(item.requirement.credits_required)), 0);
   const projected = progress.reduce((sum, item) => sum + Math.min(item.verifiedProjectedCredits, Number(item.requirement.credits_required)), 0);
@@ -134,20 +111,9 @@ function DiplomaView({
   const selected = progress.find((item) => item.requirement.id === selectedId) ?? progress[0];
   const missing = progress.filter((item) => item.status === "missing");
 
-  return <>
-    <WorkspaceTabs
-      className="graduation-layer-tabs"
-      items={availableLayers}
-      value={availableLayers.some((item) => item.id === layer) ? layer : availableLayers[0]?.id ?? "local"}
-      onChange={setLayer}
-      label="Academic requirement layer"
-    />
-    {layer !== "local" && activeFramework ? <AcademicFrameworkView
-      progress={activeFramework}
-      constraints={academicConstraints.filter((constraint) => constraint.framework_id === activeFramework.framework.id)}
-    /> : progress.length ? <>
+  return progress.length ? <>
     <EligibilitySummary
-      identity={school.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" size="header" decorative /> : <Buildings size={25} aria-hidden />}
+      identity={school.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" size="header" decorative /> : <BookOpen size={25} aria-hidden />}
       label="High school diploma"
       answer={open === 0 ? "The saved plan covers the diploma." : `${formatValue(open)} credits still need a course.`}
       body={`${formatValue(completed)} of ${formatValue(required)} required credits are earned. Scheduled work is shown separately.`}
@@ -160,7 +126,7 @@ function DiplomaView({
       ]}
       action={missing[0] ? <button className="secondary-button small" type="button" onClick={() => onSelect(missing[0].requirement.id)}>Review first gap</button> : null}
     />
-    <p className="graduation-source-note">Official {school.short_name} rules. <a href={localFramework?.framework.source_url ?? DTECH_REQUIREMENTS_URL} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
+    <p className="graduation-source-note">Official {school.short_name} rules. <a href={DTECH_REQUIREMENTS_URL} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
     <div className="graduation-evidence-layout">
       <RequirementIndex
         title="Diploma requirements"
@@ -189,47 +155,7 @@ function DiplomaView({
         warnings={selected.ruleWarnings}
         action={<button className="primary-button small dtech-action" type="button" onClick={() => onFindCourses(selected.requirement.area)}><BookOpen size={15} /> Find courses</button>}
       />}
-    </div></> : activeFramework ? <AcademicFrameworkView progress={activeFramework} constraints={[]} /> : <section className="framework-unavailable"><Warning size={18} /><div><strong>Requirement sources need review</strong><p>This school is selected, but its local graduation policy has not been published in Pilot yet.</p></div></section>}
-  </>;
-}
-
-function AcademicFrameworkView({ progress, constraints }: { progress: AcademicFrameworkProgress; constraints: AcademicFrameworkConstraint[] }) {
-  const percent = progress.requiredCredits ? Math.round(((progress.completedCredits + progress.scheduledCredits) / progress.requiredCredits) * 100) : 0;
-  return <>
-    <EligibilitySummary
-      identity={<Buildings size={25} aria-hidden />}
-      label={progress.framework.framework_type === "uc_ag" ? "College eligibility" : "Graduation floor"}
-      answer={progress.mappingCoverage === "missing"
-        ? "Course mappings still need verification."
-        : progress.remainingCredits === 0 ? "The saved plan covers this framework." : `${formatValue(progress.remainingCredits / 10)} course-years remain open.`}
-      body={progress.mappingCoverage === "missing"
-        ? "The official requirements are loaded, but Pilot will not claim progress until this school's catalog is connected to them."
-        : progress.mappingCoverage === "partial"
-          ? "Verified course matches are counted. Requirements without a published local match stay marked for verification."
-        : `${progress.completedRules} of ${progress.totalRules} areas are earned; scheduled courses are shown separately.`}
-      tone="degree"
-      metrics={[
-        ["Earned", `${formatValue(progress.completedCredits / 10)} yr`],
-        ["Scheduled", `${formatValue(progress.scheduledCredits / 10)} yr`],
-        ["Plan coverage", `${percent}%`],
-        ["Areas covered", `${progress.coveredRules}/${progress.totalRules}`]
-      ]}
-      action={null}
-    />
-    <p className="graduation-source-note">{progress.framework.source_label} · {progress.framework.academic_year}. <a href={progress.framework.source_url} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
-    {constraints.length > 0 && <div className="framework-constraints">{constraints.map((constraint) => <span key={constraint.id}><strong>{formatValue(constraint.numeric_value)} courses before grade {constraint.before_grade}</strong>{constraint.notes && <small>{constraint.notes}</small>}</span>)}</div>}
-    <section className="graduation-requirement-index framework-requirement-index">
-      <header><h2>{progress.framework.name}</h2><p>Earned and scheduled work only appears after an approved course-to-requirement match.</p></header>
-      <div className="requirement-index-head" aria-hidden><span>Requirement</span><span>Earned</span><span>Scheduled</span><span>Open</span><span>Status</span></div>
-      <div className="requirement-index-list">{progress.rules.map((row) => <div className="framework-requirement-row" key={row.rule.id}>
-        <span><strong>{row.rule.title}</strong><small>{formatValue(row.requiredCredits / 10)} course-years{row.rule.minimum_grade ? ` · ${row.rule.minimum_grade} or better` : ""}</small></span>
-        <b data-label="Earned">{formatValue(row.completedCredits / 10)} yr</b>
-        <b data-label="Scheduled">{formatValue(row.scheduledCredits / 10)} yr</b>
-        <b data-label="Open">{formatValue(row.remainingCredits / 10)} yr</b>
-        <em className={statusClass(row.status)}>{row.status === "complete" ? "Complete" : row.status === "on_track" ? "Covered" : !row.mappingAvailable ? "Verify" : "Gap"}</em>
-      </div>)}</div>
-    </section>
-  </>;
+    </div></> : <section className="framework-unavailable"><div><strong>Official diploma requirements are not available yet</strong><p>Pilot will not substitute California minimums or UC A–G for this school’s diploma rules.</p></div></section>;
 }
 
 function EligibilitySummary({

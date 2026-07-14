@@ -83,15 +83,7 @@ if (dryRun) {
   process.exit(0);
 }
 
-const frameworkResult = await supabase.from("academic_frameworks").select("id").eq("framework_type", "uc_ag").eq("jurisdiction_key", "university-of-california").eq("status", "published").single();
-if (frameworkResult.error) throw frameworkResult.error;
-const ucFrameworkId = frameworkResult.data.id;
-const ruleResult = await supabase.from("academic_requirement_rules").select("id,rule_key").eq("framework_id", ucFrameworkId);
-if (ruleResult.error) throw ruleResult.error;
-const ruleByArea = new Map((ruleResult.data ?? []).map((rule) => [rule.rule_key.toLowerCase(), rule.id]));
-
 let importedCourses = 0;
-let mappedCourses = 0;
 await mapWithConcurrency(available, 4, async ({ school, courses }) => {
   const sourceUrl = `${ORIGIN}/agcourselist/institution/${school.uc_ag_institution_id}`;
   let sourceResult = await supabase.from("official_sources").select("id").eq("school_id", school.id).is("user_id", null).eq("source_url", sourceUrl).maybeSingle();
@@ -137,22 +129,6 @@ await mapWithConcurrency(available, 4, async ({ school, courses }) => {
     importedCourses += missing.length;
   }
 
-  const mappingByKey = new Map();
-  for (const row of courses) {
-    const course = existingByName.get(String(row.title).trim().toLowerCase());
-    const requirementRuleId = ruleByArea.get(String(row.subjectAreaCode).toLowerCase());
-    if (course && requirementRuleId) mappingByKey.set(`${course.id}:${requirementRuleId}`, {
-      course_id: course.id, framework_id: ucFrameworkId, requirement_rule_id: requirementRuleId,
-      source_url: sourceUrl, confidence: "verified", review_status: "approved"
-    });
-  }
-  const mappings = [...mappingByKey.values()];
-  if (mappings.length) {
-    const mappingResult = await supabase.from("course_framework_mappings").upsert(mappings, { onConflict: "course_id,framework_id,requirement_rule_id" });
-    if (mappingResult.error) throw mappingResult.error;
-    mappedCourses += mappings.length;
-  }
-
   const honorByCourse = new Map();
   for (const row of courses.filter((candidate) => Number(candidate.isHonors) === 1)) {
     const course = existingByName.get(String(row.title).trim().toLowerCase());
@@ -165,4 +141,4 @@ await mapWithConcurrency(available, 4, async ({ school, courses }) => {
   }
 });
 
-console.log(`Synced ${available.length} UCOP A-G course lists: ${importedCourses} new catalog rows and ${mappedCourses} approved framework mappings.`);
+console.log(`Synced ${available.length} UCOP A-G course lists: ${importedCourses} new catalog rows plus UC honors designations. A-G rows are identity evidence, not a graduation-progress layer.`);

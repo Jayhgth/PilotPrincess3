@@ -564,9 +564,6 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   const transcript = /trans(?:cript|cipt)/.test(normalized);
   const auditIntent = /\b(audit|check|double[ -]?check|error|wrong|mismatch|parse|parsed|accurate|accuracy)\b/.test(normalized);
   if (transcript && auditIntent) return { name: "audit_transcript_data", arguments: { include_source_text: true } };
-  if (/\b(a[–-]?g|uc eligibility|california (?:state )?(?:minimum|graduation)|graduation framework|local diploma)\b/.test(normalized)) {
-    return { name: "get_academic_framework_progress", arguments: {} };
-  }
   if (/\b(nearby|closest|near me|local)\b/.test(normalized) && /\b(college|provider|dual enrollment)\b/.test(normalized)) {
     return { name: "get_nearby_education_providers", arguments: {} };
   }

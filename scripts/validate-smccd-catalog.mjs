@@ -60,6 +60,46 @@ for (const program of catalog.programs) {
   if (!collegeCodes.has(program.collegeCode)) errors.push(`Unknown program college ${program.collegeCode}.`);
   if (!program.requirementGroups.length) errors.push(`Program ${id} has no parsed requirement groups.`);
   if (!program.catalogUrl?.startsWith("https://catalog.")) errors.push(`Invalid program URL for ${id}.`);
+  for (const requirement of program.requirementGroups) {
+    if (typeof requirement.constraintOnly !== "boolean") errors.push(`Requirement ${id}:${requirement.id} is missing constraintOnly.`);
+    if (/(?:not required|additional recommended)/i.test(requirement.label)) errors.push(`Program ${id} treats a recommended course list as required.`);
+  }
+}
+
+const physicalScience = catalog.programs.find((program) => program.collegeCode === "CSM" && program.programCode === "physical-science-as");
+if (!physicalScience) errors.push("CSM Physical Science AS is missing.");
+else {
+  const constraints = physicalScience.requirementGroups.filter((requirement) => requirement.constraintOnly);
+  const unitPool = physicalScience.requirementGroups.find((requirement) => requirement.kind === "choose_units" && requirement.minUnits === 18);
+  if (constraints.length !== 4 || constraints.some((requirement) => requirement.kind !== "or_group" || requirement.minCount !== 1)) {
+    errors.push("CSM Physical Science must preserve all four one-course core-group constraints.");
+  }
+  if (!unitPool || unitPool.courseOptions.length < 19) errors.push("CSM Physical Science must preserve its complete 18-unit core and supplemental pool.");
+}
+
+const computerScience = catalog.programs.find((program) => program.collegeCode === "CSM" && program.programCode === "computer-and-information-science-as");
+if (!computerScience) errors.push("CSM Computer and Information Science AS is missing.");
+else {
+  const optionGroups = computerScience.requirementGroups.filter((requirement) => requirement.kind === "or_group");
+  const cisSelective = computerScience.requirementGroups.find((requirement) => requirement.kind === "text_rule" && /CIS courses numbered 110 or higher/i.test(requirement.rawText ?? ""));
+  if (optionGroups.length !== 2) errors.push("CSM Computer and Information Science must preserve both required OR course pairs.");
+  if (!cisSelective || cisSelective.minUnits !== 4) errors.push("CSM Computer and Information Science must preserve its four-unit CIS 110+ selective.");
+}
+
+const preNursing = catalog.programs.find((program) => program.collegeCode === "CSM" && program.programCode === "biology-pre-nursing-as");
+const preNursingPathway = preNursing?.requirementGroups.find((requirement) => /one of the following groups/i.test(requirement.rawText ?? ""));
+if (!preNursingPathway || preNursingPathway.kind !== "text_rule" || preNursingPathway.courseOptions.length !== 4) {
+  errors.push("CSM Biology Pre-Nursing must preserve both chemistry pathways without treating every course as required.");
+}
+
+const engineering = catalog.programs.find((program) => program.collegeCode === "CSM" && program.programCode === "engineering-as");
+if (engineering?.requirementGroups[0]?.kind !== "choose_units" || engineering.requirementGroups[0]?.minUnits !== 7) {
+  errors.push("CSM Engineering must treat its engineering-core table as a selection, not require every option.");
+}
+
+const skylineDance = catalog.programs.find((program) => program.collegeCode === "SKY" && program.programCode === "dance-aa");
+if (skylineDance?.requirementGroups[0]?.kind !== "text_rule") {
+  errors.push("Skyline Dance must keep its nested list and OR structure in manual review instead of flattening it.");
 }
 
 if (!equivalencies.source_url?.includes("1DShfEovBYe-N9VlR1QM6Pyy3pmJ4cMMc6bE91QUzLIw")) {

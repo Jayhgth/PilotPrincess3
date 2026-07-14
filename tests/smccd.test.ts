@@ -402,6 +402,60 @@ describe("SMCCD curriculum planning", () => {
     expect(result.requirements[0].manualReviewReason).toContain("approved BUS. or ACTG");
     expect(result.manualReviewRequirements).toBe(1);
   });
+
+  it("does not mark Physical Science complete when the four required core groups are missing", () => {
+    const program = { id: "CSM:physical-science-as", college_code: "CSM", total_degree_units: 60, total_major_units_text: "18 units" } as SmccdProgram;
+    const groupCodes = [["ASTR 100"], ["CHEM 210"], ["GEOL 100"], ["PHYS 250"]];
+    const supplementalCodes = ["CIS 255", "MATH 251", "MATH 252", "PHYS 260"];
+    const requirements = [
+      ...groupCodes.map((_, index) => ({ id: `group-${index + 1}`, program_id: program.id, label: `Required core: Group ${index + 1}`, kind: "or_group", min_units: null, min_count: 1, raw_text: null, constraint_only: true, sort_order: index })),
+      { id: "units", program_id: program.id, label: "Required core unit total: 18 units", kind: "choose_units", min_units: 18, min_count: null, raw_text: null, constraint_only: false, sort_order: 4 }
+    ] as SmccdProgramRequirement[];
+    const allCodes = [...groupCodes.flat(), ...supplementalCodes];
+    const options = [
+      ...groupCodes.flatMap((codes, index) => codes.map((course_code) => ({ requirement_id: `group-${index + 1}`, course_code, units_text: "4 units" }))),
+      ...allCodes.map((course_code) => ({ requirement_id: "units", course_code, units_text: "5 units" }))
+    ] as SmccdRequirementCourse[];
+    const courses = allCodes.map((code) => course(code, code === "CIS 255" || code.startsWith("PHYS") ? 4 : 5));
+    const supplementOnly = supplementalCodes.map((code) => ({ smccd_course_id: `CSM:${code}`, status: "planned", college_units: code === "CIS 255" || code.startsWith("PHYS") ? 4 : 5 })) as PlanCourse[];
+
+    const missingCore = calculateSmccdProgramProgress(program, requirements, options, supplementOnly, courses);
+    expect(missingCore.projectedMajorUnits).toBeGreaterThanOrEqual(18);
+    expect(missingCore.majorPercent).toBe(0);
+    expect(missingCore.requirements.slice(0, 4).every((item) => item.status === "missing")).toBe(true);
+
+    const withEveryCore = calculateSmccdProgramProgress(program, requirements, options, groupCodes.flat().map((code) => ({ smccd_course_id: `CSM:${code}`, status: "planned", college_units: code === "ASTR 100" || code === "GEOL 100" ? 3 : code === "CHEM 210" ? 5 : 4 })) as PlanCourse[], courses);
+    expect(withEveryCore.requirements.slice(0, 4).every((item) => item.status === "satisfied")).toBe(true);
+    expect(withEveryCore.majorPercent).toBeLessThan(100);
+  });
+
+  it("applies CIS 110-level selective coursework without reusing required core courses", () => {
+    const program = { id: "CSM:computer-and-information-science-as", college_code: "CSM", total_degree_units: 60, total_major_units_text: "31 units" } as SmccdProgram;
+    const requirements = [
+      { id: "pair-1", program_id: program.id, label: "Programming option", kind: "or_group", min_units: null, min_count: 1, raw_text: null, constraint_only: false, sort_order: 0 },
+      { id: "pair-2", program_id: program.id, label: "Data structures option", kind: "or_group", min_units: null, min_count: 1, raw_text: null, constraint_only: false, sort_order: 1 },
+      { id: "fixed", program_id: program.id, label: "Remaining required courses", kind: "all", min_units: 13, min_count: null, raw_text: null, constraint_only: false, sort_order: 2 },
+      { id: "cis-selective", program_id: program.id, label: "Required Selective Courses: 4", kind: "text_rule", min_units: 4, min_count: null, raw_text: "4 or more units from CIS courses numbered 110 or higher", constraint_only: false, sort_order: 3 },
+      { id: "math-selective", program_id: program.id, label: "Required Selective Courses: 6 or more units", kind: "choose_units", min_units: 6, min_count: null, raw_text: null, constraint_only: false, sort_order: 4 }
+    ] as SmccdProgramRequirement[];
+    const options = [
+      ...["CIS 255", "CIS 278"].map((course_code) => ({ requirement_id: "pair-1", course_code, units_text: "4 units" })),
+      ...["CIS 256", "CIS 279"].map((course_code) => ({ requirement_id: "pair-2", course_code, units_text: "4 units" })),
+      ...[["MATH 251", "5 units"], ["MATH 252", "5 units"], ["ENGL C1000", "3 units"]].map(([course_code, units_text]) => ({ requirement_id: "fixed", course_code, units_text })),
+      ...[["MATH 253", "5 units"], ["MATH 270", "3 units"]].map(([course_code, units_text]) => ({ requirement_id: "math-selective", course_code, units_text }))
+    ] as SmccdRequirementCourse[];
+    const units = new Map([["CIS 255", 4], ["CIS 256", 4], ["CIS 117", 4], ["MATH 251", 5], ["MATH 252", 5], ["ENGL C1000", 3], ["MATH 253", 5], ["MATH 270", 3]]);
+    const courses = [...units].map(([code, value]) => course(code, value));
+    const coreRows = ["CIS 255", "CIS 256", "MATH 251", "MATH 252", "ENGL C1000", "MATH 253", "MATH 270"].map((code) => ({ smccd_course_id: `CSM:${code}`, status: "planned", college_units: units.get(code) })) as PlanCourse[];
+
+    const withoutSeparateCisSelective = calculateSmccdProgramProgress(program, requirements, options, coreRows, courses);
+    expect(withoutSeparateCisSelective.requirements.find((item) => item.requirement.id === "cis-selective")).toMatchObject({ status: "missing", earnedUnits: 0 });
+    expect(withoutSeparateCisSelective.majorPercent).toBeLessThan(100);
+
+    const complete = calculateSmccdProgramProgress(program, requirements, options, [...coreRows, { smccd_course_id: "CSM:CIS 117", status: "planned", college_units: 4 }] as PlanCourse[], courses);
+    expect(complete.requirements.find((item) => item.requirement.id === "cis-selective")).toMatchObject({ status: "satisfied", selectedCourseCodes: ["CIS 117"] });
+    expect(complete.majorPercent).toBe(100);
+  });
 });
 
 function course(courseCode: string, units: number): SmccdCourse {

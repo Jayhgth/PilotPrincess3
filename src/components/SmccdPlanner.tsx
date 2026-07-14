@@ -20,6 +20,7 @@ import {
   calculateSmccdProgramProgressWithContext,
   createSmccdProgramProgressContext,
   normalizeSmccdCourseCode,
+  smccdDegreeOverallPercent,
   SMCCD_LOCAL_GE_SOURCE_URLS,
   SMCCD_COLLEGE_NAMES
 } from "@/lib/smccd";
@@ -397,7 +398,7 @@ export default function SmccdPlanner({
     return programs
       .map((program) => ({ program, progress: programProgress.get(program.id)! }))
       .filter((row) => !query || `${row.program.title} ${row.program.award_type} ${SMCCD_COLLEGE_NAMES[row.program.college_code]}`.toLowerCase().includes(query))
-      .sort((a, b) => degreeOverallPercent(b.progress, geProgressByCollege.get(b.program.college_code) ?? []) - degreeOverallPercent(a.progress, geProgressByCollege.get(a.program.college_code) ?? [])
+      .sort((a, b) => smccdDegreeOverallPercent(b.progress, geProgressByCollege.get(b.program.college_code) ?? []) - smccdDegreeOverallPercent(a.progress, geProgressByCollege.get(a.program.college_code) ?? [])
         || b.progress.projectedMajorUnits - a.progress.projectedMajorUnits
         || a.program.title.localeCompare(b.program.title))
       .slice(0, 60);
@@ -701,7 +702,7 @@ export default function SmccdPlanner({
               const isSelected = goalProgramId === program.id;
               const geProgress = geProgressByCollege.get(program.college_code) ?? [];
               const geSatisfied = geProgress.filter((area) => area.status === "completed" || area.status === "planned").length;
-              const overallPercent = degreeOverallPercent(programResult, geProgress);
+              const overallPercent = smccdDegreeOverallPercent(programResult, geProgress);
               const previewCodes = [...new Set(programResult.requirements.flatMap((item) => item.optionCourseCodes))].slice(0, 4);
               return <Fragment key={program.id}>
                 <tr className={`${isSelected ? `selected award-${program.award_type.toLowerCase()}` : ""} ${isMarked ? "marked" : ""}`}>
@@ -784,13 +785,6 @@ export default function SmccdPlanner({
   );
 }
 
-function degreeOverallPercent(progress: SmccdProgramProgress, geProgress: SmccdGeProgress[]) {
-  const majorPercent = progress.requiredMajorUnits > 0 ? Math.min(100, (progress.projectedMajorUnits / progress.requiredMajorUnits) * 100) : 0;
-  const degreeUnitsPercent = progress.totalDegreeUnits > 0 ? Math.min(100, (progress.projectedDegreeApplicableUnits / progress.totalDegreeUnits) * 100) : 0;
-  const coveredGeAreas = geProgress.filter((area) => area.status === "completed" || area.status === "planned").length;
-  const gePercent = geProgress.length > 0 ? (coveredGeAreas / geProgress.length) * 100 : 0;
-  return Math.round((majorPercent + degreeUnitsPercent + gePercent) / 3);
-}
 
 function formatPlannerNumber(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);

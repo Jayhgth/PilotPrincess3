@@ -67,6 +67,7 @@ create table public.smccd_program_requirements (
   min_units numeric(5,2),
   min_count integer,
   raw_text text,
+  constraint_only boolean not null default false,
   sort_order integer not null default 0
 );
 
@@ -176,7 +177,7 @@ const requirements = catalog.programs.flatMap((program) => program.requirementGr
 })));
 for (const batch of chunks(requirements, 200)) {
   sql.push(insertValues(
-    "public.smccd_program_requirements (id, program_id, label, kind, min_units, min_count, raw_text, sort_order)",
+    "public.smccd_program_requirements (id, program_id, label, kind, min_units, min_count, raw_text, constraint_only, sort_order)",
     batch.map((requirement) => [
       requirement.id,
       requirement.programId,
@@ -185,6 +186,7 @@ for (const batch of chunks(requirements, 200)) {
       requirement.minUnits,
       requirement.minCount,
       requirement.rawText,
+      requirement.constraintOnly === true,
       requirement.sortOrder
     ])
   ));

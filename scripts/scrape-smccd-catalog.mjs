@@ -200,27 +200,161 @@ async function scrapePrograms(college) {
 
 function parseRequirementGroups($, text) {
   const tableGroups = [];
+  let groupedCore = null;
+  let alternativePathway = null;
   $("table.smc-table-core-requirements").each((index, table) => {
     const header = $(table).find("thead th").first().text().replace(/\s+/g, " ").trim();
-    if (!/(core|selective|elective|courses)/i.test(header)) return;
-    const isSelection = /(selective|elective|choose|minimum)/i.test(header) && !/^complete core/i.test(header);
-    const group = {
-      id: `${slug(header)}-${index}`,
-      label: header,
-      kind: isSelection ? "choose_units" : "all",
-      minUnits: parseRequirementMinUnits(header),
-      minCount: null,
-      rawText: null,
-      courseOptions: []
-    };
+    if (/(?:not required|additional recommended)/i.test(header)) return;
+    const rows = [];
     $(table).find("tbody tr").each((_, row) => {
-      const cells = $(row).find("td");
+      const cells = $(row).find("th, td");
       const courseText = cells.eq(0).text().replace(/\s+/g, " ").trim();
-      const unitsText = cells.eq(2).text().replace(/\s+/g, " ").trim();
+      const rowText = cells.map((__, cell) => $(cell).text().replace(/\s+/g, " ").trim()).get().filter(Boolean).join(" ");
+      const unitsText = cells.last().text().replace(/\s+/g, " ").trim();
       const match = courseText.match(/^([A-Z]{2,5}\.?)\s+([A-Z]?\d{2,4}(?:\.\d)?[A-Z]?)$/i);
-      if (match) group.courseOptions.push({ courseCode: normalizeCourseId(`${match[1]} ${match[2]}`), unitsText, note: null });
+      if (match) rows.push({ type: "course", option: { courseCode: normalizeCourseId(`${match[1]} ${match[2]}`), unitsText, note: null } });
+      else if (/^OR$/i.test(rowText)) rows.push({ type: "or" });
+      else if (courseText) rows.push({ type: "text", text: courseText, unitsText });
     });
-    if (group.courseOptions.length > 0) tableGroups.push(group);
+    const courseOptions = rows.filter((row) => row.type === "course").map((row) => row.option);
+    const groupNumber = header.match(/\bGroup\s+(\d+)\b/i)?.[1] ?? null;
+    if (/one of the following groups/i.test(header) && courseOptions.length > 0) {
+      alternativePathway = {
+        id: `${slug(header)}-${index}`,
+        label: header.replace(/\s+Units$/i, ""),
+        kind: "text_rule",
+        minUnits: parseRequirementMinUnits(header),
+        minCount: null,
+        rawText: `${header} Group ${groupNumber ?? 1}: ${courseOptions.map((option) => option.courseCode).join(", ")}`,
+        constraintOnly: false,
+        courseOptions: courseOptions.map((option) => ({ ...option, note: `Alternative pathway group ${groupNumber ?? 1}` }))
+      };
+      tableGroups.push(alternativePathway);
+      return;
+    }
+    if (groupNumber && alternativePathway && courseOptions.length > 0) {
+      alternativePathway.rawText += ` Group ${groupNumber}: ${courseOptions.map((option) => option.courseCode).join(", ")}`;
+      alternativePathway.courseOptions.push(...courseOptions.map((option) => ({ ...option, note: `Alternative pathway group ${groupNumber}` })));
+      return;
+    }
+    const startsGroupedCore = /one or more courses selected from each group/i.test(header);
+    if (startsGroupedCore) {
+      groupedCore = { totalUnits: parseRequirementMinUnits(header), courseOptions: [] };
+    }
+    if ((startsGroupedCore || groupNumber) && groupedCore && courseOptions.length > 0) {
+      groupedCore.courseOptions.push(...courseOptions);
+      tableGroups.push({
+        id: `required-core-group-${groupNumber ?? tableGroups.length + 1}-${index}`,
+        label: `Required core: Group ${groupNumber ?? tableGroups.length + 1}`,
+        kind: "or_group",
+        minUnits: null,
+        minCount: 1,
+        rawText: header,
+        constraintOnly: true,
+        courseOptions
+      });
+      return;
+    }
+    if (groupedCore && /complete the required\s+\d+(?:\.\d+)?\s+units with courses selected from Groups/i.test(header)) {
+      const combinedOptions = [...groupedCore.courseOptions, ...courseOptions]
+        .filter((option, optionIndex, options) => options.findIndex((candidate) => candidate.courseCode === option.courseCode) === optionIndex);
+      tableGroups.push({
+        id: `required-core-unit-total-${index}`,
+        label: `Required core unit total: ${groupedCore.totalUnits ?? parseRequirementMinUnits(header)} units`,
+        kind: "choose_units",
+        minUnits: groupedCore.totalUnits ?? parseRequirementMinUnits(header),
+        minCount: null,
+        rawText: header,
+        constraintOnly: false,
+        courseOptions: combinedOptions
+      });
+      groupedCore = null;
+      return;
+    }
+    if (!/(core|selective|elective|courses|selection|complete|list\s+[a-z]|group\s+[a-z])/i.test(header)) return;
+
+    const alternativeSets = [];
+    const fixedOptions = [];
+    for (let rowIndex = 0; rowIndex < rows.length;) {
+      const row = rows[rowIndex];
+      if (row.type !== "course") { rowIndex += 1; continue; }
+      const alternatives = [row.option];
+      while (rows[rowIndex + 1]?.type === "or" && rows[rowIndex + 2]?.type === "course") {
+        alternatives.push(rows[rowIndex + 2].option);
+        rowIndex += 2;
+      }
+      if (alternatives.length > 1) alternativeSets.push(alternatives);
+      else fixedOptions.push(row.option);
+      rowIndex += 1;
+    }
+    const freeTextRows = rows.filter((row) => row.type === "text");
+    const headerMinUnits = parseRequirementMinUnits(header);
+    const complexText = [header, ...freeTextRows.map((row) => row.text)].join(" ");
+    if (courseOptions.length > 0 && (/(?:any .*list|not already (?:used|chosen)|famil(?:y|ies))/i.test(complexText) || (alternativeSets.length > 1 && freeTextRows.length > 0))) {
+      tableGroups.push({
+        id: `${slug(header)}-manual-${index}`,
+        label: header.replace(/\s+Units$/i, ""),
+        kind: "text_rule",
+        minUnits: headerMinUnits,
+        minCount: null,
+        rawText: complexText,
+        constraintOnly: false,
+        courseOptions
+      });
+      return;
+    }
+    if (alternativeSets.length > 0 && /^Required Core/i.test(header)) {
+      alternativeSets.forEach((options, alternativeIndex) => tableGroups.push({
+        id: `${slug(header)}-option-${alternativeIndex + 1}-${index}`,
+        label: `${header.replace(/\s+Units$/i, "")}: option ${alternativeIndex + 1}`,
+        kind: "or_group",
+        minUnits: null,
+        minCount: 1,
+        rawText: header,
+        constraintOnly: false,
+        courseOptions: options
+      }));
+      if (fixedOptions.length > 0) tableGroups.push({
+        id: `${slug(header)}-fixed-${index}`,
+        label: `${header.replace(/\s+Units$/i, "")}: remaining required courses`,
+        kind: "all",
+        minUnits: fixedOptions.reduce((sum, option) => sum + (parseUnitsText(option.unitsText)?.unitsMin ?? 0), 0),
+        minCount: null,
+        rawText: header,
+        constraintOnly: false,
+        courseOptions: fixedOptions
+      });
+      return;
+    }
+    if (courseOptions.length > 0) {
+      const explicitlySelects = /(selective|elective|choose|\bselect\b|selection|minimum|at least)/i.test(header);
+      const isSelection = explicitlySelects || (
+        /(from the following|or more units|complete\s+\d+(?:\.\d+)?(?:\s*-\s*\d+(?:\.\d+)?)?\s+units?\s+from)/i.test(header)
+        && !/^(?:complete\s+)?(?:required\s+)?core/i.test(header)
+      );
+      tableGroups.push({
+        id: `${slug(header)}-${index}`,
+        label: header.replace(/\s+Units$/i, ""),
+        kind: isSelection ? (headerMinUnits === null ? "text_rule" : "choose_units") : "all",
+        minUnits: headerMinUnits,
+        minCount: null,
+        rawText: isSelection && headerMinUnits === null ? header : null,
+        constraintOnly: false,
+        courseOptions
+      });
+    } else if (freeTextRows.length > 0) {
+      const rawText = freeTextRows.map((row) => row.text).join(" ");
+      tableGroups.push({
+        id: `${slug(header)}-${index}`,
+        label: header.replace(/\s+Units$/i, ""),
+        kind: "text_rule",
+        minUnits: headerMinUnits ?? parseRequirementMinUnits(rawText),
+        minCount: null,
+        rawText,
+        constraintOnly: false,
+        courseOptions: []
+      });
+    }
   });
   if (tableGroups.length > 0) return tableGroups;
 

@@ -134,11 +134,6 @@ test.describe("live Pilot behavior", () => {
     const providerTools = await supabase.from("ai_tool_calls").select("tool_name,status").eq("conversation_id", conversationId).eq("tool_name", "get_nearby_education_providers");
     expect(providerTools.data).toContainEqual({ tool_name: "get_nearby_education_providers", status: "completed" });
 
-    const frameworkTurn = await sendTurn(request, accessToken, conversationId, "Check my California graduation minimum and UC A-G progress separately.");
-    expect(frameworkTurn.proposals).toHaveLength(0);
-    const frameworkTools = await supabase.from("ai_tool_calls").select("tool_name,status").eq("conversation_id", conversationId).eq("tool_name", "get_academic_framework_progress");
-    expect(frameworkTools.data).toContainEqual({ tool_name: "get_academic_framework_progress", status: "completed" });
-
     const correctionTurn = await sendTurn(request, accessToken, conversationId, "Submit a shared school-data correction for administrator review: the school's directory_source_url should be https://sd.cde.ca.gov/schooldirectory/details?cdscode=41690470129759, and that same official CDE page is the evidence.");
     expect(correctionTurn.proposals.map((proposal) => proposal.name)).toEqual(["submit_shared_data_correction"]);
     const correctionReviews = await autoReview(request, accessToken, correctionTurn.proposals);

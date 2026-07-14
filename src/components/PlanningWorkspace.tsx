@@ -11,7 +11,8 @@ import {
   HouseIcon as House,
   PlusIcon as Plus,
   ShieldCheckIcon as ShieldCheck,
-  WarningIcon as Warning
+  WarningIcon as Warning,
+  XIcon as X
 } from "@phosphor-icons/react";
 import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
@@ -42,7 +43,6 @@ import {
   schoolYearForGrade
 } from "@/lib/planning";
 import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
-import { calculateAcademicFrameworkProgress } from "@/lib/academic-frameworks";
 import type { GpaScenarioChoice } from "@/lib/gpa-planner";
 import { requirementsForSettings } from "@/lib/planning";
 import {
@@ -65,12 +65,8 @@ import StudentSettingsPanel, { type StudentSettingsPatch } from "@/components/St
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   CatalogReviewItem,
-  AcademicFramework,
-  AcademicFrameworkConstraint,
-  AcademicRequirementRule,
   Course,
   CourseDesignation,
-  CourseFrameworkMapping,
   CourseRequirementMapping,
   EnrollmentPolicy,
   FourYearPlan,
@@ -225,6 +221,7 @@ export default function PlanningWorkspace() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
+  const [unitWarningHidden, setUnitWarningHidden] = useState(() => typeof window !== "undefined" && sessionStorage.getItem("pilot-hide-unit-warning") === "true");
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
@@ -241,10 +238,6 @@ export default function PlanningWorkspace() {
   const [sources, setSources] = useState<OfficialSource[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [requirements, setRequirements] = useState<GraduationRequirement[]>([]);
-  const [academicFrameworks, setAcademicFrameworks] = useState<AcademicFramework[]>([]);
-  const [academicRules, setAcademicRules] = useState<AcademicRequirementRule[]>([]);
-  const [academicConstraints, setAcademicConstraints] = useState<AcademicFrameworkConstraint[]>([]);
-  const [frameworkMappings, setFrameworkMappings] = useState<CourseFrameworkMapping[]>([]);
   const [courseDesignations, setCourseDesignations] = useState<CourseDesignation[]>([]);
   const [mappings, setMappings] = useState<CourseRequirementMapping[]>([]);
   const [equivalencies, setEquivalencies] = useState<SmccdHighSchoolEquivalency[]>([]);
@@ -294,14 +287,6 @@ export default function PlanningWorkspace() {
     () => calculateRequirementProgress(requirements, planCourses, mappings, courses, equivalencies),
     [requirements, planCourses, mappings, courses, equivalencies]
   );
-  const academicProgress = useMemo(() => calculateAcademicFrameworkProgress({
-    frameworks: academicFrameworks,
-    rules: academicRules,
-    mappings: frameworkMappings,
-    courses,
-    planCourses,
-    graduationYear: settings?.graduation_year ?? null
-  }), [academicFrameworks, academicRules, courses, frameworkMappings, planCourses, settings?.graduation_year]);
   const gpa = useMemo(() => calculateGpa(planCourses, equivalencies), [planCourses, equivalencies]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(fullProgress), [fullProgress]);
   const availableCatalogGrades = useMemo(() => settings ? selectedPlanGrades(settings) : [], [settings]);
@@ -422,14 +407,13 @@ export default function PlanningWorkspace() {
       const rawSettings = settingsResult.data as unknown as StudentSettings;
       const selectedSchoolId = rawSettings.school_id ?? loadedPlan.school_id;
       if (!selectedSchoolId) throw new Error("Choose a California high school before opening the workspace.");
-      const [schoolResult, sourceResult, courseResult, requirementResult, mappingResult, equivalencyResult, frameworkResult] = await Promise.all([
+      const [schoolResult, sourceResult, courseResult, requirementResult, mappingResult, equivalencyResult] = await Promise.all([
         supabase.from("schools").select("*").eq("id", selectedSchoolId).single(),
         supabase.from("official_sources").select("*").or(`school_id.eq.${selectedSchoolId},user_id.eq.${userId}`).order("is_official", { ascending: false }).order("created_at", { ascending: false }),
         supabase.from("courses").select("*").eq("school_id", selectedSchoolId).eq("review_status", "approved").order("subject").order("name"),
         supabase.from("graduation_requirements").select("*").eq("school_id", selectedSchoolId).eq("review_status", "approved").order("name"),
         supabase.from("course_requirement_mappings").select("id, course_id, requirement_id, source_id, confidence, is_user_override, courses!inner(school_id)").eq("courses.school_id", selectedSchoolId),
-        supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code"),
-        supabase.from("academic_frameworks").select("*").eq("status", "published").or(`school_id.is.null,school_id.eq.${selectedSchoolId}`).order("framework_type")
+        supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code")
       ]);
       const catalogError = [
         schoolResult.error,
@@ -437,20 +421,10 @@ export default function PlanningWorkspace() {
         courseResult.error,
         requirementResult.error,
         mappingResult.error,
-        equivalencyResult.error,
-        frameworkResult.error
+        equivalencyResult.error
       ].find(Boolean);
       if (catalogError) throw catalogError;
 
-      const loadedFrameworks = (frameworkResult.data ?? []) as unknown as AcademicFramework[];
-      const frameworkIds = loadedFrameworks.map((framework) => framework.id);
-      const [academicRuleResult, frameworkMappingResult, constraintResult] = frameworkIds.length ? await Promise.all([
-        supabase.from("academic_requirement_rules").select("*").in("framework_id", frameworkIds).order("sort_order"),
-        supabase.from("course_framework_mappings").select("*").in("framework_id", frameworkIds).eq("review_status", "approved"),
-        supabase.from("academic_framework_constraints").select("*").in("framework_id", frameworkIds).order("sort_order")
-      ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
-      const frameworkError = academicRuleResult.error ?? frameworkMappingResult.error ?? constraintResult.error;
-      if (frameworkError) throw frameworkError;
       const loadedCourseIds = (courseResult.data ?? []).map((course) => course.id);
       const designationResult = loadedCourseIds.length
         ? await supabase
@@ -495,10 +469,6 @@ export default function PlanningWorkspace() {
       setSources(loadedSources);
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
-      setAcademicFrameworks(loadedFrameworks);
-      setAcademicRules((academicRuleResult.data ?? []) as unknown as AcademicRequirementRule[]);
-      setFrameworkMappings((frameworkMappingResult.data ?? []) as unknown as CourseFrameworkMapping[]);
-      setAcademicConstraints((constraintResult.data ?? []) as unknown as AcademicFrameworkConstraint[]);
       setCourseDesignations((designationResult.data ?? []) as unknown as CourseDesignation[]);
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
       setEquivalencies(schoolResult.data.slug === "design-tech-high-school"
@@ -1406,35 +1376,21 @@ export default function PlanningWorkspace() {
 
   function renderDashboard() {
     if (!settings || !supabase || !session) return null;
-    const stateProgress = academicProgress.find((item) => item.framework.framework_type === "state_graduation") ?? null;
     const requirementSnapshot = overviewProgress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
     });
-    const legacyDashboardCredits = requirementSnapshot.reduce((sum, { applied }) => {
+    const dashboardCredits = requirementSnapshot.reduce((sum, { applied }) => {
       return { completed: sum.completed + applied.completed, scheduled: sum.scheduled + applied.current + applied.planned, remaining: sum.remaining + applied.remaining };
     }, { completed: 0, scheduled: 0, remaining: 0 });
-    const legacyOverviewRequirements = requirementSnapshot
+    const overviewRequirements = requirementSnapshot
       .map(({ item, applied }) => ({
         id: item.requirement.id,
         name: item.requirement.name,
         remaining: applied.remaining
       }))
       .sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
-    const usesLocalRequirements = legacyOverviewRequirements.length > 0;
-    const dashboardCredits = usesLocalRequirements ? legacyDashboardCredits : {
-      completed: stateProgress?.completedCredits ?? 0,
-      scheduled: stateProgress?.scheduledCredits ?? 0,
-      remaining: stateProgress?.remainingCredits ?? 0
-    };
-    const overviewRequirements = usesLocalRequirements ? legacyOverviewRequirements : (stateProgress?.rules ?? []).map((row) => ({
-      id: row.rule.id,
-      name: row.rule.title,
-      remaining: row.remainingCredits
-    })).sort((left, right) => right.remaining - left.remaining || left.name.localeCompare(right.name));
-    const earnedPercent = usesLocalRequirements
-      ? graduationEarnedPercent
-      : stateProgress?.requiredCredits ? Math.round((stateProgress.completedCredits / stateProgress.requiredCredits) * 100) : 0;
+    const earnedPercent = graduationEarnedPercent;
     const overviewCourse = (row: PlanCourse) => {
       const collegeCode = row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id)?.college_code : null;
       const isCollegeCourse = Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0);
@@ -1461,7 +1417,7 @@ export default function PlanningWorkspace() {
       currentGradedCredits: gpa.currentGradedCredits,
       currentWeightedCredits: gpa.currentWeightedCredits,
       requirements: overviewRequirements,
-      requirementsVerified: usesLocalRequirements || stateProgress?.mappingCoverage === "available",
+      requirementsVerified: overviewRequirements.length > 0,
       currentPeriodLabel: currentPeriod.label,
       nextPeriodLabel: upcomingPeriod.label,
       currentCourses: periodCourses(currentPeriod),
@@ -1639,8 +1595,6 @@ export default function PlanningWorkspace() {
         <PageHeader title="Graduation" description="Source-backed high school diploma progress, associate-degree plans, and college gen-ed." />
         <GraduationWorkspace
           progress={fullProgress}
-          academicProgress={academicProgress}
-          academicConstraints={academicConstraints}
           school={school}
           onFindDtechCourses={openRequirementCourses}
           degreePlanner={<SmccdPlanner
@@ -1764,13 +1718,14 @@ export default function PlanningWorkspace() {
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A four-year schedule for completed, current, and planned classes." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
       <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "High school courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
-      {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && <aside className="enrollment-policy-callout" role="status">
+      {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && !unitWarningHidden && <aside className="enrollment-policy-callout" role="status">
         <Warning size={16} weight="fill" aria-hidden />
         <div>
           <strong>{activeEnrollmentPolicy.provider_name} unit limit needs attention</strong>
           {enrollmentWarnings.map((term) => <p key={term.key}><b>{term.term[0].toUpperCase() + term.term.slice(1)} {term.schoolYear}:</b> {term.message}</p>)}
           <small>Your saved enrollment type is {activeEnrollmentPolicy.program_type} enrollment. <a href={activeEnrollmentPolicy.source_url} target="_blank" rel="noreferrer">Review the district source</a> or change the enrollment type in Settings.</small>
         </div>
+        <button className="enrollment-policy-dismiss" type="button" aria-label="Hide unit limit warning" onClick={() => { sessionStorage.setItem("pilot-hide-unit-warning", "true"); setUnitWarningHidden(true); }}><X size={15} weight="bold" /></button>
       </aside>}
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded

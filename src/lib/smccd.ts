@@ -124,6 +124,9 @@ interface SmccdRequirementProgress {
   remainingDisciplines: number;
   missingSummary: string;
   manualReviewReason: string | null;
+  completionRatio: number;
+  completedCompletionRatio: number;
+  completionWeight: number;
   selectedCourses: SmccdProgressCourse[];
   remainingOptions: SmccdRequirementOption[];
 }
@@ -298,8 +301,10 @@ export function calculateSmccdProgramProgressWithContext(
     const optionCodes = [...new Set(requirementOptions.map((option) => normalizeSmccdCourseCode(option.course_code)))];
     const projected = evaluateRequirement(requirement, requirementOptions, optionCodes, projectedAttempts, context.courseById, context.courseUnitsByCode, projectedMajorCodes);
     const completed = evaluateRequirement(requirement, requirementOptions, optionCodes, completedAttempts, context.courseById, context.courseUnitsByCode, completedMajorCodes);
-    for (const code of projected.selectedCodes) projectedMajorCodes.add(code);
-    for (const code of completed.selectedCodes) completedMajorCodes.add(code);
+    if (!requirement.constraint_only) {
+      for (const code of projected.selectedCodes) projectedMajorCodes.add(code);
+      for (const code of completed.selectedCodes) completedMajorCodes.add(code);
+    }
     const selectedCourses = projected.selectedCodes
       .map((code) => progressCourse(code, projectedAttempts, context.courseById))
       .filter((course): course is SmccdProgressCourse => Boolean(course));
@@ -331,15 +336,28 @@ export function calculateSmccdProgramProgressWithContext(
       remainingDisciplines: projected.remainingDisciplines,
       missingSummary: requirementNeedLabel(requirement, projected, manualReviewReason),
       manualReviewReason,
+      completionRatio: projected.completionRatio,
+      completedCompletionRatio: completed.completionRatio,
+      completionWeight: projected.completionWeight,
       selectedCourses,
       remainingOptions
     } satisfies SmccdRequirementProgress;
   });
 
-  const completedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + progress.completedUnits, 0));
-  const projectedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + progress.earnedUnits, 0));
+  const completedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + (progress.requirement.constraint_only ? 0 : progress.completedUnits), 0));
+  const projectedMajorUnits = round(requirementProgress.reduce((sum, progress) => sum + (progress.requirement.constraint_only ? 0 : progress.earnedUnits), 0));
   const fromCatalog = Number(program.total_major_units_text.match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
-  const requiredMajorUnits = fromCatalog || round(requirementProgress.reduce((sum, progress) => sum + Number(progress.requiredUnits ?? 0), 0));
+  const requiredMajorUnits = fromCatalog || round(requirementProgress.reduce((sum, progress) => sum + (progress.requirement.constraint_only ? 0 : Number(progress.requiredUnits ?? 0)), 0));
+  const unitPercent = requiredMajorUnits > 0 ? Math.min(100, (projectedMajorUnits / requiredMajorUnits) * 100) : 0;
+  const substantiveRequirements = requirementProgress.filter((progress) => !progress.requirement.constraint_only);
+  const substantiveWeight = substantiveRequirements.reduce((sum, progress) => sum + requirementProgressWeight(progress), 0);
+  const substantivePercent = substantiveWeight > 0
+    ? substantiveRequirements.reduce((sum, progress) => sum + progress.completionRatio * requirementProgressWeight(progress), 0) / substantiveWeight * 100
+    : unitPercent;
+  const constraints = requirementProgress.filter((progress) => progress.requirement.constraint_only);
+  const constraintPercent = constraints.length > 0
+    ? constraints.reduce((sum, progress) => sum + progress.completionRatio, 0) / constraints.length * 100
+    : 100;
 
   return {
     completedCollegeUnits: context.completedCollegeUnits,
@@ -354,7 +372,7 @@ export function calculateSmccdProgramProgressWithContext(
     satisfiedRequirements: requirementProgress.filter((progress) => progress.status === "satisfied").length,
     totalRequirements: requirementProgress.length,
     manualReviewRequirements: requirementProgress.filter((progress) => progress.status === "manual_review" || Boolean(progress.manualReviewReason)).length,
-    majorPercent: requiredMajorUnits > 0 ? Math.min(100, Math.round((projectedMajorUnits / requiredMajorUnits) * 100)) : 0,
+    majorPercent: Math.round(Math.min(unitPercent, substantivePercent, constraintPercent)),
     geEvidence: context.geEvidence,
     requirements: requirementProgress
   };
@@ -451,6 +469,37 @@ function evaluateRequirement(
   const unitSelection = requirement.kind === "all" && isUnitSelectionGroup(requirement, options, courseUnitsByCode);
 
   if (requirement.kind === "text_rule") {
+    const subjectRule = supportedSubjectSelectionRule(requirement);
+    if (subjectRule) {
+      const eligible = [...attemptsByCode.keys()].filter((code) => {
+        const parsed = courseSubjectAndNumber(code);
+        const attempt = attemptsByCode.get(code);
+        return parsed?.subject === subjectRule.subject
+          && parsed.number >= subjectRule.minimumNumber
+          && !alreadyUsed.has(code)
+          && Boolean(attempt)
+          && satisfiesMajorAttempt(attempt!);
+      }).sort((left, right) => (courseUnitsByCode.get(right) ?? 0) - (courseUnitsByCode.get(left) ?? 0));
+      const selectedCodes: string[] = [];
+      let earnedUnits = 0;
+      for (const code of eligible) {
+        selectedCodes.push(code);
+        earnedUnits += attemptUnits(attemptsByCode.get(code)!, courseById);
+        if (earnedUnits >= subjectRule.minUnits) break;
+      }
+      earnedUnits = round(earnedUnits);
+      return {
+        status: earnedUnits >= subjectRule.minUnits ? "satisfied" as const : earnedUnits > 0 ? "partial" as const : "missing" as const,
+        selectedCodes,
+        earnedUnits,
+        requiredUnits: subjectRule.minUnits,
+        remainingUnits: round(Math.max(0, subjectRule.minUnits - earnedUnits)),
+        remainingCount: null,
+        remainingDisciplines: 0,
+        completionRatio: Math.min(1, earnedUnits / subjectRule.minUnits),
+        completionWeight: subjectRule.minUnits
+      };
+    }
     return {
       status: "manual_review" as const,
       selectedCodes: [] as string[],
@@ -458,7 +507,9 @@ function evaluateRequirement(
       requiredUnits: minUnits,
       remainingUnits: minUnits,
       remainingCount: null,
-      remainingDisciplines: minDisciplines
+      remainingDisciplines: minDisciplines,
+      completionRatio: 0,
+      completionWeight: minUnits ?? 1
     };
   }
 
@@ -508,15 +559,17 @@ function evaluateRequirement(
       : requirement.kind === "choose_count" || requirement.kind === "or_group"
         ? Math.max(0, (minCount ?? 1) - selectedCodes.length)
         : null,
-    remainingDisciplines: Math.max(0, minDisciplines - disciplineCount(selectedCodes))
+    remainingDisciplines: Math.max(0, minDisciplines - disciplineCount(selectedCodes)),
+    completionRatio: requirementCompletionRatio(requirement, optionCodes, selectedCodes, earnedUnits, minUnits, minCount, minDisciplines, unitSelection),
+    completionWeight: requirementWeight(requirement, optionCodes, minUnits, minCount, courseUnitsByCode)
   };
 }
 
 type RequirementEvaluation = ReturnType<typeof evaluateRequirement>;
 
 function requirementNeedLabel(requirement: SmccdProgramRequirement, evaluation: RequirementEvaluation, manualReviewReason: string | null) {
-  if (requirement.kind === "text_rule") return "Counselor or catalog review required";
-  if (evaluation.status === "satisfied") return manualReviewReason ? "Course minimum covered; verify the text rule" : "Requirement covered";
+  if (requirement.kind === "text_rule" && !supportedSubjectSelectionRule(requirement)) return "Counselor or catalog review required";
+  if (evaluation.status === "satisfied") return manualReviewReason ? "Requirement covered; review the noted condition" : "Requirement covered";
   if (evaluation.remainingCount !== null) {
     if (requirement.kind === "or_group" || requirement.kind === "choose_count") {
       return `Choose ${evaluation.remainingCount} more ${evaluation.remainingCount === 1 ? "course" : "courses"} from the options`;
@@ -533,12 +586,61 @@ function requirementNeedLabel(requirement: SmccdProgramRequirement, evaluation: 
 }
 
 function supplementalRuleReview(requirement: SmccdProgramRequirement) {
-  if (requirement.kind === "text_rule") return requirement.raw_text ?? "This requirement needs manual review.";
+  if (requirement.kind === "text_rule") return supportedSubjectSelectionRule(requirement) ? null : requirement.raw_text ?? "This requirement needs manual review.";
   const text = `${requirement.label} ${requirement.raw_text ?? ""}`;
   if (/(?:minimum|overall|major)\s+gpa|grade\s+of\s+[A-C][+-]?\s+or\s+better|residen(?:cy|t)/i.test(text)) {
     return "The course or unit minimum is measured, but the grade, GPA, or residency condition still needs official review.";
   }
   return null;
+}
+
+function supportedSubjectSelectionRule(requirement: SmccdProgramRequirement) {
+  const text = `${requirement.label} ${requirement.raw_text ?? ""}`;
+  const match = text.match(/(\d+(?:\.\d+)?)\s+or more units from\s+([A-Z.]+)\s+courses numbered\s+(\d+)\s+or higher/i);
+  if (!match) return null;
+  return { minUnits: Number(match[1]), subject: match[2].replace(/\.$/, "").toUpperCase(), minimumNumber: Number(match[3]) };
+}
+
+function courseSubjectAndNumber(code: string) {
+  const match = normalizeSmccdCourseCode(code).match(/^([A-Z.]+)\s+[A-Z]?(\d+)/);
+  return match ? { subject: match[1].replace(/\.$/, ""), number: Number(match[2]) } : null;
+}
+
+function requirementCompletionRatio(
+  requirement: SmccdProgramRequirement,
+  optionCodes: string[],
+  selectedCodes: string[],
+  earnedUnits: number,
+  minUnits: number | null,
+  minCount: number | null,
+  minDisciplines: number,
+  unitSelection: boolean
+) {
+  if (requirement.kind === "all" && !unitSelection) return optionCodes.length > 0 ? selectedCodes.length / optionCodes.length : 0;
+  if (requirement.kind === "or_group" || requirement.kind === "choose_count") return Math.min(1, selectedCodes.length / (minCount ?? 1));
+  const unitRatio = minUnits && minUnits > 0 ? Math.min(1, earnedUnits / minUnits) : 0;
+  const disciplineRatio = minDisciplines > 0 ? Math.min(1, disciplineCount(selectedCodes) / minDisciplines) : 1;
+  return Math.min(unitRatio, disciplineRatio);
+}
+
+function requirementProgressWeight(progress: SmccdRequirementProgress) {
+  return progress.completionWeight;
+}
+
+function requirementWeight(requirement: SmccdProgramRequirement, optionCodes: string[], minUnits: number | null, minCount: number | null, courseUnitsByCode: Map<string, number>) {
+  if (minUnits && minUnits > 0) return minUnits;
+  const optionUnits = optionCodes.map((code) => courseUnitsByCode.get(code) ?? 0).filter((units) => units > 0);
+  if (requirement.kind === "or_group") return optionUnits.length > 0 ? Math.min(...optionUnits) : 1;
+  if (requirement.kind === "choose_count") return (optionUnits.length > 0 ? Math.min(...optionUnits) : 1) * (minCount ?? 1);
+  if (requirement.kind === "all") return optionUnits.reduce((sum, units) => sum + units, 0) || Math.max(1, optionCodes.length);
+  return 1;
+}
+
+export function smccdDegreeOverallPercent(progress: SmccdProgramProgress, geProgress: SmccdGeProgress[]) {
+  const degreeUnitsPercent = progress.totalDegreeUnits > 0 ? Math.min(100, (progress.projectedDegreeApplicableUnits / progress.totalDegreeUnits) * 100) : 0;
+  const coveredGeAreas = geProgress.filter((area) => area.status === "completed" || area.status === "planned").length;
+  const gePercent = geProgress.length > 0 ? (coveredGeAreas / geProgress.length) * 100 : 0;
+  return Math.round((progress.majorPercent + degreeUnitsPercent + gePercent) / 3);
 }
 
 function catalogOption(code: string, program: SmccdProgram, coursesByCode: Map<string, SmccdCourse[]>): SmccdRequirementOption | null {

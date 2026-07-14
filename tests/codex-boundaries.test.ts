@@ -94,7 +94,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("get_enrollment_constraints", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_course_schedule_options", { respect_recommended_limit: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
-    expect(parseAssistantToolCall("get_academic_framework_progress", {})).toMatchObject({ mutatesData: false });
+    expect(() => parseAssistantToolCall("get_academic_framework_progress", {})).toThrow();
     expect(parseAssistantToolCall("get_nearby_education_providers", {})).toMatchObject({ mutatesData: false });
     expect(() => parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toThrow();
     expect(parseAssistantToolCall("create_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });

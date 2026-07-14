@@ -473,9 +473,9 @@ input:focus, select:focus, textarea:focus {
 .inline-alert.success { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 28%, var(--line)); color: var(--success); }
 
 .enrollment-policy-callout {
-  --policy-warning-bg: #fff3bf;
-  --policy-warning-border: #d6b54b;
-  --policy-warning-ink: #715100;
+  --policy-warning-bg: #fff7ed;
+  --policy-warning-border: #fed7aa;
+  --policy-warning-ink: #7c2d12;
   display: flex;
   width: min(100%, 720px);
   align-items: flex-start;
@@ -489,16 +489,21 @@ input:focus, select:focus, textarea:focus {
 }
 
 .enrollment-policy-callout > svg { flex: 0 0 auto; margin-top: 1px; }
-.enrollment-policy-callout > div { display: grid; gap: 2px; }
+.enrollment-policy-callout > div { display: grid; flex: 1; gap: 2px; min-width: 0; }
 .enrollment-policy-callout strong { font-size: 13px; line-height: 18px; }
-.enrollment-policy-callout p { margin: 0; color: var(--ink); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.enrollment-policy-callout small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.enrollment-policy-callout p { margin: 0; color: var(--policy-warning-ink); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.enrollment-policy-callout small { color: color-mix(in srgb, var(--policy-warning-ink) 78%, transparent); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .enrollment-policy-callout a { color: inherit; font-weight: 700; }
+.enrollment-policy-dismiss { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; margin: -3px -5px 0 0; border: 0; border-radius: 5px; background: transparent; color: #9a3412; cursor: pointer; }
+.enrollment-policy-dismiss:hover { background: #ffedd5; }
+.enrollment-policy-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 :root[data-theme="dark"] .enrollment-policy-callout {
-  --policy-warning-bg: #302a13;
-  --policy-warning-border: #6f5e20;
-  --policy-warning-ink: #e2c45e;
+  --policy-warning-bg: #321c12;
+  --policy-warning-border: #7c3f22;
+  --policy-warning-ink: #fed7aa;
 }
+:root[data-theme="dark"] .enrollment-policy-dismiss { color: #fdba74; }
+:root[data-theme="dark"] .enrollment-policy-dismiss:hover { background: #4b2515; }
 
 @media (max-width: 900px) {
   .auth-page { grid-template-columns: 1fr; }

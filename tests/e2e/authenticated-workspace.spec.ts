@@ -143,10 +143,9 @@ test.describe("authenticated student workspace", () => {
     await expect(page.getByText("Verify school catalog", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "Graduation", exact: true }).click();
-    await page.getByRole("tab", { name: "California minimum", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "California state minimum graduation requirements" })).toBeVisible();
-    await page.getByRole("tab", { name: "UC A–G", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "University of California A–G subject requirements" })).toBeVisible();
+    await expect(page.getByText("Official diploma requirements are not available yet", { exact: true })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "California minimum", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "UC A–G", exact: true })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Courses", exact: true }).click();
     await page.getByRole("button", { name: "Add courses" }).click();

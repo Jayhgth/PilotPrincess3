@@ -65,60 +65,6 @@ export interface StudentSettings {
   tracked_requirement_areas: RequirementArea[];
 }
 
-export interface AcademicFramework {
-  id: string;
-  school_id: string | null;
-  framework_type: "state_graduation" | "local_graduation" | "uc_ag";
-  jurisdiction_key: string;
-  name: string;
-  academic_year: string;
-  source_url: string;
-  source_label: string;
-  status: "draft" | "published" | "retired";
-  effective_graduation_year_start: number | null;
-  effective_graduation_year_end: number | null;
-}
-
-export interface AcademicRequirementRule {
-  id: string;
-  framework_id: string;
-  rule_key: string;
-  parent_rule_key: string | null;
-  subject_area: string;
-  title: string;
-  credits_required: number | null;
-  years_required: number | null;
-  courses_required: number | null;
-  minimum_grade: string | null;
-  required_before_grade: number | null;
-  effective_graduation_year_start: number | null;
-  effective_graduation_year_end: number | null;
-  notes: string | null;
-  sort_order: number;
-}
-
-export interface AcademicFrameworkConstraint {
-  id: string;
-  framework_id: string;
-  constraint_key: string;
-  constraint_type: "minimum_total_courses_before_grade" | "minimum_total_credits" | "minimum_total_years";
-  numeric_value: number;
-  before_grade: number | null;
-  minimum_grade: string | null;
-  notes: string | null;
-  sort_order: number;
-}
-
-export interface CourseFrameworkMapping {
-  id: string;
-  course_id: string;
-  framework_id: string;
-  requirement_rule_id: string | null;
-  source_url: string | null;
-  confidence: Confidence;
-  review_status: ReviewStatus;
-}
-
 export interface CourseDesignation {
   id: string;
   course_id: string;
@@ -351,6 +297,7 @@ export interface SmccdProgramRequirement {
   min_units: number | null;
   min_count: number | null;
   raw_text: string | null;
+  constraint_only: boolean;
   sort_order: number;
 }
 

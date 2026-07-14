@@ -1,6 +1,6 @@
 # Academic data and rule reference
 
-Last reviewed: 2026-07-13
+Last reviewed: 2026-07-14
 
 This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, statewide school data, and college evidence.
 
@@ -8,14 +8,13 @@ This is the durable implementation reference for transcript, GPA, graduation, co
 
 The checked-in d.tech and SMCCD curriculum is labeled 2025-26. The d.tech-to-SMCCD equivalency chart is dated 2021. Preserve source year, URL, institution, confidence, and review status. Curriculum inclusion does not prove a live section, seat, schedule fit, counselor approval, or award eligibility.
 
-Statewide planning keeps four authorities separate:
+Statewide discovery keeps institutional authorities separate:
 
 - CDE supplies public and charter school identity and public school address data;
-- California Education Code/CDE supplies the statewide diploma floor;
-- UCOP supplies school identities, A–G subject areas, approved course lists, and UC honors markers; and
+- UCOP supplies school identities, A–G subject areas, approved course lists, and UC honors markers for catalog identity and designation evidence; and
 - each school or district supplies local graduation rules, course availability, credits, terms, prerequisites, and local designations.
 
-UCOP approval does not prove that a course is currently offered or schedulable. UCOP rows without reviewed grade/term availability may match transcript evidence and count through an approved framework mapping, but stay out of the add-course catalog. AP, IB, UC honors, school honors, CTE, and dual enrollment are separate designations; one label does not imply another.
+UCOP approval does not prove that a course is currently offered, schedulable, or a local diploma requirement. UCOP rows without reviewed grade/term availability may match transcript identity, but stay out of the add-course catalog. AP, IB, UC honors, school honors, CTE, and dual enrollment are separate designations; one label does not imply another.
 
 `verified` requires explicit reviewed evidence. `likely` is a supported interpretation. `uncertain` and `needs_review` remain visible and never become success through broad matching.
 
@@ -41,7 +40,7 @@ Diploma progress keeps completed, current, planned, unverified, unused, and rema
 - A verified Level 3/III world-language course satisfies the full 20-credit sequence, even without lower levels in the record.
 - SMCCD high-school credit requires a reviewed directional equivalency; college units alone do not invent a d.tech requirement mapping.
 
-Local diploma, California minimum, and UC A–G progress are calculated independently. Only approved course-to-framework mappings count. Missing local mappings remain visible as `Verify`; they do not become zero-credit requirements or implicit completion. Framework-wide constraints, such as the UC recommendation that part of A–G be completed before grade 12, are not duplicated onto every subject rule.
+Only the selected school's published official diploma requirements are calculated. If those rules are unavailable, Pilot reports that limitation and does not fall back to California minimums or UC A–G.
 
 ## Catalog eligibility
 
@@ -78,7 +77,7 @@ Catalog details show source wording, matched evidence, missing/out-of-order requ
 
 The checked-in district artifact contains official course identity, college, units, degree applicability, transfer/general-education tags, detail URL/status, prerequisites, corequisites, and recommended preparation. Common Course Numbering relies on official detail-page applicability rather than a number heuristic.
 
-Associate-degree progress distinguishes completed major units, projected major units, degree-applicable units, parsed requirement options, and text rules requiring review. It is not a complete GE, residency, catalog-rights, waiver, substitution, or award-eligibility audit.
+Associate-degree progress distinguishes completed major units, projected major units, degree-applicable units, parsed requirement options, mandatory core-group constraints, and text rules requiring review. A progress percentage is capped by missing required groups and selective rules, so surplus units cannot conceal an unmet core. Supported course-family rules such as “CIS 110 or higher” are evaluated by normalized subject and number while preventing the same course from being reused. It is not a complete GE, residency, catalog-rights, waiver, substitution, or award-eligibility audit.
 
 The reference-app ideas adopted from DegreeDoesntWorks are indexed search, course-code ranking, college/degree filters, requirement-level evidence, missing-option discovery, and explicit unresolved discipline rules. Promotional ranking, hidden heuristic substitutions, and unsupported certification were not copied.
 
@@ -107,7 +106,7 @@ After changing SMCCD source data:
 
 ```sh
 pnpm smccd:scrape
-pnpm smccd:migration
+pnpm smccd:requirements-migration
 pnpm smccd:validate
 pnpm test
 supabase db lint --linked
