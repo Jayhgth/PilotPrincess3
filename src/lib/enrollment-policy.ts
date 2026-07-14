@@ -1,6 +1,6 @@
 import type { EnrollmentPolicy, PlanCourse, StudentEnrollmentPreference } from "@/lib/models";
 
-export type EnrollmentLimitState = "within" | "review" | "over_policy" | "blocked";
+type EnrollmentLimitState = "within" | "review" | "over_policy" | "blocked";
 
 export interface EnrollmentTermEvaluation {
   key: string;

@@ -1,5 +1,5 @@
 export type Confidence = "verified" | "likely" | "uncertain";
-export type ReviewStatus = "pending" | "approved" | "rejected";
+type ReviewStatus = "pending" | "approved" | "rejected";
 export type CourseStatus = "completed" | "current" | "planned";
 export type GradeLevel = 9 | 10 | 11 | 12;
 export type RequirementArea =
@@ -295,7 +295,7 @@ export interface AiMessage {
   attachments?: AiMessageAttachment[];
 }
 
-export interface AiMessageAttachment {
+interface AiMessageAttachment {
   id: string;
   conversation_id: string;
   message_id: string;

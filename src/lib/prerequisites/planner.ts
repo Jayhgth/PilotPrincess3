@@ -12,7 +12,7 @@ import type {
 import type { Course, GradeLevel, PlanCourse, SmccdCourse, SmccdHighSchoolEquivalency } from "@/lib/models";
 import type { SmccdPrerequisiteCourseInput } from "./smccd";
 
-export const DTECH_PREREQUISITE_ALIASES: Readonly<Record<string, readonly string[]>> = {
+const DTECH_PREREQUISITE_ALIASES: Readonly<Record<string, readonly string[]>> = {
   "Algebra 1": ["Algebra I"],
   "English 2 / English 2 Honors": ["English 2"],
   "English 3 / English 3 Honors": ["English 3"],
@@ -51,7 +51,7 @@ function plannedTermIndex(course: PlanCourse): number | undefined {
   return plannerTargetTermIndex(course.grade_level, course.term);
 }
 
-export function dtechPrerequisiteCatalog(courses: readonly Course[]): CatalogCourse[] {
+function dtechPrerequisiteCatalog(courses: readonly Course[]): CatalogCourse[] {
   return courses.map((course) => ({
     id: course.id,
     code: course.course_code,
@@ -67,7 +67,7 @@ export function dtechPrerequisiteCatalog(courses: readonly Course[]): CatalogCou
   }));
 }
 
-export function smccdPrerequisiteCourse(course: SmccdCourse): SmccdPrerequisiteCourseInput {
+function smccdPrerequisiteCourse(course: SmccdCourse): SmccdPrerequisiteCourseInput {
   return {
     id: course.id,
     collegeCode: course.college_code,
@@ -111,7 +111,7 @@ export function plannerCourseInputs(
   });
 }
 
-export function dtechEquivalenciesForPrerequisites(
+function dtechEquivalenciesForPrerequisites(
   rows: readonly SmccdHighSchoolEquivalency[],
   catalog: readonly CatalogCourse[]
 ): PrerequisiteEquivalencyInput[] {

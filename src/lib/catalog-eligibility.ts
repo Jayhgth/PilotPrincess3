@@ -3,7 +3,7 @@ import { normalizeCollegeCourseCode, resolvePlanCollegeCourseCode } from "@/lib/
 import { normalizeCourseKey } from "@/lib/prerequisites/normalize";
 import type { Course, GradeLevel, PlanCourse, SmccdCourse } from "@/lib/models";
 
-export type CatalogExclusionReason = "already_in_plan" | "outside_grade" | "below_math_level";
+type CatalogExclusionReason = "already_in_plan" | "outside_grade" | "below_math_level";
 
 export interface CatalogEligibility {
   eligible: boolean;

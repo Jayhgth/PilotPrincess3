@@ -57,7 +57,7 @@ export function isDtechIntersessionCourse(payload: TranscriptCoursePayload) {
     || (payload.transcript_classification === "dtech_intersession" && personalDevelopment);
 }
 
-export function findHighSchoolEquivalency(
+function findHighSchoolEquivalency(
   payload: Pick<TranscriptCoursePayload, "course_code" | "course_name" | "matched_smccd_course_id">,
   equivalencies: SmccdHighSchoolEquivalency[]
 ) {

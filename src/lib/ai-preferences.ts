@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export const DEFAULT_AI_MODEL = "gpt-5.6-luna" as const;
 export const DEFAULT_AI_REASONING_EFFORT = "low" as const;
-export const AI_REASONING_EFFORT = DEFAULT_AI_REASONING_EFFORT;
 export const aiReviewModeSchema = z.enum(["manual", "auto_review"]);
 export type AiReviewMode = z.infer<typeof aiReviewModeSchema>;
 
@@ -49,9 +48,4 @@ export type AiModel = z.infer<typeof aiModelSchema>;
 
 export function aiModelLabel(model: string) {
   return AI_MODEL_OPTIONS.find((option) => option.value === model)?.label ?? model;
-}
-
-export function formatAiReasoning(value: string) {
-  return AI_REASONING_OPTIONS.find((option) => option.value === value)?.label
-    ?? value.charAt(0).toUpperCase() + value.slice(1);
 }

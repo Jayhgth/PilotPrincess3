@@ -7,7 +7,7 @@ import {
 import { useState } from "react";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
-import { AI_MODEL_OPTIONS, AI_REASONING_EFFORT, type AiModel } from "@/lib/ai-preferences";
+import { AI_MODEL_OPTIONS, DEFAULT_AI_REASONING_EFFORT, type AiModel } from "@/lib/ai-preferences";
 import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
 import styles from "./CodexConnectionSetup.module.css";
 
@@ -97,7 +97,7 @@ export default function CodexConnectionSetup({
         <button type="button" onClick={() => void testConnection()} disabled={testing || !value.approved}>
           {testing ? <ShinyText text="Testing connection" speed={1.7} /> : value.testedAt ? "Test again" : "Test connection"}
         </button>
-        <span>GPT-5.6 Luna with {AI_REASONING_EFFORT === "low" ? "Light" : AI_REASONING_EFFORT} reasoning is recommended.</span>
+        <span>GPT-5.6 Luna with {DEFAULT_AI_REASONING_EFFORT === "low" ? "Light" : DEFAULT_AI_REASONING_EFFORT} reasoning is recommended.</span>
       </div>
       {testMessage && value.testedAt && <FadeContent className={styles.success} duration={0.14}><CheckCircle size={17} weight="fill" /><span>{testMessage}</span></FadeContent>}
       {testError && <div className={styles.error} role="alert"><Warning size={17} /><span>{testError}</span></div>}

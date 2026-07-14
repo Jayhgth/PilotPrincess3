@@ -529,7 +529,7 @@ function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
   });
 }
 
-export function evaluatePrerequisites(
+function evaluatePrerequisites(
   rule: PrerequisiteRule,
   input: PrerequisiteEvaluationInput
 ): PrerequisiteEvaluationResult {

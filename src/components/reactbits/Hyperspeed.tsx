@@ -6,7 +6,7 @@ import { useEffect, useRef, type FC } from 'react';
 import * as THREE from 'three';
 
 interface Distortion {
-  uniforms: Record<string, { value: any }>;
+  uniforms: Record<string, THREE.IUniform>;
   getDistortion: string;
   getJS?: (progress: number, time: number) => THREE.Vector3;
 }
@@ -460,7 +460,7 @@ class CarLights {
     const curve = new THREE.LineCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1));
     const geometry = new THREE.TubeGeometry(curve, 40, 1, 8, false);
 
-    const instanced = new THREE.InstancedBufferGeometry().copy(geometry as any) as THREE.InstancedBufferGeometry;
+    const instanced = new THREE.InstancedBufferGeometry().copy(geometry as unknown as THREE.InstancedBufferGeometry);
     instanced.instanceCount = options.lightPairsPerRoadWay * 2;
 
     const laneWidth = options.roadWidth / options.lanesPerRoad;
@@ -618,7 +618,7 @@ class LightsSticks {
   init() {
     const options = this.options;
     const geometry = new THREE.PlaneGeometry(1, 1);
-    const instanced = new THREE.InstancedBufferGeometry().copy(geometry as any) as THREE.InstancedBufferGeometry;
+    const instanced = new THREE.InstancedBufferGeometry().copy(geometry as unknown as THREE.InstancedBufferGeometry);
     const totalSticks = options.totalSideLightSticks;
     instanced.instanceCount = totalSticks;
 
@@ -762,7 +762,7 @@ class Road {
       segments
     );
 
-    let uniforms: Record<string, { value: any }> = {
+    let uniforms: Record<string, THREE.IUniform> = {
       uTravelLength: { value: options.length },
       uColor: {
         value: new THREE.Color(isRoad ? options.colors.roadColor : options.colors.islandColor)
@@ -928,13 +928,12 @@ class App {
   renderPass!: RenderPass;
   bloomPass!: EffectPass;
   clock: THREE.Clock;
-  assets: Record<string, any>;
   disposed: boolean;
   road: Road;
   leftCarLights: CarLights;
   rightCarLights: CarLights;
   leftSticks: LightsSticks;
-  fogUniforms: Record<string, { value: any }>;
+  fogUniforms: Record<string, THREE.IUniform>;
   fovTarget: number;
   speedUpTarget: number;
   speedUp: number;
@@ -988,7 +987,6 @@ class App {
     };
 
     this.clock = new THREE.Clock();
-    this.assets = {};
     this.disposed = false;
     this.animationFrame = 0;
 

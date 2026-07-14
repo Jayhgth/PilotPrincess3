@@ -172,7 +172,7 @@ const toolArgumentSchemas = {
 
 export type AssistantToolName = keyof typeof toolArgumentSchemas;
 
-export const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
+const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   name: AssistantToolName;
   mutatesData: boolean;
   description: string;
@@ -613,7 +613,7 @@ export interface AssistantToolResult {
   undo?: AssistantUndo;
 }
 
-export type AssistantUndo =
+type AssistantUndo =
   | { kind: "delete_rows"; table: "plan_versions" | "plan_courses"; ids: string[]; summary: string }
   | { kind: "restore_rows"; table: "plan_courses" | "student_smccd_goals"; rows: Array<Record<string, unknown>>; summary: string }
   | { kind: "restore_enrollment_preference"; row: Record<string, unknown> | null; summary: string };

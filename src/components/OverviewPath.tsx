@@ -7,13 +7,13 @@ import {
 import type { CSSProperties, ReactNode } from "react";
 import { BentoCard, BentoGrid } from "@/components/magicui/BentoGrid";
 
-export interface OverviewRequirementItem {
+interface OverviewRequirementItem {
   id: string;
   name: string;
   remaining: number;
 }
 
-export interface OverviewCourseItem {
+interface OverviewCourseItem {
   id: string;
   name: string;
   source: string;

@@ -56,10 +56,6 @@ export const INSTITUTIONS: Record<InstitutionKey, InstitutionIdentity> = {
   }
 };
 
-export function institutionFromCollegeCode(code: SmccdCollege["code"]): InstitutionIdentity {
-  return INSTITUTIONS[code];
-}
-
 export function institutionKeyFromName(value: string | null | undefined): InstitutionKey | null {
   const normalized = value?.trim().toLowerCase() ?? "";
   if (!normalized) return null;

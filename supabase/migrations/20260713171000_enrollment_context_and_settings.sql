@@ -1,3 +1,6 @@
+-- Run after the restored Pilot knowledge table. This migration originally
+-- shared a version with the student_settings migration, which made linked
+-- migration history ambiguous and prevented safe deployment.
 update public.student_enrollment_preferences
 set limit_mode = 'recommended',
     custom_unit_limit = null,

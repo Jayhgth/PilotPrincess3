@@ -45,7 +45,7 @@ export function normalizeSmccdCourseCode(input: string) {
   return `${subject} ${match[3]}`;
 }
 
-export function extractSmccdCourseCode(input: string | null | undefined) {
+function extractSmccdCourseCode(input: string | null | undefined) {
   if (!input) return null;
   const cleaned = input
     .trim()
@@ -87,9 +87,9 @@ export function findSmccdCourseMatch(
     ?? [...matches].sort((left, right) => ["CSM", "SKY", "CAN"].indexOf(left.college_code) - ["CSM", "SKY", "CAN"].indexOf(right.college_code))[0];
 }
 
-export type SmccdRequirementState = "satisfied" | "partial" | "missing" | "manual_review";
+type SmccdRequirementState = "satisfied" | "partial" | "missing" | "manual_review";
 
-export interface SmccdProgressCourse {
+interface SmccdProgressCourse {
   courseCode: string;
   title: string;
   collegeCode: SmccdCourse["college_code"];
@@ -101,7 +101,7 @@ export interface SmccdProgressCourse {
   catalogUrl: string;
 }
 
-export interface SmccdRequirementOption {
+interface SmccdRequirementOption {
   courseCode: string;
   title: string;
   collegeCode: SmccdCourse["college_code"];
@@ -109,7 +109,7 @@ export interface SmccdRequirementOption {
   catalogUrl: string;
 }
 
-export interface SmccdRequirementProgress {
+interface SmccdRequirementProgress {
   requirement: SmccdProgramRequirement;
   status: SmccdRequirementState;
   completedStatus: SmccdRequirementState;
@@ -135,7 +135,7 @@ export interface SmccdGeEvidence {
   projectedCourseCodes: string[];
 }
 
-export type SmccdGeState = "completed" | "planned" | "partial" | "missing";
+type SmccdGeState = "completed" | "planned" | "partial" | "missing";
 
 export interface SmccdGeProgress extends SmccdGeEvidence {
   description: string;
@@ -148,7 +148,7 @@ export interface SmccdGeProgress extends SmccdGeEvidence {
   manuallyCompleted: boolean;
 }
 
-export const CSM_LOCAL_GE_WORKSHEET_URL = "https://collegeofsanmateo.edu/forms/docs/counseling/AAAS_DegreeWorksheet_25-26.pdf";
+const CSM_LOCAL_GE_WORKSHEET_URL = "https://collegeofsanmateo.edu/forms/docs/counseling/AAAS_DegreeWorksheet_25-26.pdf";
 export const SMCCD_LOCAL_GE_SOURCE_URLS: Record<SmccdCourse["college_code"], string> = {
   CSM: CSM_LOCAL_GE_WORKSHEET_URL,
   CAN: "https://catalog.canadacollege.edu/current/ge-worksheets/_docs/aa-as-req.pdf",

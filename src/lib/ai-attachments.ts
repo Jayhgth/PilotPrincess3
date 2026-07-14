@@ -1,9 +1,9 @@
 export const MAX_ASSISTANT_ATTACHMENTS = 8;
-export const MAX_ASSISTANT_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_ASSISTANT_IMAGE_BYTES = 10 * 1024 * 1024;
 
-export const ASSISTANT_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+const ASSISTANT_IMAGE_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
 
-export type AssistantImageMimeType = (typeof ASSISTANT_IMAGE_MIME_TYPES)[number];
+type AssistantImageMimeType = (typeof ASSISTANT_IMAGE_MIME_TYPES)[number];
 
 export interface AssistantImageCandidate {
   name: string;

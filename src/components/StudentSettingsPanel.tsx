@@ -18,7 +18,7 @@ export type StudentSettingsPatch = Partial<Pick<
   | "plan_end_grade"
 >>;
 
-export type StudentSettingsSection = "general" | "planning" | "pilot";
+type StudentSettingsSection = "general" | "planning" | "pilot";
 
 interface StudentSettingsPanelProps {
   section: StudentSettingsSection;
@@ -121,7 +121,15 @@ export default function StudentSettingsPanel({
   const currentYear = new Date().getFullYear();
 
   if (section === "pilot") {
-    return <div className={styles.settingsPanel}><PilotSettingsSection settings={settings} onChanged={onAiPreferencesChanged} /></div>;
+    const pilotSettingsKey = [
+      settings.ai_enabled,
+      settings.ai_model,
+      settings.ai_reasoning_effort,
+      settings.ai_connection_approved_at,
+      settings.ai_setup_tested_at,
+      settings.ai_review_mode
+    ].join(":");
+    return <div className={styles.settingsPanel}><PilotSettingsSection key={pilotSettingsKey} settings={settings} onChanged={onAiPreferencesChanged} /></div>;
   }
 
   if (section === "planning") {

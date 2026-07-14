@@ -484,12 +484,12 @@ export async function runCodexStructuredStream<T>(
   }
 }
 
-export interface AssistantChatHistoryMessage {
+interface AssistantChatHistoryMessage {
   role: "user" | "assistant" | "tool";
   content: string;
 }
 
-export interface AssistantChatToolActivity {
+interface AssistantChatToolActivity {
   id: string;
   name: AssistantToolName;
   label: string;

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import OverviewPath, { type OverviewPathData } from "./OverviewPath";
+import OverviewPath, { type OverviewPathData } from "@/components/OverviewPath";
 
 const data: OverviewPathData = {
   earnedPercent: 80,

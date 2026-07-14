@@ -1,31 +1,27 @@
 export { auditPrerequisiteGraph } from "./audit";
-export { evaluateParsedPrerequisites, evaluatePrerequisites } from "./evaluator";
-export {
-  courseIdentityMatch,
-  normalizeCourseKey,
-  referenceFromCatalogCourse,
-  resolveCatalogCourse
-} from "./normalize";
+export { evaluateParsedPrerequisites } from "./evaluator";
 export { parsePrerequisites } from "./parser";
 export {
-  DTECH_PREREQUISITE_ALIASES,
   createSmccdPlannerPrerequisiteEvaluator,
-  dtechEquivalenciesForPrerequisites,
-  dtechPrerequisiteCatalog,
   evaluateDtechPlannerPrerequisites,
   evaluateSmccdPlannerPrerequisites,
   plannerCourseInputs,
-  plannerTargetTermIndex,
-  smccdPrerequisiteCourse
+  plannerTargetTermIndex
 } from "./planner";
 export {
   auditSmccdPrerequisites,
   buildDtechPrerequisiteEquivalencies,
   buildReviewedDtechToSmccdPrerequisiteEquivalencies,
-  buildSmccdPrerequisiteCatalog,
   clearanceFromStoredRecord,
   parseSmccdCoursePrerequisites
 } from "./smccd";
-export type * from "./types";
-export type * from "./smccd";
-export type * from "./planner";
+export type {
+  CatalogCourse,
+  GradeLevel,
+  PlannedCourseInput,
+  PrerequisiteEvaluationInput,
+  PrerequisiteRule,
+  SourceConfidence
+} from "./types";
+export type { SmccdPrerequisiteCourseInput } from "./smccd";
+export type { PlannerPrerequisiteEvaluation } from "./planner";

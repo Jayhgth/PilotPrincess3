@@ -1,7 +1,7 @@
 import type { PlanCourse, SmccdHighSchoolEquivalency } from "@/lib/models";
 import { resolvePlanCollegeCourseCode } from "@/lib/college-course-identity";
 
-export type HighSchoolCreditBasis =
+type HighSchoolCreditBasis =
   | "stored_high_school_credits"
   | "verified_equivalency"
   | "district_unit_conversion"
@@ -21,7 +21,7 @@ function positiveNumber(value: number | null | undefined) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-export function districtHighSchoolCreditsForCollegeUnits(collegeUnits: number | null | undefined) {
+function districtHighSchoolCreditsForCollegeUnits(collegeUnits: number | null | undefined) {
   const units = positiveNumber(collegeUnits);
   if (units >= 5) return 10;
   if (units >= 3) return 5;

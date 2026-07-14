@@ -181,7 +181,13 @@ function ChangeReceipt({ message, busy, onUndo }: { message: AiMessage; busy: bo
   const toolName = String(message.page_context.tool_name ?? "student data");
   const undone = typeof message.page_context.undone_at === "string";
   const undoExpiresAt = typeof message.page_context.undo_expires_at === "string" ? Date.parse(message.page_context.undo_expires_at) : 0;
-  const canUndo = message.page_context.undo_available === true && typeof message.page_context.tool_call_id === "string" && undoExpiresAt > Date.now() && !undone;
+  const [undoWindowOpen, setUndoWindowOpen] = useState(true);
+  useEffect(() => {
+    const remaining = undoExpiresAt - Date.now();
+    const timeout = window.setTimeout(() => setUndoWindowOpen(false), Math.max(0, remaining));
+    return () => window.clearTimeout(timeout);
+  }, [undoExpiresAt]);
+  const canUndo = message.page_context.undo_available === true && typeof message.page_context.tool_call_id === "string" && undoWindowOpen && !undone;
   return <FadeContent className={`${styles.changeReceipt} ${undone ? styles.changeUndone : ""}`} duration={0.16}>
     <div><CheckCircle size={16} weight="fill" /><span><strong>{undone ? "Change undone" : "Change applied"}</strong><small>{friendlyToolLabel(toolName)}</small></span></div>
     <p>{message.content}</p>
@@ -378,7 +384,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [busyUndo, setBusyUndo] = useState<string | null>(null);
   const [autoReviewing, setAutoReviewing] = useState(false);
   const reviewMode = preferences.reviewMode;
-  const [selectedModel, setSelectedModel] = useState(preferences.model);
+  const [pendingModel, setPendingModel] = useState<AiModel | null>(null);
   const [savingModel, setSavingModel] = useState(false);
   const [images, setImages] = useState<ComposerImage[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
@@ -402,15 +408,13 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
   const activeId = data.activeConversation?.id ?? null;
+  const selectedModel = pendingModel ?? preferences.model;
 
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => authenticatedFetch(url, init), []);
 
-  useEffect(() => setSelectedModel(preferences.model), [preferences.model]);
-
   async function changeModel(model: AiModel) {
     if (model === selectedModel || savingModel || running) return;
-    const previousModel = selectedModel;
-    setSelectedModel(model);
+    setPendingModel(model);
     setSavingModel(true);
     setError(null);
     try {
@@ -427,8 +431,9 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "The model could not be changed.");
       await onPreferencesChanged();
+      setPendingModel(null);
     } catch (caught) {
-      setSelectedModel(previousModel);
+      setPendingModel(null);
       setError(caught instanceof Error ? caught.message : "The model could not be changed.");
     } finally {
       setSavingModel(false);

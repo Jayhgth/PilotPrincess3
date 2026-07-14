@@ -77,7 +77,7 @@ import type {
   SmccdHighSchoolEquivalency,
   StudentEnrollmentPreference,
   StudentSettings
-} from "@/lib/workspace-types";
+} from "@/lib/models";
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";

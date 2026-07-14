@@ -13,7 +13,7 @@ import type {
   SourceConfidence
 } from "./types";
 
-export type SmccdCollegeCode = "CSM" | "SKY" | "CAN";
+type SmccdCollegeCode = "CSM" | "SKY" | "CAN";
 
 export interface SmccdPrerequisiteCourseInput {
   id: string;
@@ -135,7 +135,7 @@ export function parseSmccdCoursePrerequisites(
   return combineRules(prerequisite, corequisite, course);
 }
 
-export function buildSmccdPrerequisiteCatalog(
+function buildSmccdPrerequisiteCatalog(
   courses: readonly SmccdPrerequisiteCourseInput[]
 ): CatalogCourse[] {
   return courses.map((course) => ({

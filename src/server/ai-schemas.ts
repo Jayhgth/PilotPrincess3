@@ -172,7 +172,7 @@ export const parsedTranscriptJsonSchema = {
   }
 } as const;
 
-export const assistantToolNames = [
+const assistantToolNames = [
   "get_student_overview",
   "list_plan_courses",
   "search_course_catalog",
@@ -208,7 +208,7 @@ export const assistantToolNames = [
 
 export const ASSISTANT_MESSAGE_MAX_LENGTH = 900;
 
-export const assistantQuestionSchema = z.object({
+const assistantQuestionSchema = z.object({
   id: z.string().trim().min(1).max(48).regex(/^[a-z0-9_-]+$/),
   prompt: z.string().trim().min(1).max(240),
   options: z.array(z.object({
@@ -243,8 +243,6 @@ export const assistantTurnSchema = z.object({
   })).max(8),
   memory_updates: z.array(assistantMemoryUpdateSchema).max(5).default([])
 });
-
-export type AssistantTurnResult = z.infer<typeof assistantTurnSchema>;
 
 export const assistantTurnJsonSchema = {
   type: "object",

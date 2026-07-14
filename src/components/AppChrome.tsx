@@ -32,7 +32,7 @@ function normalizeSidebarWidth(value: number) {
   return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_EXPANDED_WIDTH, Math.round(value)));
 }
 
-export interface WorkspaceNavItem<ViewId extends string> {
+interface WorkspaceNavItem<ViewId extends string> {
   id: ViewId;
   label: string;
   icon: Icon;

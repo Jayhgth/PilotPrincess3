@@ -39,7 +39,7 @@ test("renders the high school authentication experience", async ({ page }) => {
   await expect(page.getByRole("tab", { name: "Create account" })).toBeVisible();
   await expect(page.getByLabel("Email")).toHaveAttribute("placeholder", "you@example.com");
   await expect(page.getByRole("button", { name: "Forgot password?" })).toBeVisible();
-  await expect(page.getByText("2025-26", { exact: true })).toBeVisible();
+  await expect(page.getByText("Private student data is protected by per-user database policies.", { exact: true })).toBeVisible();
 });
 
 test("offers a session-safe login preview for demos", async ({ page }) => {

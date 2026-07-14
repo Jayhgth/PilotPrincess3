@@ -13,10 +13,10 @@ import AnimatedList from "@/components/reactbits/AnimatedList";
 import FadeContent from "@/components/reactbits/FadeContent";
 import type { InstitutionKey } from "@/lib/institutions";
 
-export type CatalogSourceKind = "dtech" | "smccd";
+type CatalogSourceKind = "dtech" | "smccd";
 export type CatalogReadinessTone = "ready" | "blocked" | "review" | "none";
 
-export interface CatalogResultRow {
+interface CatalogResultRow {
   id: string;
   code?: string;
   title: string;

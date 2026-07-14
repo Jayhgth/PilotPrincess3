@@ -70,10 +70,6 @@ export default function PilotSettingsSection({
   const authorizedFetch = useCallback((url: string, init?: RequestInit) => authenticatedFetch(url, init), []);
 
   useEffect(() => {
-    setDraft(settingsDraft(settings));
-  }, [settings]);
-
-  useEffect(() => {
     let cancelled = false;
     void authorizedFetch("/api/ai/conversations?archived=true")
       .then(async (response) => {

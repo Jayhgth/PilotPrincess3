@@ -2,7 +2,7 @@ import type { CourseStatus, GradeLevel, PlanCourse } from "@/lib/models";
 
 export type CourseBoardTerm = "fall" | "spring" | "summer";
 
-export const COURSE_BOARD_TERMS: readonly CourseBoardTerm[] = ["fall", "spring", "summer"];
+const COURSE_BOARD_TERMS: readonly CourseBoardTerm[] = ["fall", "spring", "summer"];
 
 export function courseBoardTermsForGrade(grade: GradeLevel): readonly CourseBoardTerm[] {
   return grade === 12 ? COURSE_BOARD_TERMS.slice(0, 2) : COURSE_BOARD_TERMS;

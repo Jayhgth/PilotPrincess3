@@ -64,7 +64,7 @@ export function schoolYearForGrade(graduationYear: number, grade: GradeLevel) {
   return `${endYear - 1}-${endYear}`;
 }
 
-export type AcademicTerm = "fall" | "spring" | "summer";
+type AcademicTerm = "fall" | "spring" | "summer";
 
 export interface AcademicPeriod {
   term: AcademicTerm;

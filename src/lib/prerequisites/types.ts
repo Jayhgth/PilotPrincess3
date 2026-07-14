@@ -22,7 +22,7 @@ export interface AllOfRule extends RuleBase {
   rules: PrerequisiteRule[];
 }
 
-export interface AnyOfRule extends RuleBase {
+interface AnyOfRule extends RuleBase {
   kind: "any_of";
   rules: PrerequisiteRule[];
 }
@@ -34,7 +34,7 @@ export interface CourseReference {
   aliases?: string[];
 }
 
-export type CourseTiming = "prior" | "prior_or_concurrent" | "concurrent";
+type CourseTiming = "prior" | "prior_or_concurrent" | "concurrent";
 
 export type LetterGrade =
   | "A+"
@@ -58,7 +58,7 @@ export interface CourseRule extends RuleBase {
   minimumGrade?: LetterGrade;
 }
 
-export type PrerequisiteClearanceType =
+type PrerequisiteClearanceType =
   | "placement"
   | "approved_equivalency"
   | "prerequisite_challenge"
@@ -129,7 +129,7 @@ export interface ParsePrerequisiteOptions {
   defaultTiming?: CourseTiming;
 }
 
-export type PlannedCourseStatus = "completed" | "current" | "planned";
+type PlannedCourseStatus = "completed" | "current" | "planned";
 
 export interface PlannedCourseInput {
   instanceId?: string;
@@ -184,7 +184,7 @@ export interface PrerequisiteEquivalencyInput {
   sourceUrl?: string;
 }
 
-export type PrerequisiteEvaluationStatus = "satisfied" | "blocked" | "needs_review";
+type PrerequisiteEvaluationStatus = "satisfied" | "blocked" | "needs_review";
 
 export interface MissingCourse {
   course: CourseReference;
@@ -203,7 +203,7 @@ export interface OrderingViolation {
   message: string;
 }
 
-export type EvidenceKind = "course" | "clearance" | "grade_level" | "manual_review";
+type EvidenceKind = "course" | "clearance" | "grade_level" | "manual_review";
 
 export interface PrerequisiteEvidence {
   kind: EvidenceKind;
