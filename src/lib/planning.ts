@@ -37,7 +37,12 @@ export const REQUIREMENT_LABELS = {
   world_language: "World Language",
   design_lab: "Design Lab",
   visual_performing_arts: "Visual and Performing Arts",
-  personal_development: "Personal Development"
+  personal_development: "Personal Development",
+  physical_education: "Physical Education",
+  career_technical_education: "Career Technical Education",
+  electives: "Electives",
+  ethnic_studies: "Ethnic Studies",
+  other: "Other diploma requirement"
 } as const;
 
 const DTECH_SCHOOL_ID = "d7ec0000-0000-4000-8000-000000000001";
@@ -618,13 +623,19 @@ export function generateSuggestedPlan(
 }
 
 export function overallGraduationPercent(progress: RequirementProgress[]) {
-  const required = progress.reduce((total, item) => total + item.requirement.credits_required, 0);
-  const projected = progress.reduce((total, item) => total + Math.min(item.verifiedProjectedCredits, item.requirement.credits_required), 0);
-  return required > 0 ? clamp(Math.round((projected / required) * 100), 0, 100) : 0;
+  const substantive = progress.filter((item) => !item.requirement.constraint_only);
+  const required = substantive.reduce((total, item) => total + item.requirement.credits_required, 0);
+  const projected = substantive.reduce((total, item) => total + Math.min(item.verifiedProjectedCredits, item.requirement.credits_required), 0);
+  const base = required > 0 ? clamp(Math.round((projected / required) * 100), 0, 100) : 0;
+  const hasOpenConstraint = progress.some((item) => item.requirement.constraint_only && item.verifiedProjectedCredits < item.requirement.credits_required);
+  return hasOpenConstraint && base === 100 ? 99 : base;
 }
 
 export function overallCompletedPercent(progress: RequirementProgress[]) {
-  const required = progress.reduce((total, item) => total + item.requirement.credits_required, 0);
-  const completed = progress.reduce((total, item) => total + Math.min(item.completedCredits, item.requirement.credits_required), 0);
-  return required > 0 ? clamp(Math.round((completed / required) * 100), 0, 100) : 0;
+  const substantive = progress.filter((item) => !item.requirement.constraint_only);
+  const required = substantive.reduce((total, item) => total + item.requirement.credits_required, 0);
+  const completed = substantive.reduce((total, item) => total + Math.min(item.completedCredits, item.requirement.credits_required), 0);
+  const base = required > 0 ? clamp(Math.round((completed / required) * 100), 0, 100) : 0;
+  const hasOpenConstraint = progress.some((item) => item.requirement.constraint_only && item.completedCredits < item.requirement.credits_required);
+  return hasOpenConstraint && base === 100 ? 99 : base;
 }

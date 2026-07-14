@@ -34,7 +34,7 @@ describe("onboarding flow", () => {
     expect(defaults.plan_start_grade).toBe(10);
     expect(defaults.plan_end_grade).toBe(12);
     expect(defaults.tracker_mode).toBe("full");
-    expect(defaults.tracked_requirement_areas).toHaveLength(8);
+    expect(defaults.tracked_requirement_areas).toHaveLength(13);
   });
 
   it("shows only the profile, assistant, and transcript stages", () => {

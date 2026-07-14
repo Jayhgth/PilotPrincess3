@@ -126,6 +126,10 @@ describe("catalog eligibility", () => {
     expect(dtechCatalogEligibility(algebra1, 11, [], catalog)).toEqual({ eligible: false, reason: "outside_grade" });
   });
 
+  it("keeps an official course visible when the local source does not publish grade availability", () => {
+    expect(dtechCatalogEligibility({ ...algebra1, grade_levels: [] }, 11, [], catalog)).toEqual({ eligible: true });
+  });
+
   it("treats the same SMCCD course code across colleges as already taken", () => {
     const skyline = smccd({ id: "SKY:MATH 200", college_code: "SKY" });
     const completedAtCsm = planCourse({ course_id: null, smccd_course_id: "CSM:MATH 200", custom_course_name: "MATH 200 Statistics" });

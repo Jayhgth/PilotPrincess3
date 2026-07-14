@@ -25,6 +25,7 @@
     "smccd:requirements-migration": "node scripts/generate-smccd-requirement-migration.mjs",
     "equivalencies:generate": "node scripts/generate-equivalency-migration.mjs",
     "schools:sync": "node scripts/sync-california-schools.mjs",
+    "schools:academics": "node --env-file-if-exists=.env scripts/sync-school-academics.mjs",
     "schools:audit": "node --env-file-if-exists=.env scripts/audit-statewide-school-parity.mjs",
     "providers:sync": "node scripts/sync-california-community-colleges.mjs",
     "uc-ag:sync-schools": "node scripts/sync-uc-ag-schools.mjs",

@@ -14,7 +14,7 @@ Statewide discovery keeps institutional authorities separate:
 - UCOP supplies school identities, A–G subject areas, approved course lists, and UC honors markers for catalog identity and designation evidence; and
 - each school or district supplies local graduation rules, course availability, credits, terms, prerequisites, and local designations.
 
-UCOP approval does not prove that a course is currently offered, schedulable, or a local diploma requirement. UCOP rows without reviewed grade/term availability may match transcript identity, but stay out of the add-course catalog. AP, IB, UC honors, school honors, CTE, and dual enrollment are separate designations; one label does not imply another.
+UCOP approval does not prove a current section, seat, local grade restriction, or diploma requirement. UCOP rows remain searchable when a local catalog is unavailable, but the interface marks missing grade availability for verification. A discovered official local catalog can add non-A–G courses and supply grade, term, description, and prerequisite evidence. AP, IB, UC honors, school honors, CTE, and dual enrollment are separate designations; one label does not imply another.
 
 `verified` requires explicit reviewed evidence. `likely` is a supported interpretation. `uncertain` and `needs_review` remain visible and never become success through broad matching.
 
@@ -41,6 +41,8 @@ Diploma progress keeps completed, current, planned, unverified, unused, and rema
 - SMCCD high-school credit requires a reviewed directional equivalency; college units alone do not invent a d.tech requirement mapping.
 
 Only the selected school's published official diploma requirements are calculated. If those rules are unavailable, Pilot reports that limitation and does not fall back to California minimums or UC A–G.
+
+Local requirements are versioned by academic authority: district schools share their district rules and charter schools use their own CDS-scoped authority. The source discovery job follows official school-to-district navigation, checks official site maps and linked document hosts, records content hashes and exact evidence, and publishes only when all four core areas plus a complete local set validate. Default all-student plans are kept separate from transfer, foster-youth, or other exception plans. Required pathways whose credits are already part of electives are tracked as constraints and excluded from aggregate credit totals.
 
 ## Catalog eligibility
 
@@ -112,6 +114,8 @@ After changing SMCCD source data:
 pnpm smccd:scrape
 pnpm smccd:requirements-migration
 pnpm smccd:validate
+pnpm schools:academics --discover-only --school-name "Carlmont High"
+pnpm schools:academics --all
 pnpm test
 supabase db lint --linked
 supabase db push --linked --dry-run

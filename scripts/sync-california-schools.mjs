@@ -47,7 +47,11 @@ async function readDirectory() {
   if (sourceFile) return readFile(sourceFile, "utf8");
   const response = await fetch(CDE_DIRECTORY_URL, { headers: { "user-agent": "PilotPrincess school directory sync" } });
   if (!response.ok) throw new Error(`CDE directory download failed with ${response.status}.`);
-  return response.text();
+  const text = await response.text();
+  if (!text.startsWith("CDSCode\t")) {
+    throw new Error("CDE did not return its tab-delimited directory (the automated endpoint may require a browser check). Download the official TXT file and rerun with --file <path>.");
+  }
+  return text;
 }
 
 function parseDirectory(text) {
@@ -58,11 +62,22 @@ function parseDirectory(text) {
     if (column[required] === undefined) throw new Error(`The CDE directory is missing ${required}.`);
   }
 
-  return lines.flatMap((line) => {
-    if (!line.trim()) return [];
+  const parsed = lines.filter((line) => line.trim()).map((line) => {
     const row = line.split("\t");
     const get = (name) => row[column[name]];
-    const cdsCode = value(get("CDSCode"));
+    return { row, get, cdsCode: value(get("CDSCode")) };
+  });
+  const districts = new Map(parsed.flatMap(({ get, cdsCode }) => {
+    if (!cdsCode?.endsWith("0000000")) return [];
+    return [[cdsCode.slice(0, 7), {
+      district_cds_code: cdsCode.slice(0, 7),
+      district_website_url: websiteValue(get("WebSite")),
+      district_directory_source_url: `https://sd.cde.ca.gov/schooldirectory/details?cdscode=${cdsCode}`,
+      district_name: value(get("District"))
+    }]];
+  }));
+
+  const schools = parsed.flatMap(({ get, cdsCode }) => {
     const schoolName = value(get("School"));
     const status = value(get("StatusType"))?.toLowerCase();
     const span = gradeSpan(get("GSoffered"));
@@ -73,6 +88,7 @@ function parseDirectory(text) {
     const isDtech = cdsCode === "41690470129759";
     const isCharter = value(get("Charter")) === "Y";
     const updatedAt = dateValue(get("LastUpDate"));
+    const district = districts.get(cdsCode.slice(0, 7));
     return [{
       cds_code: cdsCode,
       slug: isDtech ? "design-tech-high-school" : `ca-${cdsCode}`,
@@ -83,6 +99,9 @@ function parseDirectory(text) {
       nces_district_id: value(get("NCESDist")),
       nces_school_id: value(get("NCESSchool")),
       district_name: value(get("District")),
+      district_cds_code: cdsCode.slice(0, 7),
+      district_website_url: district?.district_website_url ?? null,
+      academic_authority_key: isCharter ? `charter:${cdsCode}` : `district:${cdsCode.slice(0, 7)}`,
       county_name: value(get("County")),
       governance_type: isCharter ? "charter" : "district",
       charter_number: value(get("CharterNum")),
@@ -100,17 +119,36 @@ function parseDirectory(text) {
       directory_updated_at: updatedAt
     }];
   });
+  const authorities = new Map();
+  for (const school of schools) {
+    if (authorities.has(school.academic_authority_key)) continue;
+    const district = districts.get(school.district_cds_code);
+    authorities.set(school.academic_authority_key, {
+      authority_key: school.academic_authority_key,
+      authority_type: school.governance_type === "charter" ? "charter" : "district",
+      name: school.governance_type === "charter" ? school.name : district?.district_name ?? school.district_name ?? school.name,
+      district_cds_code: school.district_cds_code,
+      website_url: school.governance_type === "charter" ? school.website_url : school.district_website_url ?? school.website_url,
+      source_url: school.governance_type === "charter" ? school.directory_source_url : district?.district_directory_source_url ?? school.directory_source_url,
+      source_updated_at: school.directory_updated_at
+    });
+  }
+  return { schools, authorities: [...authorities.values()] };
 }
 
-const rows = parseDirectory(await readDirectory());
+const { schools: rows, authorities } = parseDirectory(await readDirectory());
 const charterCount = rows.filter((row) => row.governance_type === "charter").length;
-console.log(JSON.stringify({ source: sourceFile ?? CDE_DIRECTORY_URL, schools: rows.length, charters: charterCount, dryRun }, null, 2));
+console.log(JSON.stringify({ source: sourceFile ?? CDE_DIRECTORY_URL, schools: rows.length, authorities: authorities.length, charters: charterCount, dryRun }, null, 2));
 
 if (!dryRun) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!supabaseUrl || !serviceRoleKey) throw new Error("Set SUPABASE_URL (or PUBLIC_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY to sync schools.");
   const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  for (let index = 0; index < authorities.length; index += 400) {
+    const result = await supabase.from("school_academic_authorities").upsert(authorities.slice(index, index + 400), { onConflict: "authority_key" });
+    if (result.error) throw result.error;
+  }
   for (let index = 0; index < rows.length; index += 400) {
     const result = await supabase.from("schools").upsert(rows.slice(index, index + 400), { onConflict: "cds_code" });
     if (result.error) throw result.error;

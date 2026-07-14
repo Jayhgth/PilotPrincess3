@@ -10,7 +10,12 @@ export type RequirementArea =
   | "world_language"
   | "design_lab"
   | "visual_performing_arts"
-  | "personal_development";
+  | "personal_development"
+  | "physical_education"
+  | "career_technical_education"
+  | "electives"
+  | "ethnic_studies"
+  | "other";
 
 export interface School {
   id: string;
@@ -23,6 +28,9 @@ export interface School {
   nces_district_id: string | null;
   nces_school_id: string | null;
   district_name: string | null;
+  district_cds_code: string | null;
+  district_website_url: string | null;
+  academic_authority_key: string | null;
   county_name: string | null;
   governance_type: "district" | "charter" | "private" | "other";
   charter_number: string | null;
@@ -157,12 +165,13 @@ export interface OfficialSource {
   parse_status: "pending" | "processing" | "complete" | "needs_review" | "failed";
   confidence: Confidence;
   error_message: string | null;
-  document_type: "general" | "transcript";
+  document_type: "general" | "transcript" | "course_catalog" | "graduation_requirements";
   created_at: string;
 }
 
 export interface Course {
   id: string;
+  external_course_id?: string | null;
   school_id: string;
   catalog_version_id: string;
   source_id: string | null;
@@ -185,12 +194,14 @@ export interface Course {
 
 export interface GraduationRequirement {
   id: string;
+  requirement_key?: string;
   school_id?: string;
   catalog_version_id?: string;
   area: RequirementArea;
   name: string;
   credits_required: number;
   years_required: number | null;
+  constraint_only?: boolean;
   notes: string | null;
   confidence: Confidence;
   review_status: ReviewStatus;

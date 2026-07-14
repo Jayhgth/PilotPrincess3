@@ -27,9 +27,8 @@ async function openFreshOnboarding(page: Page) {
 async function chooseSchoolAndFinish(page: Page, schoolName: string) {
   await page.getByLabel("Search California high schools").fill(schoolName);
   await page.getByRole("option").filter({ hasText: schoolName }).first().click();
-  const districtGroup = page.getByRole("group", { name: "Community-college district" });
-  await expect(districtGroup).toBeVisible();
-  await expect(districtGroup.locator('input[type="radio"]:checked')).toHaveCount(1);
+  await expect(page.getByLabel("Community-college district")).toBeVisible();
+  await expect(page.getByLabel("Community-college district")).not.toHaveValue("");
   await page.getByLabel("Preferred name").fill("School QA");
   await page.getByLabel("Age").fill("16");
   await page.getByLabel("Current grade").selectOption("10");
@@ -53,8 +52,8 @@ test.describe("statewide school parity", () => {
     const dtechResult = page.getByRole("option").filter({ hasText: "Design Tech High School" }).first();
     await expect(dtechResult.locator('img[src*="dtech-wordmark"]').first()).toBeVisible();
     await dtechResult.click();
-    await expect(page.getByRole("group", { name: "Community-college district" }).getByText("San Mateo County Community College District", { exact: true })).toBeVisible();
-    await expect(page.getByRole("group", { name: "Community-college district" }).getByText("Recommended", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Community-college district")).toHaveValue("ccc-district-san-mateo-county-community-college-district");
+    await expect(page.getByLabel("Community-college district").locator("option:checked")).toContainText("recommended");
     await page.getByLabel("Preferred name").fill("School QA");
     await page.getByLabel("Age").fill("16");
     await page.getByLabel("Current grade").selectOption("10");

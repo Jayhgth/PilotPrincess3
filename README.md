@@ -52,17 +52,19 @@ Use focused tests while debugging. Run browser, SMCCD, migration, RLS, storage, 
 
 ## Data refreshes
 
-California school identity comes from the official CDE public-school directory. UC A–G identities and approved course lists come from UCOP; imported UCOP rows support transcript identity and course designations, but do not create a graduation-progress layer and remain unavailable for schedule placement until a local source supplies grade and term availability. Nearby community colleges come from the official CCCCO directory and are geocoded from the school's public address, never a student's device location.
+California school identity comes from the official CDE public-school directory. UC A–G identities and approved course lists come from UCOP. The local-academics sync discovers each district or charter's official catalog and diploma source, reads public PDF, HTML, Google Doc, and Google Sheet formats, merges local grade/term/prerequisite evidence into UCOP identity, and refuses to publish incomplete diploma sets. If a current local catalog is unavailable, UCOP courses remain searchable with grade availability clearly marked for verification rather than being silently omitted. Nearby community colleges come from the official CCCCO directory and are geocoded from the school's public address, never a student's device location.
 
 ```sh
 pnpm schools:sync
+pnpm schools:academics --dry-run --school-name "Carlmont High"
+pnpm schools:academics --all
 pnpm uc-ag:sync-schools
 pnpm uc-ag:sync-courses
 pnpm providers:sync
 pnpm schools:audit
 ```
 
-The syncs are idempotent and retain source URLs, source dates, confidence, and review state. `schools:audit` checks every synced high school, college, and normalized district for identity, provenance, district linkage, and a deterministic public-address-based district default. Review ambiguous identities instead of selecting a fuzzy match.
+The syncs are idempotent and retain source URLs, source dates, content hashes, source evidence, confidence, and review state. `schools:academics` uses a service role only for publishing; `--discover-only` and `--dry-run` perform read-only audits. District schools share the district's requirement authority while charter schools remain isolated. `schools:audit` checks every synced high school, college, and normalized district for identity, provenance, district linkage, and a deterministic public-address-based district default. Review ambiguous identities instead of selecting a fuzzy match.
 
 The checked-in SMCCD catalog and college-specific local-degree patterns are generated from the official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs and degree worksheets. CSM's 27-unit GE, Skyline's 24-unit GE plus separate graduation requirements, and Cañada's 25-unit GE remain distinct. Program scraping audits every official requirement table and course option before validation.
 
@@ -99,7 +101,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/ai-knowledge.ts`, `src/server/ai-memory.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, retrieved versioned application guidance, lightweight per-student memory, private image context, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
-- `scripts/sync-california-schools.mjs`, `scripts/sync-uc-ag-schools.mjs`, `scripts/sync-uc-ag-courses.mjs`, and `scripts/sync-california-community-colleges.mjs`: official statewide identity and catalog ingestion.
+- `scripts/sync-california-schools.mjs`, `scripts/sync-school-academics.mjs`, `scripts/sync-uc-ag-schools.mjs`, `scripts/sync-uc-ag-courses.mjs`, and `scripts/sync-california-community-colleges.mjs`: official statewide identity, local-source discovery, and catalog ingestion.
 
 ## Decision rules
 

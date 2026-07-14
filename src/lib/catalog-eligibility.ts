@@ -78,7 +78,7 @@ export function dtechCatalogEligibility(
     row.course_id === course.id || intersects(candidateKeys, planDtechKeys(row, courseById))
   );
   if (alreadyInPlan) return { eligible: false, reason: "already_in_plan" };
-  if (!course.grade_levels.includes(targetGrade)) return { eligible: false, reason: "outside_grade" };
+  if (course.grade_levels.length > 0 && !course.grade_levels.includes(targetGrade)) return { eligible: false, reason: "outside_grade" };
 
   const candidateMathRank = course.subject === "Mathematics" ? dtechMathRank(course.name) : null;
   const demonstratedMathRank = highestDemonstratedDtechMathRank(planCourses, dtechCourses);

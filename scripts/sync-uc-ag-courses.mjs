@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { ucopCourseValues } from "./lib/school-academic-sources.mjs";
 
 const ORIGIN = "https://hs-articulation.ucop.edu";
 const SOURCE_YEAR = "2026-27";
@@ -46,26 +47,11 @@ async function fetchCourseList(school) {
 }
 
 function courseValues(row, school, catalogVersionId, sourceId) {
-  const semester = Number(row.courseLengthId) === 1;
   return {
+    ...ucopCourseValues(row),
     school_id: school.id,
     catalog_version_id: catalogVersionId,
     source_id: sourceId,
-    course_code: row.transcriptAbbreviations || row.recordId || null,
-    name: String(row.title).trim(),
-    subject: row.disciplineName || `A-G area ${String(row.subjectAreaCode).toUpperCase()}`,
-    course_type: "uc_ag_approved",
-    grade_levels: [],
-    credits: semester ? 5 : 10,
-    college_units: null,
-    term_type: semester ? "semester" : "year",
-    uc_ag_area: String(row.subjectAreaCode).toLowerCase(),
-    prerequisites: [],
-    description: "UC A-G approved course. School offering grade, prerequisites, and schedule require local catalog verification.",
-    is_honors: Number(row.isHonors) === 1,
-    is_weighted: Number(row.isHonors) === 1,
-    confidence: "verified",
-    review_status: "approved"
   };
 }
 
@@ -113,15 +99,17 @@ await mapWithConcurrency(available, 4, async ({ school, courses }) => {
     catalogVersionId = inserted.data.id;
   }
 
-  const existingResult = await supabase.from("courses").select("id,name").eq("school_id", school.id);
+  const existingResult = await supabase.from("courses").select("id,name,external_course_id").eq("school_id", school.id);
   if (existingResult.error) throw existingResult.error;
   const existingByName = new Map((existingResult.data ?? []).map((row) => [row.name.toLowerCase(), row]));
-  const missingByName = new Map();
+  const existingByExternalId = new Map((existingResult.data ?? []).filter((row) => row.external_course_id).map((row) => [row.external_course_id, row]));
+  const missingByIdentity = new Map();
   for (const row of courses) {
     const normalizedTitle = String(row.title).trim().toLowerCase();
-    if (!existingByName.has(normalizedTitle) && !missingByName.has(normalizedTitle)) missingByName.set(normalizedTitle, courseValues(row, school, catalogVersionId, sourceId));
+    const identity = String(row.courseId ?? row.recordId);
+    if (!existingByExternalId.has(identity) && !existingByName.has(normalizedTitle) && !missingByIdentity.has(identity)) missingByIdentity.set(identity, courseValues(row, school, catalogVersionId, sourceId));
   }
-  const missing = [...missingByName.values()];
+  const missing = [...missingByIdentity.values()];
   if (missing.length) {
     const inserted = await supabase.from("courses").insert(missing).select("id,name");
     if (inserted.error) throw inserted.error;

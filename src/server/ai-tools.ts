@@ -207,7 +207,7 @@ const toolArgumentSchemas = {
     plan_start_grade: gradeSchema.nullable().optional(),
     plan_end_grade: gradeSchema.nullable().optional(),
     tracker_mode: z.enum(["full", "selected"]).optional(),
-    tracked_requirement_areas: z.array(z.enum(["english", "social_science", "math", "lab_science", "world_language", "design_lab", "visual_performing_arts", "personal_development"])).max(8).optional(),
+    tracked_requirement_areas: z.array(z.enum(["english", "social_science", "math", "lab_science", "world_language", "design_lab", "visual_performing_arts", "personal_development", "physical_education", "career_technical_education", "electives", "ethnic_studies", "other"])).max(13).optional(),
     ai_model: z.enum(["gpt-5.6-luna", "gpt-5.5", "gpt-5.4-mini"]).optional(),
     ai_reasoning_effort: z.enum(["low", "medium", "high"]).optional(),
     ai_review_mode: z.enum(["manual", "auto_review"]).optional()

@@ -26,6 +26,7 @@ function graduationViewFromLocation() {
 interface Props {
   progress: RequirementProgress[];
   school: School;
+  requirementSourceUrl?: string | null;
   onFindDtechCourses: (area: RequirementProgress["requirement"]["area"]) => void;
   degreePlanner: ReactNode;
   generalEducationPlanner: ReactNode;
@@ -36,6 +37,7 @@ const DTECH_REQUIREMENTS_URL = "https://docs.google.com/document/d/1N351ZQzwGakG
 export default function GraduationWorkspace({
   progress,
   school,
+  requirementSourceUrl,
   onFindDtechCourses,
   degreePlanner,
   generalEducationPlanner
@@ -79,6 +81,7 @@ export default function GraduationWorkspace({
         {view === "diploma" && <DiplomaView
           progress={progress}
           school={school}
+          requirementSourceUrl={requirementSourceUrl}
           selectedId={selectedDiplomaId || firstDiplomaGap?.requirement.id || ""}
           onSelect={setSelectedDiplomaId}
           onFindCourses={onFindDtechCourses}
@@ -93,22 +96,26 @@ export default function GraduationWorkspace({
 function DiplomaView({
   progress,
   school,
+  requirementSourceUrl,
   selectedId,
   onSelect,
   onFindCourses
 }: {
   progress: RequirementProgress[];
   school: School;
+  requirementSourceUrl?: string | null;
   selectedId: string;
   onSelect: (id: string) => void;
   onFindCourses: Props["onFindDtechCourses"];
 }) {
-  const required = progress.reduce((sum, item) => sum + Number(item.requirement.credits_required), 0);
-  const completed = progress.reduce((sum, item) => sum + Math.min(item.completedCredits, Number(item.requirement.credits_required)), 0);
-  const projected = progress.reduce((sum, item) => sum + Math.min(item.verifiedProjectedCredits, Number(item.requirement.credits_required)), 0);
+  const substantive = progress.filter((item) => !item.requirement.constraint_only);
+  const required = substantive.reduce((sum, item) => sum + Number(item.requirement.credits_required), 0);
+  const completed = substantive.reduce((sum, item) => sum + Math.min(item.completedCredits, Number(item.requirement.credits_required)), 0);
+  const projected = substantive.reduce((sum, item) => sum + Math.min(item.verifiedProjectedCredits, Number(item.requirement.credits_required)), 0);
   const current = progress.reduce((sum, item) => sum + item.currentCredits, 0);
   const unverified = progress.reduce((sum, item) => sum + item.unverifiedCredits, 0);
   const open = Math.max(0, required - projected);
+  const openConstraints = progress.filter((item) => item.requirement.constraint_only && item.verifiedProjectedCredits < item.requirement.credits_required).length;
   const selected = progress.find((item) => item.requirement.id === selectedId) ?? progress[0];
   const missing = progress.filter((item) => item.status === "missing");
 
@@ -116,7 +123,7 @@ function DiplomaView({
     <EligibilitySummary
       identity={<InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} size="header" decorative />}
       label="High school diploma"
-      answer={open === 0 ? "The saved plan covers the diploma." : `${formatValue(open)} credits still need a course.`}
+      answer={open === 0 && openConstraints === 0 ? "The saved plan covers the diploma." : open > 0 ? `${formatValue(open)} credits still need a course.` : `${openConstraints} required pathway ${openConstraints === 1 ? "is" : "are"} still open.`}
       body={`${formatValue(completed)} of ${formatValue(required)} required credits are earned. Scheduled work is shown separately.`}
       tone="dtech"
       metrics={[
@@ -127,7 +134,7 @@ function DiplomaView({
       ]}
       action={missing[0] ? <button className="secondary-button small" type="button" onClick={() => onSelect(missing[0].requirement.id)}>Review first gap</button> : null}
     />
-    <p className="graduation-source-note">Official {school.short_name} rules. <a href={school.slug === "design-tech-high-school" ? DTECH_REQUIREMENTS_URL : school.directory_source_url ?? school.website_url ?? "#"} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
+    <p className="graduation-source-note">Official {school.short_name} rules. <a href={requirementSourceUrl ?? (school.slug === "design-tech-high-school" ? DTECH_REQUIREMENTS_URL : school.directory_source_url ?? school.website_url ?? "#")} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
     <div className="graduation-evidence-layout">
       <RequirementIndex
         title="Diploma requirements"

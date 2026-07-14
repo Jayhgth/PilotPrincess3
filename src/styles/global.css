@@ -601,6 +601,8 @@ input:focus, select:focus, textarea:focus {
   .gpa-answer { grid-template-columns: 1fr; padding: 18px; }
   .gpa-evidence-strip { grid-template-columns: auto minmax(0, 1fr); }
   .gpa-evidence-strip > small { grid-column: 2; white-space: normal; }
+  .onboarding-district-field { grid-template-columns: 1fr; gap: 7px; }
+  .onboarding-district-field > label { padding-top: 0; }
 }
 
 @media (max-width: 520px) {
@@ -682,17 +684,16 @@ input:focus, select:focus, textarea:focus {
 .onboarding-school-results button > span { display: grid; min-width: 0; gap: 2px; }
 .onboarding-school-results strong { overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .onboarding-school-results small { overflow: hidden; color: var(--ink-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.onboarding-nearby-providers { display: grid; min-width: 0; gap: 7px; margin: 3px 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); padding: 9px; }
-.onboarding-nearby-providers legend { padding: 0 4px; color: var(--ink-soft); font-size: 11px; font-weight: 700; }
-.onboarding-nearby-providers > div { display: grid; gap: 5px; }
-.onboarding-nearby-providers label { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 6px; background: var(--surface); padding: 7px 8px; cursor: pointer; }
-.onboarding-nearby-providers label.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
-.onboarding-nearby-providers input { accent-color: var(--accent); }
-.onboarding-nearby-providers label > span { display: grid; min-width: 0; gap: 2px; }
-.onboarding-nearby-providers strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.onboarding-nearby-providers small { overflow: hidden; color: var(--ink-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.onboarding-nearby-providers em { color: var(--ink-soft); font-size: 9px; font-style: normal; font-weight: 700; }
-.onboarding-nearby-providers p { margin: 0; color: var(--ink-faint); font-size: 10px; line-height: 1.4; }
+.onboarding-student-grid { align-items: start; }
+.onboarding-selected-school { display: grid; min-height: 48px; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-control); background: var(--surface); padding: 8px 10px; }
+.onboarding-selected-school > span { display: grid; min-width: 0; gap: 2px; }
+.onboarding-selected-school strong { overflow: hidden; font-size: var(--type-body); text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-selected-school small { overflow: hidden; color: var(--ink-faint); font-size: var(--type-supporting); text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-district-field { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: start; gap: 16px; border-block: 1px solid var(--line); padding-block: 16px; }
+.onboarding-district-field > label { padding-top: 12px; color: var(--ink); font-size: var(--type-supporting); font-weight: 650; }
+.onboarding-district-field > div { display: grid; min-width: 0; gap: 6px; }
+.onboarding-district-field select { width: 100%; }
+.onboarding-district-field p { margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .transcript-entry { display: grid; gap: 17px; }
 .transcript-drop {
   display: flex;

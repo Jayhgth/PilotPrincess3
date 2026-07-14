@@ -36,6 +36,7 @@ import {
   courseDisplayName,
   generateSuggestedPlan,
   GRADE_LEVELS,
+  REQUIREMENT_LABELS,
   overallCompletedPercent,
   nextAcademicPeriod,
   selectedPlanGrades,
@@ -649,17 +650,7 @@ export default function PlanningWorkspace() {
   }
 
   function openRequirementCourses(area: GraduationRequirement["area"]) {
-    const subjectByArea: Record<GraduationRequirement["area"], string> = {
-      english: "English",
-      social_science: "Social Science",
-      math: "Mathematics",
-      lab_science: "Laboratory Science",
-      world_language: "World Language",
-      design_lab: "Design Lab",
-      visual_performing_arts: "Visual and Performing Arts",
-      personal_development: "Personal Development"
-    };
-    setCatalogSubject(subjectByArea[area]);
+    setCatalogSubject(REQUIREMENT_LABELS[area]);
     setCatalogSearch("");
     openCourses("dtech");
   }
@@ -1540,6 +1531,7 @@ export default function PlanningWorkspace() {
         <GraduationWorkspace
           progress={fullProgress}
           school={school}
+          requirementSourceUrl={sources.find((source) => source.document_type === "graduation_requirements")?.source_url}
           onFindDtechCourses={openRequirementCourses}
           degreePlanner={<SmccdPlanner
             embedded
