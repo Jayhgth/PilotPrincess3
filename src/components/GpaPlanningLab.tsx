@@ -153,7 +153,7 @@ export default function GpaPlanningLab({
                 <InstitutionMark institution={institution.code} decorative />
                 <div>
                   <strong>{displayName}</strong>
-                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{highSchoolCredits.collegeUnits > 0 ? ` · ${institution.label} · ${displayNumber(highSchoolCredits.collegeUnits)} units → ${displayNumber(highSchoolCredits.credits)} GPA cr` : ""}</span>
+                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{highSchoolCredits.collegeUnits > 0 ? ` · ${institution.label} · ${displayNumber(highSchoolCredits.collegeUnits)} units` : ""}</span>
                 </div>
               </div>
               <div className={styles.courseControls}>

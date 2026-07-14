@@ -47,7 +47,8 @@ describe("GPA planning lab", () => {
     expect(html).toContain("College");
     expect(html.match(/data-react-bits="animated-list"/g)).toHaveLength(2);
     expect(html).toContain("Expected grade for English 4");
-    expect(html).toContain("3 units → 5 GPA cr");
+    expect(html).toContain("3 units");
+    expect(html).not.toContain("GPA cr");
     expect(html.match(/type="checkbox"/g)).toHaveLength(2);
     expect(html).not.toContain(">Include<");
     expect(html).not.toContain("Choose grade");
