@@ -3,6 +3,7 @@
   --surface: #fff;
   --surface-raised: #fff;
   --surface-muted: rgb(0 0 0 / 0.04);
+  --chrome-surface: #fff;
   --ink: #262626;
   --ink-soft: #565656;
   --ink-faint: #777;
@@ -17,16 +18,17 @@
 }
 
 :root[data-theme="dark"] .t3code-app {
-  --bg: #101112;
-  --surface: #111213;
-  --surface-raised: #161719;
-  --surface-muted: rgb(255 255 255 / 0.045);
-  --ink: #f0f0f1;
-  --ink-soft: #b7b7ba;
-  --ink-faint: #88898d;
-  --line: rgb(255 255 255 / 0.065);
-  --line-strong: rgb(255 255 255 / 0.1);
-  --control-line: rgb(255 255 255 / 0.16);
+  --bg: #313338;
+  --surface: #383a40;
+  --surface-raised: #404249;
+  --surface-muted: #43454c;
+  --chrome-surface: #2b2d31;
+  --ink: #f2f3f5;
+  --ink-soft: #b5bac1;
+  --ink-faint: #abb0b8;
+  --line: #4a4d54;
+  --line-strong: #5b5e66;
+  --control-line: #858993;
 }
 
 .t3code-app.app-shell {
@@ -35,8 +37,8 @@
 
 .t3code-app :is(input, select, textarea, button) { font-family: inherit; }
 .t3code-app .app-sidebar,
-.t3code-app .app-toolbar,
-.t3code-app .onboarding-topbar { background: var(--surface); }
+.t3code-app .onboarding-topbar { background: var(--chrome-surface); }
+.t3code-app .app-toolbar { background: var(--bg); }
 .t3code-app .app-sidebar { border-right-color: var(--line); }
 .t3code-app .sidebar-top { min-height: 52px; border-bottom-color: var(--line); padding: 0 14px; }
 .t3code-app .wordmark { font-size: 13px; font-weight: 600; }
