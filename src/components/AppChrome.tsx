@@ -213,8 +213,7 @@ export default function AppChrome<ViewId extends string>({
       </div>
       <div className="app-toolbar">
         <button className={assistantOpen ? "active" : ""} type="button" onClick={onAssistantToggle}>
-          {!assistantOpen && <ChatCircleDots size={17} />}
-          <span>{assistantOpen ? "Collapse Pilot" : aiEnabled ? "Ask Pilot" : "Set up Pilot"}</span>
+          <span>{assistantOpen ? "Collapse Pilot" : aiEnabled ? "Open Pilot" : "Set up Pilot"}</span>
         </button>
       </div>
       <div className="app-content">{children}</div>

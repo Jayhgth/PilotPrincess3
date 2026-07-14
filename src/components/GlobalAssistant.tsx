@@ -993,7 +993,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         <header className={styles.header}>
           <div className={styles.conversationPicker}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
-              <ChatCircleDots size={15} weight="fill" /><span>{data.activeConversation?.title ?? "New conversation"}</span><CaretDown size={11} />
+              <span>{data.activeConversation?.title ?? "New conversation"}</span><CaretDown size={11} />
             </button>
             {historyOpen && <div className={styles.historyMenu}>
               <button className={styles.newConversation} type="button" onClick={startNewConversation}><Plus size={14} /> New conversation</button>
