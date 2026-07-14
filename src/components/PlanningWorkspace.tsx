@@ -39,6 +39,7 @@ import {
   selectedPlanGrades,
   schoolYearForGrade
 } from "@/lib/planning";
+import type { GpaScenarioChoice } from "@/lib/gpa-planner";
 import { requirementsForSettings } from "@/lib/planning";
 import {
   findExistingTranscriptPlanCourse,
@@ -221,6 +222,7 @@ export default function PlanningWorkspace() {
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
   const [settingsArea, setSettingsArea] = useState<SettingsArea>(() => locationState().settingsArea);
   const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
+  const [gpaScenarioChoices, setGpaScenarioChoices] = useState<GpaScenarioChoice[]>([]);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
   const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
@@ -1520,7 +1522,9 @@ export default function PlanningWorkspace() {
       courses={courses}
       smccdCourses={plannedSmccdCourses}
       equivalencies={equivalencies}
+      choices={gpaScenarioChoices}
       onOpenCourses={() => openCourses("mine")}
+      onChoicesChange={setGpaScenarioChoices}
       onScenarioChange={setGpaScenarioContext}
     /></div>;
   }

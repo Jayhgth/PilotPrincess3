@@ -25,7 +25,9 @@ interface Props {
   courses: Course[];
   smccdCourses: SmccdCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
+  choices: GpaScenarioChoice[];
   onOpenCourses: () => void;
+  onChoicesChange: (choices: GpaScenarioChoice[]) => void;
   onScenarioChange: (context: Record<string, unknown>) => void;
 }
 
@@ -52,10 +54,11 @@ export default function GpaPlanningLab({
   courses,
   smccdCourses,
   equivalencies,
+  choices,
   onOpenCourses,
+  onChoicesChange,
   onScenarioChange
 }: Props) {
-  const [choices, setChoices] = useState<GpaScenarioChoice[]>(() => initialGpaScenarioChoices(rows));
   const [bulkGrade, setBulkGrade] = useState("A");
   const courseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
   const smccdMap = useMemo(() => new Map(smccdCourses.map((course) => [course.id, course])), [smccdCourses]);
@@ -65,44 +68,43 @@ export default function GpaPlanningLab({
   }, [rows, choices]);
   const result = useMemo(() => calculateGpaScenario(rows, effectiveChoices, equivalencies), [rows, effectiveChoices, equivalencies]);
   const openRows = rows.filter((row) => row.status !== "completed");
-  const collegeCreditContext = useMemo(() => rows.filter((row) => row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0).map((row) => {
-    const resolution = resolvePlanCourseHighSchoolCredits(row, equivalencies);
-    return {
-      plan_course_id: row.id,
-      college_units: resolution.collegeUnits,
-      high_school_gpa_credits: resolution.credits,
-      credit_basis: resolution.basis
-    };
-  }), [rows, equivalencies]);
   const courseGroups = [
     { id: "high-school", label: "High school", rows: openRows.filter((row) => !row.smccd_course_id && !row.college_provider_code && Number(row.college_units ?? 0) <= 0) },
     { id: "college", label: "College", rows: openRows.filter((row) => Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0)) }
   ];
 
   useEffect(() => {
+    const collegeCreditContext = rows.filter((row) => row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0).map((row) => {
+      const resolution = resolvePlanCourseHighSchoolCredits(row, equivalencies);
+      return {
+        plan_course_id: row.id,
+        college_units: resolution.collegeUnits,
+        high_school_gpa_credits: resolution.credits,
+        credit_basis: resolution.basis
+      };
+    });
     onScenarioChange({
       current_weighted_gpa: result.baseline.projectedWeighted,
       scenario_weighted_gpa: result.scenario.projectedWeighted,
       all_a_schedule_ceiling: result.bestCase.projectedWeighted,
       missing_grade_assumptions: result.missingExpectedGrades,
       college_credit_policy: COLLEGE_HIGH_SCHOOL_CREDIT_POLICY,
-      college_credit_conversions: collegeCreditContext
+      college_credit_conversions: collegeCreditContext,
+      choices: effectiveChoices.map((choice) => ({
+        plan_course_id: choice.planCourseId,
+        included: choice.included,
+        expected_grade: choice.expectedGrade
+      }))
     });
-  }, [collegeCreditContext, result, onScenarioChange]);
+  }, [effectiveChoices, equivalencies, result, rows, onScenarioChange]);
 
   function updateChoice(id: string, patch: Partial<GpaScenarioChoice>) {
-    setChoices((current) => {
-      const existing = current.find((choice) => choice.planCourseId === id)
-        ?? initialGpaScenarioChoices(rows).find((choice) => choice.planCourseId === id);
-      if (!existing) return current;
-      return current.some((choice) => choice.planCourseId === id)
-        ? current.map((choice) => choice.planCourseId === id ? { ...choice, ...patch } : choice)
-        : [...current, { ...existing, ...patch }];
-    });
+    if (!effectiveChoices.some((choice) => choice.planCourseId === id)) return;
+    onChoicesChange(effectiveChoices.map((choice) => choice.planCourseId === id ? { ...choice, ...patch } : choice));
   }
 
   function setAllExpectedGrades() {
-    setChoices(setAllGpaScenarioGrades(effectiveChoices, bulkGrade));
+    onChoicesChange(setAllGpaScenarioGrades(effectiveChoices, bulkGrade));
   }
 
   return (
@@ -158,7 +160,6 @@ export default function GpaPlanningLab({
               </div>
               <div className={styles.courseControls}>
                 <label className={styles.includeControl} title={choice?.included === false ? "Include in GPA scenario" : "Exclude from GPA scenario"}>
-                  <span className="sr-only">Include {displayName} in GPA scenario</span>
                   <Checkbox.Root
                     aria-label={`Include ${displayName} in GPA scenario`}
                     checked={choice?.included ?? true}

@@ -37,7 +37,9 @@ describe("GPA planning lab", () => {
       courses: [],
       smccdCourses: [],
       equivalencies: [],
+      choices: [],
       onOpenCourses: () => undefined,
+      onChoicesChange: () => undefined,
       onScenarioChange: () => undefined
     }));
 
@@ -55,5 +57,21 @@ describe("GPA planning lab", () => {
     expect(html).not.toContain("Target weighted GPA");
     expect(html).not.toContain("Pilot can compare this calculator");
     expect(html).not.toContain("completed transcript already meets");
+  });
+
+  it("renders parent-owned scenario choices", () => {
+    const html = renderToStaticMarkup(createElement(GpaPlanningLab, {
+      rows: [row("high-school")],
+      courses: [],
+      smccdCourses: [],
+      equivalencies: [],
+      choices: [{ planCourseId: "high-school", included: false, expectedGrade: "B" }],
+      onOpenCourses: () => undefined,
+      onChoicesChange: () => undefined,
+      onScenarioChange: () => undefined
+    }));
+
+    expect(html).toContain('data-excluded="true"');
+    expect(html).toContain('<option value="B" selected="">B</option>');
   });
 });
