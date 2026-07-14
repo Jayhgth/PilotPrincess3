@@ -13,12 +13,10 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
-  type DragOverEvent,
   type DragStartEvent
 } from "@dnd-kit/core";
 import {
   SortableContext,
-  arrayMove,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy
@@ -36,6 +34,8 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import InstitutionMark from "@/components/InstitutionMark";
 import {
   compareCourseBoardRows,
+  compareCourseBoardRowsForTerm,
+  courseStatusForBoardMove,
   courseAppearsInBoardTerm,
   courseBoardTermsForGrade,
   orderedCourseIdsForBoardMove,
@@ -159,8 +159,8 @@ function CourseCardBody({
   ].filter(Boolean) as string[];
   const style: CSSProperties | undefined = transform
     ? {
-        transform: `translate3d(${Math.round(transform.x)}px, ${Math.round(transform.y)}px, 0) scaleX(${transform.scaleX}) scaleY(${transform.scaleY})`,
-        transition
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        transition: isDragging ? undefined : transition
       }
     : transition
       ? { transition }
@@ -169,23 +169,18 @@ function CourseCardBody({
   return (
     <div ref={setNodeRef} style={style} className={`kanban-course ${confirmingRemove ? "confirming-remove" : ""} ${isDragging ? "dragging" : ""} ${isOver && !isDragging ? "sorting-over" : ""} ${locked ? "locked" : "draggable"} ${continuation ? "continuation" : ""} ${row.status === "completed" ? "completed" : ""} ${isSmccd ? `dual-enrollment institution-${institution?.toLowerCase()}` : ""}`}>
       <article
+        ref={!locked && !confirmingRemove ? setActivatorNodeRef : undefined}
         className="kanban-course-main"
+        {...(!locked && !confirmingRemove ? attributes : {})}
+        {...(!locked && !confirmingRemove ? listeners : {})}
         aria-label={continuation ? `${title}, full-year course continuing in spring.` : locked || confirmingRemove ? undefined : `Move ${title}. Drag this card to another school year or term.`}
+        aria-describedby={!locked && !confirmingRemove ? "course-plan-drag-guide" : undefined}
       >
         {continuation
           ? <span className="kanban-continuation-mark" aria-hidden />
           : locked
           ? <span className="kanban-lock" title={row.status === "completed" ? "Completed courses cannot move" : "This course cannot move"}><LockKey size={16} /><span>Locked</span></span>
-          : <button
-              ref={setActivatorNodeRef}
-              className="kanban-drag-handle"
-              type="button"
-              title="Drag to move between years or terms"
-              aria-label={`Move ${title}`}
-              aria-describedby="course-plan-drag-guide"
-              {...listeners}
-              {...attributes}
-            ><DotsSixVertical size={18} weight="bold" /></button>}
+          : <span className="kanban-drag-indicator" aria-hidden><DotsSixVertical size={18} weight="bold" /></span>}
         <div className="kanban-course-copy">
           {institution && <span className="kanban-course-institution"><InstitutionMark institution={institution} decorative /><span>{INSTITUTIONS[institution].name}<small>Dual enrollment</small></span></span>}
           <strong>{title}</strong>
@@ -224,7 +219,6 @@ function GradeTab({
 }) {
   const state = grade < currentGrade ? "completed" : grade === currentGrade ? "current" : "future";
   const acceptsActive = Boolean(activeRow)
-    && grade >= currentGrade
     && !(grade === 12 && activeRow?.term === "summer");
   const { setNodeRef, isOver } = useDroppable({
     id: `grade-${grade}`,
@@ -282,8 +276,8 @@ export default function CourseKanban(props: CourseKanbanProps) {
     return () => window.clearTimeout(timeout);
   }, [confirmingRemoveId]);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 90, tolerance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 7 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 160, tolerance: 7 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   const courseMap = useMemo(() => new Map(props.courses.map((course) => [course.id, course])), [props.courses]);
@@ -294,8 +288,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
     () => props.rows.filter((row) => row.grade_level === selectedGrade),
     [props.rows, selectedGrade]
   );
-  const selectedYearLocked = selectedGrade < currentGrade;
-  const selectedYearState = selectedYearLocked ? "completed" : selectedGrade === currentGrade ? "current" : "future";
+  const selectedYearState = selectedGrade < currentGrade ? "completed" : selectedGrade === currentGrade ? "current" : "future";
   const collisionDetection = useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
     if (pointerCollisions.length > 0) {
@@ -314,13 +307,6 @@ export default function CourseKanban(props: CourseKanbanProps) {
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
     setConfirmingRemoveId(null);
-  }
-
-  function handleDragOver(event: DragOverEvent) {
-    const destination = event.over?.data.current as { type?: string; gradeLevel?: GradeLevel } | undefined;
-    if (destination?.type === "year" && destination.gradeLevel && destination.gradeLevel !== selectedGrade) {
-      setSelectedGrade(destination.gradeLevel);
-    }
   }
 
   function handleDragCancel() {
@@ -343,7 +329,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
     const destination = event.over?.data.current as { type?: "course" | "lane" | "year"; gradeLevel?: GradeLevel; term?: CourseBoardTerm } | undefined;
     setActiveId(null);
     if (!row) return;
-    if (row.status === "completed" || row.source_review_item_id || !destination?.gradeLevel || destination.gradeLevel < currentGrade) {
+    if (row.status === "completed" || row.source_review_item_id || !destination?.gradeLevel) {
       setSelectedGrade(row.grade_level);
       return;
     }
@@ -356,31 +342,25 @@ export default function CourseKanban(props: CourseKanbanProps) {
     }
     const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
     const term = catalogCourse?.term_type === "year" || row.term === "full_year" ? "full_year" : destinationBoardTerm;
-    const status: CourseStatus = destination.gradeLevel === currentGrade ? "current" : "planned";
-    const sameLane = row.grade_level === destination.gradeLevel
-      && courseAppearsInBoardTerm(row, destinationBoardTerm);
+    const status = courseStatusForBoardMove(currentGrade, destination.gradeLevel, row.status);
     const destinationRows = props.rows
-      .filter((candidate) => candidate.grade_level === destination.gradeLevel && courseAppearsInBoardTerm(candidate, destinationBoardTerm))
+      .filter((candidate) => candidate.grade_level === destination.gradeLevel)
       .sort(compareCourseBoardRows);
     const destinationIds = destinationRows.map((candidate) => candidate.id);
     const overId = destination.type === "course" ? String(event.over?.id) : null;
-    let orderedCourseIds: string[];
-    if (sameLane && overId && destinationIds.includes(row.id) && destinationIds.includes(overId)) {
-      orderedCourseIds = arrayMove(destinationIds, destinationIds.indexOf(row.id), destinationIds.indexOf(overId));
-    } else {
-      const activeRect = event.active.rect.current.translated;
-      const overRect = event.over?.rect;
-      const insertAfter = Boolean(activeRect && overRect && activeRect.top > overRect.top + overRect.height / 2);
-      orderedCourseIds = orderedCourseIdsForBoardMove(
-        props.rows,
-        row.id,
-        destination.gradeLevel,
-        destinationBoardTerm,
-        overId,
-        insertAfter
-      );
-    }
-    const orderChanged = orderedCourseIds.some((id, index) => destinationIds[index] !== id);
+    const activeRect = event.active.rect.current.translated;
+    const overRect = event.over?.rect;
+    const insertAfter = Boolean(activeRect && overRect && activeRect.top > overRect.top + overRect.height / 2);
+    const orderedCourseIds = orderedCourseIdsForBoardMove(
+      props.rows,
+      row.id,
+      destination.gradeLevel,
+      destinationBoardTerm,
+      overId,
+      insertAfter
+    );
+    const orderChanged = orderedCourseIds.length !== destinationIds.length
+      || orderedCourseIds.some((id, index) => destinationIds[index] !== id);
     if (row.grade_level === destination.gradeLevel && row.term === term && row.status === status && !orderChanged) return;
     setSelectedGrade(destination.gradeLevel);
     props.onMove(row, { gradeLevel: destination.gradeLevel, term, status, orderedCourseIds });
@@ -391,14 +371,13 @@ export default function CourseKanban(props: CourseKanbanProps) {
       sensors={sensors}
       collisionDetection={collisionDetection}
       measuring={{ droppable: { strategy: MeasuringStrategy.WhileDragging } }}
-      autoScroll={{ acceleration: 12, interval: 5, threshold: { x: 0.16, y: 0.18 } }}
+      autoScroll={{ acceleration: 8, interval: 12, threshold: { x: 0.16, y: 0.18 } }}
       onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
     >
       <div className="course-plan-toolbar">
-        <p className={`course-plan-drag-guide ${activeRow ? "active" : ""}`} id="course-plan-drag-guide"><DotsSixVertical size={16} weight="bold" /><span>{activeRow ? "Drop on a grade tab to keep the term, or continue into a term column." : "Drag editable courses by the dotted handle to another grade or term. Completed and transcript-backed courses stay locked."}</span></p>
+        <p className={`course-plan-drag-guide ${activeRow ? "active" : ""}`} id="course-plan-drag-guide"><DotsSixVertical size={16} weight="bold" /><span>{activeRow ? "Drop on a grade tab to move years, or on a term column to place it precisely." : "Drag from any open area of an editable card. Completed and transcript-backed courses stay locked."}</span></p>
         <div className="course-plan-toolbar-actions">
           <button className="secondary-button small" type="button" onClick={props.onSort} disabled={props.busy || props.rows.length < 2} title="Sort every grade with college courses first"><SortAscending size={15} /> Sort courses</button>
           <button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button>
@@ -425,10 +404,11 @@ export default function CourseKanban(props: CourseKanbanProps) {
       <section className="course-year-board" aria-label="Four-year course plan">
         <section className={`course-year ${selectedYearState}`} id={`course-year-${selectedGrade}`} role="tabpanel" aria-labelledby={`course-grade-${selectedGrade}`}>
           <div className={`course-year-terms ${selectedGrade === 12 ? "two-terms" : ""}`}>{courseBoardTermsForGrade(selectedGrade).map((term) => {
-            const termRows = selectedRows.filter((row) => courseAppearsInBoardTerm(row, term)).sort(compareCourseBoardRows);
-            return <TermLane grade={selectedGrade} term={term} rows={termRows} locked={selectedYearLocked} key={term}>
-              <SortableContext items={termRows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
-                {termRows.map((row) => <CourseCard row={row} boardTerm={term} courseMap={courseMap} smccdCourseMap={smccdCourseMap} sectionLocked={selectedYearLocked} continuation={row.term === "full_year" && term === "spring"} confirmingRemove={confirmingRemoveId === row.id} busy={props.busy} onRemoveRequest={handleRemoveRequest} key={`${row.id}-${term}`} />)}
+            const termRows = selectedRows.filter((row) => courseAppearsInBoardTerm(row, term)).sort(compareCourseBoardRowsForTerm(term));
+            const sortableTermRows = termRows.filter((row) => !(row.term === "full_year" && term === "spring"));
+            return <TermLane grade={selectedGrade} term={term} rows={termRows} locked={false} key={term}>
+              <SortableContext items={sortableTermRows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
+                {termRows.map((row) => <CourseCard row={row} boardTerm={term} courseMap={courseMap} smccdCourseMap={smccdCourseMap} sectionLocked={false} continuation={row.term === "full_year" && term === "spring"} confirmingRemove={confirmingRemoveId === row.id} busy={props.busy} onRemoveRequest={handleRemoveRequest} key={`${row.id}-${term}`} />)}
               </SortableContext>
             </TermLane>;
           })}</div>

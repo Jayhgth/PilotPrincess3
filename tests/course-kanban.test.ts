@@ -4,8 +4,11 @@ import { describe, expect, it } from "vitest";
 import CourseKanban from "@/components/CourseKanban";
 import {
   compareCourseBoardRows,
+  compareCourseBoardRowsForAutomaticSort,
+  compareCourseBoardRowsForTerm,
   courseAppearsInBoardTerm,
   courseBoardTermsForGrade,
+  courseStatusForBoardMove,
   orderedCourseIdsForAutomaticBoardSort,
   orderedCourseIdsForBoardMove
 } from "@/lib/course-board";
@@ -74,7 +77,9 @@ describe("four-year course board", () => {
     expect(html.match(/Completed Algebra/g)).toHaveLength(4);
     expect(html).toContain("Completed Algebra, full-year course continuing in spring.");
     expect(html).toContain("Remove Current English");
-    expect(html).toContain("Drag editable courses by the dotted handle to another grade or term. Completed and transcript-backed courses stay locked.");
+    expect(html).toContain("Drag from any open area of an editable card. Completed and transcript-backed courses stay locked.");
+    expect(html).toContain("kanban-drag-indicator");
+    expect(html).not.toContain("kanban-drag-handle");
     expect(html).toContain("Sort courses");
     expect(html).not.toContain("course-edit-button");
     expect(html).not.toContain("kanban-course-editor");
@@ -93,6 +98,20 @@ describe("four-year course board", () => {
     expect(courseAppearsInBoardTerm(row("year", "Year", 12, "current", "full_year"), "spring")).toBe(true);
   });
 
+  it("keeps non-movable full-year continuations at the bottom of spring", () => {
+    const fullYear = row("full-year", "English", 11, "current", "full_year", { sort_order: 0 });
+    const spring = row("spring", "Government", 11, "current", "spring", { sort_order: 4 });
+
+    expect([fullYear, spring].sort(compareCourseBoardRowsForTerm("spring")).map((course) => course.id)).toEqual([
+      "spring",
+      "full-year"
+    ]);
+    expect([fullYear, spring].sort(compareCourseBoardRowsForTerm("fall")).map((course) => course.id)).toEqual([
+      "full-year",
+      "spring"
+    ]);
+  });
+
   it("orders college first, high school second, and pass/fail last", () => {
     const college = row("college", "College Course", 11, "current", "fall", { college_provider_code: "SMCCD", college_units: 3 });
     const highSchool = row("high-school", "High School Course", 11, "current", "fall");
@@ -101,10 +120,24 @@ describe("four-year course board", () => {
       requirement_area_override: "personal_development"
     });
 
-    expect([passFail, highSchool, college].sort(compareCourseBoardRows).map((course) => course.id)).toEqual([
+    expect([passFail, highSchool, college].sort(compareCourseBoardRowsForAutomaticSort).map((course) => course.id)).toEqual([
       "college",
       "high-school",
       "pass-fail"
+    ]);
+  });
+
+  it("does not reshuffle tied manual positions when course metadata changes", () => {
+    const highSchool = row("a-high-school", "High School Course", 11, "current", "fall", { sort_order: 0 });
+    const college = row("z-college", "College Course", 11, "current", "fall", {
+      sort_order: 0,
+      college_provider_code: "SMCCD",
+      college_units: 3
+    });
+
+    expect([college, highSchool].sort(compareCourseBoardRows).map((course) => course.id)).toEqual([
+      "a-high-school",
+      "z-college"
     ]);
   });
 
@@ -140,5 +173,28 @@ describe("four-year course board", () => {
       physics.id,
       algebra.id
     ]);
+  });
+
+  it("normalizes the whole destination grade so dragging cannot create duplicate order slots", () => {
+    const fallA = row("fall-a", "Fall A", 11, "current", "fall", { sort_order: 0 });
+    const spring = row("spring", "Spring", 11, "current", "spring", { sort_order: 1 });
+    const fallB = row("fall-b", "Fall B", 11, "current", "fall", { sort_order: 2 });
+
+    expect(orderedCourseIdsForBoardMove([fallA, spring, fallB], fallB.id, 11, "fall", fallA.id)).toEqual([
+      "fall-b",
+      "fall-a",
+      "spring"
+    ]);
+    expect(orderedCourseIdsForBoardMove([fallA, spring, fallB], fallA.id, 11, "fall", null)).toEqual([
+      "spring",
+      "fall-b",
+      "fall-a"
+    ]);
+  });
+
+  it("moves editable courses across any grade tab without inventing completion", () => {
+    expect(courseStatusForBoardMove(12, 10, "current")).toBe("current");
+    expect(courseStatusForBoardMove(11, 11, "planned")).toBe("current");
+    expect(courseStatusForBoardMove(10, 12, "current")).toBe("planned");
   });
 });

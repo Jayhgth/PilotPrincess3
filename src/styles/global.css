@@ -2253,14 +2253,14 @@ textarea,
 .kanban-course.completed { opacity: .58; }
 .course-year.completed .kanban-course.completed { opacity: 1; }
 .kanban-course-main { display: grid; min-height: 70px; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 7px; padding: 9px 40px 9px 7px; text-align: left; }
+.kanban-course.draggable .kanban-course-main { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.kanban-course.draggable .kanban-course-main:active { cursor: grabbing; }
 .kanban-course.confirming-remove .kanban-course-main { padding-right: 96px; }
 .kanban-course.completed .kanban-course-main { min-height: 68px; padding-top: 9px; padding-bottom: 9px; }
 .kanban-course.completed .kanban-course-institution small { display: none; }
 .kanban-course-main:focus-visible { border-radius: 6px; outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -3px; }
-.kanban-drag-handle { display: grid; width: 28px; min-height: 46px; align-self: stretch; place-items: center; border: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent); border-radius: 5px; background: var(--surface-muted); color: var(--ink-soft); padding: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-.kanban-drag-handle:hover { border-color: color-mix(in srgb, var(--accent) 58%, var(--line-strong)); background: var(--accent-soft); color: var(--accent); }
-.kanban-drag-handle:active { cursor: grabbing; }
-.kanban-drag-handle:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent); outline-offset: -2px; }
+.kanban-drag-indicator { display: grid; width: 28px; min-height: 46px; align-self: stretch; place-items: center; color: var(--ink-faint); pointer-events: none; }
+.kanban-course.draggable:hover .kanban-drag-indicator { color: var(--accent); }
 .kanban-lock { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); font-size: var(--type-supporting); white-space: nowrap; }
 .kanban-lock span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .kanban-continuation-mark { width: 18px; height: 28px; }
@@ -2332,7 +2332,7 @@ textarea,
   .course-year-terms { grid-template-columns: 1fr; }
   .course-term-lane { border-top: 1px solid var(--line); border-left: 0; }
   .course-term-lane:first-child { border-top: 0; }
-  .kanban-drag-handle { width: 34px; }
+  .kanban-drag-indicator { width: 34px; }
   .kanban-course-main { grid-template-columns: 34px minmax(0, 1fr); }
   .plan-generation-prompt { grid-template-columns: 1fr; }
   .plan-generation-prompt > div:last-child { justify-content: flex-end; }

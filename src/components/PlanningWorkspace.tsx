@@ -788,7 +788,7 @@ export default function PlanningWorkspace() {
 
   function movePlanCourse(row: PlanCourse, placement: CoursePlacement) {
     if (!settings || !supabase) return;
-    if (row.source_review_item_id || row.status === "completed" || row.grade_level < Number(settings.grade_level ?? 9)) {
+    if (row.source_review_item_id || row.status === "completed") {
       notify("Completed and transcript-backed courses stay locked in their recorded term.");
       return;
     }

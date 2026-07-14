@@ -1,4 +1,4 @@
-import type { GradeLevel, PlanCourse } from "@/lib/models";
+import type { CourseStatus, GradeLevel, PlanCourse } from "@/lib/models";
 
 export type CourseBoardTerm = "fall" | "spring" | "summer";
 
@@ -27,6 +27,12 @@ export function isPassFailPlanCourse(row: PlanCourse) {
   );
 }
 
+export function courseStatusForBoardMove(currentGrade: GradeLevel, destinationGrade: GradeLevel, currentStatus: CourseStatus) {
+  if (destinationGrade > currentGrade) return "planned";
+  if (destinationGrade === currentGrade) return "current";
+  return currentStatus;
+}
+
 function boardSortGroup(row: PlanCourse) {
   if (isPassFailPlanCourse(row)) return 2;
   return isCollegePlanCourse(row) ? 0 : 1;
@@ -34,15 +40,20 @@ function boardSortGroup(row: PlanCourse) {
 
 export function compareCourseBoardRows(left: PlanCourse, right: PlanCourse) {
   return left.sort_order - right.sort_order
-    || boardSortGroup(left) - boardSortGroup(right)
-    || (left.custom_course_name ?? "").localeCompare(right.custom_course_name ?? "")
     || left.id.localeCompare(right.id);
+}
+
+export function compareCourseBoardRowsForTerm(term: CourseBoardTerm) {
+  return (left: PlanCourse, right: PlanCourse) => {
+    const leftContinuation = term === "spring" && left.term === "full_year" ? 1 : 0;
+    const rightContinuation = term === "spring" && right.term === "full_year" ? 1 : 0;
+    return leftContinuation - rightContinuation || compareCourseBoardRows(left, right);
+  };
 }
 
 export function compareCourseBoardRowsForAutomaticSort(left: PlanCourse, right: PlanCourse) {
   return boardSortGroup(left) - boardSortGroup(right)
     || left.sort_order - right.sort_order
-    || (left.custom_course_name ?? "").localeCompare(right.custom_course_name ?? "")
     || left.id.localeCompare(right.id);
 }
 
@@ -61,14 +72,29 @@ export function orderedCourseIdsForBoardMove(
   overId: string | null,
   insertAfter = false
 ) {
-  const destinationIds = rows
-    .filter((row) => row.id !== activeId && row.grade_level === gradeLevel && courseAppearsInBoardTerm(row, term))
+  const originalDestinationIds = rows
+    .filter((row) => row.grade_level === gradeLevel)
     .sort(compareCourseBoardRows)
     .map((row) => row.id);
+  const active = rows.find((row) => row.id === activeId);
+  if (overId === activeId && active?.grade_level === gradeLevel && courseAppearsInBoardTerm(active, term)) {
+    return originalDestinationIds;
+  }
+
+  const destinationRows = rows
+    .filter((row) => row.id !== activeId && row.grade_level === gradeLevel)
+    .sort(compareCourseBoardRows);
+  const destinationIds = destinationRows.map((row) => row.id);
   const overIndex = overId ? destinationIds.indexOf(overId) : -1;
-  const insertionIndex = overIndex < 0
-    ? destinationIds.length
-    : Math.min(destinationIds.length, overIndex + (insertAfter ? 1 : 0));
+  let insertionIndex = overIndex >= 0
+    ? Math.min(destinationIds.length, overIndex + (insertAfter ? 1 : 0))
+    : destinationRows.reduce(
+        (lastIndex, row, index) => courseAppearsInBoardTerm(row, term) ? index + 1 : lastIndex,
+        destinationIds.length
+      );
+  if (overIndex < 0 && !destinationRows.some((row) => courseAppearsInBoardTerm(row, term))) {
+    insertionIndex = destinationIds.length;
+  }
   destinationIds.splice(insertionIndex, 0, activeId);
   return destinationIds;
 }
