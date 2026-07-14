@@ -471,23 +471,32 @@ input:focus, select:focus, textarea:focus {
 .inline-alert.success { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 28%, var(--line)); color: var(--success); }
 
 .enrollment-policy-callout {
+  --policy-warning-bg: #fff3bf;
+  --policy-warning-border: #d6b54b;
+  --policy-warning-ink: #715100;
   display: flex;
-  width: min(100%, 920px);
+  width: min(100%, 720px);
   align-items: flex-start;
-  gap: 10px;
-  margin: 14px 0 18px;
-  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line));
-  border-radius: var(--radius);
-  background: var(--warning-soft);
-  padding: 12px 14px;
-  color: var(--warning);
+  gap: 8px;
+  margin: 10px 0 14px;
+  border: 1px solid var(--policy-warning-border);
+  border-radius: 6px;
+  background: var(--policy-warning-bg);
+  padding: 9px 11px;
+  color: var(--policy-warning-ink);
 }
 
 .enrollment-policy-callout > svg { flex: 0 0 auto; margin-top: 1px; }
-.enrollment-policy-callout > div { display: grid; gap: 4px; }
-.enrollment-policy-callout p { margin: 0; color: var(--ink); font-size: var(--type-body); line-height: var(--leading-body); }
+.enrollment-policy-callout > div { display: grid; gap: 2px; }
+.enrollment-policy-callout strong { font-size: 13px; line-height: 18px; }
+.enrollment-policy-callout p { margin: 0; color: var(--ink); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .enrollment-policy-callout small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .enrollment-policy-callout a { color: inherit; font-weight: 700; }
+:root[data-theme="dark"] .enrollment-policy-callout {
+  --policy-warning-bg: #302a13;
+  --policy-warning-border: #6f5e20;
+  --policy-warning-ink: #e2c45e;
+}
 
 @media (max-width: 900px) {
   .auth-page { grid-template-columns: 1fr; }
