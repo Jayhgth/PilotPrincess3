@@ -28,6 +28,7 @@ import {
   HandGrabbingIcon as HandGrabbing,
   ListPlusIcon as ListPlus,
   LockKeyIcon as LockKey,
+  SortAscendingIcon as SortAscending,
   TrashIcon as Trash
 } from "@phosphor-icons/react";
 import { useReducedMotion } from "motion/react";
@@ -75,6 +76,7 @@ interface CourseKanbanProps {
   busy: boolean;
   onMove: (row: PlanCourse, placement: CoursePlacement) => void;
   onRemove: (id: string) => void;
+  onSort: () => void;
   onGeneratePlan: () => void;
 }
 
@@ -178,8 +180,9 @@ function CourseCardBody({
               ref={setActivatorNodeRef}
               className="kanban-drag-handle"
               type="button"
-              title="Move course"
+              title="Drag to move between years or terms"
               aria-label={`Move ${title}`}
+              aria-describedby="course-plan-drag-guide"
               {...listeners}
               {...attributes}
             ><DotsSixVertical size={18} weight="bold" /></button>}
@@ -394,7 +397,13 @@ export default function CourseKanban(props: CourseKanbanProps) {
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
     >
-      <div className="course-plan-toolbar"><button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button></div>
+      <div className="course-plan-toolbar">
+        <p className={`course-plan-drag-guide ${activeRow ? "active" : ""}`} id="course-plan-drag-guide"><DotsSixVertical size={16} weight="bold" /><span>{activeRow ? "Drop on a grade tab to keep the term, or continue into a term column." : "Drag editable courses by the dotted handle to another grade or term. Completed and transcript-backed courses stay locked."}</span></p>
+        <div className="course-plan-toolbar-actions">
+          <button className="secondary-button small" type="button" onClick={props.onSort} disabled={props.busy || props.rows.length < 2} title="Sort every grade with college courses first"><SortAscending size={15} /> Sort courses</button>
+          <button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button>
+        </div>
+      </div>
       <div className={`course-grade-tabs ${activeRow ? "dragging-course" : ""}`} role="tablist" aria-label="High school year">
         {GRADE_LEVELS.map((grade) => {
           const courseCount = props.rows.filter((row) => row.grade_level === grade).length;

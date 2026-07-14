@@ -2287,7 +2287,12 @@ textarea,
 }
 
 /* Four-year course schedule and rule-aware graduation */
-.course-plan-toolbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.course-plan-toolbar { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.course-plan-toolbar-actions { display: flex; flex: 0 0 auto; gap: 7px; }
+.course-plan-drag-guide { display: flex; min-width: 0; align-items: center; gap: 6px; margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.course-plan-drag-guide svg { flex: 0 0 auto; color: var(--ink-soft); }
+.course-plan-drag-guide.active { color: var(--accent); font-weight: 650; }
+.course-plan-drag-guide.active svg { color: var(--accent); }
 .course-grade-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
 .course-grade-tabs button { display: grid; min-width: 0; gap: 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-soft); padding: 9px 12px 8px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease; }
 .course-grade-tabs button:hover { background: var(--surface-muted); color: var(--ink); }
@@ -2330,8 +2335,8 @@ textarea,
 .kanban-course.completed .kanban-course-main { min-height: 68px; padding-top: 9px; padding-bottom: 9px; }
 .kanban-course.completed .kanban-course-institution small { display: none; }
 .kanban-course-main:focus-visible { border-radius: 6px; outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: -3px; }
-.kanban-drag-handle { display: grid; width: 28px; min-height: 46px; align-self: stretch; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-faint); padding: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-.kanban-drag-handle:hover { background: var(--surface-muted); color: var(--accent); }
+.kanban-drag-handle { display: grid; width: 28px; min-height: 46px; align-self: stretch; place-items: center; border: 1px solid color-mix(in srgb, var(--line-strong) 72%, transparent); border-radius: 5px; background: var(--surface-muted); color: var(--ink-soft); padding: 0; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.kanban-drag-handle:hover { border-color: color-mix(in srgb, var(--accent) 58%, var(--line-strong)); background: var(--accent-soft); color: var(--accent); }
 .kanban-drag-handle:active { cursor: grabbing; }
 .kanban-drag-handle:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent); outline-offset: -2px; }
 .kanban-lock { display: inline-grid; width: 18px; height: 28px; place-items: center; color: var(--ink-faint); font-size: var(--type-supporting); white-space: nowrap; }
@@ -2400,6 +2405,8 @@ textarea,
   .smccd-program-toolbar { width: 100%; justify-content: space-between; }
   .smccd-ge-page-heading select { width: 100%; }
   .course-grade-tabs { overflow-x: auto; grid-template-columns: repeat(4, minmax(112px, 1fr)); }
+  .course-plan-toolbar { align-items: stretch; flex-direction: column; }
+  .course-plan-toolbar-actions { justify-content: flex-end; }
   .course-year-terms { grid-template-columns: 1fr; }
   .course-term-lane { border-top: 1px solid var(--line); border-left: 0; }
   .course-term-lane:first-child { border-top: 0; }

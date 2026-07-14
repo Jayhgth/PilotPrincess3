@@ -34,11 +34,13 @@ import {
   courseOccursInAcademicPeriod,
   courseDisplayName,
   generateSuggestedPlan,
+  GRADE_LEVELS,
   overallCompletedPercent,
   nextAcademicPeriod,
   selectedPlanGrades,
   schoolYearForGrade
 } from "@/lib/planning";
+import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import type { GpaScenarioChoice } from "@/lib/gpa-planner";
 import { requirementsForSettings } from "@/lib/planning";
 import {
@@ -884,6 +886,52 @@ export default function PlanningWorkspace() {
     });
   }
 
+  function sortPlanCourses() {
+    if (!supabase) return;
+    const previousRows = planCourses;
+    const previousById = new Map(previousRows.map((row) => [row.id, row]));
+    const orderById = new Map<string, number>();
+    for (const grade of GRADE_LEVELS) {
+      orderedCourseIdsForAutomaticBoardSort(previousRows, grade).forEach((id, index) => orderById.set(id, index));
+    }
+    const nextRows = previousRows.map((row) => ({ ...row, sort_order: orderById.get(row.id) ?? row.sort_order }));
+    const changedRows = nextRows.filter((row) => previousById.get(row.id)?.sort_order !== row.sort_order);
+    if (changedRows.length === 0) {
+      notify("Courses are already sorted with college courses first.");
+      return;
+    }
+
+    setPlanCourses(nextRows);
+    void runAction("Sorting courses", async () => {
+      const results = await Promise.all(changedRows.map((row) => supabase.from("plan_courses").update({ sort_order: row.sort_order }).eq("id", row.id)));
+      const error = results.find((result) => result.error)?.error;
+      if (error) {
+        await Promise.all(changedRows.flatMap((row) => {
+          const previous = previousById.get(row.id);
+          return previous ? [supabase.from("plan_courses").update({ sort_order: previous.sort_order }).eq("id", previous.id)] : [];
+        }));
+        throw error;
+      }
+      void logEvent("plan_edited", { action: "sort_courses", order: "college_first" });
+      return true;
+    }).then((succeeded) => {
+      if (!succeeded) {
+        setPlanCourses(previousRows);
+        return;
+      }
+      notifyUndo("Courses sorted with college courses first.", async () => {
+        const changedIds = new Set(changedRows.map((row) => row.id));
+        const results = await Promise.all(changedRows.flatMap((row) => {
+          const previous = previousById.get(row.id);
+          return previous ? [supabase.from("plan_courses").update({ sort_order: previous.sort_order }).eq("id", previous.id)] : [];
+        }));
+        const error = results.find((result) => result.error)?.error;
+        if (error) throw error;
+        setPlanCourses((current) => current.map((row) => changedIds.has(row.id) ? previousById.get(row.id) ?? row : row));
+      });
+    });
+  }
+
   async function removePlanCourse(id: string) {
     if (!supabase) return;
     const removed = planCourses.find((row) => row.id === id);
@@ -1587,6 +1635,7 @@ export default function PlanningWorkspace() {
           busy={Boolean(busyLabel)}
           onMove={movePlanCourse}
           onRemove={(id) => void removePlanCourse(id)}
+          onSort={sortPlanCourses}
           onGeneratePlan={openPlanGenerationPrompt}
         />
       </>

@@ -39,6 +39,20 @@ export function compareCourseBoardRows(left: PlanCourse, right: PlanCourse) {
     || left.id.localeCompare(right.id);
 }
 
+export function compareCourseBoardRowsForAutomaticSort(left: PlanCourse, right: PlanCourse) {
+  return boardSortGroup(left) - boardSortGroup(right)
+    || left.sort_order - right.sort_order
+    || (left.custom_course_name ?? "").localeCompare(right.custom_course_name ?? "")
+    || left.id.localeCompare(right.id);
+}
+
+export function orderedCourseIdsForAutomaticBoardSort(rows: readonly PlanCourse[], gradeLevel: GradeLevel) {
+  return rows
+    .filter((row) => row.grade_level === gradeLevel)
+    .sort(compareCourseBoardRowsForAutomaticSort)
+    .map((row) => row.id);
+}
+
 export function orderedCourseIdsForBoardMove(
   rows: readonly PlanCourse[],
   activeId: string,

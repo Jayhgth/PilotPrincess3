@@ -6,6 +6,7 @@ import {
   compareCourseBoardRows,
   courseAppearsInBoardTerm,
   courseBoardTermsForGrade,
+  orderedCourseIdsForAutomaticBoardSort,
   orderedCourseIdsForBoardMove
 } from "@/lib/course-board";
 import type { PlanCourse, StudentSettings } from "@/lib/models";
@@ -46,6 +47,7 @@ function renderBoard(rows: PlanCourse[], gradeLevel: PlanCourse["grade_level"] =
     busy: false,
     onMove: () => undefined,
     onRemove: () => undefined,
+    onSort: () => undefined,
     onGeneratePlan: () => undefined
   }));
 }
@@ -72,6 +74,8 @@ describe("four-year course board", () => {
     expect(html.match(/Completed Algebra/g)).toHaveLength(4);
     expect(html).toContain("Completed Algebra, full-year course continuing in spring.");
     expect(html).toContain("Remove Current English");
+    expect(html).toContain("Drag editable courses by the dotted handle to another grade or term. Completed and transcript-backed courses stay locked.");
+    expect(html).toContain("Sort courses");
     expect(html).not.toContain("course-edit-button");
     expect(html).not.toContain("kanban-course-editor");
   });
@@ -102,6 +106,19 @@ describe("four-year course board", () => {
       "high-school",
       "pass-fail"
     ]);
+  });
+
+  it("restores college-first order without overriding manual order until requested", () => {
+    const skyline = row("skyline", "Skyline Calculus", 11, "current", "fall", {
+      college_provider_code: "SMCCD",
+      college_units: 5,
+      sort_order: 9
+    });
+    const highSchool = row("high-school", "High School English", 11, "current", "fall", { sort_order: 0 });
+    const otherYear = row("other-year", "Senior Government", 12, "planned", "fall", { sort_order: 0 });
+
+    expect([skyline, highSchool].sort(compareCourseBoardRows).map((course) => course.id)).toEqual(["high-school", "skyline"]);
+    expect(orderedCourseIdsForAutomaticBoardSort([highSchool, otherYear, skyline], 11)).toEqual(["skyline", "high-school"]);
   });
 
   it("projects stable order when a course moves within or across school years", () => {
