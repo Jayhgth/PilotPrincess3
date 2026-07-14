@@ -1,6 +1,7 @@
 import { Button as BaseButton } from "@base-ui/react/button";
 import {
   ArrowLeftIcon as ArrowLeft,
+  BuildingsIcon as Buildings,
   ChatCircleDotsIcon as ChatCircleDots,
   GearSixIcon as GearSix,
   MoonIcon as Moon,
@@ -42,7 +43,7 @@ interface Props<ViewId extends string> {
   view: ViewId;
   activeLabel: string;
   navItems: WorkspaceNavItem<ViewId>[];
-  school: { short_name: string; source_year: string | null };
+  school: { slug: string; short_name: string; source_year: string | null };
   theme: "light" | "dark";
   aiEnabled: boolean;
   assistantOpen: boolean;
@@ -168,7 +169,7 @@ export default function AppChrome<ViewId extends string>({
       </nav>
       <div className="sidebar-footer">
         <div className="school-chip" title={`${school.short_name}, ${school.source_year ?? "Current"} sources`}>
-          <InstitutionMark institution="dtech" decorative />
+          {school.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" decorative /> : <Buildings size={19} aria-hidden />}
           <span><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
         </div>
         <div className="sidebar-account-actions">

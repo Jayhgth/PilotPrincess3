@@ -92,6 +92,10 @@ test.describe("live Pilot behavior", () => {
 
     const reset = await authorizedPost(request, "/api/admin/reset", accessToken, {});
     expect(reset.ok(), await reset.text()).toBe(true);
+    const school = await supabase.from("schools").select("id").eq("slug", "design-tech-high-school").single();
+    if (school.error) throw school.error;
+    const schoolSelection = await supabase.rpc("select_current_school", { target_school_id: school.data.id });
+    if (schoolSelection.error) throw schoolSelection.error;
     const settings = await supabase.from("student_settings").update({
       preferred_name: "Pilot QA",
       age: 17,
@@ -124,6 +128,25 @@ test.describe("live Pilot behavior", () => {
     const conversationResponse = await authorizedPost(request, "/api/ai/conversations", accessToken, { title: "Pilot live stress test" });
     expect(conversationResponse.status()).toBe(201);
     const conversationId = String((await conversationResponse.json() as { conversation: { id: string } }).conversation.id);
+
+    const providerTurn = await sendTurn(request, accessToken, conversationId, "Which community colleges are closest to my school?");
+    expect(providerTurn.proposals).toHaveLength(0);
+    const providerTools = await supabase.from("ai_tool_calls").select("tool_name,status").eq("conversation_id", conversationId).eq("tool_name", "get_nearby_education_providers");
+    expect(providerTools.data).toContainEqual({ tool_name: "get_nearby_education_providers", status: "completed" });
+
+    const frameworkTurn = await sendTurn(request, accessToken, conversationId, "Check my California graduation minimum and UC A-G progress separately.");
+    expect(frameworkTurn.proposals).toHaveLength(0);
+    const frameworkTools = await supabase.from("ai_tool_calls").select("tool_name,status").eq("conversation_id", conversationId).eq("tool_name", "get_academic_framework_progress");
+    expect(frameworkTools.data).toContainEqual({ tool_name: "get_academic_framework_progress", status: "completed" });
+
+    const correctionTurn = await sendTurn(request, accessToken, conversationId, "Submit a shared school-data correction for administrator review: the school's directory_source_url should be https://sd.cde.ca.gov/schooldirectory/details?cdscode=41690470129759, and that same official CDE page is the evidence.");
+    expect(correctionTurn.proposals.map((proposal) => proposal.name)).toEqual(["submit_shared_data_correction"]);
+    const correctionReviews = await autoReview(request, accessToken, correctionTurn.proposals);
+    expect(correctionReviews.every((result) => result.applied === true), JSON.stringify(correctionReviews)).toBe(true);
+    const pendingCorrection = await supabase.from("shared_data_proposals").select("id,status").eq("submitted_by", userId).eq("status", "pending").order("created_at", { ascending: false }).limit(1).single();
+    if (pendingCorrection.error) throw pendingCorrection.error;
+    const publishCorrection = await authorizedPost(request, "/api/admin/shared-proposals", accessToken, { proposalId: pendingCorrection.data.id, decision: "approved", note: "Live QA publish-path verification." });
+    expect(publishCorrection.ok(), await publishCorrection.text()).toBe(true);
 
     const preferenceTurn = await sendTurn(
       request,

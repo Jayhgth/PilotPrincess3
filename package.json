@@ -22,6 +22,10 @@
     "smccd:scrape": "node scripts/scrape-smccd-catalog.mjs",
     "smccd:migration": "node scripts/generate-smccd-migration.mjs",
     "equivalencies:generate": "node scripts/generate-equivalency-migration.mjs",
+    "schools:sync": "node scripts/sync-california-schools.mjs",
+    "providers:sync": "node scripts/sync-california-community-colleges.mjs",
+    "uc-ag:sync-schools": "node scripts/sync-uc-ag-schools.mjs",
+    "uc-ag:sync-courses": "node scripts/sync-uc-ag-courses.mjs",
     "smccd:validate": "node scripts/validate-smccd-catalog.mjs"
   },
   "dependencies": {

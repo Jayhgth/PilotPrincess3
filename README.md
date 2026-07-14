@@ -1,6 +1,6 @@
 # Pilot Princess
 
-Pilot Princess is a source-backed academic planning workspace for Design Tech High School students. It combines d.tech graduation tracking, deterministic transcript import, course planning, SMCCD concurrent-enrollment discovery, and narrowly scoped Codex assistance.
+Pilot Princess is a source-backed academic planning workspace for California public and charter high-school students. It combines statewide school identity, layered graduation and UC A–G evidence, deterministic transcript import, course planning, nearby community-college discovery, and narrowly scoped Codex assistance. d.tech and SMCCD remain the deepest reviewed local integrations; the schema is designed to add other local catalogs and providers without changing the student model.
 
 Current reference data is labeled 2025-26. Registration accepts any valid email address. Planning results are advisory and preserve source age, verification, and uncertainty.
 
@@ -52,6 +52,17 @@ Use focused tests while debugging. Run browser, SMCCD, migration, RLS, storage, 
 
 ## Data refreshes
 
+California school identity comes from the official CDE public-school directory. UC A–G identities and approved course lists come from UCOP; imported UCOP rows support transcript identity and A–G evidence, but remain unavailable for schedule placement until a local source supplies grade and term availability. Nearby community colleges come from the official CCCCO directory and are geocoded from the school's public address, never a student's device location.
+
+```sh
+pnpm schools:sync
+pnpm uc-ag:sync-schools
+pnpm uc-ag:sync-courses
+pnpm providers:sync
+```
+
+The syncs are idempotent and retain source URLs, source dates, confidence, and review state. Review ambiguous identities instead of selecting a fuzzy match.
+
 The checked-in SMCCD catalog is generated from official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs.
 
 ```sh
@@ -76,7 +87,7 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/components/AdminSettingsPanel.tsx` and `src/pages/api/admin/reset.ts`: administrator-only QA controls inside Settings, with a server- and database-enforced self-reset that preserves auth and role membership.
 - `src/components/GlobalAssistant.tsx`: persistent t3code-inspired docked conversation rail with a compact model picker, concise sanitized GFM answers, timed and folded reasoning summaries, student-data tool activity, reversible conversation archiving, and Supervised/Auto-review access.
 - `src/components/AppChrome.tsx`, `src/components/OverviewPath.tsx`, and `src/styles/t3code.css`: the retained t3code-inspired workspace shell and planning overview.
-- `src/components/GraduationWorkspace.tsx`: d.tech diploma and selected AA/AS evidence views.
+- `src/components/GraduationWorkspace.tsx` and `src/lib/academic-frameworks.ts`: separate local diploma, California minimum, UC A–G, and selected AA/AS evidence views.
 - `src/components/SmccdPlanner.tsx`: district course and associate-degree discovery.
 - `src/lib/planning.ts`: deterministic graduation, GPA, and course-plan logic.
 - `src/lib/transcript.ts` and `src/server/transcript-parser.ts`: deterministic text-layer transcript parsing and reconciliation.
@@ -84,10 +95,11 @@ Review generated diffs before applying migrations. Curriculum inclusion does not
 - `src/pages/api/ai/`, `src/server/codex.ts`, `src/server/ai-knowledge.ts`, `src/server/ai-memory.ts`, `src/server/assistant-audits.ts`, `src/server/ai-auto-review.ts`, and `src/server/ai-tools.ts`: consent-gated conversations, retrieved versioned application guidance, lightweight per-student memory, private image context, isolated Codex turns, bounded evidence audits, separate risk review, student-data tools, streaming, and validated mutations.
 - `supabase/migrations/`: schema, RLS, auth, and storage source of truth.
 - `supabase/catalog/`: reviewed catalog and equivalency artifacts.
+- `scripts/sync-california-schools.mjs`, `scripts/sync-uc-ag-schools.mjs`, `scripts/sync-uc-ag-courses.mjs`, and `scripts/sync-california-community-colleges.mjs`: official statewide identity and catalog ingestion.
 
 ## Decision rules
 
-- Text-layer PDF extraction, catalog matching, GPA, graduation, and SMCCD progress are deterministic.
+- Text-layer PDF extraction, catalog matching, GPA, layered requirement progress, and SMCCD progress are deterministic. A missing local mapping is shown as verification work, never as zero requirements or a completed plan.
 - Codex is opt-in. Onboarding explains the boundary, requires explicit approval, runs a real connection test, and saves the selected model before the assistant can run. The global rail reads only allowlisted, RLS-protected academic records. Transcript audits can compare bounded source text with parsed, reviewed, catalog-linked, and imported rows while keeping transcript-backed records read-only. Answers default to one to three short sentences and are schema-bounded to 900 characters. Every write is stored as an exact pending tool call. Manual mode waits for the student; Auto-review independently applies an approved exact proposal or declines it without asking for confirmation. Normal RLS, prerequisite, eligibility, transcript-lock, and record rules run again at execution. Hidden chain-of-thought, shell, files, network, MCP, plugins, skills, and subagents are disabled.
 - `P` earns credit but does not enter GPA. Quarter-coded pass/fail rows are intersession records.
 - `A+`, `A`, and `A-` use the same four-point band while preserving the exact mark.

@@ -1,6 +1,7 @@
 import {
   ArrowClockwiseIcon as ArrowClockwise,
   BookOpenIcon as BookOpen,
+  BuildingsIcon as Buildings,
   ChartLineUpIcon as ChartLineUp,
   ChatCircleDotsIcon as ChatCircleDots,
   CheckIcon as Check,
@@ -41,6 +42,7 @@ import {
   schoolYearForGrade
 } from "@/lib/planning";
 import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
+import { calculateAcademicFrameworkProgress } from "@/lib/academic-frameworks";
 import type { GpaScenarioChoice } from "@/lib/gpa-planner";
 import { requirementsForSettings } from "@/lib/planning";
 import {
@@ -63,7 +65,12 @@ import StudentSettingsPanel, { type StudentSettingsPatch } from "@/components/St
 import WorkspaceTabs from "@/components/WorkspaceTabs";
 import type {
   CatalogReviewItem,
+  AcademicFramework,
+  AcademicFrameworkConstraint,
+  AcademicRequirementRule,
   Course,
+  CourseDesignation,
+  CourseFrameworkMapping,
   CourseRequirementMapping,
   EnrollmentPolicy,
   FourYearPlan,
@@ -234,6 +241,11 @@ export default function PlanningWorkspace() {
   const [sources, setSources] = useState<OfficialSource[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [requirements, setRequirements] = useState<GraduationRequirement[]>([]);
+  const [academicFrameworks, setAcademicFrameworks] = useState<AcademicFramework[]>([]);
+  const [academicRules, setAcademicRules] = useState<AcademicRequirementRule[]>([]);
+  const [academicConstraints, setAcademicConstraints] = useState<AcademicFrameworkConstraint[]>([]);
+  const [frameworkMappings, setFrameworkMappings] = useState<CourseFrameworkMapping[]>([]);
+  const [courseDesignations, setCourseDesignations] = useState<CourseDesignation[]>([]);
   const [mappings, setMappings] = useState<CourseRequirementMapping[]>([]);
   const [equivalencies, setEquivalencies] = useState<SmccdHighSchoolEquivalency[]>([]);
   const [plannedSmccdCourses, setPlannedSmccdCourses] = useState<SmccdCourse[]>([]);
@@ -282,6 +294,14 @@ export default function PlanningWorkspace() {
     () => calculateRequirementProgress(requirements, planCourses, mappings, courses, equivalencies),
     [requirements, planCourses, mappings, courses, equivalencies]
   );
+  const academicProgress = useMemo(() => calculateAcademicFrameworkProgress({
+    frameworks: academicFrameworks,
+    rules: academicRules,
+    mappings: frameworkMappings,
+    courses,
+    planCourses,
+    graduationYear: settings?.graduation_year ?? null
+  }), [academicFrameworks, academicRules, courses, frameworkMappings, planCourses, settings?.graduation_year]);
   const gpa = useMemo(() => calculateGpa(planCourses, equivalencies), [planCourses, equivalencies]);
   const graduationEarnedPercent = useMemo(() => overallCompletedPercent(fullProgress), [fullProgress]);
   const availableCatalogGrades = useMemo(() => settings ? selectedPlanGrades(settings) : [], [settings]);
@@ -338,17 +358,21 @@ export default function PlanningWorkspace() {
       equivalencies
     );
     const readiness = prerequisiteDisplay(evaluation);
+    const designationLabels = courseDesignations
+      .filter((designation) => designation.course_id === course.id)
+      .map((designation) => designation.designation === "ap" ? "AP" : designation.designation === "ib" ? "IB" : designation.designation === "uc_honors" ? "UC honors" : designation.designation === "school_honors" ? "Honors" : designation.designation === "cte" ? "CTE" : "Dual enrollment");
     return {
       id: course.id,
       title: course.name,
       metadata: [
         course.subject,
-        course.credits ? formatCredits(course.credits) : "Credits to verify"
+        course.credits ? formatCredits(course.credits) : "Credits to verify",
+        ...designationLabels
       ],
       readinessLabel: readiness.label,
       readinessTone: readiness.tone
     };
-  }), [activeCatalogGrade, courses, defaultDtechPlacement, equivalencies, filteredCourses, planCourses, plannedSmccdCourses]);
+  }), [activeCatalogGrade, courseDesignations, courses, defaultDtechPlacement, equivalencies, filteredCourses, planCourses, plannedSmccdCourses]);
   const plannedSmccdMap = useMemo(() => new Map(plannedSmccdCourses.map((course) => [course.id, course])), [plannedSmccdCourses]);
   const assistantPageContext = useMemo(() => ({
     view,
@@ -372,26 +396,14 @@ export default function PlanningWorkspace() {
       setSession(sessionData.session);
       const userId = sessionData.session.user.id;
       const [
-        schoolResult,
         settingsResult,
-        sourceResult,
-        courseResult,
-        requirementResult,
-        mappingResult,
-        equivalencyResult,
         planResult,
         reviewResult,
         enrollmentPolicyResult,
         enrollmentPreferenceResult,
         adminResult
       ] = await Promise.all([
-        supabase.from("schools").select("*").eq("slug", "design-tech-high-school").single(),
         supabase.from("student_settings").select("*").eq("id", userId).single(),
-        supabase.from("official_sources").select("*").order("is_official", { ascending: false }).order("created_at", { ascending: false }),
-        supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
-        supabase.from("graduation_requirements").select("*").eq("review_status", "approved").order("name"),
-        supabase.from("course_requirement_mappings").select("*"),
-        supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code"),
         supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
         supabase.from("catalog_review_items").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
         supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
@@ -399,12 +411,7 @@ export default function PlanningWorkspace() {
         supabase.rpc("is_app_admin")
       ]);
       const firstError = [
-        schoolResult.error,
         settingsResult.error,
-        courseResult.error,
-        requirementResult.error,
-        mappingResult.error,
-        equivalencyResult.error,
         planResult.error,
         enrollmentPolicyResult.error,
         enrollmentPreferenceResult.error
@@ -412,6 +419,48 @@ export default function PlanningWorkspace() {
       if (firstError) throw firstError;
 
       const loadedPlan = planResult.data as unknown as FourYearPlan;
+      const rawSettings = settingsResult.data as unknown as StudentSettings;
+      const selectedSchoolId = rawSettings.school_id ?? loadedPlan.school_id;
+      if (!selectedSchoolId) throw new Error("Choose a California high school before opening the workspace.");
+      const [schoolResult, sourceResult, courseResult, requirementResult, mappingResult, equivalencyResult, frameworkResult] = await Promise.all([
+        supabase.from("schools").select("*").eq("id", selectedSchoolId).single(),
+        supabase.from("official_sources").select("*").or(`school_id.eq.${selectedSchoolId},user_id.eq.${userId}`).order("is_official", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("courses").select("*").eq("school_id", selectedSchoolId).eq("review_status", "approved").order("subject").order("name"),
+        supabase.from("graduation_requirements").select("*").eq("school_id", selectedSchoolId).eq("review_status", "approved").order("name"),
+        supabase.from("course_requirement_mappings").select("id, course_id, requirement_id, source_id, confidence, is_user_override, courses!inner(school_id)").eq("courses.school_id", selectedSchoolId),
+        supabase.from("smccd_high_school_equivalencies").select("*").order("normalized_course_code"),
+        supabase.from("academic_frameworks").select("*").eq("status", "published").or(`school_id.is.null,school_id.eq.${selectedSchoolId}`).order("framework_type")
+      ]);
+      const catalogError = [
+        schoolResult.error,
+        sourceResult.error,
+        courseResult.error,
+        requirementResult.error,
+        mappingResult.error,
+        equivalencyResult.error,
+        frameworkResult.error
+      ].find(Boolean);
+      if (catalogError) throw catalogError;
+
+      const loadedFrameworks = (frameworkResult.data ?? []) as unknown as AcademicFramework[];
+      const frameworkIds = loadedFrameworks.map((framework) => framework.id);
+      const [academicRuleResult, frameworkMappingResult, constraintResult] = frameworkIds.length ? await Promise.all([
+        supabase.from("academic_requirement_rules").select("*").in("framework_id", frameworkIds).order("sort_order"),
+        supabase.from("course_framework_mappings").select("*").in("framework_id", frameworkIds).eq("review_status", "approved"),
+        supabase.from("academic_framework_constraints").select("*").in("framework_id", frameworkIds).order("sort_order")
+      ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+      const frameworkError = academicRuleResult.error ?? frameworkMappingResult.error ?? constraintResult.error;
+      if (frameworkError) throw frameworkError;
+      const loadedCourseIds = (courseResult.data ?? []).map((course) => course.id);
+      const designationResult = loadedCourseIds.length
+        ? await supabase
+            .from("course_designations")
+            .select("id, course_id, designation, source_url, source_year, confidence, review_status")
+            .in("course_id", loadedCourseIds)
+            .eq("review_status", "approved")
+        : { data: [], error: null };
+      if (designationResult.error) throw designationResult.error;
+
       const versionResult = await supabase
         .from("plan_versions")
         .select("*")
@@ -431,7 +480,6 @@ export default function PlanningWorkspace() {
         : { data: [], error: null };
       if (planCourseResult.error) throw planCourseResult.error;
 
-      const rawSettings = settingsResult.data as unknown as StudentSettings;
       const loadedSettings: StudentSettings = {
         ...rawSettings,
         ai_enabled: rawSettings.ai_enabled ?? false,
@@ -447,8 +495,15 @@ export default function PlanningWorkspace() {
       setSources(loadedSources);
       setCourses((courseResult.data ?? []) as unknown as Course[]);
       setRequirements((requirementResult.data ?? []) as unknown as GraduationRequirement[]);
+      setAcademicFrameworks(loadedFrameworks);
+      setAcademicRules((academicRuleResult.data ?? []) as unknown as AcademicRequirementRule[]);
+      setFrameworkMappings((frameworkMappingResult.data ?? []) as unknown as CourseFrameworkMapping[]);
+      setAcademicConstraints((constraintResult.data ?? []) as unknown as AcademicFrameworkConstraint[]);
+      setCourseDesignations((designationResult.data ?? []) as unknown as CourseDesignation[]);
       setMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
-      setEquivalencies((equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[]);
+      setEquivalencies(schoolResult.data.slug === "design-tech-high-school"
+        ? (equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[]
+        : []);
       setPlan(loadedPlan);
       setActiveVersion(loadedActiveVersion);
       const loadedPlanCourses = (planCourseResult.data ?? []) as unknown as PlanCourse[];
@@ -1351,20 +1406,35 @@ export default function PlanningWorkspace() {
 
   function renderDashboard() {
     if (!settings || !supabase || !session) return null;
+    const stateProgress = academicProgress.find((item) => item.framework.framework_type === "state_graduation") ?? null;
     const requirementSnapshot = overviewProgress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
     });
-    const dashboardCredits = requirementSnapshot.reduce((sum, { applied }) => {
+    const legacyDashboardCredits = requirementSnapshot.reduce((sum, { applied }) => {
       return { completed: sum.completed + applied.completed, scheduled: sum.scheduled + applied.current + applied.planned, remaining: sum.remaining + applied.remaining };
     }, { completed: 0, scheduled: 0, remaining: 0 });
-    const overviewRequirements = requirementSnapshot
+    const legacyOverviewRequirements = requirementSnapshot
       .map(({ item, applied }) => ({
         id: item.requirement.id,
         name: item.requirement.name,
         remaining: applied.remaining
       }))
       .sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
+    const usesLocalRequirements = legacyOverviewRequirements.length > 0;
+    const dashboardCredits = usesLocalRequirements ? legacyDashboardCredits : {
+      completed: stateProgress?.completedCredits ?? 0,
+      scheduled: stateProgress?.scheduledCredits ?? 0,
+      remaining: stateProgress?.remainingCredits ?? 0
+    };
+    const overviewRequirements = usesLocalRequirements ? legacyOverviewRequirements : (stateProgress?.rules ?? []).map((row) => ({
+      id: row.rule.id,
+      name: row.rule.title,
+      remaining: row.remainingCredits
+    })).sort((left, right) => right.remaining - left.remaining || left.name.localeCompare(right.name));
+    const earnedPercent = usesLocalRequirements
+      ? graduationEarnedPercent
+      : stateProgress?.requiredCredits ? Math.round((stateProgress.completedCredits / stateProgress.requiredCredits) * 100) : 0;
     const overviewCourse = (row: PlanCourse) => {
       const collegeCode = row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id)?.college_code : null;
       const isCollegeCourse = Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0);
@@ -1382,7 +1452,7 @@ export default function PlanningWorkspace() {
       .sort((left, right) => Number(Boolean(right.smccd_course_id)) - Number(Boolean(left.smccd_course_id)) || left.sort_order - right.sort_order)
       .map(overviewCourse);
     const overviewData: OverviewPathData = {
-      earnedPercent: graduationEarnedPercent,
+      earnedPercent,
       completedCredits: dashboardCredits.completed,
       scheduledCredits: dashboardCredits.scheduled,
       remainingCredits: dashboardCredits.remaining,
@@ -1391,6 +1461,7 @@ export default function PlanningWorkspace() {
       currentGradedCredits: gpa.currentGradedCredits,
       currentWeightedCredits: gpa.currentWeightedCredits,
       requirements: overviewRequirements,
+      requirementsVerified: usesLocalRequirements || stateProgress?.mappingCoverage === "available",
       currentPeriodLabel: currentPeriod.label,
       nextPeriodLabel: upcomingPeriod.label,
       currentCourses: periodCourses(currentPeriod),
@@ -1518,7 +1589,8 @@ export default function PlanningWorkspace() {
   function renderDtechCatalog() {
     return (
       <CourseCatalogBrowser
-        source="dtech"
+        source={school?.slug === "design-tech-high-school" ? "dtech" : "high_school"}
+        sourceIdentity={school?.slug === "design-tech-high-school" ? <InstitutionMark institution="dtech" size="header" decorative /> : <Buildings size={25} aria-hidden />}
         title="Course catalog"
         description="Courses you can still add in the selected school year."
         countLabel={filteredCourses.length ? `${filteredCourses.length} ${filteredCourses.length === 1 ? "course" : "courses"}` : "No courses"}
@@ -1541,7 +1613,11 @@ export default function PlanningWorkspace() {
           facts={[
             { label: "Subject", value: selectedDtechCourse.subject },
             { label: "Credits", value: selectedDtechCourse.credits ? formatCredits(selectedDtechCourse.credits) : "Verify" },
-            { label: "Offered", value: selectedDtechCourse.grade_levels.length ? selectedDtechCourse.grade_levels.join(", ") : "Verify" }
+            { label: "Offered", value: selectedDtechCourse.grade_levels.length ? selectedDtechCourse.grade_levels.join(", ") : "Verify" },
+            ...(() => {
+              const labels = courseDesignations.filter((designation) => designation.course_id === selectedDtechCourse.id).map((designation) => designation.designation === "ap" ? "AP" : designation.designation === "ib" ? "IB" : designation.designation === "uc_honors" ? "UC honors" : designation.designation === "school_honors" ? "Honors" : designation.designation === "cte" ? "CTE" : "Dual enrollment");
+              return labels.length ? [{ label: "Designations", value: labels.join(", ") }] : [];
+            })()
           ]}
           description={selectedDtechCourse.description}
           controls={<form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
@@ -1557,12 +1633,15 @@ export default function PlanningWorkspace() {
   }
 
   function renderGraduation() {
-    if (!settings || !supabase || !session || !activeVersion) return null;
+    if (!settings || !supabase || !session || !activeVersion || !school) return null;
     return (
       <div className="graduation-page page-frame">
         <PageHeader title="Graduation" description="Source-backed high school diploma progress, associate-degree plans, and college gen-ed." />
         <GraduationWorkspace
           progress={fullProgress}
+          academicProgress={academicProgress}
+          academicConstraints={academicConstraints}
+          school={school}
           onFindDtechCourses={openRequirementCourses}
           degreePlanner={<SmccdPlanner
             embedded
@@ -1611,7 +1690,7 @@ export default function PlanningWorkspace() {
   }
 
   function renderSettings() {
-    if (!settings || !session) return null;
+    if (!settings || !session || !school) return null;
     const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
     const descriptions: Record<SettingsArea, string> = {
       general: "Account and student details.",
@@ -1632,6 +1711,7 @@ export default function PlanningWorkspace() {
         section={activeSettingsArea}
         session={session}
         settings={settings}
+        school={school}
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
         onAiPreferencesChanged={refreshAiPreferences}

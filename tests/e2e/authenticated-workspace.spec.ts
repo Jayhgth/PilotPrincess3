@@ -18,7 +18,9 @@ async function signInToOnboarding(page: Page) {
   await expect(page.getByRole("heading", { name: "Tell us where you are now" })).toBeVisible();
 }
 
-async function fillStudentStep(page: Page) {
+async function fillStudentStep(page: Page, schoolName = "Design Tech High School") {
+  await page.getByLabel("Search California high schools").fill(schoolName);
+  await page.getByRole("option").filter({ hasText: schoolName }).first().click();
   await page.getByLabel("Preferred name").fill("Codex QA");
   await page.getByLabel("Age").fill("17");
   await page.getByLabel("Current grade").selectOption("11");
@@ -129,6 +131,26 @@ test.describe("authenticated student workspace", () => {
     await page.getByRole("button", { name: "Courses", exact: true }).click();
     await page.getByRole("button", { name: "Remove Advanced Environmental Science Honors" }).click();
     await page.getByRole("button", { name: "Confirm removal of Advanced Environmental Science Honors" }).click();
+    await expect(page.getByText("Advanced Environmental Science Honors", { exact: true })).toHaveCount(0);
+  });
+
+  test("selects another California public school without leaking the d.tech catalog", async ({ page }) => {
+    await signInToOnboarding(page);
+    await fillStudentStep(page, "AIMS College Prep High");
+    await page.getByRole("button", { name: "Finish setup" }).click();
+    await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".school-chip")).toHaveAttribute("title", /AIMS College Prep High/);
+    await expect(page.getByText("Verify school catalog", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Graduation", exact: true }).click();
+    await page.getByRole("tab", { name: "California minimum", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "California state minimum graduation requirements" })).toBeVisible();
+    await page.getByRole("tab", { name: "UC A–G", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "University of California A–G subject requirements" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Courses", exact: true }).click();
+    await page.getByRole("button", { name: "Add courses" }).click();
+    await expect(page.getByText("No matching courses", { exact: true })).toBeVisible();
     await expect(page.getByText("Advanced Environmental Science Honors", { exact: true })).toHaveCount(0);
   });
 });

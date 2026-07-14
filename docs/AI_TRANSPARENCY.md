@@ -33,8 +33,9 @@ Read tools may run automatically after a student sends a message:
 - a compact inventory of available student-owned records;
 - student overview;
 - Done, In progress, and Planned courses;
-- eligible d.tech and SMCCD catalog search;
-- graduation evidence;
+- eligible selected-school and SMCCD catalog search;
+- separate local diploma, California minimum, and UC A–G evidence, including explicit missing-mapping state;
+- nearby community-college providers derived from the selected school's public address;
 - course-level GPA inclusion and weighting evidence;
 - current-four-year-plan GPA scenario arithmetic and the all-A ceiling;
 - source-backed concurrent and dual-enrollment limits with term totals;
@@ -48,12 +49,13 @@ Read tools may run automatically after a student sends a message:
 
 Write tools may prepare these changes:
 
-- add a d.tech or SMCCD course;
+- add a selected-school or SMCCD course;
 - add an exact schedule batch after showing the returned courses; Supervised mode requires a structured Yes answer, while Auto-review sends the safe-limit batch directly to its independent reviewer;
 - move one or an exact set of unlocked plan courses, or remove an exact set of unlocked plan courses;
 - edit placement, grade, credits, units, notes, and weighting on an unlocked plan course; GPA always recalculates from these course variables rather than accepting a hardcoded GPA value;
 - correct an imported transcript course while preserving the original parsed payload, the exact corrected payload, and a student-provided reason;
 - submit prerequisite, placement, equivalency, challenge, approval, admission, audition, or portfolio evidence as pending; Pilot cannot approve institutional evidence;
+- submit an exact evidence-backed shared school-data correction as pending; only an application administrator can publish it;
 - update ordinary student and planning settings, excluding AI consent, authentication, account lifecycle, and administrator state;
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
 - save a named snapshot of the current plan and update the student-confirmed SMCCD Area 7A completion;
@@ -66,7 +68,7 @@ Every write is an exact proposal first. The chat composer exposes two persisted 
 
 Risk labels describe impact but do not create a second approval step. Explicit removals, grade edits, and moves to Done can be approved when the request and exact arguments match. Ambiguous, broader-than-requested, unsupported, or unverifiable proposals are denied automatically. A reviewer failure also declines the proposal instead of leaving it pending. Both routes execute the same server-side RLS, eligibility, prerequisite, transcript-lock, and validation rules as the normal product UI; neither the assistant nor reviewer can bypass them.
 
-The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Supabase RLS still scopes every query to the authenticated student. The **current four-year plan** means the active Done, In progress, and Planned rows shown in Courses; Pilot does not use the unexplained phrase “saved plan.” GPA optimization is bounded to deterministic arithmetic on that current plan and student-supplied assumptions. Pilot must call the all-A output an all-A schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot delete an account, change authentication or AI consent, grant administrator access, enroll at a college, independently approve prerequisite evidence or a transcript mapping, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
+The read surface covers student-facing academic planning data, not arbitrary database access. It cannot read authentication secrets, administrator-only data, another user's records, storage paths from unrelated products, or run SQL chosen by the model. Catalog and framework reads are scoped to the student's selected school plus published statewide frameworks; Pilot cannot borrow another school's local catalog. Nearby-provider reads use the school's public address, not precise student location. Supabase RLS still scopes every query to the authenticated student. The **current four-year plan** means the active Done, In progress, and Planned rows shown in Courses; Pilot does not use the unexplained phrase “saved plan.” GPA optimization is bounded to deterministic arithmetic on that current plan and student-supplied assumptions. Pilot must call the all-A output an all-A schedule ceiling and check graduation, prerequisites, and provider-specific enrollment constraints before proposing a course change. The student runtime cannot delete an account, change authentication or AI consent, grant administrator access, enroll at a college, independently approve prerequisite evidence, a transcript mapping, or a shared institutional correction, certify graduation, claim admissions outcomes, browse the web, run shell commands, read or edit files, invoke MCP, load skills/plugins, or create subagents. New tools require an allowlisted implementation, validation schema, readable presentation, boundary tests, and an update to this document.
 
 Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent triggers the deterministic evidence tool before the model answers, so Pilot cannot return a placeholder such as “I’m checking” without doing the check. Pilot must lead with that verdict, compare the source record with the saved derived record, separate confirmed mismatches from unresolved verification, and keep downstream outcomes separate. A `needs_review` status alone is not an error, and a missing graduation requirement does not prove that a transcript was parsed incorrectly. Transcript-backed rows cannot be moved or deleted as ordinary plan rows. An explicit correction instead preserves the imported proposal, stores a separate corrected payload and reason, and updates its linked completed course; weighting corrections use that explicit reviewed value and GPA then recalculates normally.
 
@@ -80,7 +82,7 @@ Each Pilot turn retrieves a bounded set of active guidance chunks from Supabase 
 
 Pilot also retrieves RLS-scoped `ai_student_memories` relevant to the current message and page. This layer stores only explicitly stated durable preferences, goals, constraints, interests, and personal planning context under stable keys. It updates automatically after a student message without a separate save prompt and can forget a value when the student retracts it. It does not store transcripts, course rows, grades, GPA, secrets, inferred traits, or facts already owned by canonical application tables. Memory can rank equally valid schedule choices, but it cannot override catalog, graduation, prerequisite, enrollment, transcript, or review rules.
 
-Together, the assistant uses three distinct grounding layers: retrieved application guidance explains how Pilot Princess works; validated tools read and write canonical student records; and lightweight memory personalizes choices. None of the three grants arbitrary database access.
+Together, the assistant uses three distinct grounding layers: retrieved application guidance explains how Pilot Princess works; validated tools read and write canonical student records and selected-school evidence; and lightweight memory personalizes choices. Shared institutional corrections are a fourth governed workflow: Pilot may submit an exact pending proposal, while an administrator alone can publish it. None of these grants arbitrary database access.
 
 ## Conversation and event model
 

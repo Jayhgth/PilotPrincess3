@@ -13,7 +13,7 @@ import AnimatedList from "@/components/reactbits/AnimatedList";
 import FadeContent from "@/components/reactbits/FadeContent";
 import type { InstitutionKey } from "@/lib/institutions";
 
-type CatalogSourceKind = "dtech" | "smccd";
+type CatalogSourceKind = "dtech" | "high_school" | "smccd";
 export type CatalogReadinessTone = "ready" | "blocked" | "review" | "none";
 
 interface CatalogResultRow {
@@ -29,6 +29,7 @@ interface CatalogResultRow {
 
 interface Props {
   source: CatalogSourceKind;
+  sourceIdentity?: ReactNode;
   title: string;
   description?: string;
   countLabel: string;
@@ -48,6 +49,7 @@ interface Props {
 
 export default function CourseCatalogBrowser({
   source,
+  sourceIdentity,
   title,
   description,
   countLabel,
@@ -85,7 +87,7 @@ export default function CourseCatalogBrowser({
     <section className={`unified-catalog source-${source}`}>
       <header className="catalog-source-header">
         <div className="catalog-source-identity">
-          <InstitutionMark institution={source} size="header" decorative />
+          {sourceIdentity ?? (source === "high_school" ? <BookOpen size={25} aria-hidden /> : <InstitutionMark institution={source} size="header" decorative />)}
           <div>
             <h2>{title}</h2>
             {description && <p>{description}</p>}

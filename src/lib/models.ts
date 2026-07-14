@@ -19,6 +19,28 @@ export interface School {
   short_name: string;
   website_url: string | null;
   source_year: string | null;
+  cds_code: string | null;
+  nces_district_id: string | null;
+  nces_school_id: string | null;
+  district_name: string | null;
+  county_name: string | null;
+  governance_type: "district" | "charter" | "private" | "other";
+  charter_number: string | null;
+  status: "active" | "pending" | "closed" | "merged";
+  school_type: string | null;
+  low_grade: number | null;
+  high_grade: number | null;
+  street_address: string | null;
+  city: string | null;
+  state_code: string;
+  postal_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  uc_ag_institution_id: string | null;
+  uc_ag_atp_code: string | null;
+  uc_ag_directory_updated_at: string | null;
+  directory_source_url: string | null;
+  directory_updated_at: string | null;
 }
 
 export interface StudentSettings {
@@ -29,6 +51,7 @@ export interface StudentSettings {
   grade_level: number | null;
   graduation_year: number | null;
   school_confirmed: boolean;
+  school_selected_at: string | null;
   onboarding_complete: boolean;
   ai_enabled: boolean;
   ai_model: "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4-mini";
@@ -40,6 +63,108 @@ export interface StudentSettings {
   plan_end_grade: GradeLevel | null;
   tracker_mode: "full" | "selected";
   tracked_requirement_areas: RequirementArea[];
+}
+
+export interface AcademicFramework {
+  id: string;
+  school_id: string | null;
+  framework_type: "state_graduation" | "local_graduation" | "uc_ag";
+  jurisdiction_key: string;
+  name: string;
+  academic_year: string;
+  source_url: string;
+  source_label: string;
+  status: "draft" | "published" | "retired";
+  effective_graduation_year_start: number | null;
+  effective_graduation_year_end: number | null;
+}
+
+export interface AcademicRequirementRule {
+  id: string;
+  framework_id: string;
+  rule_key: string;
+  parent_rule_key: string | null;
+  subject_area: string;
+  title: string;
+  credits_required: number | null;
+  years_required: number | null;
+  courses_required: number | null;
+  minimum_grade: string | null;
+  required_before_grade: number | null;
+  effective_graduation_year_start: number | null;
+  effective_graduation_year_end: number | null;
+  notes: string | null;
+  sort_order: number;
+}
+
+export interface AcademicFrameworkConstraint {
+  id: string;
+  framework_id: string;
+  constraint_key: string;
+  constraint_type: "minimum_total_courses_before_grade" | "minimum_total_credits" | "minimum_total_years";
+  numeric_value: number;
+  before_grade: number | null;
+  minimum_grade: string | null;
+  notes: string | null;
+  sort_order: number;
+}
+
+export interface CourseFrameworkMapping {
+  id: string;
+  course_id: string;
+  framework_id: string;
+  requirement_rule_id: string | null;
+  source_url: string | null;
+  confidence: Confidence;
+  review_status: ReviewStatus;
+}
+
+export interface CourseDesignation {
+  id: string;
+  course_id: string;
+  designation: "ap" | "ib" | "uc_honors" | "school_honors" | "cte" | "dual_enrollment";
+  source_url: string | null;
+  source_year: string | null;
+  confidence: Confidence;
+  review_status: ReviewStatus;
+}
+
+export interface EducationProvider {
+  id: string;
+  provider_code: string;
+  provider_type: "community_college" | "university" | "roc_program" | "online_program";
+  district_name: string | null;
+  name: string;
+  website_url: string;
+  street_address: string | null;
+  city: string | null;
+  state_code: string;
+  postal_code: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: "active" | "inactive";
+  source_url: string;
+  source_updated_at: string | null;
+}
+
+export interface SharedDataProposal {
+  id: string;
+  submitted_by: string;
+  submitted_via: "student" | "pilot" | "admin";
+  entity_type: "school" | "course" | "course_mapping" | "requirement" | "provider" | "provider_link" | "policy" | "source";
+  action: "create" | "correct" | "retire";
+  school_id: string | null;
+  target_table: string;
+  target_id: string | null;
+  proposed_payload: Record<string, unknown>;
+  evidence_url: string | null;
+  evidence_summary: string;
+  status: "pending" | "approved" | "rejected";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface OfficialSource {

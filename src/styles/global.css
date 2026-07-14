@@ -164,8 +164,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .institution-dtech { --institution-color: var(--dtech-ui); }
 
 .unified-catalog.source-dtech .primary-button,
+.unified-catalog.source-high_school .primary-button,
 .primary-button.dtech-action { background: var(--dtech-brand); color: var(--dtech-ink); }
 .unified-catalog.source-dtech .primary-button:hover:not(:disabled),
+.unified-catalog.source-high_school .primary-button:hover:not(:disabled),
 .primary-button.dtech-action:hover:not(:disabled) { background: color-mix(in srgb, var(--dtech-brand) 86%, white); }
 .primary-button.college-action { background: var(--dual-brand); color: #fff; }
 .primary-button.college-action:hover:not(:disabled) { background: color-mix(in srgb, var(--dual-brand) 86%, black); }
@@ -661,6 +663,22 @@ input:focus, select:focus, textarea:focus {
 .onboarding-stage > header > svg { margin-bottom: 15px; color: var(--accent); }
 .onboarding-stage > header h1 { margin: 0; font-size: clamp(27px, 4vw, 36px); font-weight: 650; letter-spacing: -0.05em; line-height: 1.08; }
 .onboarding-stage > header p { max-width: 62ch; margin: 10px 0 0; color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+.onboarding-school-field { position: relative; }
+.onboarding-school-field > label { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+.onboarding-school-results { position: absolute; z-index: 5; top: calc(100% + 5px); right: 0; left: 0; max-height: 230px; overflow-y: auto; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface); box-shadow: 0 4px 8px rgb(0 0 0 / 8%); }
+.onboarding-school-results button { display: grid; width: 100%; min-height: 50px; gap: 3px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 9px 11px; text-align: left; }
+.onboarding-school-results button:last-child { border-bottom: 0; }
+.onboarding-school-results button:hover,
+.onboarding-school-results button[aria-selected="true"] { background: var(--surface-muted); }
+.onboarding-school-results strong { color: var(--ink); font-size: 12px; font-weight: 650; }
+.onboarding-school-results span { overflow: hidden; color: var(--ink-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-nearby-providers { display: grid; gap: 7px; margin-top: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); padding: 9px; }
+.onboarding-nearby-providers > span { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
+.onboarding-nearby-providers > div { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.onboarding-nearby-providers > div > span { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 7px; border-radius: 5px; background: var(--surface); padding: 6px 7px; }
+.onboarding-nearby-providers strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.onboarding-nearby-providers small { flex: 0 0 auto; color: var(--ink-faint); font-size: 10px; }
+.onboarding-nearby-providers p { margin: 0; color: var(--ink-faint); font-size: 10px; line-height: 1.4; }
 .transcript-entry { display: grid; gap: 17px; }
 .transcript-drop {
   display: flex;
@@ -1735,6 +1753,9 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .graduation-workspace-tabs button:nth-child(2).active,
 .graduation-workspace-tabs button:nth-child(3).active { color: var(--accent); }
 .graduation-view-transition { min-width: 0; }
+.graduation-layer-tabs { width: fit-content; margin: -5px 0 14px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); padding: 3px; }
+.graduation-layer-tabs button { min-height: 32px; border: 0; border-radius: 5px; padding: 0 12px; }
+.graduation-layer-tabs button.active { background: var(--surface); box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent); }
 .eligibility-summary { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); gap: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); padding: 22px; }
 .eligibility-summary.dtech { background: color-mix(in srgb, var(--dtech-soft) 34%, var(--surface)); }
 .eligibility-summary.degree { background: color-mix(in srgb, var(--dual-soft) 32%, var(--surface)); }
@@ -1777,6 +1798,23 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .requirement-index-list > button em { color: var(--ink-soft); font-size: var(--type-supporting); font-style: normal; font-weight: 650; text-align: right; white-space: nowrap; }
 .requirement-index-list > button em.complete { color: var(--success); }
 .requirement-index-list > button em.missing { color: var(--warning); }
+.framework-requirement-index { max-width: 100%; }
+.framework-requirement-row { display: grid; min-height: 58px; grid-template-columns: minmax(165px, 1fr) repeat(3, 64px) 78px; align-items: center; gap: 10px; border-radius: 6px; padding: 7px; }
+.framework-requirement-row:nth-child(even) { background: color-mix(in srgb, var(--surface-muted) 55%, transparent); }
+.framework-requirement-row > span { display: grid; min-width: 0; gap: 2px; }
+.framework-requirement-row strong { overflow: hidden; font-size: var(--type-supporting); text-overflow: ellipsis; white-space: nowrap; }
+.framework-requirement-row small { color: var(--ink-faint); font-size: var(--type-supporting); }
+.framework-requirement-row b { color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 650; text-align: right; }
+.framework-requirement-row em { color: var(--ink-soft); font-size: var(--type-supporting); font-style: normal; font-weight: 650; text-align: right; white-space: nowrap; }
+.framework-requirement-row em.complete { color: var(--success); }
+.framework-requirement-row em.missing { color: var(--warning); }
+.framework-constraints { display: flex; flex-wrap: wrap; gap: 8px; margin: -10px 0 18px; }
+.framework-constraints > span { display: grid; max-width: 650px; gap: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-muted); padding: 9px 11px; }
+.framework-constraints strong { font-size: var(--type-supporting); }
+.framework-constraints small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: 1.4; }
+.framework-unavailable { display: flex; align-items: flex-start; gap: 10px; border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--line)); border-radius: 9px; background: var(--warning-soft); padding: 16px; }
+.framework-unavailable svg { flex: 0 0 auto; color: var(--warning); }
+.framework-unavailable p { margin: 3px 0 0; color: var(--ink-soft); font-size: var(--type-supporting); }
 .graduation-evidence-panel { display: grid; gap: 16px; padding: 18px; }
 .graduation-evidence-panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .graduation-evidence-panel > header > div { min-width: 0; }

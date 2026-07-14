@@ -30,6 +30,7 @@ export interface OverviewPathData {
   currentGradedCredits: number;
   currentWeightedCredits: number;
   requirements: OverviewRequirementItem[];
+  requirementsVerified: boolean;
   currentPeriodLabel: string;
   nextPeriodLabel: string;
   currentCourses: OverviewCourseItem[];
@@ -65,7 +66,7 @@ export default function OverviewPath({ data, degreeProgress, onOpenCourses, onOp
       action={<button className="bento-card-action" type="button" onClick={onOpenGraduation}>Open graduation <ArrowRight size={14} /></button>}
     >
       <div className="dashboard-credit-summary">
-        <div className="dashboard-credit-total"><strong>{data.earnedPercent}%</strong><span>{completedAreas.length} of {data.requirements.length} areas complete</span></div>
+        <div className="dashboard-credit-total"><strong>{data.earnedPercent}%</strong><span>{data.requirementsVerified ? `${completedAreas.length} of ${data.requirements.length} areas complete` : "Catalog mapping needed"}</span></div>
         <dl>
           <div><dt>Earned</dt><dd>{data.completedCredits}<span> cr</span></dd></div>
           <div><dt>Scheduled</dt><dd>{data.scheduledCredits}<span> cr</span></dd></div>
@@ -76,8 +77,8 @@ export default function OverviewPath({ data, degreeProgress, onOpenCourses, onOp
         <span className="earned" /><span className="scheduled" />
       </div>
       <button className="dashboard-next-requirement" type="button" onClick={onOpenGraduation}>
-        <span><small>{nextRequirement ? "Next requirement" : "Requirements"}</small><strong>{nextRequirement?.name ?? "All covered"}</strong></span>
-        <span>{nextRequirement ? `${nextRequirement.remaining} credits open` : "Review"}<ArrowRight size={14} /></span>
+        <span><small>{data.requirementsVerified ? nextRequirement ? "Next requirement" : "Requirements" : "Requirements"}</small><strong>{data.requirementsVerified ? nextRequirement?.name ?? "All covered" : "Verify school catalog"}</strong></span>
+        <span>{data.requirementsVerified && nextRequirement ? `${nextRequirement.remaining} credits open` : "Review"}<ArrowRight size={14} /></span>
       </button>
     </BentoCard>
 

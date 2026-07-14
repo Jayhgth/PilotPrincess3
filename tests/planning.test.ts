@@ -38,6 +38,7 @@ const settings: StudentSettings = {
   grade_level: 10,
   graduation_year: 2028,
   school_confirmed: true,
+  school_selected_at: null,
   onboarding_complete: true,
   ai_enabled: true,
   ai_model: "gpt-5.6-luna",

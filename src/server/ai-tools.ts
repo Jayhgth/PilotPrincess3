@@ -3,9 +3,15 @@ import { z } from "zod";
 import { createSmccdPlanCourseIndex, dtechCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import type {
+  AcademicFramework,
+  AcademicFrameworkConstraint,
+  AcademicRequirementRule,
   CatalogReviewItem,
   Course,
+  CourseFrameworkMapping,
+  CourseDesignation,
   CourseRequirementMapping,
+  EducationProvider,
   EnrollmentPolicy,
   FourYearPlan,
   GradeLevel,
@@ -13,6 +19,7 @@ import type {
   OfficialSource,
   PlanCourse,
   PlanVersion,
+  School,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
   SmccdPrerequisiteClearance,
@@ -42,11 +49,21 @@ import type { TranscriptCoursePayload } from "@/lib/transcript";
 import { buildTranscriptAudit } from "@/server/assistant-audits";
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { evaluateGpaScenario } from "@/lib/gpa-planner";
+import { calculateAcademicFrameworkProgress } from "@/lib/academic-frameworks";
 
 const courseStatusSchema = z.enum(["current", "planned"]);
 const termSchema = z.enum(["fall", "spring", "summer", "full_year"]);
 const gradeSchema = z.union([z.literal(9), z.literal(10), z.literal(11), z.literal(12)]);
 const optionalText = (maximum: number) => z.string().trim().max(maximum).nullable();
+
+const SHARED_CORRECTION_FIELDS: Record<string, ReadonlySet<string>> = {
+  schools: new Set(["name", "short_name", "website_url", "district_name", "county_name", "governance_type", "charter_number", "status", "school_type", "street_address", "city", "postal_code", "uc_ag_institution_id", "directory_source_url"]),
+  courses: new Set(["course_code", "name", "subject", "course_type", "grade_levels", "credits", "college_units", "term_type", "uc_ag_area", "prerequisites", "description", "is_honors", "is_weighted", "confidence", "review_status"]),
+  course_framework_mappings: new Set(["requirement_rule_id", "source_url", "confidence", "review_status"]),
+  academic_requirement_rules: new Set(["subject_area", "title", "credits_required", "years_required", "courses_required", "minimum_grade", "required_before_grade", "effective_graduation_year_start", "effective_graduation_year_end", "notes", "sort_order"]),
+  education_providers: new Set(["district_name", "name", "website_url", "street_address", "city", "postal_code", "status", "source_url"]),
+  school_provider_links: new Set(["relationship_type", "distance_miles", "source_url", "confidence", "review_status"])
+};
 
 function assertPlanningTermExists(gradeLevel: GradeLevel, term: PlanCourse["term"]) {
   if (gradeLevel === 12 && term === "summer") {
@@ -59,10 +76,12 @@ const toolArgumentSchemas = {
   list_plan_courses: z.object({ status: z.enum(["completed", "current", "planned", "all"]).default("all") }),
   search_course_catalog: z.object({
     query: z.string().trim().min(1).max(80),
-    source: z.enum(["dtech", "smccd", "all"]).default("all"),
+    source: z.enum(["high_school", "dtech", "smccd", "all"]).default("all"),
     grade_level: gradeSchema.optional()
   }),
   get_graduation_progress: z.object({}),
+  get_academic_framework_progress: z.object({}),
+  get_nearby_education_providers: z.object({}),
   get_transcript_sources: z.object({}),
   get_student_data_inventory: z.object({}),
   audit_transcript_data: z.object({ include_source_text: z.boolean().default(false) }),
@@ -99,6 +118,12 @@ const toolArgumentSchemas = {
     max_courses_per_term: z.number().int().min(1).max(12).nullable().default(null)
   }),
   add_dtech_course: z.object({
+    course_id: z.uuid(),
+    status: courseStatusSchema,
+    grade_level: gradeSchema,
+    term: termSchema
+  }),
+  add_high_school_course: z.object({
     course_id: z.uuid(),
     status: courseStatusSchema,
     grade_level: gradeSchema,
@@ -148,6 +173,14 @@ const toolArgumentSchemas = {
     tracker_mode: z.enum(["full", "selected"]).optional(),
     tracked_requirement_areas: z.array(z.enum(["english", "social_science", "math", "lab_science", "world_language", "design_lab", "visual_performing_arts", "personal_development"])).max(8).optional()
   }).refine((value) => Object.keys(value).length > 0, "Provide at least one setting to update."),
+  submit_shared_data_correction: z.object({
+    entity_type: z.enum(["school", "course", "course_mapping", "requirement", "provider", "provider_link", "policy", "source"]),
+    target_table: z.enum(["schools", "courses", "course_framework_mappings", "academic_requirement_rules", "education_providers", "school_provider_links"]),
+    target_id: z.uuid(),
+    proposed_payload: z.record(z.string(), z.unknown()).refine((payload) => Object.keys(payload).length > 0 && Object.keys(payload).length <= 20, "Provide one to twenty corrected fields."),
+    evidence_url: z.url().max(1000).nullable().default(null),
+    evidence_summary: z.string().trim().min(10).max(1200)
+  }),
   correct_transcript_course: z.object({
     review_item_id: z.uuid(),
     letter_grade: z.enum(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F", "P", "IP"]).nullable().optional(),
@@ -180,8 +213,10 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
 }> = [
   { name: "get_student_overview", mutatesData: false, description: "Read the current graduation, GPA, and course-count summary.", arguments: "{}" },
   { name: "list_plan_courses", mutatesData: false, description: "List courses already in the active plan, with stable IDs and Done/In progress/Planned state.", arguments: '{"status":"completed|current|planned|all"}' },
-  { name: "search_course_catalog", mutatesData: false, description: "Search eligible d.tech and/or SMCCD catalog courses. Returns stable course IDs needed for add-course requests.", arguments: '{"query":"string","source":"dtech|smccd|all","grade_level":9|10|11|12}' },
+  { name: "search_course_catalog", mutatesData: false, description: "Search the selected high school's approved catalog and/or the currently supported SMCCD catalog. Returns stable course IDs and never mixes high-school catalogs.", arguments: '{"query":"string","source":"high_school|smccd|all","grade_level":9|10|11|12}' },
   { name: "get_graduation_progress", mutatesData: false, description: "Read requirement-by-requirement completed, scheduled, and remaining credit evidence.", arguments: "{}" },
+  { name: "get_academic_framework_progress", mutatesData: false, description: "Read separate source-backed progress for the selected school's local diploma rules, California's statewide minimum, and UC A–G. Missing catalog mappings are reported as unverified, never complete.", arguments: "{}" },
+  { name: "get_nearby_education_providers", mutatesData: false, description: "Read community colleges discovered from the selected school's official address and approximate distance. This does not use precise student location or prove enrollment eligibility.", arguments: "{}" },
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Corrections require the separate exact correction tool and preserve the original evidence.", arguments: "{}" },
   { name: "get_student_data_inventory", mutatesData: false, description: "Read a compact inventory of the current student's available records so the assistant can choose the correct evidence tool.", arguments: "{}" },
   { name: "audit_transcript_data", mutatesData: false, description: "Compare transcript source text, parsed rows, review decisions, catalog identities, and imported plan rows. Use source text for an actual extraction audit; never treat a graduation gap as a parsing error.", arguments: '{"include_source_text":boolean}' },
@@ -195,6 +230,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "search_smccd_programs", mutatesData: false, description: "Search official SMCCD AA and AS programs by name or program code. Returns exact program IDs needed to bookmark a degree.", arguments: '{"query":"string","college":"CSM|SKY|CAN|all","award_type":"AA|AS|all"}' },
   { name: "add_course_schedule", mutatesData: true, description: "Propose adding the exact complete-plan batch returned by get_course_schedule_options. Pass the same interests, rigor, workload cap, and unit-limit choice so revalidation is identical.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean,"interests":["string"],"rigor":"balanced|advanced|lighter","max_courses_per_term":number|null}' },
   { name: "add_dtech_course", mutatesData: true, description: "Propose adding one verified d.tech catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
+  { name: "add_high_school_course", mutatesData: true, description: "Propose adding one approved course from the student's selected high-school catalog to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The selected review route must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
   { name: "move_plan_courses", mutatesData: true, description: "Propose moving an exact set of editable plan courses to Done, In progress, or Planned in one request. Use this for all/every bulk state changes after listing the matching courses.", arguments: '{"plan_course_ids":["uuid"],"status":"completed|current|planned"}' },
@@ -203,6 +239,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "update_plan_course", mutatesData: true, description: "Propose editing placement, grade, credits, college units, weighting, or notes on a non-transcript plan course. GPA recalculates from the resulting course variables.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","credits":number,"college_units":number|null,"is_weighted":boolean,"notes":"string|null"}' },
   { name: "update_enrollment_preference", mutatesData: true, description: "Propose changing whether the student plans to use SMCCD concurrent enrollment or a dual-enrollment partnership and whether generated plans respect its recommended limit. District thresholds remain source-backed policy.", arguments: '{"program_type":"concurrent|dual","respect_recommended_limit":boolean}' },
   { name: "update_student_settings", mutatesData: true, description: "Propose changing ordinary student and planning settings. Include only fields the student explicitly asked to change and omit every unchanged or default field. This cannot change Pilot consent, review mode, authentication, or account lifecycle.", arguments: '{"preferred_name?":"string","age?":number|null,"grade_level?":9|10|11|12|null,"graduation_year?":number|null,"plan_start_grade?":9|10|11|12|null,"plan_end_grade?":9|10|11|12|null,"tracker_mode?":"full|selected","tracked_requirement_areas?":["english|..."]}' },
+  { name: "submit_shared_data_correction", mutatesData: true, description: "Submit an evidence-backed correction to shared school, course, requirement, mapping, or provider data for administrator review. This creates a pending proposal only; Pilot cannot publish institutional data. Use exact IDs and include only corrected fields. For the student's selected school ID, call get_student_data_inventory instead of asking the student.", arguments: '{"entity_type":"school|course|course_mapping|requirement|provider|provider_link|policy|source","target_table":"schools|courses|course_framework_mappings|academic_requirement_rules|education_providers|school_provider_links","target_id":"uuid","proposed_payload":{"field":"corrected value"},"evidence_url":"url|null","evidence_summary":"string"}' },
   { name: "correct_transcript_course", mutatesData: true, description: "Propose an exact correction to imported transcript evidence and its linked completed plan row while preserving the original proposed payload and correction reason.", arguments: '{"review_item_id":"uuid","letter_grade":"string|null","credits":number,"weighted":boolean,"grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","reason":"string"}' },
   { name: "save_prerequisite_evidence", mutatesData: true, description: "Submit placement, equivalency, challenge, approval, admission, or audition evidence for independent verification. Pilot cannot mark institutional evidence approved.", arguments: '{"target_course_id":"string","clearance_type":"placement|approved_equivalency|prerequisite_challenge|instructor_approval|program_admission|audition_or_portfolio","authority":"string","evidence_summary":"string","source_url":"url|null"}' },
   { name: "create_plan_snapshot", mutatesData: true, description: "Create a named snapshot copy of the current four-year plan for comparison or rollback reference.", arguments: '{"label":"string"}' },
@@ -225,6 +262,8 @@ export function assistantToolLabel(name: string) {
     list_plan_courses: "Read course plan",
     search_course_catalog: "Search course catalogs",
     get_graduation_progress: "Check graduation progress",
+    get_academic_framework_progress: "Check academic frameworks",
+    get_nearby_education_providers: "Find nearby education providers",
     get_transcript_sources: "Read transcript sources",
     get_student_data_inventory: "Inventory student records",
     audit_transcript_data: "Audit transcript evidence",
@@ -238,6 +277,7 @@ export function assistantToolLabel(name: string) {
     search_smccd_programs: "Search college programs",
     add_course_schedule: "Add course schedule",
     add_dtech_course: "Add high school course",
+    add_high_school_course: "Add high school course",
     add_smccd_course: "Add college course",
     move_plan_course: "Move course",
     move_plan_courses: "Move courses",
@@ -246,6 +286,7 @@ export function assistantToolLabel(name: string) {
     update_plan_course: "Update course",
     update_enrollment_preference: "Update college enrollment type",
     update_student_settings: "Update student settings",
+    submit_shared_data_correction: "Submit shared data correction",
     correct_transcript_course: "Correct transcript course",
     save_prerequisite_evidence: "Submit prerequisite evidence",
     create_plan_snapshot: "Save plan snapshot",
@@ -268,12 +309,19 @@ export function parseAssistantToolCall(name: string, argumentsValue: unknown) {
 
 interface AssistantWorkspace {
   settings: StudentSettings;
+  school: School;
   plan: FourYearPlan;
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
   courses: Course[];
   requirements: GraduationRequirement[];
   mappings: CourseRequirementMapping[];
+  academicFrameworks: AcademicFramework[];
+  academicRules: AcademicRequirementRule[];
+  academicConstraints: AcademicFrameworkConstraint[];
+  frameworkMappings: CourseFrameworkMapping[];
+  courseDesignations: CourseDesignation[];
+  nearbyProviders: Array<Pick<EducationProvider, "provider_code" | "name" | "provider_type" | "city" | "postal_code" | "website_url"> & { provider_id: string; distance_miles: number | null; relationship_type: string; confidence: string }>;
   equivalencies: SmccdHighSchoolEquivalency[];
   plannedSmccdCourses: SmccdCourse[];
   sources: OfficialSource[];
@@ -290,23 +338,50 @@ function firstError(results: ReadonlyArray<{ error: { message: string } | null }
 }
 
 async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string): Promise<AssistantWorkspace> {
-  const [settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, memoryResult] = await Promise.all([
+  const [settingsResult, planResult] = await Promise.all([
     supabase.from("student_settings").select("*").eq("id", userId).single(),
-    supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single(),
-    supabase.from("courses").select("*").eq("review_status", "approved").order("subject").order("name"),
-    supabase.from("graduation_requirements").select("*").eq("review_status", "approved").order("name"),
-    supabase.from("course_requirement_mappings").select("*"),
-    supabase.from("smccd_high_school_equivalencies").select("*"),
+    supabase.from("four_year_plans").select("*").eq("user_id", userId).eq("is_active", true).single()
+  ]);
+  const identityError = firstError([settingsResult, planResult]);
+  if (identityError) throw new Error(identityError.message);
+  const settings = settingsResult.data as unknown as StudentSettings;
+  const schoolId = settings.school_id ?? (planResult.data as unknown as FourYearPlan).school_id;
+  if (!schoolId) throw new Error("Choose a school before Pilot reads academic planning data.");
+  const schoolResult = await supabase.from("schools").select("*").eq("id", schoolId).single();
+  if (schoolResult.error) throw new Error(schoolResult.error.message);
+  const isDtech = schoolResult.data.slug === "design-tech-high-school";
+
+  const [courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, memoryResult, frameworkResult, providerResult] = await Promise.all([
+    supabase.from("courses").select("*").eq("school_id", schoolId).eq("review_status", "approved").order("subject").order("name"),
+    supabase.from("graduation_requirements").select("*").eq("school_id", schoolId).eq("review_status", "approved").order("name"),
+    supabase.from("course_requirement_mappings").select("id,course_id,requirement_id,confidence,is_user_override,courses!inner(school_id)").eq("courses.school_id", schoolId),
+    isDtech ? supabase.from("smccd_high_school_equivalencies").select("*") : Promise.resolve({ data: [], error: null }),
     supabase.from("official_sources").select("*").eq("user_id", userId).eq("document_type", "transcript").order("created_at", { ascending: false }),
     supabase.from("catalog_review_items").select("*").eq("user_id", userId).in("entity_type", ["transcript_course", "transcript_note"]).order("created_at"),
     supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("created_at"),
     supabase.from("enrollment_policies").select("*").order("provider_code").order("program_type"),
     supabase.from("student_enrollment_preferences").select("*").eq("user_id", userId).eq("provider_code", "SMCCD").maybeSingle(),
     supabase.from("student_prerequisite_clearances").select("*").eq("user_id", userId),
-    supabase.from("ai_student_memories").select("memory_key,content,tags").eq("user_id", userId).eq("is_active", true)
+    supabase.from("ai_student_memories").select("memory_key,content,tags").eq("user_id", userId).eq("is_active", true),
+    supabase.from("academic_frameworks").select("*").eq("status", "published").or(`school_id.is.null,school_id.eq.${schoolId}`).order("framework_type"),
+    supabase.rpc("nearby_school_providers", { target_school_id: schoolId, result_limit: 8 })
   ]);
-  const error = firstError([settingsResult, planResult, courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult]);
+  const error = firstError([courseResult, requirementResult, mappingResult, equivalencyResult, sourceResult, reviewResult, goalResult, policyResult, preferenceResult, clearanceResult, frameworkResult, providerResult]);
   if (error) throw new Error(error.message);
+  const selectedCourseIds = (courseResult.data ?? []).map((course) => course.id);
+  const designationResult = selectedCourseIds.length
+    ? await supabase.from("course_designations").select("id,course_id,designation,source_url,source_year,confidence,review_status").in("course_id", selectedCourseIds).eq("review_status", "approved")
+    : { data: [], error: null };
+  if (designationResult.error) throw new Error(designationResult.error.message);
+  const academicFrameworks = (frameworkResult.data ?? []) as unknown as AcademicFramework[];
+  const frameworkIds = academicFrameworks.map((framework) => framework.id);
+  const [academicRuleResult, frameworkMappingResult, constraintResult] = await Promise.all([
+    supabase.from("academic_requirement_rules").select("*").in("framework_id", frameworkIds).order("sort_order"),
+    supabase.from("course_framework_mappings").select("*").in("framework_id", frameworkIds).eq("review_status", "approved"),
+    supabase.from("academic_framework_constraints").select("*").in("framework_id", frameworkIds).order("sort_order")
+  ]);
+  const academicError = firstError([academicRuleResult, frameworkMappingResult, constraintResult]);
+  if (academicError) throw new Error(academicError.message);
 
   const plan = planResult.data as unknown as FourYearPlan;
   const versionResult = await supabase.from("plan_versions").select("*").eq("plan_id", plan.id).eq("kind", "active").single();
@@ -322,13 +397,20 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
   if (smccdResult.error) throw new Error(smccdResult.error.message);
 
   return {
-    settings: settingsResult.data as unknown as StudentSettings,
+    settings,
+    school: schoolResult.data as unknown as School,
     plan,
     activeVersion,
     planCourses,
     courses: (courseResult.data ?? []) as unknown as Course[],
     requirements: (requirementResult.data ?? []) as unknown as GraduationRequirement[],
     mappings: (mappingResult.data ?? []) as unknown as CourseRequirementMapping[],
+    academicFrameworks,
+    academicRules: (academicRuleResult.data ?? []) as unknown as AcademicRequirementRule[],
+    academicConstraints: (constraintResult.data ?? []) as unknown as AcademicFrameworkConstraint[],
+    frameworkMappings: (frameworkMappingResult.data ?? []) as unknown as CourseFrameworkMapping[],
+    courseDesignations: (designationResult.data ?? []) as unknown as CourseDesignation[],
+    nearbyProviders: (providerResult.data ?? []) as AssistantWorkspace["nearbyProviders"],
     equivalencies: (equivalencyResult.data ?? []) as unknown as SmccdHighSchoolEquivalency[],
     plannedSmccdCourses: (smccdResult.data ?? []) as unknown as SmccdCourse[],
     sources: (sourceResult.data ?? []) as unknown as OfficialSource[],
@@ -347,9 +429,18 @@ function calculatedWorkspace(workspace: AssistantWorkspace) {
   const tracked = requirementsForSettings(workspace.requirements, workspace.settings);
   const overviewProgress = calculateRequirementProgress(tracked, workspace.planCourses, workspace.mappings, workspace.courses, workspace.equivalencies);
   const graduationProgress = calculateRequirementProgress(workspace.requirements, workspace.planCourses, workspace.mappings, workspace.courses, workspace.equivalencies);
+  const academicProgress = calculateAcademicFrameworkProgress({
+    frameworks: workspace.academicFrameworks,
+    rules: workspace.academicRules,
+    mappings: workspace.frameworkMappings,
+    courses: workspace.courses,
+    planCourses: workspace.planCourses,
+    graduationYear: workspace.settings.graduation_year
+  });
   return {
     overviewProgress,
     graduationProgress,
+    academicProgress,
     gpa: calculateGpa(workspace.planCourses, workspace.equivalencies)
   };
 }
@@ -659,7 +750,7 @@ export async function executeAssistantReadTool(
           plan_course_id: row.id,
           course_id: row.course_id ?? row.smccd_course_id,
           name: courseDisplayName(row, courseMap),
-          source: smccd?.college_code ?? (row.smccd_course_id ? "SMCCD" : "d.tech"),
+          source: smccd?.college_code ?? (row.smccd_course_id ? "SMCCD" : workspace.school.short_name),
           status: row.status,
           grade_level: row.grade_level,
           term: row.term,
@@ -675,14 +766,14 @@ export async function executeAssistantReadTool(
     const source = String(argumentsValue.source ?? "all");
     const targetGrade = Number(argumentsValue.grade_level ?? workspace.settings.grade_level ?? 9) as GradeLevel;
     const matches: Array<Record<string, unknown>> = [];
-    if (source === "dtech" || source === "all") {
+    if (source === "high_school" || source === "dtech" || source === "all") {
       const candidates = workspace.courses.filter((course) => [course.name, course.subject, course.course_code ?? ""].join(" ").toLowerCase().includes(query));
       for (const course of candidates) {
         if (!dtechCatalogEligibility(course, targetGrade, workspace.planCourses, workspace.courses).eligible) continue;
         const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: targetGrade, term: course.term_type === "semester" ? "fall" : "full_year" }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
         if (prerequisite.result.status === "blocked") continue;
         matches.push({
-          source: "d.tech",
+          source: workspace.school.short_name,
           course_id: course.id,
           name: course.name,
           subject: course.subject,
@@ -737,6 +828,48 @@ export async function executeAssistantReadTool(
     return { summary: "Read the current graduation requirement audit.", data };
   }
 
+  if (name === "get_academic_framework_progress") {
+    const data = calculated.academicProgress.map((framework) => ({
+      framework: framework.framework.name,
+      framework_type: framework.framework.framework_type,
+      source: { label: framework.framework.source_label, url: framework.framework.source_url, academic_year: framework.framework.academic_year },
+      mapping_coverage: framework.mappingCoverage,
+      completed_areas: framework.completedRules,
+      covered_areas: framework.coveredRules,
+      total_areas: framework.totalRules,
+      requirements: framework.rules.map((row) => ({
+        key: row.rule.rule_key,
+        name: row.rule.title,
+        required_course_years: row.requiredCredits / 10,
+        earned_course_years: row.completedCredits / 10,
+        scheduled_course_years: row.scheduledCredits / 10,
+        remaining_course_years: row.remainingCredits / 10,
+        minimum_grade: row.rule.minimum_grade,
+        status: row.status
+      })),
+      framework_constraints: workspace.academicConstraints.filter((constraint) => constraint.framework_id === framework.framework.id)
+    }));
+    return {
+      summary: `Read ${data.length} separate academic requirement ${data.length === 1 ? "framework" : "frameworks"}.`,
+      data: {
+        school: workspace.school.name,
+        frameworks: data,
+        boundary: "A missing mapping means Pilot has the official rule but cannot verify how this school's courses satisfy it."
+      }
+    };
+  }
+
+  if (name === "get_nearby_education_providers") {
+    return {
+      summary: `Read ${workspace.nearbyProviders.length} nearby education ${workspace.nearbyProviders.length === 1 ? "provider" : "providers"}.`,
+      data: {
+        school: { name: workspace.school.name, city: workspace.school.city, postal_code: workspace.school.postal_code },
+        providers: workspace.nearbyProviders,
+        boundary: "Distances are approximate and derived from institution addresses, not student location. Enrollment, partnership, and course availability require provider verification."
+      }
+    };
+  }
+
   if (name === "get_transcript_sources") {
     const data = workspace.sources.map((source) => ({
       source_id: source.id,
@@ -758,8 +891,10 @@ export async function executeAssistantReadTool(
       data: {
         scope: "Current user's RLS-protected academic planning records; no auth secrets, admin data, arbitrary SQL, or other users' records.",
         setup: { onboarding_complete: workspace.settings.onboarding_complete },
+        school: { id: workspace.school.id, name: workspace.school.name, catalog_course_count: workspace.courses.length },
         active_plan: { course_count: workspace.planCourses.length, completed_count: completed, transcript_imported_count: imported },
-        graduation: { requirement_count: calculated.graduationProgress.length },
+        graduation: { local_requirement_count: calculated.graduationProgress.length, academic_framework_count: calculated.academicProgress.length },
+        advanced_course_designations: Object.fromEntries(["ap", "ib", "uc_honors", "school_honors", "cte", "dual_enrollment"].map((designation) => [designation, workspace.courseDesignations.filter((row) => row.designation === designation).length])),
         gpa: { graded_credits: calculated.gpa.gradedCredits, pass_credits: calculated.gpa.passCredits },
         transcript: {
           source_count: workspace.sources.length,
@@ -780,6 +915,8 @@ export async function executeAssistantReadTool(
         available_detail_tools: [
           "list_plan_courses",
           "get_graduation_progress",
+          "get_academic_framework_progress",
+          "get_nearby_education_providers",
           "get_gpa_evidence",
           "evaluate_gpa_scenario",
           "get_enrollment_constraints",
@@ -1115,11 +1252,11 @@ export async function executeAssistantMutationTool(
     };
   }
 
-  if (name === "add_dtech_course") {
-    const args = toolArgumentSchemas.add_dtech_course.parse(argumentsValue);
+  if (name === "add_dtech_course" || name === "add_high_school_course") {
+    const args = toolArgumentSchemas[name].parse(argumentsValue);
     assertPlanningTermExists(args.grade_level, args.term);
     const course = workspace.courses.find((candidate) => candidate.id === args.course_id);
-    if (!course) throw new Error("That d.tech catalog course is no longer available.");
+    if (!course) throw new Error(`That ${workspace.school.short_name} catalog course is no longer available.`);
     const eligibility = dtechCatalogEligibility(course, args.grade_level, workspace.planCourses, workspace.courses);
     if (!eligibility.eligible) throw new Error(eligibility.reason === "already_in_plan" ? "That course is already in the plan." : eligibility.reason === "outside_grade" ? `That course is not offered in grade ${args.grade_level}.` : "That course is below the math level already demonstrated in the plan.");
     const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: args.grade_level, term: args.term }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
@@ -1376,6 +1513,36 @@ export async function executeAssistantMutationTool(
       summary: "The student and planning settings were updated.",
       data: patch,
       changed: { entity: "student_settings", id: userId }
+    };
+  }
+
+  if (name === "submit_shared_data_correction") {
+    const args = toolArgumentSchemas.submit_shared_data_correction.parse(argumentsValue);
+    const allowedFields = SHARED_CORRECTION_FIELDS[args.target_table];
+    const proposedFields = Object.keys(args.proposed_payload);
+    const invalidFields = proposedFields.filter((field) => !allowedFields?.has(field));
+    if (invalidFields.length) throw new Error(`These shared fields cannot be proposed through Pilot: ${invalidFields.join(", ")}.`);
+    const { data: target, error: targetError } = await supabase.from(args.target_table).select("id").eq("id", args.target_id).maybeSingle();
+    if (targetError) throw new Error(targetError.message);
+    if (!target) throw new Error("The shared record no longer exists or is not visible to this student.");
+    const { data, error } = await supabase.from("shared_data_proposals").insert({
+      submitted_by: userId,
+      submitted_via: "pilot",
+      entity_type: args.entity_type,
+      action: "correct",
+      school_id: workspace.settings.school_id,
+      target_table: args.target_table,
+      target_id: args.target_id,
+      proposed_payload: args.proposed_payload,
+      evidence_url: args.evidence_url,
+      evidence_summary: args.evidence_summary,
+      status: "pending"
+    }).select("id,status").single();
+    if (error) throw new Error(error.message);
+    return {
+      summary: "The correction was submitted for administrator review.",
+      data: { proposal_id: data.id, status: data.status, corrected_fields: proposedFields },
+      changed: { entity: "shared_data_proposal", id: data.id }
     };
   }
 

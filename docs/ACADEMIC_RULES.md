@@ -2,11 +2,20 @@
 
 Last reviewed: 2026-07-13
 
-This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, and SMCCD degree evidence.
+This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, statewide school data, and college evidence.
 
 ## Authority and confidence
 
 The checked-in d.tech and SMCCD curriculum is labeled 2025-26. The d.tech-to-SMCCD equivalency chart is dated 2021. Preserve source year, URL, institution, confidence, and review status. Curriculum inclusion does not prove a live section, seat, schedule fit, counselor approval, or award eligibility.
+
+Statewide planning keeps four authorities separate:
+
+- CDE supplies public and charter school identity and public school address data;
+- California Education Code/CDE supplies the statewide diploma floor;
+- UCOP supplies school identities, A–G subject areas, approved course lists, and UC honors markers; and
+- each school or district supplies local graduation rules, course availability, credits, terms, prerequisites, and local designations.
+
+UCOP approval does not prove that a course is currently offered or schedulable. UCOP rows without reviewed grade/term availability may match transcript evidence and count through an approved framework mapping, but stay out of the add-course catalog. AP, IB, UC honors, school honors, CTE, and dual enrollment are separate designations; one label does not imply another.
 
 `verified` requires explicit reviewed evidence. `likely` is a supported interpretation. `uncertain` and `needs_review` remain visible and never become success through broad matching.
 
@@ -31,6 +40,8 @@ Diploma progress keeps completed, current, planned, unverified, unused, and rema
 - Laboratory Science requires Biology, Chemistry, and a third lab science at 10 credits each.
 - A verified Level 3/III world-language course satisfies the full 20-credit sequence, even without lower levels in the record.
 - SMCCD high-school credit requires a reviewed directional equivalency; college units alone do not invent a d.tech requirement mapping.
+
+Local diploma, California minimum, and UC A–G progress are calculated independently. Only approved course-to-framework mappings count. Missing local mappings remain visible as `Verify`; they do not become zero-credit requirements or implicit completion. Framework-wide constraints, such as the UC recommendation that part of A–G be completed before grade 12, are not duplicated onto every subject rule.
 
 ## Catalog eligibility
 
@@ -57,6 +68,7 @@ Conservative policies:
 - A course cannot satisfy its own prerequisite unless the source explicitly defines a corequisite relationship.
 - Later courses do not back-satisfy earlier prerequisites.
 - Within SMCCD, the same normalized district course code is prerequisite evidence across Cañada, CSM, and Skyline. Campus is preserved as provenance; different course codes still require a reviewed directional equivalency.
+- A provider-wide canonical course code may satisfy a prerequisite across campuses only when an official district/provider identity connects those campuses. Similar titles across unrelated colleges do not pass automatically.
 - Directional d.tech-to-SMCCD equivalencies are not reversed.
 - Placement, program admission, licensing, tests, work experience, portfolios, and malformed source clauses remain review items.
 
@@ -82,6 +94,12 @@ For the reviewed 2026 SMCCD sources:
 - the district K-12 maximum is 19 units.
 
 Aggregate CSM, Skyline, and Cañada units across the same school year and term. A full-year row counts in fall and spring. Completed rows do not consume a future-term limit. Crossing a selected or fee-free limit produces review, while crossing the sourced absolute maximum blocks the scenario. Unit count never proves course eligibility: prerequisites, placement, school and college approval, impacted-course restrictions, materials, fees, and seat availability stay separate. Other districts require their own reviewed policy rows; do not infer them from SMCCD.
+
+Nearby-provider discovery uses the selected school's public CDE address and official provider coordinates. It is a discovery aid, not a claim of enrollment eligibility, articulation, or a current course offering, and it never requests precise student location.
+
+## Shared-data corrections
+
+Students and Pilot may submit an exact, evidence-backed correction to shared school, course, mapping, requirement, provider, policy, or source data. The submission remains pending and changes no shared data. An application administrator must review the evidence and may approve and publish the allowlisted patch or reject it. Student-owned plan and transcript corrections continue through their existing RLS-protected flows.
 
 ## Maintenance gate
 

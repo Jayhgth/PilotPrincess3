@@ -12,7 +12,7 @@ import {
   WarningIcon as Warning
 } from "@phosphor-icons/react";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CatalogReviewItem,
   Course,
@@ -81,6 +81,19 @@ function courseTitle(item: CatalogReviewItem) {
   return payload.matched_course_name || payload.course_name || "Transcript course";
 }
 
+type SchoolSearchResult = Pick<School, "id" | "cds_code" | "name" | "district_name" | "county_name" | "governance_type" | "city" | "postal_code" | "low_grade" | "high_grade" | "website_url">;
+
+interface NearbyProviderResult {
+  provider_id: string;
+  provider_code: string;
+  name: string;
+  provider_type: string;
+  city: string | null;
+  postal_code: string | null;
+  website_url: string;
+  distance_miles: number | null;
+}
+
 interface OnboardingFlowProps {
   supabase: SupabaseClient;
   session: Session;
@@ -122,6 +135,14 @@ export default function OnboardingFlow({
     initialSettings,
     (initialSettings.grade_level ?? initialSettings.plan_start_grade ?? 9) as GradeLevel
   ));
+  const [activeSchool, setActiveSchool] = useState(school);
+  const [selectedSchool, setSelectedSchool] = useState<SchoolSearchResult | null>(() => initialSettings.school_confirmed ? school : null);
+  const [schoolQuery, setSchoolQuery] = useState(() => initialSettings.school_confirmed ? school.name : "");
+  const [schoolResults, setSchoolResults] = useState<SchoolSearchResult[]>(() => initialSettings.school_confirmed ? [school] : []);
+  const [nearbyProviders, setNearbyProviders] = useState<NearbyProviderResult[]>([]);
+  const [schoolCourses, setSchoolCourses] = useState(courses);
+  const [schoolMappings, setSchoolMappings] = useState(mappings);
+  const [schoolEquivalencies, setSchoolEquivalencies] = useState(equivalencies);
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [transcriptItems, setTranscriptItems] = useState<CatalogReviewItem[]>([]);
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
@@ -152,9 +173,44 @@ export default function OnboardingFlow({
   });
   const academicTranscriptItems = transcriptItems.filter((item) => !intersessionTranscriptItems.includes(item));
 
+  useEffect(() => {
+    if (stage !== "student") return;
+    const query = schoolQuery.trim();
+    if ((selectedSchool && query === selectedSchool.name) || query.length < 2) return;
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void supabase.rpc("search_california_high_schools", { query_text: query, result_limit: 12 }).then(({ data, error: searchError }) => {
+        if (cancelled) return;
+        if (searchError) {
+          setError("California school search is temporarily unavailable.");
+          setSchoolResults([]);
+          return;
+        }
+        setSchoolResults((data ?? []) as unknown as SchoolSearchResult[]);
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [schoolQuery, selectedSchool, stage, supabase]);
+
+  useEffect(() => {
+    let active = true;
+    if (!selectedSchool) return;
+    void supabase.rpc("nearby_school_providers", { target_school_id: selectedSchool.id, result_limit: 4 }).then(({ data, error: providerError }) => {
+      if (active) setNearbyProviders(providerError ? [] : (data ?? []) as unknown as NearbyProviderResult[]);
+    });
+    return () => { active = false; };
+  }, [selectedSchool, supabase]);
+
   function validateStage() {
     setError(null);
     if (stage === "student") {
+      if (!selectedSchool) {
+        setError("Choose your California public or charter high school.");
+        return false;
+      }
       if (!settings.preferred_name.trim() || !settings.age || !settings.grade_level || !settings.graduation_year) {
         setError("Add your name, age, current grade, and expected graduation year.");
         return false;
@@ -194,8 +250,38 @@ export default function OnboardingFlow({
     }));
   }
 
+  async function saveSchoolSelection() {
+    if (!selectedSchool) throw new Error("Choose your California public or charter high school.");
+    const selection = await supabase.rpc("select_current_school", { target_school_id: selectedSchool.id });
+    if (selection.error) throw selection.error;
+    const [schoolResult, courseResult, mappingResult] = await Promise.all([
+      supabase.from("schools").select("*").eq("id", selectedSchool.id).single(),
+      supabase.from("courses").select("*").eq("school_id", selectedSchool.id).eq("review_status", "approved").order("subject").order("name"),
+      supabase.from("course_requirement_mappings").select("id, course_id, requirement_id, confidence, is_user_override, courses!inner(school_id)").eq("courses.school_id", selectedSchool.id)
+    ]);
+    const firstError = schoolResult.error ?? courseResult.error ?? mappingResult.error;
+    if (firstError) throw firstError;
+    const loadedSchool = schoolResult.data as unknown as School;
+    setActiveSchool(loadedSchool);
+    setSchoolCourses((courseResult.data ?? []) as unknown as Course[]);
+    setSchoolMappings((mappingResult.data ?? []) as unknown as CourseRequirementMapping[]);
+    setSchoolEquivalencies(loadedSchool.slug === "design-tech-high-school" ? equivalencies : []);
+    setSettings((current) => ({ ...current, school_id: loadedSchool.id, school_confirmed: true, school_selected_at: new Date().toISOString() }));
+  }
+
   async function nextStage() {
     if (!validateStage()) return;
+    if (stage === "student") {
+      setBusyLabel("Saving school");
+      try {
+        await saveSchoolSelection();
+      } catch (caught) {
+        setError(onboardingErrorMessage(caught, "The school selection could not be saved."));
+        return;
+      } finally {
+        setBusyLabel(null);
+      }
+    }
     if (stage === "assistant") {
       setBusyLabel(aiSetup.enabled ? "Saving Pilot connection" : "Saving AI preference");
       try {
@@ -260,7 +346,7 @@ export default function OnboardingFlow({
         .limit(1)
         .maybeSingle();
       const sourceValues = {
-          school_id: school.id,
+          school_id: activeSchool.id,
           user_id: session.user.id,
           title: transcriptFile.name,
           kind,
@@ -345,7 +431,7 @@ export default function OnboardingFlow({
       const claimedPlanCourseIds = new Set([...linkedPlanCoursesByReviewId.values()].map((row) => row.id));
       let nextSortOrder = persistedPlanCourses.reduce((maximum, row) => Math.max(maximum, row.sort_order), -1) + 1;
       const candidates = selectedTranscriptItems.map((item) => {
-        const draft = transcriptPlanCourseDraft(payloadFor(item), settings, courses, mappings, item.id, equivalencies);
+        const draft = transcriptPlanCourseDraft(payloadFor(item), settings, schoolCourses, schoolMappings, item.id, schoolEquivalencies);
         const linked = linkedPlanCoursesByReviewId.get(item.id);
         const existing = linked ?? findExistingTranscriptPlanCourse(draft, persistedPlanCourses, claimedPlanCourseIds);
         if (existing) claimedPlanCourseIds.add(existing.id);
@@ -364,7 +450,7 @@ export default function OnboardingFlow({
 
       const completedSettings: StudentSettings = {
         ...applyOnboardingPlanningDefaults(settings, currentGrade),
-        school_id: school.id,
+        school_id: activeSchool.id,
         school_confirmed: true,
         onboarding_complete: true,
         ai_enabled: aiSetup.enabled,
@@ -443,7 +529,12 @@ export default function OnboardingFlow({
             <header><UserCircle size={25} weight="duotone" /><h1>Tell us where you are now</h1><p>This anchors school years and plans through graduation.</p></header>
             <div className="form-grid two">
               <label className="form-field"><span>Preferred name</span><input autoFocus value={settings.preferred_name} onChange={(event) => setSettings({ ...settings, preferred_name: event.target.value })} /></label>
-              <label className="form-field"><span>School</span><input value={school.name} readOnly aria-readonly="true" /></label>
+              <div className="form-field onboarding-school-field">
+                <label htmlFor="onboarding-school-search">California high school</label>
+                <input id="onboarding-school-search" aria-label="Search California high schools" autoComplete="off" value={schoolQuery} onChange={(event) => { setSchoolQuery(event.target.value); setSelectedSchool(null); setNearbyProviders([]); }} placeholder="Search by school, district, city, ZIP, or CDS code" />
+                {schoolQuery.trim().length >= 2 && schoolResults.length > 0 && !selectedSchool && <div className="onboarding-school-results" role="listbox" aria-label="California high school results">{schoolResults.map((result) => <button type="button" role="option" aria-selected={false} key={result.id} onClick={() => { setSelectedSchool(result); setSchoolQuery(result.name); setNearbyProviders([]); setError(null); }}><strong>{result.name}</strong><span>{[result.district_name, result.city, result.governance_type === "charter" ? "Charter" : null].filter(Boolean).join(" · ")}</span></button>)}</div>}
+                {selectedSchool && nearbyProviders.length > 0 && <div className="onboarding-nearby-providers"><span>Nearby community colleges</span><div>{nearbyProviders.map((provider) => <span key={provider.provider_id}><strong>{provider.name}</strong><small>{provider.distance_miles != null ? `${Number(provider.distance_miles).toFixed(1)} mi` : provider.city}</small></span>)}</div><p>Pilot can use these as planning options; another college can be added later.</p></div>}
+              </div>
               <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={settings.age ?? ""} onChange={(event) => setSettings({ ...settings, age: asNumber(event.target.value) })} /></label>
               <label className="form-field"><span>Current grade</span><select value={settings.grade_level ?? ""} onChange={(event) => changeGrade(Number(event.target.value) as GradeLevel)}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
               <label className="form-field"><span>Expected graduation year</span><input type="number" min={2026} max={2040} value={settings.graduation_year ?? ""} onChange={(event) => setSettings({ ...settings, graduation_year: asNumber(event.target.value) })} /></label>
@@ -470,7 +561,7 @@ export default function OnboardingFlow({
               <div className="transcript-course-list">{academicTranscriptItems.map((item) => {
                 const payload = payloadFor(item);
                 const selected = selectedTranscriptIds.has(item.id);
-                const resolution = resolveTranscriptCourse(payload, courses);
+                const resolution = resolveTranscriptCourse(payload, schoolCourses);
                 const identityLabel = resolution.classification === "dtech_catalog"
                   ? "Catalog match"
                   : resolution.classification === "smccd_catalog"

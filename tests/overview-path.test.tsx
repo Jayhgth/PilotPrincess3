@@ -15,6 +15,7 @@ const data: OverviewPathData = {
     { id: "english", name: "English", remaining: 0 },
     { id: "design", name: "Design Lab", remaining: 0 }
   ],
+  requirementsVerified: true,
   currentPeriodLabel: "Fall 2026",
   nextPeriodLabel: "Spring 2027",
   currentCourses: [{ id: "current", name: "English 4", source: "d.tech", institution: "dtech" }],
