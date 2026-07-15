@@ -24,7 +24,6 @@ import {
 import {
   DotsSixVerticalIcon as DotsSixVertical,
   HandGrabbingIcon as HandGrabbing,
-  ListPlusIcon as ListPlus,
   LockKeyIcon as LockKey,
   SortAscendingIcon as SortAscending,
   TrashIcon as Trash
@@ -78,7 +77,6 @@ interface CourseKanbanProps {
   onMove: (row: PlanCourse, placement: CoursePlacement) => boolean;
   onRemove: (id: string) => void;
   onSort: () => void;
-  onGeneratePlan: () => void;
 }
 
 interface CourseCardProps {
@@ -376,10 +374,9 @@ export default function CourseKanban(props: CourseKanbanProps) {
       onDragEnd={handleDragEnd}
     >
       <div className="course-plan-toolbar">
-        <p className={`course-plan-drag-guide ${activeRow ? "active" : ""}`} id="course-plan-drag-guide"><DotsSixVertical size={16} weight="bold" /><span>{activeRow ? "Drop on a grade tab to move years, or on a term column to place it precisely." : "Drag from any open area of an editable card. Completed and transcript-backed courses stay locked."}</span></p>
+        <p className={`course-plan-drag-guide ${activeRow ? "active" : ""}`} id="course-plan-drag-guide">{activeRow ? "Drop on a grade tab to move years, or on a term column to place it precisely." : "Drag from any open area of an editable card. Completed and transcript-backed courses stay locked."}</p>
         <div className="course-plan-toolbar-actions">
           <button className="secondary-button small" type="button" onClick={props.onSort} disabled={props.busy || props.rows.length < 2} title="Sort every grade with college courses first and pass/fail courses last"><SortAscending size={15} /> Sort courses</button>
-          <button className="secondary-button small" type="button" onClick={props.onGeneratePlan} disabled={props.busy}><ListPlus size={15} /> Suggest courses</button>
         </div>
       </div>
       <div className={`course-grade-tabs ${activeRow ? "dragging-course" : ""}`} role="tablist" aria-label="High school year">

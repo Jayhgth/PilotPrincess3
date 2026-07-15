@@ -34,7 +34,6 @@ import {
   calculateRequirementProgress,
   courseOccursInAcademicPeriod,
   courseDisplayName,
-  generateSuggestedPlan,
   GRADE_LEVELS,
   REQUIREMENT_LABELS,
   overallCompletedPercent,
@@ -270,11 +269,6 @@ export default function PlanningWorkspace() {
   const [sourceAiTransparency, setSourceAiTransparency] = useState<SourceAiTransparency | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, string>>({});
   const [selectedTranscriptIds, setSelectedTranscriptIds] = useState<Set<string>>(new Set());
-  const [planExplanation, setPlanExplanation] = useState<string | null>(null);
-  const [suggestedPlan, setSuggestedPlan] = useState<ReturnType<typeof generateSuggestedPlan>>([]);
-  const [planGenerationPromptOpen, setPlanGenerationPromptOpen] = useState(false);
-  const [respectUnitCapDraft, setRespectUnitCapDraft] = useState(true);
-
   useEffect(() => {
     if (!supabase) return;
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -954,84 +948,6 @@ export default function PlanningWorkspace() {
     });
   }
 
-  function openPlanGenerationPrompt() {
-    setRespectUnitCapDraft(enrollmentPreference?.respect_recommended_limit !== false);
-    setPlanGenerationPromptOpen(true);
-  }
-
-  async function generatePlan(respectRecommendedLimit: boolean) {
-    if (!settings || !supabase || !session || !enrollmentPreference) return;
-    const enrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
-    if (enrollmentPolicy) {
-      const { data: savedPreference, error: preferenceError } = await supabase.from("student_enrollment_preferences").upsert({
-        user_id: session.user.id,
-        provider_code: enrollmentPreference.provider_code,
-        program_type: enrollmentPreference.program_type,
-        limit_mode: "recommended",
-        custom_unit_limit: null,
-        respect_recommended_limit: respectRecommendedLimit
-      }, { onConflict: "user_id,provider_code" }).select("*").single();
-      if (preferenceError) {
-        notify(preferenceError.message, "error");
-        return;
-      }
-      setEnrollmentPreference({
-        ...savedPreference as unknown as StudentEnrollmentPreference,
-        limit_mode: "recommended",
-        custom_unit_limit: null,
-        respect_recommended_limit: savedPreference.respect_recommended_limit !== false
-      });
-    } else {
-      setEnrollmentPreference((current) => current ? { ...current, respect_recommended_limit: respectRecommendedLimit } : current);
-    }
-    setPlanGenerationPromptOpen(false);
-    const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy, respectRecommendedLimit, {
-      schoolSlug: school?.slug ?? "",
-      requirements,
-      mappings,
-      startGrade: settings.plan_start_grade ?? (settings.grade_level as GradeLevel | null) ?? 9,
-      includeCollegeCourses: true
-    });
-    if (generated.length === 0) {
-      notify("The current plan already contains the available high school flow courses.");
-      return;
-    }
-    setSuggestedPlan(generated);
-    notify(`${generated.length} suggested ${generated.length === 1 ? "course is" : "courses are"} ready to review.`);
-  }
-
-  async function confirmSuggestedPlan() {
-    if (!supabase || !session || !activeVersion || suggestedPlan.length === 0) return;
-    const generated = suggestedPlan;
-    const inserted = await runAction(
-      "Adding suggested courses",
-      async () => {
-        const rows = generated.map((row, index) => ({
-          ...row,
-          plan_version_id: activeVersion.id,
-          user_id: session.user.id,
-          sort_order: index
-        }));
-        const { data, error } = await supabase.from("plan_courses").insert(rows).select("*");
-        if (error) throw error;
-        const inserted = (data ?? []) as unknown as PlanCourse[];
-        setPlanCourses((current) => [...current, ...inserted]);
-        setSuggestedPlan([]);
-        const explanation = "Suggested courses were added from the official high school flow. Verify each placement and prerequisite before registration.";
-        setPlanExplanation(explanation);
-        await supabase.from("plan_versions").update({ ai_summary: null }).eq("id", activeVersion.id);
-        await logEvent("plan_generated", { course_count: inserted.length, ai_used: false });
-        return inserted;
-      }
-    );
-    if (inserted) notifyUndo(`${generated.length} suggested courses added.`, async () => {
-      const ids = inserted.map((row) => row.id);
-      const { error } = await supabase.from("plan_courses").delete().in("id", ids);
-      if (error) throw error;
-      setPlanCourses((current) => current.filter((row) => !ids.includes(row.id)));
-    });
-  }
-
   async function submitTranscript(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!supabase || !session || !school) return;
@@ -1649,33 +1565,17 @@ export default function PlanningWorkspace() {
 
   function renderMineCourses() {
     if (!settings) return null;
-    const generationPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
-
     return (
-      <>
-        {planExplanation && <p className="plan-explanation">{planExplanation}</p>}
-        {planGenerationPromptOpen && <section className="plan-generation-prompt" aria-labelledby="plan-generation-heading">
-          <div><h2 id="plan-generation-heading">Suggest a course plan</h2><p>{generationPolicy ? "Should college coursework stay at or below the district planning limit for each term?" : "The selected district does not have a reviewed enrollment-limit policy in Pilot yet. High-school suggestions remain available."}</p></div>
-          {generationPolicy && <label><input type="checkbox" checked={respectUnitCapDraft} onChange={(event) => setRespectUnitCapDraft(event.target.checked)} /><span><strong>Yes, respect the limit</strong><small>{generationPolicy.recommended_max_units} units per term from the saved {generationPolicy.provider_name} policy. Recommended.</small></span></label>}
-          <div><button className="secondary-button small" type="button" onClick={() => setPlanGenerationPromptOpen(false)}>Cancel</button><button className="primary-button small" type="button" onClick={() => void generatePlan(respectUnitCapDraft)} disabled={Boolean(busyLabel)}>Generate suggestions</button></div>
-        </section>}
-        {suggestedPlan.length > 0 && <section className="suggested-plan-preview" aria-label="Suggested plan preview">
-          <div><strong>Review suggested courses</strong><p>Nothing has been added yet. Check the placements before applying this set.</p></div>
-          <ul>{suggestedPlan.map((row) => <li key={`${row.course_id}-${row.grade_level}`}><span><strong>{courseMap.get(row.course_id)?.name ?? "Course"}</strong><small>Grade {row.grade_level} · {row.term === "full_year" ? "Full year" : row.term[0].toUpperCase() + row.term.slice(1)}</small></span></li>)}</ul>
-          <div className="suggested-plan-actions"><button className="secondary-button small" type="button" onClick={() => setSuggestedPlan([])}>Cancel</button><button className="primary-button small" type="button" onClick={() => void confirmSuggestedPlan()} disabled={Boolean(busyLabel)}><Check size={15} /> Add {suggestedPlan.length} courses</button></div>
-        </section>}
-        <CourseKanban
-          rows={planCourses}
-          courses={courses}
-          smccdCourses={plannedSmccdCourses}
-          settings={settings}
-          busy={Boolean(busyLabel)}
-          onMove={movePlanCourse}
-          onRemove={(id) => void removePlanCourse(id)}
-          onSort={sortPlanCourses}
-          onGeneratePlan={openPlanGenerationPrompt}
-        />
-      </>
+      <CourseKanban
+        rows={planCourses}
+        courses={courses}
+        smccdCourses={plannedSmccdCourses}
+        settings={settings}
+        busy={Boolean(busyLabel)}
+        onMove={movePlanCourse}
+        onRemove={(id) => void removePlanCourse(id)}
+        onSort={sortPlanCourses}
+      />
     );
   }
 
@@ -1687,7 +1587,7 @@ export default function PlanningWorkspace() {
       : [];
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A four-year schedule for completed, current, and planned classes." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
-      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "High school courses" }, { id: "smccd", label: "College courses" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
+      <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "High school catalog" }, { id: "smccd", label: "College catalog" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
       {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && !unitWarningHidden && <aside className="enrollment-policy-callout" role="status">
         <Warning size={16} weight="fill" aria-hidden />
         <div>
