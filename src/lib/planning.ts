@@ -245,7 +245,11 @@ export function calculateRequirementProgress(
       if (!overrideMatches && !mapping && !countsAsExcessElective) continue;
 
       const credits = resolvePlanCourseHighSchoolCredits(planCourse, equivalencies).credits;
-      const lacksVerifiedEvidence = requirement.area === "electives" ? !countsAsExcessElective : !planCourse.mapping_verified;
+      const lacksVerifiedEvidence = requirement.area === "electives"
+        ? !countsAsExcessElective
+        : overrideMatches
+          ? !planCourse.mapping_verified
+          : mapping?.confidence !== "verified";
       if ((!overrideMatches && mapping?.confidence === "uncertain") || lacksVerifiedEvidence) {
         unverifiedCredits += credits;
         unverifiedRows.push({

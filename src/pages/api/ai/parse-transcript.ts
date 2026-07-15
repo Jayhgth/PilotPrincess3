@@ -6,7 +6,7 @@ import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { CatalogReviewItem, Course, PlanCourse, SmccdCourse } from "@/lib/models";
-import { inferTranscriptGradeLevel, resolveTranscriptWeighting, type TranscriptCoursePayload } from "@/lib/transcript";
+import { inferTranscriptGradeLevel, resolveTranscriptCourse, resolveTranscriptWeighting, type TranscriptCoursePayload } from "@/lib/transcript";
 import {
   parsedTranscriptJsonSchema,
   parsedTranscriptSchema,
@@ -186,6 +186,17 @@ export const POST: APIRoute = async ({ request }) => {
       ? await catalogQuery.eq("school_id", source.school_id)
       : { data: [], error: null };
     if (catalogError) throw catalogError;
+    const catalogCourses = (catalogData ?? []) as unknown as Course[];
+    const catalogCourseIds = catalogCourses.map((course) => course.id);
+    const verifiedMappingResult = catalogCourseIds.length > 0
+      ? await auth.supabase
+          .from("course_requirement_mappings")
+          .select("course_id")
+          .in("course_id", catalogCourseIds)
+          .eq("confidence", "verified")
+      : { data: [], error: null };
+    if (verifiedMappingResult.error) throw verifiedMappingResult.error;
+    const verifiedMappedCourseIds = new Set((verifiedMappingResult.data ?? []).map((mapping) => mapping.course_id));
     const collegeCourseCodes = [...new Set(parsedResult.courses
       .map((course) => course.course_code ? normalizeSmccdCourseCode(course.course_code) : null)
       .filter((value): value is string => Boolean(value)))];
@@ -275,13 +286,23 @@ export const POST: APIRoute = async ({ request }) => {
     const refreshedPlanRows = linkedPlanRows.flatMap((planRow) => {
       const payload = (planRow.source_review_item_id ? proposedByReviewId.get(planRow.source_review_item_id) : null) as TranscriptCoursePayload | null;
       if (!payload) return [];
+      const resolution = resolveTranscriptCourse(payload, catalogCourses);
+      const matchedCourse = resolution.matchedCourse;
+      const resolvedHighSchoolCourse = resolution.classification === "dtech_catalog" || resolution.classification === "high_school_catalog";
       return [{
         ...planRow,
+        course_id: resolvedHighSchoolCourse ? matchedCourse?.id ?? null : planRow.course_id,
         term: payload.term ?? planRow.term,
         grade_level: payload.grade_level ?? planRow.grade_level,
         school_year: payload.school_year ?? planRow.school_year,
         letter_grade: payload.letter_grade,
-        is_weighted: resolveTranscriptWeighting(payload, (catalogData ?? []) as unknown as Course[]).weighted
+        is_weighted: resolveTranscriptWeighting(payload, catalogCourses).weighted,
+        mapping_verified: resolvedHighSchoolCourse && matchedCourse
+          ? verifiedMappedCourseIds.has(matchedCourse.id)
+          : planRow.mapping_verified,
+        smccd_course_id: resolvedHighSchoolCourse ? null : planRow.smccd_course_id,
+        college_provider_code: resolvedHighSchoolCourse ? null : planRow.college_provider_code,
+        college_units: resolvedHighSchoolCourse ? null : planRow.college_units
       }];
     });
     if (refreshedPlanRows.length > 0) {

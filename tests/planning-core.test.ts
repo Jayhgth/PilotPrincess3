@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
+import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 
 const settings: StudentSettings = {
@@ -51,6 +52,13 @@ describe("core academic planning contracts", () => {
     const [progress] = calculateRequirementProgress([requirement], [plan({ course_id: "math" }), plan({ id: "unknown", course_id: "other", status: "planned", mapping_verified: false })], mappings);
     expect(progress).toMatchObject({ completedCredits: 10, plannedCredits: 0, unverifiedCredits: 10, percent: 33, status: "missing" });
 
+    const [reconciledProgress] = calculateRequirementProgress(
+      [requirement],
+      [plan({ course_id: "math", mapping_verified: false })],
+      [{ id: "verified-map", course_id: "math", requirement_id: requirement.id, confidence: "verified", is_user_override: false }]
+    );
+    expect(reconciledProgress).toMatchObject({ completedCredits: 10, unverifiedCredits: 0 });
+
     const current = { ...course("current", "Current Math"), catalog_version_id: "current-catalog" };
     const stale = { ...course("stale", "Stale Math"), catalog_version_id: "stale-catalog" };
     const normalized = normalizeWorkspaceBootstrap({
@@ -63,6 +71,48 @@ describe("core academic planning contracts", () => {
     });
     expect(normalized.courses.map((row) => row.id)).toEqual(["current"]);
     expect(normalized.mappings.map((row) => row.id)).toEqual(["current-map"]);
+
+    const english = course("english-2", "English 2 / English 2 Honors", "English", [10]);
+    const reconciledTranscript = normalizeWorkspaceBootstrap({
+      requirements: [{ ...requirement, catalog_version_id: "catalog" }],
+      courses: [english],
+      mappings: [{ id: "english-map", course_id: english.id, requirement_id: requirement.id, confidence: "verified", is_user_override: false }],
+      plan_courses: [plan({ course_id: null, custom_course_name: "English 2 Honors", source_review_item_id: "review", mapping_verified: false })],
+      review_items: [{
+        id: "review", user_id: "student", source_id: "source", entity_type: "transcript_course",
+        proposed_payload: { course_name: "English 2 Honors", institution_name: "Design Tech High School" }, corrected_payload: null,
+        status: "approved", confidence: "uncertain", uncertainty_notes: ["No exact selected-school catalog match was found for Design Tech High School. This course will remain custom until reviewed."], created_at: "2026-07-15"
+      }]
+    });
+    expect(reconciledTranscript.plan_courses[0]).toMatchObject({ course_id: english.id, mapping_verified: true });
+    expect(visibleTranscriptUncertaintyNotes(
+      { course_name: "English 2 Honors", institution_name: "Design Tech High School" },
+      reconciledTranscript.review_items[0].uncertainty_notes,
+      [english]
+    )).toEqual([]);
+
+    const reconciledCollegeTranscript = normalizeWorkspaceBootstrap({
+      requirements: [{ ...requirement, catalog_version_id: "catalog" }],
+      courses: [english],
+      mappings: [],
+      plan_courses: [plan({
+        course_id: null, custom_course_name: "BIOL 110 Principles of Biology", source_review_item_id: "college-review",
+        smccd_course_id: "SKY:BIOL 110", college_units: 4, credits: 5, mapping_verified: false, requirement_area_override: null
+      })],
+      review_items: [{
+        id: "college-review", user_id: "student", source_id: "source", entity_type: "transcript_course",
+        proposed_payload: { course_name: "BIOL 110 Principles of Biology", course_code: "BIOL 110", institution_name: "Skyline College", matched_smccd_course_id: "SKY:BIOL 110" }, corrected_payload: null,
+        status: "approved", confidence: "verified", uncertainty_notes: [], created_at: "2026-07-15"
+      }],
+      equivalencies: [{
+        normalized_course_code: "BIOL 110", college_course_code: "Biology 110", description: "Principles of Biology", college_units: 4,
+        high_school_credits: 10, high_school_equivalent: "Biology", requirement_area: "lab_science", pairing_note: null,
+        source_id: "equivalency-source", confidence: "verified"
+      }]
+    });
+    expect(reconciledCollegeTranscript.plan_courses[0]).toMatchObject({
+      credits: 10, mapping_verified: true, requirement_area_override: "lab_science"
+    });
 
     const electiveRequirement: GraduationRequirement = { ...requirement, id: "electives", area: "electives", name: "Electives", credits_required: 10, years_required: 1 };
     const overflow = calculateRequirementProgress(

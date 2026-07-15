@@ -1,4 +1,5 @@
 import type {
+  CatalogReviewItem,
   Course,
   CourseRequirementMapping,
   GradeLevel,
@@ -162,9 +163,75 @@ export function visibleTranscriptUncertaintyNotes(
   const resolution = resolveTranscriptCourse(payload, courses);
   return notes.filter((note) => {
     if (note.startsWith(DTECH_CATALOG_MISS) && (resolution.classification === "dtech_intersession" || resolution.classification === "dtech_catalog")) return false;
-    if (note.startsWith(SCHOOL_CATALOG_MISS) && resolution.classification === "high_school_catalog") return false;
+    if (note.startsWith(SCHOOL_CATALOG_MISS) && (resolution.classification === "high_school_catalog" || resolution.classification === "dtech_catalog")) return false;
     if (note.startsWith(SMCCD_CATALOG_MISS) && resolution.classification === "smccd_catalog") return false;
     return true;
+  });
+}
+
+export function reconcileTranscriptPlanCourseIdentities(
+  planCourses: PlanCourse[],
+  reviewItems: CatalogReviewItem[],
+  courses: Course[],
+  mappings: CourseRequirementMapping[],
+  equivalencies: SmccdHighSchoolEquivalency[] = []
+) {
+  const reviewById = new Map(
+    reviewItems
+      .filter((item) => item.entity_type === "transcript_course")
+      .map((item) => [item.id, item])
+  );
+  const verifiedCourseIds = new Set(
+    mappings
+      .filter((mapping) => mapping.confidence === "verified")
+      .map((mapping) => mapping.course_id)
+  );
+
+  return planCourses.map((row) => {
+    if (!row.source_review_item_id) return row;
+    const review = reviewById.get(row.source_review_item_id);
+    if (!review) return row;
+    const payload = (review.corrected_payload ?? review.proposed_payload) as unknown as TranscriptCoursePayload;
+    const resolution = resolveTranscriptCourse(payload, courses);
+
+    if (resolution.classification === "dtech_intersession") {
+      return {
+        ...row,
+        course_id: null,
+        smccd_course_id: null,
+        college_provider_code: null,
+        college_units: null,
+        mapping_verified: row.mapping_verified || payload.letter_grade?.trim().toUpperCase() === "P",
+        requirement_area_override: "personal_development" as const
+      };
+    }
+
+    if (resolution.classification === "smccd_catalog" || resolution.classification === "smccd_unmatched") {
+      const normalizedCode = normalizeCollegeCourseCode(
+        payload.matched_smccd_course_id?.split(":").at(-1) ?? payload.course_code ?? payload.course_name
+      );
+      const equivalency = normalizedCode
+        ? equivalencies.find((candidate) => candidate.normalized_course_code === normalizedCode)
+        : null;
+      if (!equivalency) return row;
+      return {
+        ...row,
+        credits: equivalency.high_school_credits,
+        college_units: payload.college_units ?? row.college_units,
+        mapping_verified: true,
+        requirement_area_override: equivalency.requirement_area
+      };
+    }
+
+    if (!resolution.matchedCourse) return row;
+    return {
+      ...row,
+      course_id: resolution.matchedCourse.id,
+      mapping_verified: row.mapping_verified || verifiedCourseIds.has(resolution.matchedCourse.id),
+      smccd_course_id: null,
+      college_provider_code: null,
+      college_units: null
+    };
   });
 }
 

@@ -25,6 +25,7 @@ import type {
   StudentSettings,
   SmccdPrerequisiteClearance
 } from "@/lib/models";
+import { reconcileTranscriptPlanCourseIdentities } from "@/lib/transcript";
 
 interface StoredGpaScenarioChoice {
   plan_course_id: string;
@@ -98,6 +99,9 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     : rawCourses;
   const courseIds = new Set(courses.map((course) => course.id));
   const requirementIds = new Set(requirements.map((requirement) => requirement.id));
+  const mappings = Array.isArray(snapshot.mappings) ? snapshot.mappings.filter((mapping) => courseIds.has(mapping.course_id) && requirementIds.has(mapping.requirement_id)) : [];
+  const reviewItems = Array.isArray(snapshot.review_items) ? snapshot.review_items : [];
+  const equivalencies = Array.isArray(snapshot.equivalencies) ? snapshot.equivalencies : [];
   return {
     settings: snapshot.settings ?? null,
     plan: snapshot.plan ?? null,
@@ -110,12 +114,12 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     sources: Array.isArray(snapshot.sources) ? snapshot.sources : [],
     courses,
     requirements,
-    mappings: Array.isArray(snapshot.mappings) ? snapshot.mappings.filter((mapping) => courseIds.has(mapping.course_id) && requirementIds.has(mapping.requirement_id)) : [],
+    mappings,
     course_designations: Array.isArray(snapshot.course_designations) ? snapshot.course_designations : [],
-    equivalencies: Array.isArray(snapshot.equivalencies) ? snapshot.equivalencies : [],
-    review_items: Array.isArray(snapshot.review_items) ? snapshot.review_items : [],
+    equivalencies,
+    review_items: reviewItems,
     enrollment_policies: Array.isArray(snapshot.enrollment_policies) ? snapshot.enrollment_policies : [],
-    plan_courses: planCourses,
+    plan_courses: reconcileTranscriptPlanCourseIdentities(planCourses, reviewItems, courses, mappings, equivalencies),
     gpa_scenario_choices: Array.isArray(snapshot.gpa_scenario_choices) ? snapshot.gpa_scenario_choices : [],
     planned_smccd_courses: Array.isArray(snapshot.planned_smccd_courses) ? snapshot.planned_smccd_courses : [],
     degree_goals: Array.isArray(snapshot.degree_goals) ? snapshot.degree_goals : [],
