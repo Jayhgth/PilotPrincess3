@@ -30,7 +30,7 @@ import AiModelPicker from "@/components/AiModelPicker";
 import type { AiModel, AiReasoningEffort, AiReviewMode } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
-import { assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
+import { asAssistantRecord, assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
 import styles from "./GlobalAssistant.module.css";
@@ -177,10 +177,11 @@ function StructuredQuestions({ questions, answered, willQueue, onSubmit }: { que
 }
 
 function ChangeReceipt({ message, busy, onUndo }: { message: AiMessage; busy: boolean; onUndo: (message: AiMessage) => void }) {
-  const details = changeDetailsFromContext(message.page_context);
-  const toolName = String(message.page_context.tool_name ?? "student data");
-  const undone = typeof message.page_context.undone_at === "string";
-  const canUndo = message.page_context.undo_available === true && typeof message.page_context.tool_call_id === "string" && !undone;
+  const context = asAssistantRecord(message.page_context);
+  const details = changeDetailsFromContext(context);
+  const toolName = String(context.tool_name ?? "student data");
+  const undone = typeof context.undone_at === "string";
+  const canUndo = context.undo_available === true && typeof context.tool_call_id === "string" && !undone;
   return <FadeContent className={`${styles.changeReceipt} ${undone ? styles.changeUndone : ""}`} duration={0.16}>
     <div><CheckCircle size={16} weight="fill" /><span><strong>{undone ? "Change undone" : "Change applied"}</strong><small>{friendlyToolLabel(toolName)}</small></span></div>
     <p>{message.content}</p>
@@ -954,7 +955,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }
 
   async function undoChange(message: AiMessage) {
-    const toolCallId = String(message.page_context.tool_call_id ?? "");
+    const toolCallId = String(asAssistantRecord(message.page_context).tool_call_id ?? "");
     if (!toolCallId) return;
     setBusyUndo(toolCallId);
     setError(null);
@@ -973,7 +974,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }
 
   const events = useMemo(() => [
-    ...data.events.map((event) => event.payload as LiveActivity),
+    ...data.events.map((event) => asAssistantRecord(event.payload) as LiveActivity),
     ...liveEvents
   ], [data.events, liveEvents]);
   const turnIds = data.messages.map((message) => message.turn_id).filter((id): id is string => Boolean(id));
@@ -992,8 +993,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   };
   const userMessagesByTurn = new Map(data.messages.filter((message) => message.role === "user" && message.turn_id).map((message) => [message.turn_id!, message]));
   const answeredQuestionMessages = new Set(data.messages
-    .filter((message) => message.role === "user" && typeof message.page_context.structured_answer_to === "string")
-    .map((message) => String(message.page_context.structured_answer_to)));
+    .filter((message) => message.role === "user" && typeof asAssistantRecord(message.page_context).structured_answer_to === "string")
+    .map((message) => String(asAssistantRecord(message.page_context).structured_answer_to)));
   if (!open) return null;
   return (
     <>
@@ -1053,7 +1054,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
                 <MessageActions message={message} canRetry={canRetry} onRetry={sourceMessage ? () => void sendMessage(sourceMessage.content, { context: { retry_of_turn_id: sourceMessage.turn_id } }) : undefined} />
               </div>;
             }
-            return <ChangeReceipt message={message} busy={busyUndo === message.page_context.tool_call_id} onUndo={(receipt) => void undoChange(receipt)} key={message.id} />;
+            return <ChangeReceipt message={message} busy={busyUndo === asAssistantRecord(message.page_context).tool_call_id} onUndo={(receipt) => void undoChange(receipt)} key={message.id} />;
           })}
           {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={autoReviewing ? "Auto-review is checking" : "Pilot is working"} speed={1.8} /></div>}
           {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}

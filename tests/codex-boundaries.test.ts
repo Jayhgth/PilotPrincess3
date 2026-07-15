@@ -8,6 +8,7 @@ import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffor
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 import { explicitDurableMemoryUpdates } from "@/server/ai-memory";
+import { asAssistantRecord, assistantQuestionsFromContext, changeDetailsFromContext } from "@/lib/assistant-chat";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -65,6 +66,10 @@ describe("Codex feature boundaries", () => {
       clientSecret: "[redacted]",
       nested: { refresh_token: "[redacted]", safe: "keep" }
     });
+    expect(asAssistantRecord(null)).toEqual({});
+    expect(asAssistantRecord(["legacy payload"])).toEqual({});
+    expect(assistantQuestionsFromContext(null)).toEqual([]);
+    expect(changeDetailsFromContext("legacy payload")).toEqual([]);
   });
 
   it("accepts a useful short answer and rejects report-length output", () => {

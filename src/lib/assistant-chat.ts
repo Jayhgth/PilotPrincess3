@@ -7,6 +7,12 @@ export interface AssistantQuestion {
   allow_custom: boolean;
 }
 
+export function asAssistantRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
 const DRAFT_PREFIX = "pilot-princess:assistant-draft";
 
 export function assistantDraftKey(userId: string, conversationId: string | null) {
@@ -22,7 +28,8 @@ export function prioritizeAssistantQueue<T extends { id: string }>(queue: T[], i
   return selected ? [selected, ...queue.filter((item) => item.id !== id)] : queue;
 }
 
-export function assistantQuestionsFromContext(context: Record<string, unknown>): AssistantQuestion[] {
+export function assistantQuestionsFromContext(value: unknown): AssistantQuestion[] {
+  const context = asAssistantRecord(value);
   if (!Array.isArray(context.questions)) return [];
   return context.questions.slice(0, 3).filter((question): question is AssistantQuestion => {
     if (!question || typeof question !== "object" || Array.isArray(question)) return false;
@@ -126,7 +133,8 @@ function readableValue(value: unknown): string | null {
   return text.length > 180 ? `${text.slice(0, 177)}…` : text;
 }
 
-export function changeDetailsFromContext(context: Record<string, unknown>): ChangeDetail[] {
+export function changeDetailsFromContext(value: unknown): ChangeDetail[] {
+  const context = asAssistantRecord(value);
   const data = context.data;
   if (!data || typeof data !== "object" || Array.isArray(data)) return [];
   return Object.entries(data as Record<string, unknown>)

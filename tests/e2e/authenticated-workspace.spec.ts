@@ -117,6 +117,33 @@ test.describe("authenticated student workspace", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  test("opens Pilot without taking down the workspace", async ({ page }) => {
+    await signInToOnboarding(page);
+    await fillStudentStep(page);
+    await page.getByRole("button", { name: "Finish setup" }).click();
+    await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
+
+    const pilotSupabase = ephemeralSupabase ?? createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+    if (!ephemeralSupabase) {
+      const signIn = await pilotSupabase.auth.signInWithPassword({ email: activeEmail, password: activePassword });
+      if (signIn.error) throw signIn.error;
+    }
+    const enabled = await pilotSupabase.from("student_settings").update({
+      ai_enabled: true,
+      ai_connection_approved_at: new Date().toISOString(),
+      ai_setup_tested_at: new Date().toISOString()
+    }).eq("id", (await pilotSupabase.auth.getUser()).data.user!.id);
+    if (enabled.error) throw enabled.error;
+
+    await page.reload();
+    await page.getByRole("button", { name: "Open Pilot", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Pilot Assistant" })).toBeVisible();
+    await expect(page.getByText("Pilot could not open", { exact: false })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible();
+  });
+
   test("adds, moves, evaluates, persists, and removes an editable course", async ({ page }) => {
     await signInToOnboarding(page);
     await fillStudentStep(page);

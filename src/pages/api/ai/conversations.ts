@@ -1,6 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
+import { asAssistantRecord } from "@/lib/assistant-chat";
 
 export const prerender = false;
 
@@ -110,13 +111,18 @@ export const GET: APIRoute = async ({ request }) => {
     activeConversation,
     messages: [...(messageResult.data ?? [])].reverse().map((message) => ({
       ...message,
+      page_context: asAssistantRecord(message.page_context),
       attachments: attachmentsByMessage.get(message.id) ?? []
     })),
-    events: [...(eventResult.data ?? [])].reverse(),
+    events: [...(eventResult.data ?? [])].reverse().map((event) => ({
+      ...event,
+      payload: asAssistantRecord(event.payload)
+    })),
     toolCalls: [...(toolResult.data ?? [])].reverse().map((toolCall) => {
-      if (!toolCall.result || typeof toolCall.result !== "object" || Array.isArray(toolCall.result)) return toolCall;
+      const normalized = { ...toolCall, arguments: asAssistantRecord(toolCall.arguments) };
+      if (!toolCall.result || typeof toolCall.result !== "object" || Array.isArray(toolCall.result)) return normalized;
       const { undo: _undo, ...publicResult } = toolCall.result as Record<string, unknown>;
-      return { ...toolCall, result: publicResult };
+      return { ...normalized, result: publicResult };
     })
   }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
 };
