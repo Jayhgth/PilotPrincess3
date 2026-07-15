@@ -261,7 +261,14 @@ function toolSummary(call: AiToolCall) {
 
 function readableArguments(call: AiToolCall) {
   const entries = Object.entries(call.arguments).filter(([, value]) => value !== null && value !== "");
-  return entries.map(([key, value]) => ({ label: key.replaceAll("_", " "), value: String(value).replaceAll("_", " ") }));
+  return entries.map(([key, value]) => {
+    if (key === "course_ids" && Array.isArray(value)) return { label: "Courses", value: `${value.length} selected ${value.length === 1 ? "course" : "courses"}` };
+    if (key === "include_college_courses") return { label: "College courses", value: value === true ? "Included" : "Excluded" };
+    if (typeof value === "boolean") return { label: key.replaceAll("_", " "), value: value ? "Yes" : "No" };
+    if (Array.isArray(value)) return { label: key.replaceAll("_", " "), value: value.map((item) => String(item).replaceAll("_", " ")).join(", ") || "None" };
+    if (typeof value === "object") return { label: key.replaceAll("_", " "), value: "Structured details validated" };
+    return { label: key.replaceAll("_", " "), value: String(value).replaceAll("_", " ") };
+  });
 }
 
 function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boolean; onDecision: (call: AiToolCall, decision: "confirm" | "reject") => void }) {

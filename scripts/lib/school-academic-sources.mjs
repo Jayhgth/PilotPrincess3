@@ -63,10 +63,10 @@ export function normalizeRequirementArea(title) {
   if (/physical education|\bpe\b|athletics/.test(value)) return "physical_education";
   if (/visual|performing|fine arts|\bvapa\b/.test(value)) return "visual_performing_arts";
   if (/world language|foreign language|language other than english|\blote\b/.test(value)) return "world_language";
-  if (/career technical|\bcte\b|vocational/.test(value)) return "career_technical_education";
+  if (/career tech|\bcte\b|vocational/.test(value)) return "career_technical_education";
   if (/ethnic studies/.test(value)) return "ethnic_studies";
   if (/elective/.test(value)) return "electives";
-  if (/personal development|life skills|health/.test(value)) return "personal_development";
+  if (/personal development|life skills|living skills|health/.test(value)) return "personal_development";
   if (/design lab/.test(value)) return "design_lab";
   return "other";
 }
@@ -115,13 +115,20 @@ export function extractGraduationRequirements(text) {
   for (const line of source.split("\n")) {
     const cells = line.split("\t").map((cell) => cell.replace(/\s+/g, " ").trim()).filter(Boolean);
     if (cells.length < 2) continue;
-    const title = cells[0].replace(/^[a-g][.)]\s*/i, "").trim();
+    const isStructuredHtmlTable = cells[0] === "HTML_TABLE";
+    const valueCells = isStructuredHtmlTable ? cells.slice(1) : cells;
+    const title = valueCells[0].replace(/^[a-g][.)]\s*/i, "").trim();
     const area = normalizeRequirementArea(title);
     if (area === "other" && !/college\s*(?:and|&)\s*career/i.test(title)) continue;
-    const numericCells = cells.slice(1).map((cell) => cell.match(/^\d+(?:\.\d+)?$/)?.[0]).filter(Boolean);
-    const credits = Number(numericCells.at(-1));
+    const numericCells = valueCells.slice(1).map((cell) => cell.match(/(?:^|\s)(\d+(?:\.\d+)?)(?=\s|$)/)?.[1]).filter(Boolean);
+    const credits = Number(isStructuredHtmlTable ? numericCells[0] : numericCells.at(-1));
     if (!Number.isFinite(credits) || credits <= 0 || credits > 120) continue;
     const key = `${area}:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+    if (isStructuredHtmlTable) {
+      for (const [existingKey, existingRow] of rows) {
+        if (existingRow.area === area) rows.delete(existingKey);
+      }
+    }
     if (rows.has(key)) continue;
     rows.set(key, {
       area,
@@ -129,7 +136,7 @@ export function extractGraduationRequirements(text) {
       credits_required: credits,
       years_required: credits % 10 === 0 ? credits / 10 : null,
       notes: null,
-      evidence: line.trim(),
+      evidence: isStructuredHtmlTable ? valueCells.slice(0, 2).join(" — ") : line.trim(),
       confidence: "verified"
     });
   }
@@ -504,10 +511,19 @@ export async function readAcademicSource(url) {
   } else if (contentType.includes("html")) {
     const $ = cheerio.load(buffer.toString("utf8"));
     $("script,style,noscript,svg,nav,footer").remove();
+    const structuredTables = $("tr").toArray().flatMap((row) => {
+      const cells = $(row).find("th,td").toArray().map((cell) => decodeHtmlEntities($(cell).text())).filter(Boolean);
+      return cells.length >= 2 ? [`HTML_TABLE\t${cells.join("\t")}`] : [];
+    }).join("\n");
     $("br").replaceWith("\n");
     $("th,td").each((_, element) => $(element).append("\t"));
     $("h1,h2,h3,h4,h5,p,li,tr,section,article").each((_, element) => $(element).append("\n"));
-    text = $("main,article,[role=main]").first().text() || $("body").text();
+    const semanticRoots = $("main,article,[role=main],.fsPageBody,.fsPageContent,.page-content")
+      .toArray()
+      .map((element) => $(element).text())
+      .filter((value) => value.trim().length > 0)
+      .sort((left, right) => right.length - left.length);
+    text = `${semanticRoots[0] || $("body").text()}${structuredTables ? `\n${structuredTables}` : ""}`;
   } else {
     text = buffer.toString("utf8");
   }

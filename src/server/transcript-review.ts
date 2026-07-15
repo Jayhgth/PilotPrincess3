@@ -22,6 +22,12 @@ export interface ProposedTranscriptReviewRow {
   uncertainty_notes: string[];
 }
 
+export interface TranscriptSchoolContext {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 function previousSchoolYear(value: string | null | undefined) {
   const match = value?.match(/^(\d{4})-(\d{4})$/);
   return match ? `${Number(match[1]) - 1}-${Number(match[2]) - 1}` : value;
@@ -41,11 +47,16 @@ export function transcriptReviewRows(
   sourceId: string,
   result: ParsedTranscriptResult,
   courses: Course[],
-  smccdCourses: SmccdCourse[]
+  smccdCourses: SmccdCourse[],
+  schoolContext?: TranscriptSchoolContext | null
 ): ProposedTranscriptReviewRow[] {
+  const selectedSchoolIsDtech = schoolContext?.slug === "design-tech-high-school"
+    || institutionKeyFromName(schoolContext?.name) === "dtech"
+    || institutionKeyFromName(result.school_name) === "dtech";
+  const selectedSchoolLabel = schoolContext?.name ?? result.school_name ?? "the selected high school";
   const courseRows: ProposedTranscriptReviewRow[] = result.courses.map((course) => {
     const plannerCourse = plannerPlacementForTranscriptCourse(course);
-    const isIntersession = isDtechIntersessionCourse(plannerCourse);
+    const isIntersession = selectedSchoolIsDtech && isDtechIntersessionCourse(plannerCourse);
     const normalizedCourse = isIntersession
       ? { ...plannerCourse, course_name: stripTranscriptQuarterPrefix(plannerCourse.course_name), subject: "Personal Development", weighted: false }
       : plannerCourse;
@@ -62,10 +73,10 @@ export function transcriptReviewRows(
     const match = isCollegeCourse || isIntersession ? null : findTranscriptCatalogMatch(normalizedCourse.course_name, courses);
     const transcriptClassification: TranscriptCourseClassification = isCollegeCourse
       ? smccdMatch ? "smccd_catalog" : "smccd_unmatched"
-      : isIntersession ? "dtech_intersession" : match ? "dtech_catalog" : "custom";
-    const institutionConflict = transcriptClassification === "dtech_catalog" && districtInstitution;
+      : isIntersession ? "dtech_intersession" : match ? selectedSchoolIsDtech ? "dtech_catalog" : "high_school_catalog" : "custom";
+    const institutionConflict = Boolean(match && districtInstitution);
     const reconciledCourse = institutionConflict
-      ? { ...normalizedCourse, institution_name: "Design Tech High School" }
+      ? { ...normalizedCourse, institution_name: selectedSchoolLabel }
       : normalizedCourse;
     const weighting = resolveTranscriptWeighting({
       ...reconciledCourse,
@@ -74,7 +85,7 @@ export function transcriptReviewRows(
       transcript_classification: transcriptClassification
     }, courses);
     const uncertaintyNotes = [
-      ...(transcriptClassification === "custom" ? ["No exact d.tech catalog match was found. This course will remain custom until reviewed."] : []),
+      ...(transcriptClassification === "custom" ? [`No exact selected-school catalog match was found for ${selectedSchoolLabel}. This course will remain custom until reviewed.`] : []),
       ...(isCollegeCourse && !smccdMatch ? ["No exact SMCCD catalog match was found for this college course code."] : []),
       ...(normalizedCourse.grade_level === null ? ["Grade level was not explicit in the transcript."] : []),
       ...(normalizedCourse.credits === null && match?.credits === null ? ["Credits need manual confirmation."] : [])
@@ -86,7 +97,7 @@ export function transcriptReviewRows(
       proposed_payload: {
         ...reconciledCourse,
         reported_institution_name: institutionConflict ? normalizedCourse.institution_name : null,
-        institution_resolution: institutionConflict ? "dtech_catalog_identity" : "reported",
+        institution_resolution: institutionConflict ? selectedSchoolIsDtech ? "dtech_catalog_identity" : "selected_school_catalog_identity" : "reported",
         matched_course_id: match?.id ?? null,
         matched_course_name: match?.name ?? null,
         matched_smccd_course_id: smccdMatch?.id ?? null,

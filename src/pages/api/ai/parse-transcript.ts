@@ -44,6 +44,11 @@ export const POST: APIRoute = async ({ request }) => {
     .single();
   if (sourceError || !source) return jsonError("Transcript source not found.", 404);
   const aiPreferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
+  const { data: selectedSchool, error: selectedSchoolError } = source.school_id
+    ? await auth.supabase.from("schools").select("id,name,slug").eq("id", source.school_id).maybeSingle()
+    : { data: null, error: null };
+  if (selectedSchoolError) return jsonError("The selected school could not be loaded.", 500);
+  const selectedSchoolIsDtech = selectedSchool?.slug === "design-tech-high-school";
 
   const startedAt = Date.now();
   const scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-transcript-"));
@@ -97,32 +102,37 @@ export const POST: APIRoute = async ({ request }) => {
     if (!extractedText && attachments.length === 0) throw new Error("No readable transcript content was found.");
 
     let parsedResult: ParsedTranscriptResult;
-    let parserMethod: "deterministic_text" | "codex_vision";
+    let parserMethod: "deterministic_text" | "codex_structured";
     let model: string | null = null;
     let parserLatencyMs: number;
     let aiInstruction: string | null = null;
     let aiTrace: ReturnType<typeof codexTraceSummary> | null = null;
     let aiThreadId: string | null = null;
     let aiUsage: { input_tokens: number; cached_input_tokens: number; output_tokens: number; reasoning_output_tokens: number } | null = null;
-    if (extractedText.trim()) {
+    const hasDtechLayout = selectedSchoolIsDtech || /Design Tech High School/i.test(extractedText) || /\bGR\s+Course\b[\s\S]{0,500}\bS0\b[\s\S]{0,120}\bS1\b[\s\S]{0,120}\bS2\b/i.test(layoutText || extractedText);
+    if (extractedText.trim() && hasDtechLayout) {
       const parserStartedAt = Date.now();
       parsedResult = parseDtechTranscriptText(extractedText, layoutText);
       parserLatencyMs = Date.now() - parserStartedAt;
       parserMethod = "deterministic_text";
     } else {
       if (!aiPreferences.enabled || !aiPreferences.approvedAt) {
-        throw new Error("This transcript has no readable text layer. Connect Pilot Assistant before using image interpretation, or enter the courses manually.");
+        throw new Error("This transcript does not use the verified d.tech text layout. Connect Pilot Assistant for selected-school transcript interpretation, or enter the courses manually.");
       }
       const prompt = [
-        "This transcript has no usable text layer and is provided as images. Extract only courses explicitly shown as completed or carrying a final grade.",
+        `Extract only courses explicitly shown as completed or carrying a final grade from this ${selectedSchool?.name ?? "selected high school"} transcript. The source may contain readable text, images, or both.`,
         "For every course, preserve the printed course name, institution, grade level, school year, term, final letter grade, high-school credits, college units, and weighting when present.",
-        "On d.tech transcripts, an asterisk marks UC A-G approval and does not mean weighted. Never infer weighting from an asterisk. A d.tech course is weighted only when the printed course title explicitly includes Honors.",
-        "Read the transcript's semester columns directly: S0 is summer, S1 is fall, and S2 is spring. A row graded in both S1 and S2 is full_year; a row graded in only one column belongs to that specific term. Never turn a single semester grade into full_year.",
-        "On d.tech transcripts, Q1 through Q4 rows graded P or F are intersession pass/fail courses. Preserve the Q prefix and use Personal Development as the subject; they are not expected to have an annual d.tech catalog match.",
+        "Use only the printed transcript and the selected school's approved catalog evidence for weighting. Do not transfer another school's honors or GPA rules.",
+        ...(selectedSchoolIsDtech ? [
+          "On d.tech transcripts, an asterisk marks UC A-G approval and does not mean weighted. Never infer weighting from an asterisk. A d.tech course is weighted only when the printed course title explicitly includes Honors.",
+          "Read the transcript's semester columns directly: S0 is summer, S1 is fall, and S2 is spring. A row graded in both S1 and S2 is full_year; a row graded in only one column belongs to that specific term. Never turn a single semester grade into full_year.",
+          "On d.tech transcripts, Q1 through Q4 rows graded P or F are intersession pass/fail courses. Preserve the Q prefix and use Personal Development as the subject; they are not expected to have an annual d.tech catalog match."
+        ] : []),
         "Do not treat in-progress, requested, or planned courses as completed. Omit them from courses and mention them in conflicts when relevant.",
         "Use verified only when the field is explicit and legible. Use uncertain for inferred, incomplete, or conflicting values.",
         "Evidence must be a short location or wording from the transcript, not invented context.",
-        extractionNote
+        extractionNote,
+        extractedText.trim() ? `Readable transcript text:\n${extractedText.slice(0, 60_000)}` : ""
       ].join("\n\n");
       aiInstruction = prompt;
       const codexResult = await runCodexStructuredStream({
@@ -138,17 +148,20 @@ export const POST: APIRoute = async ({ request }) => {
       }, () => undefined);
       parsedResult = codexResult.value;
       parserLatencyMs = codexResult.latencyMs;
-      parserMethod = "codex_vision";
+      parserMethod = "codex_structured";
       model = codexResult.model;
       aiTrace = codexTraceSummary(codexResult.events);
       aiThreadId = codexResult.threadId;
       aiUsage = codexResult.usage;
     }
 
-    const { data: catalogData, error: catalogError } = await auth.supabase
+    const catalogQuery = auth.supabase
       .from("courses")
       .select("*")
       .eq("review_status", "approved");
+    const { data: catalogData, error: catalogError } = source.school_id
+      ? await catalogQuery.eq("school_id", source.school_id)
+      : { data: [], error: null };
     if (catalogError) throw catalogError;
     const collegeCourseCodes = [...new Set(parsedResult.courses
       .map((course) => course.course_code ? normalizeSmccdCourseCode(course.course_code) : null)
@@ -162,7 +175,8 @@ export const POST: APIRoute = async ({ request }) => {
       source.id,
       parsedResult,
       (catalogData ?? []) as unknown as Course[],
-      (smccdResult.data ?? []) as unknown as SmccdCourse[]
+      (smccdResult.data ?? []) as unknown as SmccdCourse[],
+      selectedSchool as { id: string; name: string; slug: string } | null
     );
     const { data: existingData, error: existingError } = await auth.supabase
       .from("catalog_review_items")
@@ -271,7 +285,7 @@ export const POST: APIRoute = async ({ request }) => {
         model,
         output: { ...parsedResult, parser_method: parserMethod, parser_version: TRANSCRIPT_PARSER_VERSION },
         latency_ms: parserLatencyMs,
-        fallback_used: parserMethod === "codex_vision",
+        fallback_used: parserMethod === "codex_structured",
         uncertainty_involved: uncertaintyInvolved,
         completed_at: new Date().toISOString()
       })
@@ -283,7 +297,7 @@ export const POST: APIRoute = async ({ request }) => {
       source_used: source.kind,
       latency_ms: parserLatencyMs,
       success: true,
-      fallback_used: parserMethod === "codex_vision",
+      fallback_used: parserMethod === "codex_structured",
       uncertainty_involved: uncertaintyInvolved,
       properties: {
         source_id: source.id,
@@ -297,18 +311,18 @@ export const POST: APIRoute = async ({ request }) => {
         summary: parsedResult.summary,
         courseCount: parsedResult.courses.length,
         reviewItems: savedRows ?? [],
-        fallbackUsed: parserMethod === "codex_vision",
+        fallbackUsed: parserMethod === "codex_structured",
         parserMethod,
         parserVersion: TRANSCRIPT_PARSER_VERSION,
-        aiUsed: parserMethod === "codex_vision",
-        aiTransparency: parserMethod === "codex_vision" ? {
+        aiUsed: parserMethod === "codex_structured",
+        aiTransparency: parserMethod === "codex_structured" ? {
           model,
           reasoningEffort: "low",
           threadId: aiThreadId,
           latencyMs: parserLatencyMs,
           usage: aiUsage,
           instruction: aiInstruction,
-          input: `${attachments.length} transcript image ${attachments.length === 1 ? "page" : "pages"}`,
+          input: extractedText.trim() ? "Reviewed transcript text and any available page images" : `${attachments.length} transcript image ${attachments.length === 1 ? "page" : "pages"}`,
           capabilities: CODEX_RUNTIME_CAPABILITIES,
           events: aiTrace?.events ?? [],
           toolsUsed: aiTrace?.toolsUsed ?? [],

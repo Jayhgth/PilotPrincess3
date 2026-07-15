@@ -65,10 +65,12 @@ describe("Pilot complete academic control", () => {
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
     });
-    expect(prompt).toContain("Every verified college course is weighted for d.tech GPA");
-    expect(prompt).toContain("College units and d.tech transcript credits are different measures");
-    expect(prompt).toContain("only through a verified crosswalk/equivalency");
+    expect(prompt).toContain("Every verified college course is weighted in the app GPA");
+    expect(prompt).toContain("College units and high-school transcript credits are different measures");
+    expect(prompt).toContain("only through a verified selected-school crosswalk/equivalency");
     expect(prompt).toContain("Never transfer one college's local GE pattern to another college");
+    expect(prompt).toContain("Never substitute d.tech's sequence");
+    expect(prompt).toContain("Never call zero tracked requirements complete");
     expect(prompt).toContain("there is no arbitrary time window");
     expect(prompt).toContain("get_academic_context is the bounded cross-feature view");
   });

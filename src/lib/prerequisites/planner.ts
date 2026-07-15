@@ -132,13 +132,14 @@ export function evaluateDtechPlannerPrerequisites(
   dtechCourses: readonly Course[],
   planCourses: readonly PlanCourse[],
   smccdCourses: readonly SmccdCourse[] = [],
-  equivalencies: readonly SmccdHighSchoolEquivalency[] = []
+  equivalencies: readonly SmccdHighSchoolEquivalency[] = [],
+  sourceLabel = "Official high school course catalog"
 ): PlannerPrerequisiteEvaluation {
   const catalog = dtechPrerequisiteCatalog(dtechCourses);
   const parsed = parsePrerequisites(course.prerequisites, {
     catalog,
     ...(course.source_id ? { sourceId: course.source_id } : {}),
-    sourceLabel: "Official d.tech course catalog",
+    sourceLabel,
     confidence: course.confidence
   });
   return {

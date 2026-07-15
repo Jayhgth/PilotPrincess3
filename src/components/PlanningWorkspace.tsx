@@ -976,7 +976,13 @@ export default function PlanningWorkspace() {
       setEnrollmentPreference((current) => current ? { ...current, respect_recommended_limit: respectRecommendedLimit } : current);
     }
     setPlanGenerationPromptOpen(false);
-    const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy, respectRecommendedLimit);
+    const generated = generateSuggestedPlan(settings, courses, planCourses, enrollmentPolicy, respectRecommendedLimit, {
+      schoolSlug: school?.slug ?? "",
+      requirements,
+      mappings,
+      startGrade: settings.plan_start_grade ?? (settings.grade_level as GradeLevel | null) ?? 9,
+      includeCollegeCourses: true
+    });
     if (generated.length === 0) {
       notify("The current plan already contains the available high school flow courses.");
       return;
@@ -1453,7 +1459,7 @@ export default function PlanningWorkspace() {
             const institutionKey = institutionKeyFromName(institution);
             const classificationDetail = resolution.classification === "dtech_intersession"
               ? "Intersession · Pass/fail · Personal Development"
-              : resolution.classification === "dtech_catalog" && !displayPayload.matched_course_id
+              : (resolution.classification === "dtech_catalog" || resolution.classification === "high_school_catalog") && !displayPayload.matched_course_id
                 ? `Catalog match: ${resolution.matchedCourse?.name ?? "high school course"}`
                 : "";
             const courseDetail = [institution, classificationDetail].filter(Boolean).join(" · ");

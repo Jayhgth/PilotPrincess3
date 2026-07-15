@@ -95,7 +95,7 @@ function importedMismatch(
   if (payload.letter_grade && payload.letter_grade.trim().toUpperCase() !== row.letter_grade?.trim().toUpperCase()) mismatches.push("final grade");
   if (payload.credits != null && !sameNumber(payload.credits, row.credits)) mismatches.push("credits");
   if (payload.college_units != null && !sameNumber(payload.college_units, row.college_units)) mismatches.push("college units");
-  if (payload.matched_course_id && payload.matched_course_id !== row.course_id) mismatches.push("d.tech catalog link");
+  if (payload.matched_course_id && payload.matched_course_id !== row.course_id) mismatches.push("high-school catalog link");
   if (payload.matched_smccd_course_id && payload.matched_smccd_course_id !== row.smccd_course_id) mismatches.push("SMCCD catalog link");
   if (resolveTranscriptWeighting(payload, courses).weighted !== row.is_weighted) mismatches.push("GPA weighting");
   return mismatches;
@@ -167,7 +167,7 @@ export function buildTranscriptAudit(input: {
       reviewItems.push("catalog identity is unresolved");
     }
     if (payload.matched_course_id && resolution.matchedCourse && !titlesMatch(payload.course_name, resolution.matchedCourse.name)) {
-      parserIssues.push(`d.tech catalog link (${resolution.matchedCourse.name}) does not match printed title (${payload.course_name})`);
+      parserIssues.push(`high-school catalog link (${resolution.matchedCourse.name}) does not match printed title (${payload.course_name})`);
     }
     const printedCollegeCode = normalizeCollegeCourseCode(payload.course_code ?? payload.course_name);
     const matchedCollegeCode = normalizeCollegeCourseCode(payload.matched_smccd_course_id?.split(":").at(-1));
@@ -204,7 +204,7 @@ export function buildTranscriptAudit(input: {
         weighting_basis: weighting.basis,
         weighting_source_id: weighting.sourceId,
         classification: resolution.classification,
-        matched_dtech_course: resolution.matchedCourse?.name ?? payload.matched_course_name ?? null,
+        matched_high_school_course: resolution.matchedCourse?.name ?? payload.matched_course_name ?? null,
         matched_smccd_course: payload.matched_smccd_course_name ?? null
       },
       imported: imported ? {

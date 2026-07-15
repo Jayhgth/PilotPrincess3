@@ -170,7 +170,8 @@ test.describe("authenticated student workspace", () => {
 
     await page.getByRole("button", { name: "Courses", exact: true }).click();
     await page.getByRole("button", { name: "Add courses" }).click();
-    await expect(page.getByText("No matching courses", { exact: true })).toBeVisible();
+    await expect(page.getByRole("list", { name: "Course catalog results" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^AP Biology / })).toBeVisible();
     await expect(page.getByText("Advanced Environmental Science Honors", { exact: true })).toHaveCount(0);
   });
 });

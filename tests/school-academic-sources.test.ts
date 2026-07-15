@@ -89,6 +89,28 @@ English\t6\t30\t
     expect(rows.filter((row) => row.name === "Health Education")).toHaveLength(1);
   });
 
+  it("uses the local graduation column from an official HTML comparison table", () => {
+    const rows = extractGraduationRequirements(`
+HTML_TABLE\tSubject\tLocal diploma\tUC/CSU
+HTML_TABLE\tSocial Studies (a)\t40 Ethnic Studies, World History, US History and Government\t20
+HTML_TABLE\tEnglish (b)\t40\t40
+HTML_TABLE\tMathematics (c)\t30 Through Algebra 2\t30 Recommended 40
+HTML_TABLE\tLaboratory Science (d)\t20 Biological and Physical Lab Science\t20 Recommended 30
+HTML_TABLE\tWorld Language (e)\t20 Same language through level 2\t20
+HTML_TABLE\tVisual & Performing Arts (f)\t10\t10
+HTML_TABLE\tElectives (g)\t25\t10
+HTML_TABLE\tPhysical Education\t20\t0
+HTML_TABLE\tCareer Tech Ed\t10\t0
+HTML_TABLE\tLiving Skills\t5\t0
+`);
+    const byArea = new Map(rows.map((row) => [row.area, row]));
+    expect(byArea.get("math")?.credits_required).toBe(30);
+    expect(byArea.get("electives")?.credits_required).toBe(25);
+    expect(byArea.get("career_technical_education")?.credits_required).toBe(10);
+    expect(byArea.get("personal_development")?.credits_required).toBe(5);
+    expect(validateGraduationRequirements(rows)).toMatchObject({ publishable: true, credits_total: 220 });
+  });
+
   it("extracts full official spreadsheet catalogs and keeps non-A-G offerings", () => {
     const courses = extractCatalogCourses(`Course Name,Description,Typical Pathway by Grade,Prerequisites,UC A-G approved\nEthnic Studies,History and identity,9,None,A (History)\nGovernment,Fall semester class,12,US History,A (History)\nYearbook,Student publication,9-12,None,No`);
     expect(courses).toHaveLength(3);
@@ -117,6 +139,8 @@ English I develops writing and literary analysis.
   it("normalizes common local requirement labels without forcing unknown labels", () => {
     expect(normalizeRequirementArea("Fine Arts / VAPA")).toBe("visual_performing_arts");
     expect(normalizeRequirementArea("Physical Education")).toBe("physical_education");
+    expect(normalizeRequirementArea("Career Tech Ed")).toBe("career_technical_education");
+    expect(normalizeRequirementArea("Living Skills")).toBe("personal_development");
     expect(normalizeRequirementArea("Local capstone seminar")).toBe("other");
   });
 

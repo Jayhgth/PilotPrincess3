@@ -537,12 +537,35 @@ export interface GeneratedPlanCourse {
   user_edited: false;
 }
 
+export interface SuggestedPlanContext {
+  schoolSlug: string;
+  requirements?: readonly GraduationRequirement[];
+  mappings?: readonly CourseRequirementMapping[];
+  startGrade?: GradeLevel;
+  rigor?: "balanced" | "advanced" | "lighter";
+  maxCoursesPerTerm?: number | null;
+  startingMathCourse?: string | null;
+  includeCollegeCourses?: boolean;
+  interests?: readonly string[];
+}
+
+function normalizedPlannerText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function plannerCourseMatches(candidate: Course, requested: string) {
+  const course = normalizedPlannerText(`${candidate.course_code ?? ""} ${candidate.name}`);
+  const query = normalizedPlannerText(requested);
+  return Boolean(query && (course.includes(query) || query.includes(normalizedPlannerText(candidate.name))));
+}
+
 export function generateSuggestedPlan(
   settings: StudentSettings,
   courses: Course[],
   existing: PlanCourse[],
   enrollmentPolicy?: EnrollmentPolicy | null,
-  respectRecommendedLimit = true
+  respectRecommendedLimit = true,
+  context: SuggestedPlanContext = { schoolSlug: "design-tech-high-school" }
 ): GeneratedPlanCourse[] {
   const graduationYear = settings.graduation_year ?? new Date().getFullYear() + 3;
   const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
@@ -570,51 +593,124 @@ export function generateSuggestedPlan(
     }
   }
 
-  for (const grade of selectedPlanGrades(settings)) {
-    if (grade < currentGrade) continue;
+  const planningStartGrade = (context.startGrade ?? Math.max(currentGrade, settings.plan_start_grade ?? currentGrade)) as GradeLevel;
+  const planningGrades = selectedPlanGrades(settings).filter((grade) => grade >= planningStartGrade);
+  const isDtech = context.schoolSlug === "design-tech-high-school";
+  const includeCollegeCourses = context.includeCollegeCourses !== false;
+  const maximumPerTerm = context.maxCoursesPerTerm ?? null;
+  const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => existing.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length
+    + generated.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length;
+
+  function addCourse(course: Course, grade: GradeLevel, preferredTerm?: PlanCourse["term"]) {
+    if (generated.length >= 40) return false;
+    if (existingIds.has(course.id)) return false;
+    if (!includeCollegeCourses && Number(course.college_units ?? 0) > 0) return false;
+    if (!isDtech && course.grade_levels.length === 0) return false;
+    if (course.grade_levels.length > 0 && !course.grade_levels.includes(grade)) return false;
+    const equivalenceKeys = courseEquivalenceKeys(course.name);
+    if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) return false;
+    const schoolYear = schoolYearForGrade(graduationYear, grade);
+    const term: PlanCourse["term"] = preferredTerm ?? (course.term_type === "year"
+      ? "full_year"
+      : termLoad(grade, "fall") <= termLoad(grade, "spring") ? "fall" : "spring");
+    const plannedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
+    if (maximumPerTerm && plannedTerms.some((plannedTerm) => termLoad(grade, plannedTerm) >= maximumPerTerm)) return false;
+    const collegeUnits = Number(course.college_units ?? 0);
+    if (enrollmentPolicy && collegeUnits > 0) {
+      const scheduleLimit = respectRecommendedLimit
+        ? Number(enrollmentPolicy.recommended_max_units)
+        : Number(enrollmentPolicy.absolute_max_units);
+      if (plannedTerms.some((plannedTerm) => (collegeUnitsByTerm.get(`${schoolYear}:${plannedTerm}`) ?? 0) + collegeUnits > scheduleLimit)) return false;
+    }
+    generated.push({
+      course_id: course.id,
+      grade_level: grade,
+      school_year: schoolYear,
+      term,
+      status: grade === currentGrade ? "current" : "planned",
+      credits: course.credits,
+      college_units: course.college_units,
+      college_provider_code: collegeUnits > 0 ? enrollmentPolicy?.provider_code ?? "SMCCD" : null,
+      is_weighted: course.is_weighted,
+      mapping_verified: course.confidence === "verified",
+      user_edited: false
+    });
+    existingIds.add(course.id);
+    for (const key of equivalenceKeys) existingNameKeys.add(key);
+    if (collegeUnits > 0) {
+      for (const plannedTerm of plannedTerms) {
+        const key = `${schoolYear}:${plannedTerm}`;
+        collegeUnitsByTerm.set(key, (collegeUnitsByTerm.get(key) ?? 0) + collegeUnits);
+      }
+    }
+    return true;
+  }
+
+  if (context.startingMathCourse) {
+    const requested = context.startingMathCourse;
+    const explicitMath = courses
+      .filter((course) => normalizedPlannerText(course.subject).includes("math") && plannerCourseMatches(course, requested))
+      .sort((left, right) => Number(right.is_weighted) - Number(left.is_weighted) || left.name.localeCompare(right.name))[0];
+    if (explicitMath) addCourse(explicitMath, planningStartGrade);
+  }
+
+  if (isDtech) for (const grade of planningGrades) {
     for (const courseName of FLOW_BY_GRADE[grade]) {
       const candidates = courses.filter((candidate) => candidate.name.toLowerCase().startsWith(courseName.toLowerCase()));
       const course = candidates[0];
-      if (!course || existingIds.has(course.id)) continue;
-      const equivalenceKeys = courseEquivalenceKeys(course.name);
-      if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) continue;
-      const schoolYear = schoolYearForGrade(graduationYear, grade);
+      if (!course) continue;
       const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;
       const term: PlanCourse["term"] = course.term_type === "semester"
         ? semesterIndex % 2 === 0 ? "fall" : "spring"
         : "full_year";
-      const plannedTerms = term === "full_year" ? ["fall", "spring"] : [term];
-      const collegeUnits = Number(course.college_units ?? 0);
-      if (enrollmentPolicy && collegeUnits > 0) {
-        const scheduleLimit = respectRecommendedLimit
-          ? Number(enrollmentPolicy.recommended_max_units)
-          : Number(enrollmentPolicy.absolute_max_units);
-        const wouldExceed = plannedTerms.some((plannedTerm) =>
-          (collegeUnitsByTerm.get(`${schoolYear}:${plannedTerm}`) ?? 0) + collegeUnits > scheduleLimit
-        );
-        if (wouldExceed) continue;
+      if (addCourse(course, grade, term) && course.term_type === "semester") semesterCourseCountByGrade.set(grade, semesterIndex + 1);
+    }
+  }
+
+  if (!isDtech && context.requirements?.length && context.mappings?.length) {
+    const verifiedRequirements = context.requirements.filter((requirement) => requirement.confidence === "verified" && requirement.review_status === "approved");
+    const verifiedMappings = context.mappings.filter((mapping) => mapping.confidence === "verified");
+    const interestText = normalizedPlannerText((context.interests ?? []).join(" "));
+    const courseById = new Map(courses.map((course) => [course.id, course]));
+    const initialProgress = calculateRequirementProgress(verifiedRequirements, existing, verifiedMappings, courses);
+    const neededCredits = new Map(initialProgress.map((item) => [item.requirement.id, Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)]));
+    for (const row of generated) {
+      for (const mapping of verifiedMappings.filter((candidate) => candidate.course_id === row.course_id)) {
+        neededCredits.set(mapping.requirement_id, Math.max(0, (neededCredits.get(mapping.requirement_id) ?? 0) - Number(row.credits ?? 0)));
       }
-      generated.push({
-        course_id: course.id,
-        grade_level: grade,
-        school_year: schoolYear,
-        term,
-        status: grade === currentGrade ? "current" : "planned",
-        credits: course.credits,
-        college_units: course.college_units,
-        college_provider_code: collegeUnits > 0 ? enrollmentPolicy?.provider_code ?? "SMCCD" : null,
-        is_weighted: course.is_weighted,
-        mapping_verified: course.confidence === "verified",
-        user_edited: false
-      });
-      existingIds.add(course.id);
-      for (const key of equivalenceKeys) existingNameKeys.add(key);
-      if (course.term_type === "semester") semesterCourseCountByGrade.set(grade, semesterIndex + 1);
-      if (collegeUnits > 0) {
-        for (const plannedTerm of plannedTerms) {
-          const key = `${schoolYear}:${plannedTerm}`;
-          collegeUnitsByTerm.set(key, (collegeUnitsByTerm.get(key) ?? 0) + collegeUnits);
+    }
+    for (const requirement of verifiedRequirements) {
+      let remaining = neededCredits.get(requirement.id) ?? 0;
+      if (remaining <= 0 || requirement.constraint_only) continue;
+      const mapped = verifiedMappings
+        .filter((mapping) => mapping.requirement_id === requirement.id)
+        .map((mapping) => courseById.get(mapping.course_id))
+        .filter((course): course is Course => Boolean(course))
+        .filter((course) => course.grade_levels.length > 0)
+        .filter((course) => includeCollegeCourses || Number(course.college_units ?? 0) === 0)
+        .sort((left, right) => {
+          const leftInterest = interestText && normalizedPlannerText(`${left.name} ${left.subject} ${left.description ?? ""}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0;
+          const rightInterest = interestText && normalizedPlannerText(`${right.name} ${right.subject} ${right.description ?? ""}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0;
+          const rigorDelta = context.rigor === "advanced" ? Number(right.is_weighted) - Number(left.is_weighted) : context.rigor === "lighter" ? Number(left.is_weighted) - Number(right.is_weighted) : 0;
+          return rightInterest - leftInterest || rigorDelta || left.name.localeCompare(right.name);
+        });
+      while (remaining > 0) {
+        let added = false;
+        const placements = mapped.flatMap((course) => planningGrades
+          .filter((grade) => !existingIds.has(course.id) && (course.grade_levels.length === 0 || course.grade_levels.includes(grade)))
+          .map((grade) => ({
+            course,
+            grade,
+            load: termLoad(grade, "fall") + termLoad(grade, "spring")
+          })))
+          .sort((left, right) => left.load - right.load || left.grade - right.grade || left.course.name.localeCompare(right.course.name));
+        for (const { course: candidate, grade } of placements) {
+          if (!addCourse(candidate, grade)) continue;
+          remaining -= Math.max(0, Number(candidate.credits ?? 0));
+          added = true;
+          break;
         }
+        if (!added) break;
       }
     }
   }

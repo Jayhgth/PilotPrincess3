@@ -11,7 +11,10 @@ const CONTEXT_TAGS = [
   "smccd",
   "settings",
   "overview",
-  "history"
+  "history",
+  "school",
+  "degree",
+  "prerequisites"
 ] as const;
 
 export interface AssistantKnowledgeChunk {
@@ -39,6 +42,9 @@ export function assistantKnowledgeTags(userMessage: string, pageContext: Record<
     tags.add("college");
     tags.add("smccd");
   }
+  if (includesAny(value, [/high[ -]?school/, /selected school/, /school catalog/, /carlmont/, /d\.tech/, /district/])) tags.add("school");
+  if (includesAny(value, [/degree/, /major/, /associate/, /general education/, /\bge\b/])) tags.add("degree");
+  if (includesAny(value, [/prereq/, /eligib/, /placement/, /course sequence/])) tags.add("prerequisites");
   if (includesAny(value, [/setting/, /preference/, /review mode/])) tags.add("settings");
   if (includesAny(value, [/overview/, /dashboard/, /current path/])) tags.add("overview");
   if (includesAny(value, [/\bundo\b/, /\brevert\b/, /\brestore\b/, /bring.*back/, /previous change/, /last change/])) tags.add("history");

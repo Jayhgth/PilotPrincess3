@@ -589,7 +589,7 @@ export default function OnboardingFlow({
                 const payload = payloadFor(item);
                 const selected = selectedTranscriptIds.has(item.id);
                 const resolution = resolveTranscriptCourse(payload, schoolCourses);
-                const identityLabel = resolution.classification === "dtech_catalog"
+                const identityLabel = resolution.classification === "dtech_catalog" || resolution.classification === "high_school_catalog"
                   ? "Catalog match"
                   : resolution.classification === "smccd_catalog"
                     ? "College match"

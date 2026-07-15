@@ -2,7 +2,9 @@ import {
   ArrowSquareOutIcon as ArrowSquareOut,
   BookmarkSimpleIcon as BookmarkSimple,
   BookOpenIcon as BookOpen,
-  CheckIcon as Check,
+  CheckCircleIcon as CheckCircle,
+  CircleIcon as Circle,
+  ClockIcon as Clock,
   MagnifyingGlassIcon as MagnifyingGlass,
   PlusIcon as Plus,
   TrashIcon as Trash,
@@ -766,7 +768,7 @@ export default function SmccdPlanner({
             return <article className="smccd-ge-row" key={area.area}>
               {area.area === "7A"
                 ? <input className="smccd-ge-manual-checkbox" type="checkbox" checked={isSatisfied} disabled={busy || (isSatisfied && !area.manuallyCompleted)} onChange={() => void toggleManualDegreeCompletion("7A")} aria-label="Physical education requirement completed" title={isSatisfied && !area.manuallyCompleted ? "Covered by a course in the plan" : "Confirm physical education completion"} />
-                : <span className={`smccd-ge-check ${area.status === "completed" ? "completed" : area.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${area.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>}
+                : <span className={`smccd-ge-check ${area.status === "completed" ? "completed" : area.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${area.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{area.status === "completed" ? <CheckCircle size={18} weight="fill" /> : area.status === "planned" ? <Clock size={18} weight="fill" /> : <Circle size={18} />}</span>}
               <div><h4>{area.label}: {area.description}</h4><p>{examples.length ? `Courses include ${examples.join(", ")}${area.eligibleCourseCodes.length > examples.length ? ", and more." : "."}` : area.missingSummary}</p></div>
               <div className="smccd-ge-courses">
                 {area.completedCourseCodes.map((code) => <span className="completed" key={`completed-${area.area}-${code}`}>{code}</span>)}
@@ -783,7 +785,7 @@ export default function SmccdPlanner({
               return <article className="smccd-ge-row" key={requirement.id}>
                 {requirement.manualCompletionAvailable
                   ? <input className="smccd-ge-manual-checkbox" type="checkbox" checked={isSatisfied} disabled={busy || (isSatisfied && !requirement.manuallyCompleted)} onChange={() => void toggleManualDegreeCompletion("information_literacy")} aria-label={`${requirement.label} completed`} title={isSatisfied && !requirement.manuallyCompleted ? "Covered by coursework" : "Confirm completion"} />
-                  : <span className={`smccd-ge-check ${requirement.status === "completed" ? "completed" : requirement.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${requirement.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{isSatisfied && <Check size={14} weight="bold" />}</span>}
+                  : <span className={`smccd-ge-check ${requirement.status === "completed" ? "completed" : requirement.status === "planned" ? "planned" : ""}`} role="img" aria-label={`${requirement.label}: ${isSatisfied ? "satisfied" : "not satisfied"}`}>{requirement.status === "completed" ? <CheckCircle size={18} weight="fill" /> : requirement.status === "planned" ? <Clock size={18} weight="fill" /> : <Circle size={18} />}</span>}
                 <div><h4>{requirement.label}</h4><p>{examples.length ? `Courses include ${examples.join(", ")}${requirement.eligibleCourseCodes.length > examples.length ? ", and more." : "."}` : requirement.description}</p></div>
                 <div className="smccd-ge-courses">
                   {requirement.completedCourseCodes.map((code) => <span className="completed" key={`completed-${requirement.id}-${code}`}>{code}</span>)}

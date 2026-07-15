@@ -85,14 +85,15 @@ export default function TranscriptCourseEditor({ value, onChange, onIgnore, disa
         <span>Record type</span>
         <select value={value.transcript_classification ?? ""} onChange={(event) => update({ transcript_classification: event.target.value ? event.target.value as TranscriptCoursePayload["transcript_classification"] : undefined })}>
           <option value="">Detect automatically</option>
-          <option value="dtech_catalog">High school catalog course</option>
-          <option value="dtech_intersession">High school intersession</option>
+          <option value="high_school_catalog">Selected-school catalog course</option>
+          <option value="dtech_catalog">d.tech catalog course</option>
+          <option value="dtech_intersession">d.tech intersession</option>
           <option value="smccd_catalog">College catalog course</option>
           <option value="smccd_unmatched">Unmatched college course</option>
           <option value="custom">Custom course</option>
         </select>
       </label>
-      <p className="form-hint full">GPA weighting is derived from the institution and exact printed course title. A d.tech title must explicitly include Honors to receive weighted credit.</p>
+      <p className="form-hint full">GPA weighting follows the institution, the reviewed transcript, and the selected school's approved catalog. d.tech courses require an explicit Honors title.</p>
     </div>
     <p className="form-hint">Changes are saved when this row is imported.</p>
     <button className="quiet-button small" type="button" onClick={onIgnore} disabled={disabled}><X size={15} /> Ignore row</button>

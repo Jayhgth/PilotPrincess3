@@ -573,6 +573,52 @@ describe("planning", () => {
     expect(generateSuggestedPlan(shortenedSettings, catalog, []).map((row) => row.course_id)).toEqual(["english-2", "english-3"]);
   });
 
+  it("uses only a non-d.tech school's verified mappings and honors exact schedule constraints", () => {
+    const freshmanSettings = { ...settings, grade_level: 12, plan_start_grade: 9 as const, plan_end_grade: 12 as const };
+    const requirements: GraduationRequirement[] = [
+      { ...englishRequirement, id: "carlmont-english", credits_required: 20 },
+      { ...englishRequirement, id: "carlmont-math", area: "math", name: "Mathematics", credits_required: 10 }
+    ];
+    const catalog = [
+      course({ id: "carlmont-english-9", name: "English I AS", grade_levels: [9], credits: 10 }),
+      course({ id: "carlmont-english-10", name: "English II AS", grade_levels: [10], credits: 10 }),
+      course({ id: "carlmont-precalc", name: "Precalculus Honors", subject: "Mathematics", grade_levels: [9, 10, 11, 12], credits: 10, is_honors: true, is_weighted: true }),
+      course({ id: "dtech-only", name: "Foundation in Design Thinking", subject: "Design Lab", grade_levels: [9], credits: 10 }),
+      course({ id: "college-math", name: "MATH 251 Calculus I", subject: "Mathematics", grade_levels: [9, 10, 11, 12], credits: 10, college_units: 5, is_weighted: true })
+    ];
+    const mappings = [
+      { ...verifiedMapping, id: "map-e9", course_id: "carlmont-english-9", requirement_id: "carlmont-english" },
+      { ...verifiedMapping, id: "map-e10", course_id: "carlmont-english-10", requirement_id: "carlmont-english" },
+      { ...verifiedMapping, id: "map-precalc", course_id: "carlmont-precalc", requirement_id: "carlmont-math" },
+      { ...verifiedMapping, id: "map-college", course_id: "college-math", requirement_id: "carlmont-math" }
+    ];
+
+    const generated = generateSuggestedPlan(freshmanSettings, catalog, [], null, true, {
+      schoolSlug: "carlmont-high",
+      requirements,
+      mappings,
+      startGrade: 9,
+      startingMathCourse: "precalc",
+      includeCollegeCourses: false,
+      rigor: "advanced"
+    });
+
+    expect(generated.some((row) => row.course_id === "carlmont-precalc" && row.grade_level === 9)).toBe(true);
+    expect(generated.map((row) => row.course_id)).not.toContain("dtech-only");
+    expect(generated.map((row) => row.course_id)).not.toContain("college-math");
+    expect(generated.map((row) => row.course_id)).toEqual(expect.arrayContaining(["carlmont-english-9", "carlmont-english-10"]));
+  });
+
+  it("does not use the d.tech flow when another school's requirement evidence is unavailable", () => {
+    const freshmanSettings = { ...settings, grade_level: 9, plan_start_grade: 9 as const, plan_end_grade: 12 as const };
+    const catalog = [course({ id: "looks-like-dtech", name: "English 1", grade_levels: [9] })];
+    expect(generateSuggestedPlan(freshmanSettings, catalog, [], null, true, {
+      schoolSlug: "another-high-school",
+      requirements: [],
+      mappings: []
+    })).toEqual([]);
+  });
+
   it("filters the tracker to onboarding-selected requirement areas", () => {
     const mathRequirement: GraduationRequirement = {
       ...englishRequirement,
@@ -788,7 +834,7 @@ describe("transcript import", () => {
       "review-chemistry"
     );
     expect(draft.is_weighted).toBe(false);
-    expect(draft.notes).toContain('official d.tech catalog record "Chemistry / Chemistry Honors"');
+    expect(draft.notes).toContain('official selected-school catalog record "Chemistry / Chemistry Honors"');
   });
 
   it("ignores inferred weighting for standard d.tech courses and requires printed Honors wording", () => {

@@ -16,9 +16,11 @@ export { normalizeCollegeCourseCode } from "@/lib/college-course-identity";
 
 const DTECH_INSTITUTION_PATTERN = /Design Tech High School|\bd\.?tech\b/i;
 const DTECH_CATALOG_MISS = "No exact d.tech catalog match was found.";
+const SCHOOL_CATALOG_MISS = "No exact selected-school catalog match was found";
 const SMCCD_CATALOG_MISS = "No exact SMCCD catalog match was found";
 
 export type TranscriptCourseClassification =
+  | "high_school_catalog"
   | "dtech_catalog"
   | "dtech_intersession"
   | "smccd_catalog"
@@ -80,7 +82,7 @@ export interface TranscriptCoursePayload {
   weighted?: boolean | null;
   institution_name?: string | null;
   reported_institution_name?: string | null;
-  institution_resolution?: "reported" | "dtech_catalog_identity" | "dtech_quarter_identity";
+  institution_resolution?: "reported" | "selected_school_catalog_identity" | "dtech_catalog_identity" | "dtech_quarter_identity";
   college_units?: number | null;
   matched_course_id?: string | null;
   matched_course_name?: string | null;
@@ -105,14 +107,16 @@ export function resolveTranscriptCourse(payload: TranscriptCoursePayload, course
   const classification: TranscriptCourseClassification = isIntersession
     ? "dtech_intersession"
     : matchedCourse
-      ? "dtech_catalog"
+      ? payload.transcript_classification === "dtech_catalog" || DTECH_INSTITUTION_PATTERN.test(payload.institution_name ?? "")
+        ? "dtech_catalog"
+        : "high_school_catalog"
       : isSmccd ? payload.matched_smccd_course_id ? "smccd_catalog" : "smccd_unmatched" : "custom";
 
   return {
     classification,
     gradingBasis: isIntersession ? "pass_fail" as const : "letter" as const,
     matchedCourse,
-    identityResolved: classification === "dtech_intersession" || classification === "dtech_catalog" || classification === "smccd_catalog"
+    identityResolved: classification === "high_school_catalog" || classification === "dtech_intersession" || classification === "dtech_catalog" || classification === "smccd_catalog"
   };
 }
 
@@ -158,6 +162,7 @@ export function visibleTranscriptUncertaintyNotes(
   const resolution = resolveTranscriptCourse(payload, courses);
   return notes.filter((note) => {
     if (note.startsWith(DTECH_CATALOG_MISS) && (resolution.classification === "dtech_intersession" || resolution.classification === "dtech_catalog")) return false;
+    if (note.startsWith(SCHOOL_CATALOG_MISS) && resolution.classification === "high_school_catalog") return false;
     if (note.startsWith(SMCCD_CATALOG_MISS) && resolution.classification === "smccd_catalog") return false;
     return true;
   });
@@ -213,13 +218,13 @@ export function transcriptPlanCourseDraft(
         ? `Imported from a reviewed transcript (${payload.institution_name}).`
         : "Imported from a reviewed transcript.",
       matched && weighting.sourceId
-        ? `Matched to the official d.tech catalog record "${matched.name}". GPA weighting follows the exact printed transcript title; only an explicit Honors label is weighted.`
+        ? `Matched to the official selected-school catalog record "${matched.name}". GPA weighting follows the selected school's approved catalog and the reviewed transcript evidence.`
         : null,
       equivalency
-        ? `The official d.tech equivalency chart (updated 2021) applies ${equivalency.high_school_credits} high-school credits to ${equivalency.high_school_equivalent}. Confirm current approval with a counselor.`
+        ? `The verified selected-school equivalency applies ${equivalency.high_school_credits} high-school credits to ${equivalency.high_school_equivalent}. Confirm current approval with a counselor.`
         : null,
       creditResolution?.basis === "district_unit_conversion"
-        ? `${creditResolution.collegeUnits} college units are represented as ${creditResolution.credits} high-school credits for GPA calculations; confirm transcript credit with d.tech.`
+        ? `${creditResolution.collegeUnits} college units are represented as ${creditResolution.credits} high-school credits for GPA calculations; confirm transcript credit with the selected high school.`
         : null,
       isIntersession
         ? `Recognized from the transcript as a d.tech intersession pass/fail course${passedIntersession ? " with Personal Development credit" : "; no Personal Development credit is earned for an F"}.`

@@ -174,7 +174,7 @@ function parseTranscriptRepresentation(parserInput: string): ParsedTranscriptRes
     const differentGpaBands = new Set(grades.map(dtechGradeBand)).size > 1;
     const termResolution = resolveCourseTerm(rawTitle, pending.rawLines, pending.termColumns, gradeMatches.length);
     if (differentGpaBands) {
-      conflicts.push(`${courseName} lists semester grades in different d.tech GPA bands (${grades.join(", ")}); the latest printed grade is used for planning.`);
+      conflicts.push(`${courseName} lists semester grades in different GPA bands (${grades.join(", ")}); the latest printed grade is used for planning.`);
     }
     if (!termResolution.verified) {
       conflicts.push(`${courseName} has one printed grade, but its semester column was not available in the extracted text. Review the term before importing it.`);
@@ -268,7 +268,7 @@ function parseTranscriptRepresentation(parserInput: string): ParsedTranscriptRes
       ? `Deterministically extracted ${courses.length} completed course rows across ${academicYears.size} school years, including ${collegeCourseCount} SMCCD course rows.`
       : "No completed course rows were detected in the transcript text.",
     student_name: null,
-    school_name: institutions.has("Design Tech High School") ? "Design Tech High School" : null,
+    school_name: [...institutions].find((institution) => !isDistrictCollege(institution)) ?? null,
     academic_years: [...academicYears].sort(),
     courses,
     conflicts,

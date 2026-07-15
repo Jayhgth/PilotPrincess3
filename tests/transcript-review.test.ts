@@ -32,11 +32,11 @@ function catalogCourse(overrides: Partial<Course> = {}): Course {
   };
 }
 
-function parsedResult(courses: ParsedTranscriptResult["courses"]): ParsedTranscriptResult {
+function parsedResult(courses: ParsedTranscriptResult["courses"], schoolName = "Design Tech High School"): ParsedTranscriptResult {
   return {
     summary: "Transcript parsed.",
     student_name: null,
-    school_name: "Design Tech High School",
+    school_name: schoolName,
     academic_years: ["2025-2026"],
     courses,
     conflicts: [],
@@ -229,13 +229,50 @@ describe("transcript review reconciliation", () => {
     });
   });
 
+  it("uses only the selected non-d.tech school catalog and its weighting evidence", () => {
+    const carlmontCourse = catalogCourse({
+      id: "carlmont-ap-biology",
+      school_id: "carlmont-school",
+      name: "AP Biology",
+      subject: "Biology / Life Sciences",
+      is_honors: true,
+      is_weighted: true
+    });
+    const academic = {
+      ...baseCourse,
+      course_name: "AP Biology",
+      subject: "Biology / Life Sciences",
+      institution_name: "Carlmont High",
+      letter_grade: "A",
+      credits: 10,
+      weighted: null
+    };
+    const [row] = transcriptReviewRows(
+      "user-1",
+      "source-1",
+      parsedResult([academic], "Carlmont High"),
+      [carlmontCourse],
+      [],
+      { id: "carlmont-school", name: "Carlmont High", slug: "carlmont-high" }
+    );
+
+    expect(row.uncertainty_notes).toEqual([]);
+    expect(row.proposed_payload).toMatchObject({
+      institution_name: "Carlmont High",
+      matched_course_id: "carlmont-ap-biology",
+      transcript_classification: "high_school_catalog",
+      weighted: true,
+      weighting_basis: "catalog_default"
+    });
+  });
+
   it("keeps a truly unmatched academic course in review", () => {
     const custom = { ...baseCourse, course_name: "Independent Robotics Study", subject: null, letter_grade: "A", credits: 5 };
     const [row] = transcriptReviewRows("user-1", "source-1", parsedResult([custom]), [], []);
 
     expect(row.confidence).toBe("uncertain");
     expect(row.proposed_payload).toMatchObject({ transcript_classification: "custom" });
-    expect(row.uncertainty_notes[0]).toContain("No exact d.tech catalog match");
+    expect(row.uncertainty_notes[0]).toContain("No exact selected-school catalog match");
   });
 
   it("matches district course codes when the transcript uses the district name instead of a campus name", () => {

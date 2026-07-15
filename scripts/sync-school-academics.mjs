@@ -7,6 +7,7 @@ import {
   extractCatalogCourses,
   extractGraduationRequirements,
   mergeOfficialCourses,
+  normalizeRequirementArea,
   readAcademicSource,
   ucopCourseValues,
   validateGraduationRequirements
@@ -171,7 +172,7 @@ async function publishSchool(school, audit) {
     }
 
     const [courseResult, requirementResult] = await Promise.all([
-      supabase.from("courses").select("id,uc_ag_area,name").eq("school_id", school.id).eq("catalog_version_id", catalogVersionId).eq("review_status", "approved"),
+      supabase.from("courses").select("id,uc_ag_area,name,subject").eq("school_id", school.id).eq("catalog_version_id", catalogVersionId).eq("review_status", "approved"),
       supabase.from("graduation_requirements").select("id,area").eq("school_id", school.id).eq("catalog_version_id", catalogVersionId).eq("review_status", "approved")
     ]);
     if (courseResult.error) throw courseResult.error;
@@ -181,10 +182,10 @@ async function publishSchool(school, audit) {
     const requirementByArea = new Map([...requirementIdsByArea].flatMap(([area, ids]) => ids.length === 1 ? [[area, ids[0]]] : []));
     const areaForUc = { a: "social_science", b: "english", c: "math", d: "lab_science", e: "world_language", f: "visual_performing_arts", g: "electives" };
     const mappings = (courseResult.data ?? []).flatMap((course) => {
-      const area = areaForUc[String(course.uc_ag_area ?? "").toLowerCase()];
+      const area = areaForUc[String(course.uc_ag_area ?? "").toLowerCase()]
+        ?? normalizeRequirementArea(`${course.subject ?? ""} ${course.name ?? ""}`);
       const requirementId = area ? requirementByArea.get(area) : null;
       if (!requirementId) return [];
-      if (area === "world_language" && !/(?:\b3\b|\bIII\b|level\s*3|third)/i.test(course.name)) return [];
       return [{ course_id: course.id, requirement_id: requirementId, source_id: officialSourceId, confidence: "verified", is_user_override: false }];
     });
     const currentRequirementIds = (requirementResult.data ?? []).map((row) => row.id);

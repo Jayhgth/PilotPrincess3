@@ -210,7 +210,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
-    expect(prompt).toContain("Show exact courses before any proposal");
+    expect(prompt).toContain("Show a structured grade-by-grade plan");
     expect(prompt).toContain("current four-year plan");
     expect(prompt).toContain("Never call a partial result complete");
     expect(prompt).toContain("Schedule generation evidence contract");
@@ -286,7 +286,9 @@ describe("Codex feature boundaries", () => {
         requirement_count: 8,
         all_requirements_covered_after: true,
         remaining_gaps: []
-      }
+      },
+      source_readiness: { evidence_ready: true },
+      constraint_validation: { satisfied: true, failures: [] }
     };
     const preview = schedulePreview(result);
     expect(preview).toContain("current four-year plan already has 50 courses");
@@ -300,6 +302,17 @@ describe("Codex feature boundaries", () => {
       ...result,
       graduation_coverage: { ...result.graduation_coverage, all_requirements_covered_after: false, remaining_gaps: [{ requirement: "Social Science" }] }
     })).toBe(false);
+    expect(scheduleResultIsComplete({
+      ...result,
+      graduation_coverage: { requirement_count: 0, all_requirements_covered_after: true, remaining_gaps: [] }
+    })).toBe(false);
+    expect(schedulePreview({
+      existing_course_count: 0,
+      courses: [],
+      source_readiness: { evidence_ready: false, selected_school: "Carlmont High" },
+      constraint_validation: { satisfied: true, failures: [] },
+      graduation_coverage: { requirement_count: 0, all_requirements_covered_after: false, remaining_gaps: [] }
+    })).toContain("No other school's sequence will be substituted");
   });
 
   it("accepts the expanded student-data tools in structured assistant output", () => {
@@ -326,15 +339,26 @@ describe("Codex feature boundaries", () => {
   it("builds policy-backed schedule options before asking about the default-on unit limit", () => {
     expect(requiredAssistantEvidenceRead("Suggest a schedule for me.")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true, rigor: "balanced", objectives: ["complete_diploma"] }
+      arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
     });
     expect(requiredAssistantEvidenceRead("Generate a four-year course plan for me")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true, rigor: "balanced", objectives: ["complete_diploma"] }
+      arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
     });
     expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true, rigor: "balanced", objectives: ["complete_diploma"] }
+      arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
+    });
+    expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule. I'm starting math at precalc grade 9, want the highest GPA, and no concurrent classes.")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: "advanced",
+        include_college_courses: false,
+        starting_math_course: "precalc",
+        start_grade: 9,
+        objectives: ["complete_diploma", "maximize_weighted_gpa"]
+      }
     });
     expect(requiredAssistantEvidenceRead("Create a full schedule starting from 10th grade for the highest GPA and most degrees in my major")).toEqual({
       name: "get_academic_context",

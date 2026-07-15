@@ -117,7 +117,10 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
 function readableValue(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (Array.isArray(value)) return value.map(readableValue).filter(Boolean).join(", ");
+  if (Array.isArray(value)) {
+    const values = value.map(readableValue).filter((item): item is string => Boolean(item));
+    return values.length > 3 ? values.join("\n") : values.join(", ");
+  }
   if (typeof value === "object") return null;
   const text = String(value).replaceAll("_", " ");
   return text.length > 180 ? `${text.slice(0, 177)}…` : text;
