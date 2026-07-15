@@ -7,6 +7,7 @@ const settings: StudentSettings = {
   id: "student", school_id: "school", preferred_name: "Jay", age: 14, grade_level: 9, graduation_year: 2030,
   school_confirmed: true, school_selected_at: null, onboarding_complete: true, ai_enabled: true,
   ai_model: "gpt-5.6-luna", ai_reasoning_effort: "low", ai_review_mode: "auto_review",
+  ui_theme: "light",
   ai_connection_approved_at: null, ai_setup_tested_at: null, plan_start_grade: 9, plan_end_grade: 12,
   tracker_mode: "full", tracked_requirement_areas: []
 };
@@ -146,7 +147,7 @@ describe("core academic planning contracts", () => {
       course("pe-weight", "PE Weight Training", "Physical Education", [10]),
       course("ethnic", "Ethnic Studies", "Social Studies", [9]),
       { ...semester(course("life", "Life Skills", "Social Studies", [9])), credits: 2.5 },
-      course("art", "Art", "Visual and Performing Arts", [9]),
+      course("art", "Art", "Visual and Performing Arts", [9, 10, 11, 12]),
       { ...course("spanish-1", "Spanish I", "World Language", [10]), uc_ag_area: "E" },
       { ...course("spanish-2", "Spanish II", "World Language", [11]), uc_ag_area: "E" },
       course("psych", "AP Psychology", "Elective", [11, 12], true),
@@ -154,6 +155,7 @@ describe("core academic planning contracts", () => {
       course("computer", "Computer Science", "Elective", [12], true),
       course("journalism", "Journalism", "Elective", [12]),
       course("business", "Business", "Elective", [12]),
+      course("research", "Research Seminar", "Elective", [12]),
       course("phoenix", "Phoenix Credit Recovery", "Elective", [10, 11, 12]),
       course("ece", "Early Childhood Education", "Elective", [11, 12])
     ];
@@ -184,19 +186,20 @@ describe("core academic planning contracts", () => {
       }
     };
     const generated = generateSuggestedPlan(settings, localCourses, [], null, true, {
-      schoolSlug: "carlmont-high", planningProfile: profile, requirements, mappings, startGrade: 9, startingMathCourse: "pre-calc",
+      schoolSlug: "carlmont-high", planningProfile: profile, requirements, mappings, startGrade: 9, startingMathCourse: "pre-calc", startingLanguageCourse: "Spanish I",
       rigor: "advanced", maxCoursesPerTerm: 6, includeCollegeCourses: false
     });
     const names = new Map(localCourses.map((row) => [row.id, row.name]));
     for (const grade of [9, 10, 11, 12] as const) {
       const rows = generated.filter((row) => row.grade_level === grade);
-      expect(scheduleTermLoad(generated.map((row) => ({ ...row, custom_course_name: null, smccd_course_id: null })), localCourses, grade, "fall")).toBe(6);
-      expect(scheduleTermLoad(generated.map((row) => ({ ...row, custom_course_name: null, smccd_course_id: null })), localCourses, grade, "spring")).toBe(6);
+      expect(scheduleTermLoad(generated.map((row) => ({ ...row, custom_course_name: null, smccd_course_id: null })), localCourses, grade, "fall"), `Grade ${grade} fall`).toBe(6);
+      expect(scheduleTermLoad(generated.map((row) => ({ ...row, custom_course_name: null, smccd_course_id: null })), localCourses, grade, "spring"), `Grade ${grade} spring`).toBe(6);
       expect(rows.filter((row) => areaByCourseId.get(row.course_id) === "english")).toHaveLength(1);
       expect(rows.filter((row) => areaByCourseId.get(row.course_id) === "math")).toHaveLength(1);
     }
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "physical_education").map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "PE 1"], [10, "PE 2"]]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "math").map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "Pre-Calc Honors"], [10, "AP Calculus AB"], [11, "AP Calculus BC"], [12, "Multivariable Calculus"]]);
+    expect(generated.filter((row) => ["spanish-1", "spanish-2"].includes(row.course_id)).map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "Spanish I"], [10, "Spanish II"]]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "social_science").map((row) => names.get(row.course_id))).toEqual(["AP World History", "AP US History", "American Government", "Economics"]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "visual_performing_arts")).toHaveLength(1);
     expect(generated.map((row) => names.get(row.course_id))).not.toContain("Phoenix Credit Recovery");

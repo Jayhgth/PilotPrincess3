@@ -642,6 +642,10 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   if (/\b(nearby|closest|near me|local)\b/.test(normalized) && /\b(college|provider|dual enrollment)\b/.test(normalized)) {
     return { name: "get_nearby_education_providers", arguments: {} };
   }
+  const districtSelection = parseCollegeDistrictSelection(userMessage);
+  if (districtSelection) return { name: "get_nearby_education_providers", arguments: {} };
+  const schoolSelection = parseSchoolSelection(userMessage);
+  if (schoolSelection) return { name: "search_california_high_schools", arguments: { query: schoolSelection } };
   const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
     && !/\b(without|do not|don't|dont|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
   const clearsScheduleArea = /\b(schedule|plan|courses|classes)\b/.test(normalized);
@@ -661,6 +665,8 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     const intent = parseAssistantScheduleIntent(userMessage);
     const startGrade = intent.startGrade;
     const startingMathCourse = intent.startingMathCourse;
+    const startingLanguageCourse = intent.startingLanguageCourse;
+    const planningInterests = intent.interests;
     const excludesCollegeCourses = intent.includeCollegeCourses === false;
     const objectives = [
       "complete_diploma",
@@ -690,6 +696,8 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
         ...(intent.replaceExisting ? { replace_existing: true } : {}),
         ...(intent.maxCoursesPerTerm !== null ? { max_courses_per_term: intent.maxCoursesPerTerm } : {}),
         ...(startingMathCourse ? { starting_math_course: startingMathCourse } : {}),
+        ...(startingLanguageCourse ? { starting_language_course: startingLanguageCourse } : {}),
+        ...(planningInterests.length ? { interests: planningInterests } : {}),
         objectives,
         ...(startGrade ? { start_grade: startGrade } : {})
       }
@@ -702,6 +710,22 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
       arguments: { respect_recommended_limit: scheduleAnswer.kind === "unit_limit" ? scheduleAnswer.accepted : true }
     };
   }
+  if (parseBulkGpaIntent(userMessage)) return { name: "get_gpa_scenario", arguments: {} };
+
+  const exactCourseAddition = parseExactCourseAddition(userMessage);
+  if (exactCourseAddition) {
+    return {
+      name: "search_course_catalog",
+      arguments: { query: exactCourseAddition.query, source: exactCourseAddition.source, grade_level: exactCourseAddition.gradeLevel }
+    };
+  }
+  const degreeGoal = parseDegreeGoalIntent(userMessage);
+  if (degreeGoal) {
+    return {
+      name: "search_smccd_programs",
+      arguments: { query: degreeGoal.query, college: degreeGoal.college, award_type: degreeGoal.awardType }
+    };
+  }
 
   const courseBatch = requestedCourseBatch(normalized);
   if (courseBatch) return { name: "list_plan_courses", arguments: courseBatch.filters };
@@ -709,10 +733,79 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   return null;
 }
 
+export function parseBulkGpaIntent(userMessage: string) {
+  const normalized = userMessage.toLowerCase();
+  if (!/\b(?:set|change|update)\b/.test(normalized) || !/\b(?:every|all)\b/.test(normalized) || !/\b(?:gpa|expected grade)\b/.test(normalized)) return null;
+  const grade = userMessage.match(/\b(?:expected\s+)?(?:grade\s+)?(?:to|of|as)?\s*([A-F][+-]?)\b/i)?.[1]?.toUpperCase();
+  if (!grade || !["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"].includes(grade)) return null;
+  return { expectedGrade: grade, included: !/\b(?:exclude|remove|uncheck|not included)\b/.test(normalized) };
+}
+
+export function parseCollegeDistrictSelection(userMessage: string) {
+  return userMessage.match(/\b(?:change|set|switch|use)\s+(?:my\s+)?(?:community[ -]?college|college)\s+district\s+to\s+(.+?)(?:[.!?]|$)/i)?.[1]?.trim() ?? null;
+}
+
+export function parseSchoolSelection(userMessage: string) {
+  return userMessage.match(/\b(?:change|set|switch)\s+(?:my\s+)?(?:selected\s+)?high school\s+to\s+(.+?)(?:[.!?]|$)/i)?.[1]?.trim() ?? null;
+}
+
+export function parseAcademicClearIntent(userMessage: string) {
+  const normalized = userMessage.toLowerCase();
+  if (!/\b(?:clear|empty|wipe|remove|delete)\b/.test(normalized)) return null;
+  if (/\b(?:generate|build|create|make|draft)\b/.test(normalized) && /\b(?:schedule|plan)\b/.test(normalized)) return null;
+  const courses = /\b(?:schedule|plan|courses|classes)\b/.test(normalized);
+  const degreeBookmarks = /\b(?:degree|bookmark|goal)s?\b/.test(normalized);
+  const gpaScenario = /\b(?:gpa|grade assumption|expected grade)s?\b/.test(normalized);
+  return courses || degreeBookmarks || gpaScenario ? { courses, degree_bookmarks: degreeBookmarks, gpa_scenario: gpaScenario } : null;
+}
+
+export function parseEnrollmentPreference(userMessage: string) {
+  const normalized = userMessage.toLowerCase();
+  if (!/\b(?:use|set|switch|change)\b/.test(normalized)) return null;
+  const program_type = /\bconcurrent enrollment\b/.test(normalized) ? "concurrent" as const
+    : /\bdual enrollment\b/.test(normalized) ? "dual" as const
+      : null;
+  if (!program_type) return null;
+  return { program_type, respect_recommended_limit: !/\b(?:ignore|do not respect|don't respect|dont respect)\b/.test(normalized) };
+}
+
+export function requestedCourseSort(userMessage: string) {
+  const normalized = userMessage.toLowerCase();
+  return /\b(?:sort|arrange|organize|reorder)\b/.test(normalized) && /\b(?:course|class|schedule|plan|board)\b/.test(normalized);
+}
+
+export function parseExactCourseAddition(userMessage: string) {
+  const match = userMessage.trim().match(/^add\s+(.+?)\s+to\s+(?:my\s+)?grade\s*(9|10|11|12)\b/i);
+  if (!match) return null;
+  const suffix = userMessage.slice(match[0].length).toLowerCase();
+  const status = /\bin[ -]?progress\b|\bcurrent\b/.test(suffix) ? "current" as const : "planned" as const;
+  const term = /\bfull[ -]?year\b|\byear[ -]?round\b/.test(suffix)
+    ? "full_year" as const
+    : /\bspring\b/.test(suffix)
+      ? "spring" as const
+      : /\bsummer\b/.test(suffix)
+        ? "summer" as const
+        : "fall" as const;
+  const query = match[1].trim().replace(/^(?:the\s+)?(?:course\s+)?/i, "");
+  const source = /\b(?:csm|skyline|cañada|canada|college)\b/i.test(query) ? "all" as const : "high_school" as const;
+  return { query, gradeLevel: Number(match[2]) as 9 | 10 | 11 | 12, status, term, source };
+}
+
+export function parseDegreeGoalIntent(userMessage: string) {
+  const match = userMessage.match(/\b(?:bookmark|save|set|add)\s+(?:the\s+)?(.+?)\s+(AA|AS)\s+degree\s+at\s+(College of San Mateo|CSM|Skyline(?: College)?|Ca(?:ñ|n)ada(?: College)?)/i);
+  if (!match) return null;
+  const college = /^c(?:ollege of san mateo|sm)$/i.test(match[3]) ? "CSM" as const
+    : /^skyline/i.test(match[3]) ? "SKY" as const
+      : "CAN" as const;
+  return { query: match[1].trim(), college, awardType: match[2].toUpperCase() as "AA" | "AS" };
+}
+
 export interface AssistantScheduleIntent {
   replaceExisting: boolean;
   startGrade?: 9 | 10 | 11 | 12;
   startingMathCourse: string | null;
+  startingLanguageCourse: string | null;
+  interests: string[];
   includeCollegeCourses: boolean;
   maxCoursesPerTerm: number | null;
 }
@@ -734,19 +827,31 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${mathName}\\b`),
     new RegExp(`\\b${mathName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
   ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
+  const languageName = "((?:spanish|french|chinese|mandarin|japanese|latin|german|italian)(?:\\s+(?:1|2|3|4|i|ii|iii|iv|ap))?|american sign language(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?|asl(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?)";
+  const startingLanguageCourse = [
+    new RegExp(`\\b(?:language|world language)\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${languageName}\\b`),
+    new RegExp(`\\bstart(?:ing)?\\s+(?:language|world language)\\s+(?:at|with|in)\\s+${languageName}\\b`),
+    new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${languageName}\\b`),
+    new RegExp(`\\b(?:language|world language|spanish|french|chinese|mandarin|japanese|latin|german|italian|asl)\\s+(?:placement\\s+)?(?:at|with|in)\\s+${languageName}\\b`),
+    new RegExp(`\\b${languageName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
+  ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
   const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
     && /\b(schedule|plan|courses|classes)\b/.test(normalized)
     && /\b(all|every|whole|entire)\b/.test(normalized)
     && !/\b(without|do not|don't|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
   const includeCollegeCourses = !/\b(?:no|without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized);
-  const explicitMaximum = normalized.match(/\b(?:max(?:imum)?|limit(?:ed)? to|no more than)\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:courses|classes)(?:\s+per\s+term)?\b/)?.[1];
+  const explicitMaximum = normalized.match(/\b(?:max(?:imum)?|limit(?:ed)? to|no more than|at most)\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:courses|classes)(?:\s+per\s+term)?\b/)?.[1];
   const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
   const maxCoursesPerTerm = explicitMaximum
     ? Math.max(1, Math.min(12, numberWords[explicitMaximum] ?? Number(explicitMaximum)))
     : /\b(reasonable|realistic|balanced|manageable)\b.{0,28}\b(limit|load|course|schedule)|\b(reasonable|realistic|balanced|manageable)\s+(?:limitations?|workload)\b/.test(normalized)
       ? 6
       : null;
-  return { replaceExisting: clearing, startGrade, startingMathCourse, includeCollegeCourses, maxCoursesPerTerm };
+  const intendedMajor = normalized.match(/\b(?:intended|planned|target)?\s*major\s+(?:is|in|of|:)?\s*([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
+  const adjectiveMajor = normalized.match(/\b(?:an?\s+)?(?:intended|planned|target)\s+([a-z][a-z &-]{2,60}?)\s+major\b/)?.[1]?.trim();
+  const intendedField = normalized.match(/\b(?:want|plan|hope)\s+to\s+(?:major|study)\s+in\s+([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
+  const interests = [...new Set([intendedMajor, adjectiveMajor, intendedField].filter((value): value is string => Boolean(value)))].slice(0, 6);
+  return { replaceExisting: clearing, startGrade, startingMathCourse, startingLanguageCourse, includeCollegeCourses, maxCoursesPerTerm, interests };
 }
 
 export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null {
@@ -952,6 +1057,30 @@ export function requestedPreferredName(userMessage: string) {
   return match?.[1]?.trim().replace(/^["“”']+|["“”']+$/g, "") || null;
 }
 
+export function requestedUiTheme(userMessage: string): "light" | "dark" | null {
+  const normalized = userMessage.toLowerCase();
+  if (!/\b(?:set|switch|change|turn|use|enable)\b/.test(normalized) && !/\bmode\b/.test(normalized)) return null;
+  if (/\bdark(?:\s+(?:theme|mode))?\b/.test(normalized)) return "dark";
+  if (/\blight(?:\s+(?:theme|mode))?\b/.test(normalized)) return "light";
+  return null;
+}
+
+export function requestedStudentSettings(userMessage: string) {
+  const normalized = userMessage.toLowerCase();
+  if (!/\b(?:set|change|update)\b/.test(normalized)) return null;
+  const patch: Record<string, unknown> = {};
+  const currentGrade = normalized.match(/\bcurrent grade\s+(?:to|as|is)?\s*(9|10|11|12)\b/)?.[1];
+  const graduationYear = normalized.match(/\bgraduation year\s+(?:to|as|is)?\s*(20\d{2}|2100)\b/)?.[1];
+  const planningWindow = normalized.match(/\bplanning window\s+from\s+(?:grade\s*)?(9|10|11|12)\s+(?:through|to|-)\s+(?:grade\s*)?(9|10|11|12)\b/);
+  if (currentGrade) patch.grade_level = Number(currentGrade);
+  if (graduationYear) patch.graduation_year = Number(graduationYear);
+  if (planningWindow) {
+    patch.plan_start_grade = Number(planningWindow[1]);
+    patch.plan_end_grade = Number(planningWindow[2]);
+  }
+  return Object.keys(patch).length ? patch : null;
+}
+
 export async function runAssistantChat(options: AssistantChatOptions): Promise<AssistantChatResult> {
   if (assistantUndoIntent(options.userMessage)) {
     const target = selectAssistantUndoTarget(options.userMessage, options.recentChanges ?? []);
@@ -1000,6 +1129,82 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       message: options.reviewMode === "auto_review"
         ? `I prepared the exact preferred-name change to ${preferredName}. Auto-review will apply or decline it automatically.`
         : `I prepared the exact preferred-name change to ${preferredName} for your approval.`,
+      questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
+    };
+  }
+  const uiTheme = requestedUiTheme(options.userMessage);
+  if (uiTheme) {
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(),
+      name: "update_student_settings",
+      label: assistantToolLabel("update_student_settings"),
+      arguments: { ui_theme: uiTheme },
+      explanation: `Switch the student's interface to ${uiTheme} mode, exactly as requested.`,
+      mutatesData: true,
+      status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review"
+        ? `I prepared the ${uiTheme}-mode change. Auto-review will apply or decline it automatically.`
+        : `I prepared the ${uiTheme}-mode change for your approval.`,
+      questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
+    };
+  }
+  const exactSettings = requestedStudentSettings(options.userMessage);
+  if (exactSettings) {
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(),
+      name: "update_student_settings",
+      label: assistantToolLabel("update_student_settings"),
+      arguments: exactSettings,
+      explanation: "Apply only the exact student and planning settings requested.",
+      mutatesData: true,
+      status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review"
+        ? "I prepared the exact student and planning setting changes. Auto-review will apply or decline them automatically."
+        : "I prepared the exact student and planning setting changes for your approval.",
+      questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
+    };
+  }
+  const academicClear = parseAcademicClearIntent(options.userMessage);
+  if (academicClear) {
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(), name: "clear_academic_plan", label: assistantToolLabel("clear_academic_plan"),
+      arguments: academicClear, explanation: "Clear exactly the requested student-owned academic-plan domains and preserve one durable inverse.",
+      mutatesData: true, status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review" ? "I prepared the exact academic-plan clearing request. Auto-review will apply or decline it automatically." : "I prepared the exact academic-plan clearing request for approval.",
+      questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
+    };
+  }
+  const enrollmentPreference = parseEnrollmentPreference(options.userMessage);
+  if (enrollmentPreference) {
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(), name: "update_enrollment_preference", label: assistantToolLabel("update_enrollment_preference"),
+      arguments: enrollmentPreference, explanation: "Apply the exact source-backed enrollment preference requested by the student.",
+      mutatesData: true, status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review" ? "I prepared the enrollment-preference change. Auto-review will apply or decline it automatically." : "I prepared the enrollment-preference change for approval.",
+      questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
+    };
+  }
+  if (requestedCourseSort(options.userMessage)) {
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(), name: "sort_plan_courses", label: assistantToolLabel("sort_plan_courses"),
+      arguments: {}, explanation: "Apply the app's canonical course-board order across the active plan.",
+      mutatesData: true, status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review" ? "I prepared the standard course-board sort. Auto-review will apply or decline it automatically." : "I prepared the standard course-board sort for approval.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1268,6 +1473,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               ...(requiredRead.arguments.start_grade ? { start_grade: requiredRead.arguments.start_grade } : {}),
               objectives: requiredRead.arguments.objectives ?? ["complete_diploma"],
               ...(requiredRead.arguments.starting_math_course ? { starting_math_course: requiredRead.arguments.starting_math_course } : {}),
+              ...(requiredRead.arguments.starting_language_course ? { starting_language_course: requiredRead.arguments.starting_language_course } : {}),
               include_college_courses: requiredRead.arguments.include_college_courses ?? true,
               replace_existing: requiredRead.arguments.replace_existing ?? false
             },
@@ -1289,6 +1495,115 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             model,
             proposals: [proposal]
           };
+        }
+        if (requiredRead.name === "search_course_catalog" && Array.isArray(result.data)) {
+          const intent = parseExactCourseAddition(options.userMessage);
+          const matches = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const normalizedIntent = intent?.query.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? "";
+          const exact = matches.find((row) => {
+            const normalizedName = String(row.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+            return normalizedName === normalizedIntent || normalizedIntent.endsWith(` ${normalizedName}`);
+          })
+            ?? (matches.length === 1 ? matches[0] : null);
+          if (intent && exact && typeof exact.course_id === "string") {
+            const college = "units" in exact;
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(),
+              name: college ? "add_smccd_course" : "add_high_school_course",
+              label: assistantToolLabel(college ? "add_smccd_course" : "add_high_school_course"),
+              arguments: { course_id: exact.course_id, status: intent.status, grade_level: intent.gradeLevel, term: intent.term },
+              explanation: `Add the exact eligible ${String(exact.name ?? intent.query)} catalog course in the requested placement.`,
+              mutatesData: true,
+              status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return {
+              message: options.reviewMode === "auto_review"
+                ? `I found the exact eligible ${String(exact.name ?? intent.query)} course. Auto-review will apply or decline the requested placement automatically.`
+                : `I found the exact eligible ${String(exact.name ?? intent.query)} course and prepared the requested placement for approval.`,
+              questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
+            };
+          }
+        }
+        if (requiredRead.name === "search_smccd_programs" && Array.isArray(result.data)) {
+          const intent = parseDegreeGoalIntent(options.userMessage);
+          const matches = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const exact = matches.length === 1 ? matches[0] : matches.find((row) => {
+            const title = String(row.title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+            const query = intent?.query.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? "";
+            return title === query || title.startsWith(`${query} `);
+          });
+          if (intent && exact && typeof exact.program_id === "string") {
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(), name: "set_college_goal", label: assistantToolLabel("set_college_goal"),
+              arguments: { program_id: exact.program_id, notes: "Primary college goal" },
+              explanation: `Bookmark the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program at ${intent.college}.`,
+              mutatesData: true, status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return {
+              message: options.reviewMode === "auto_review"
+                ? `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program. Auto-review will apply or decline the bookmark automatically.`
+                : `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program and prepared the bookmark for approval.`,
+              questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
+            };
+          }
+        }
+        if (requiredRead.name === "search_california_high_schools" && Array.isArray(result.data)) {
+          const requestedSchool = parseSchoolSelection(options.userMessage);
+          const normalizedRequested = requestedSchool?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? "";
+          const matches = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const exact = matches.find((row) => {
+            const name = String(row.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+            return name === normalizedRequested || name.includes(normalizedRequested) || normalizedRequested.includes(name);
+          }) ?? (matches.length === 1 ? matches[0] : null);
+          if (requestedSchool && exact && typeof exact.school_id === "string") {
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(), name: "set_current_school", label: assistantToolLabel("set_current_school"),
+              arguments: { school_id: exact.school_id }, explanation: `Select the exact California school record for ${String(exact.name ?? requestedSchool)}.`,
+              mutatesData: true, status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return { message: options.reviewMode === "auto_review" ? `I found ${String(exact.name ?? requestedSchool)}. Auto-review will apply or decline the school change automatically.` : `I found ${String(exact.name ?? requestedSchool)} and prepared the school change for approval.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+          }
+        }
+        if (requiredRead.name === "get_nearby_education_providers" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+          const requestedDistrict = parseCollegeDistrictSelection(options.userMessage);
+          const districts = Array.isArray((result.data as Record<string, unknown>).districts)
+            ? ((result.data as Record<string, unknown>).districts as unknown[]).filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+            : [];
+          const normalizedRequested = requestedDistrict?.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? "";
+          const exact = districts.find((row) => {
+            const name = String(row.name ?? row.district_name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+            const compactName = name.replaceAll(" ", "");
+            const compactRequested = normalizedRequested.replaceAll(" ", "");
+            return name === normalizedRequested || name.includes(normalizedRequested) || normalizedRequested.includes(name)
+              || compactName === compactRequested || compactName.includes(compactRequested) || compactRequested.includes(compactName);
+          });
+          const districtCode = exact?.district_code ?? exact?.provider_code;
+          if (requestedDistrict && typeof districtCode === "string") {
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(), name: "set_college_district_preference", label: assistantToolLabel("set_college_district_preference"),
+              arguments: { district_code: districtCode }, explanation: `Select the exact nearby district record for ${String(exact?.name ?? requestedDistrict)}.`,
+              mutatesData: true, status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return { message: options.reviewMode === "auto_review" ? `I found ${String(exact?.name ?? requestedDistrict)}. Auto-review will apply or decline the district change automatically.` : `I found ${String(exact?.name ?? requestedDistrict)} and prepared the district change for approval.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+          }
+        }
+        if (requiredRead.name === "get_gpa_scenario" && Array.isArray(result.data)) {
+          const intent = parseBulkGpaIntent(options.userMessage);
+          const rows = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row) && typeof (row as Record<string, unknown>).plan_course_id === "string");
+          if (intent && rows.length) {
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(), name: "update_gpa_scenario", label: assistantToolLabel("update_gpa_scenario"),
+              arguments: { choices: rows.map((row) => ({ plan_course_id: row.plan_course_id, included: intent.included, expected_grade: intent.expectedGrade })) },
+              explanation: `Apply the requested ${intent.expectedGrade} GPA assumption to all ${rows.length} current and planned courses.`,
+              mutatesData: true, status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return { message: options.reviewMode === "auto_review" ? `I found all ${rows.length} current and planned courses. Auto-review will apply or decline the exact GPA batch automatically.` : `I found all ${rows.length} current and planned courses and prepared the exact GPA batch for approval.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+          }
         }
         prompt += "\n\n" + [
           "A required read-only evidence check already ran for this request. Do not say that you are about to check, and do not call the same tool again.",

@@ -54,13 +54,19 @@ export async function reviewAssistantProposal(input: {
   model: AiModel;
   signal?: AbortSignal;
 }): Promise<AutoReviewResult> {
+  if (input.toolName === "undo_change" && /\b(?:undo|revert|restore|reverse|rollback|roll back|bring\b.+\bback)\b/i.test(input.userMessage)) {
+    return { decision: "approve", risk: "low", summary: "The request targets the exact reversible change recorded in this conversation." };
+  }
   if (input.toolName === "add_course_schedule") {
     const intent = parseAssistantScheduleIntent(input.userMessage);
     const proposedReplacement = input.arguments.replace_existing === true;
     const proposedMath = String(input.arguments.starting_math_course ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const requestedMath = String(intent.startingMathCourse ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const proposedLanguage = String(input.arguments.starting_language_course ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const requestedLanguage = String(intent.startingLanguageCourse ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const mismatch = proposedReplacement !== intent.replaceExisting
       || (requestedMath && !proposedMath.includes(requestedMath) && !requestedMath.includes(proposedMath))
+      || (requestedLanguage && !proposedLanguage.includes(requestedLanguage) && !requestedLanguage.includes(proposedLanguage))
       || (intent.startGrade && Number(input.arguments.start_grade) !== intent.startGrade)
       || (intent.includeCollegeCourses === false && input.arguments.include_college_courses !== false)
       || (intent.maxCoursesPerTerm !== null && Number(input.arguments.max_courses_per_term) !== intent.maxCoursesPerTerm);

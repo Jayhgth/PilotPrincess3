@@ -413,6 +413,10 @@ export default function PlanningWorkspace() {
         ai_connection_approved_at: rawSettings.ai_connection_approved_at ?? null,
         ai_setup_tested_at: rawSettings.ai_setup_tested_at ?? null
       };
+      const loadedTheme = loadedSettings.ui_theme ?? "light";
+      setTheme(loadedTheme);
+      document.documentElement.dataset.theme = loadedTheme;
+      localStorage.setItem("pilot-princess-theme", loadedTheme);
       setSchool(bootstrap.school);
       setSettings(loadedSettings);
       const loadedSources = bootstrap.sources;
@@ -662,7 +666,12 @@ export default function PlanningWorkspace() {
   }
 
   function toggleTheme() {
-    applyTheme(theme === "light" ? "dark" : "light");
+    const nextTheme = theme === "light" ? "dark" : "light";
+    applyTheme(nextTheme);
+    if (supabase && session) {
+      void supabase.from("student_settings").update({ ui_theme: nextTheme }).eq("id", session.user.id);
+      setSettings((current) => current ? { ...current, ui_theme: nextTheme } : current);
+    }
   }
 
   async function signOut() {
@@ -1235,7 +1244,9 @@ export default function PlanningWorkspace() {
     const normalizedPatch: Record<string, unknown> = { ...patch };
     const { data, error } = await supabase.from("student_settings").update(normalizedPatch).eq("id", session.user.id).select("*").single();
     if (error) throw error;
-    setSettings(data as unknown as StudentSettings);
+    const nextSettings = data as unknown as StudentSettings;
+    setSettings(nextSettings);
+    if (nextSettings.ui_theme && nextSettings.ui_theme !== theme) applyTheme(nextSettings.ui_theme);
     await logEvent("student_settings_updated", { fields: Object.keys(normalizedPatch) });
   }
 

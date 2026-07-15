@@ -11,6 +11,22 @@ const liveConfigured = process.env.RUN_LIVE_PILOT === "1"
 
 type Proposal = { id: string; name: string };
 
+const STRESS_WORKFLOWS = [
+  "theme mutation and undo",
+  "profile and planning-window mutation",
+  "graduation-gap explanation",
+  "exact selected-school course addition",
+  "saved GPA assumptions",
+  "canonical course sorting",
+  "degree search and bookmark",
+  "compound academic clearing and restoration",
+  "college-district selection",
+  "selected-school change",
+  "enrollment-policy mutation",
+  "d.tech major-aware four-year rebuild",
+  "exact weighted concurrent-course addition"
+] as const;
+
 async function authorizedPost(
   request: APIRequestContext,
   path: string,
@@ -265,5 +281,159 @@ test.describe("live Pilot behavior", () => {
     const remainingMemory = await supabase.from("ai_student_memories").select("memory_key").eq("user_id", userId);
     if (remainingMemory.error) throw remainingMemory.error;
     expect(remainingMemory.data).toEqual([{ memory_key: "schedule_interests" }]);
+  });
+
+  test("executes diverse student workflows across Carlmont and d.tech", async ({ request }) => {
+    test.setTimeout(900_000);
+    expect(STRESS_WORKFLOWS).toHaveLength(13);
+
+    const createConversation = async (title: string) => {
+      const response = await authorizedPost(request, "/api/ai/conversations", accessToken, { title });
+      expect(response.status(), await response.text()).toBe(201);
+      return String((await response.json() as { conversation: { id: string } }).conversation.id);
+    };
+    const toolNames = async (conversationId: string) => {
+      const rows = await supabase.from("ai_tool_calls").select("tool_name,status").eq("conversation_id", conversationId).order("created_at");
+      if (rows.error) throw rows.error;
+      return (rows.data ?? []).map((row) => `${row.tool_name}:${row.status}`);
+    };
+    const apply = async (turn: Awaited<ReturnType<typeof sendTurn>>) => {
+      expect(turn.proposals.length, turn.message).toBeGreaterThan(0);
+      const results = await autoReview(request, accessToken, turn.proposals);
+      expect(results.every((result) => result.applied === true), JSON.stringify(results)).toBe(true);
+      return results;
+    };
+
+    // 1. Interface preference is a normal, reversible Pilot-controlled setting.
+    const themeConversation = await createConversation("Theme control");
+    const themeTurn = await sendTurn(request, accessToken, themeConversation, "Switch the whole app to dark mode.");
+    expect(themeTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
+    await apply(themeTurn);
+    expect((await supabase.from("student_settings").select("ui_theme").eq("id", userId).single()).data?.ui_theme).toBe("dark");
+    await apply(await sendTurn(request, accessToken, themeConversation, "Undo that theme change."));
+    expect((await supabase.from("student_settings").select("ui_theme").eq("id", userId).single()).data?.ui_theme).toBe("light");
+
+    // 2. Ordinary profile and planning settings mutate as one exact request.
+    const profileConversation = await createConversation("Profile control");
+    const profileTurn = await sendTurn(request, accessToken, profileConversation, "Set my current grade to 10, graduation year to 2029, and planning window from grade 10 through grade 12.");
+    expect(profileTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
+    await apply(profileTurn);
+    const profile = await supabase.from("student_settings").select("grade_level,graduation_year,plan_start_grade,plan_end_grade").eq("id", userId).single();
+    expect(profile.data).toMatchObject({ grade_level: 10, graduation_year: 2029, plan_start_grade: 10, plan_end_grade: 12 });
+    await apply(await sendTurn(request, accessToken, profileConversation, "Undo those profile changes."));
+
+    // 3. Read-only graduation guidance must use the deterministic requirement engine.
+    const graduationConversation = await createConversation("Graduation gaps");
+    const graduationTurn = await sendTurn(request, accessToken, graduationConversation, "What graduation requirements am I still missing, and which planned courses count toward each one?");
+    expect(graduationTurn.proposals).toHaveLength(0);
+    expect(await toolNames(graduationConversation)).toContain("get_graduation_progress:completed");
+
+    // 4. Search and add one exact Carlmont catalog course without asking for an internal ID.
+    const courseConversation = await createConversation("Course addition");
+    const courseTurn = await sendTurn(request, accessToken, courseConversation, "Add Carlmont Biology to grade 9 as an in-progress full-year course.");
+    expect(courseTurn.proposals.map((proposal) => proposal.name)).toContain("add_high_school_course");
+    await apply(courseTurn);
+    expect((await supabase.from("plan_courses").select("id").eq("user_id", userId).eq("grade_level", 9).eq("status", "current")).data?.length).toBeGreaterThan(0);
+
+    // 5. GPA assumptions persist through the same product state the GPA tab reads.
+    const gpaConversation = await createConversation("GPA assumptions");
+    const gpaTurn = await sendTurn(request, accessToken, gpaConversation, "Set every current and planned course in my GPA calculator to an expected A and keep each one included.");
+    expect(gpaTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_gpa_scenario"]);
+    await apply(gpaTurn);
+    const openRows = await supabase.from("plan_courses").select("id").eq("user_id", userId).in("status", ["current", "planned"]);
+    const gpaRows = await supabase.from("student_gpa_scenario_choices").select("plan_course_id,included,expected_grade").eq("user_id", userId);
+    expect(gpaRows.data).toHaveLength(openRows.data?.length ?? 0);
+    expect(gpaRows.data?.every((row) => row.included && row.expected_grade === "A")).toBe(true);
+
+    // 6. Board sorting is an actual reversible mutation, not prose instructions.
+    const sortConversation = await createConversation("Sort plan");
+    const sortTurn = await sendTurn(request, accessToken, sortConversation, "Sort my entire course board into the app's standard order.");
+    expect(sortTurn.proposals.map((proposal) => proposal.name)).toEqual(["sort_plan_courses"]);
+    await apply(sortTurn);
+
+    // 7. Degree intent is searched and stored as canonical app data.
+    const degreeConversation = await createConversation("Degree goal");
+    const degreeTurn = await sendTurn(request, accessToken, degreeConversation, "Bookmark the Computer Science Applications and Development AS degree at College of San Mateo as my college goal.");
+    expect(degreeTurn.proposals.map((proposal) => proposal.name)).toEqual(["set_college_goal"]);
+    await apply(degreeTurn);
+    expect((await supabase.from("student_smccd_goals").select("id").eq("user_id", userId)).data?.length).toBe(1);
+
+    // 8. Cross-feature clearing has one durable inverse and restores all three domains.
+    const clearConversation = await createConversation("Clear and restore academic plan");
+    const clearTurn = await sendTurn(request, accessToken, clearConversation, "Clear my whole schedule, every degree bookmark, and all saved GPA assumptions.");
+    expect(clearTurn.proposals.map((proposal) => proposal.name)).toEqual(["clear_academic_plan"]);
+    await apply(clearTurn);
+    expect((await supabase.from("plan_courses").select("id").eq("user_id", userId)).data).toHaveLength(0);
+    expect((await supabase.from("student_smccd_goals").select("id").eq("user_id", userId)).data).toHaveLength(0);
+    expect((await supabase.from("student_gpa_scenario_choices").select("plan_course_id").eq("user_id", userId)).data).toHaveLength(0);
+    await apply(await sendTurn(request, accessToken, clearConversation, "Bring all of that back."));
+    expect((await supabase.from("plan_courses").select("id").eq("user_id", userId)).data?.length).toBeGreaterThan(0);
+    expect((await supabase.from("student_smccd_goals").select("id").eq("user_id", userId)).data?.length).toBe(1);
+  });
+
+  test("executes cross-institution controls and a d.tech major-aware rebuild", async ({ request }) => {
+    test.setTimeout(600_000);
+    const createConversation = async (title: string) => {
+      const response = await authorizedPost(request, "/api/ai/conversations", accessToken, { title });
+      expect(response.status(), await response.text()).toBe(201);
+      return String((await response.json() as { conversation: { id: string } }).conversation.id);
+    };
+    const apply = async (turn: Awaited<ReturnType<typeof sendTurn>>) => {
+      expect(turn.proposals.length, turn.message).toBeGreaterThan(0);
+      const results = await autoReview(request, accessToken, turn.proposals);
+      expect(results.every((result) => result.applied === true), JSON.stringify(results)).toBe(true);
+    };
+
+    // 9. College district is independent student data and can be changed through Pilot.
+    const districtConversation = await createConversation("College district");
+    const districtTurn = await sendTurn(request, accessToken, districtConversation, "Change my community-college district to Foothill-De Anza Community College District.");
+    expect(districtTurn.proposals.map((proposal) => proposal.name)).toEqual(["set_college_district_preference"]);
+    await apply(districtTurn);
+    const district = await supabase.from("student_college_district_preferences").select("district_code").eq("user_id", userId).single();
+    expect(district.data?.district_code).toMatch(/FOOTHILL|FHDA/i);
+    await apply(await sendTurn(request, accessToken, districtConversation, "Undo the district change."));
+
+    // 10. Changing the selected school refreshes every school-owned rule and catalog.
+    const schoolConversation = await createConversation("School selection");
+    const schoolTurn = await sendTurn(request, accessToken, schoolConversation, "Switch my selected high school to Design Tech High School.");
+    expect(schoolTurn.proposals.map((proposal) => proposal.name)).toEqual(["set_current_school"]);
+    await apply(schoolTurn);
+    const selected = await supabase.from("student_settings").select("school_id").eq("id", userId).single();
+    const dtech = await supabase.from("schools").select("id").eq("slug", "design-tech-high-school").single();
+    expect(selected.data?.school_id).toBe(dtech.data?.id);
+
+    // 11. Enrollment behavior is a source-backed, undoable preference.
+    const enrollmentConversation = await createConversation("Enrollment preference");
+    const enrollmentTurn = await sendTurn(request, accessToken, enrollmentConversation, "Use concurrent enrollment and respect the district's recommended unit limit.");
+    expect(enrollmentTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_enrollment_preference"]);
+    await apply(enrollmentTurn);
+    const enrollment = await supabase.from("student_enrollment_preferences").select("program_type,respect_recommended_limit").eq("user_id", userId).single();
+    expect(enrollment.data).toMatchObject({ program_type: "concurrent", respect_recommended_limit: true });
+
+    // 12. Complex d.tech rebuild preserves explicit placement and major intent, then applies.
+    const scheduleConversation = await createConversation("d.tech four-year schedule");
+    const scheduleTurn = await sendTurn(request, accessToken, scheduleConversation,
+      "Clear my whole schedule and build a rigorous four-year d.tech plan from grade 9. Start math at Algebra 1 and Spanish at Spanish 2, keep at most 7 courses per term, include concurrent courses where useful, maximize weighted GPA, and align electives to an intended computer science major.");
+    expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_course_schedule"]);
+    const scheduleRecord = await supabase.from("ai_tool_calls").select("arguments").eq("id", scheduleTurn.proposals[0]!.id).single();
+    expect(scheduleRecord.data?.arguments).toMatchObject({ replace_existing: true, start_grade: 9, starting_math_course: "algebra 1", starting_language_course: "spanish 2", interests: ["computer science"], rigor: "advanced", max_courses_per_term: 7 });
+    await apply(scheduleTurn);
+    const dtechRows = await supabase.from("plan_courses").select("course_id,grade_level").eq("user_id", userId);
+    const dtechCourseIds = (dtechRows.data ?? []).map((row) => row.course_id).filter((id): id is string => Boolean(id));
+    const dtechCourses = await supabase.from("courses").select("id,name,subject").in("id", dtechCourseIds);
+    const names = new Map((dtechCourses.data ?? []).map((course) => [course.id, `${course.name} ${course.subject}`]));
+    expect(dtechRows.data?.some((row) => row.grade_level === 9 && /algebra 1/i.test(names.get(row.course_id ?? "") ?? ""))).toBe(true);
+    expect(dtechRows.data?.some((row) => row.grade_level === 9 && /spanish 2/i.test(names.get(row.course_id ?? "") ?? ""))).toBe(true);
+    expect(dtechRows.data?.some((row) => /computer|coding|programming|game design|engineering/i.test(names.get(row.course_id ?? "") ?? ""))).toBe(true);
+
+    // 13. Exact concurrent enrollment uses the college catalog identity and is always weighted.
+    const collegeCourseConversation = await createConversation("Concurrent course addition");
+    const collegeCourseTurn = await sendTurn(request, accessToken, collegeCourseConversation,
+      "Add CSM CIS 110 to grade 11 summer as a planned college course.");
+    expect(collegeCourseTurn.proposals.map((proposal) => proposal.name)).toEqual(["add_smccd_course"]);
+    await apply(collegeCourseTurn);
+    const collegeRow = await supabase.from("plan_courses").select("smccd_course_id,college_units,is_weighted,grade_level,term")
+      .eq("user_id", userId).eq("smccd_course_id", "CSM:CIS 110").single();
+    expect(collegeRow.data).toMatchObject({ smccd_course_id: "CSM:CIS 110", college_units: 3, is_weighted: true, grade_level: 11, term: "summer" });
   });
 });

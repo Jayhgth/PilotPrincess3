@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requestedPreferredName, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -365,18 +365,19 @@ describe("Codex feature boundaries", () => {
         objectives: ["complete_diploma", "maximize_weighted_gpa"]
       }
     });
-    expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule. I'm starting math at precalc grade 9, want the highest GPA, and no concurrent classes.")).toEqual({
+    expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule. I'm starting math at precalc and world language at Spanish 2 in grade 9, want the highest GPA, and no concurrent classes.")).toEqual({
       name: "get_course_schedule_options",
       arguments: {
         respect_recommended_limit: true,
         rigor: "advanced",
         include_college_courses: false,
         starting_math_course: "precalc",
+        starting_language_course: "spanish 2",
         start_grade: 9,
         objectives: ["complete_diploma", "maximize_weighted_gpa"]
       }
     });
-    expect(requiredAssistantEvidenceRead("Clear my whole schedule. Generate a new one, math starting at pre-calc and maximize GPA with reasonable limitations and course rigor.")).toEqual({
+    expect(requiredAssistantEvidenceRead("Clear my whole schedule. Generate a new one, math starting at pre-calc, intended major in computer science, and maximize GPA with reasonable limitations and course rigor.")).toEqual({
       name: "get_course_schedule_options",
       arguments: {
         respect_recommended_limit: true,
@@ -385,7 +386,8 @@ describe("Codex feature boundaries", () => {
         replace_existing: true,
         max_courses_per_term: 6,
         starting_math_course: "pre-calc",
-        objectives: ["complete_diploma", "maximize_weighted_gpa"]
+        interests: ["computer science"],
+        objectives: ["complete_diploma", "maximize_weighted_gpa", "align_major"]
       }
     });
     expect(requiredAssistantEvidenceRead("Create a full schedule starting from 10th grade for the highest GPA and most degrees in my major")).toEqual({
@@ -412,6 +414,17 @@ describe("Codex feature boundaries", () => {
     expect(scheduleProposalAction("manual", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
     expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "decline" });
     expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Keep college coursework within the district limit?** No")).toEqual({ kind: "propose", respectRecommendedLimit: false });
+    expect(requestedUiTheme("Switch the app to dark mode")).toBe("dark");
+    expect(requestedUiTheme("Use the light theme")).toBe("light");
+    expect(requestedStudentSettings("Set my current grade to 10, graduation year to 2029, and planning window from grade 10 through grade 12.")).toEqual({ grade_level: 10, graduation_year: 2029, plan_start_grade: 10, plan_end_grade: 12 });
+    expect(parseExactCourseAddition("Add Carlmont Biology to grade 9 as an in-progress full-year course.")).toEqual({ query: "Carlmont Biology", gradeLevel: 9, status: "current", term: "full_year", source: "high_school" });
+    expect(parseDegreeGoalIntent("Bookmark the Computer Science Applications and Development AS degree at College of San Mateo as my college goal.")).toEqual({ query: "Computer Science Applications and Development", college: "CSM", awardType: "AS" });
+    expect(parseAcademicClearIntent("Clear my whole schedule, every degree bookmark, and all saved GPA assumptions.")).toEqual({ courses: true, degree_bookmarks: true, gpa_scenario: true });
+    expect(parseCollegeDistrictSelection("Change my community-college district to Foothill-De Anza Community College District.")).toBe("Foothill-De Anza Community College District");
+    expect(parseSchoolSelection("Switch my selected high school to Design Tech High School.")).toBe("Design Tech High School");
+    expect(parseEnrollmentPreference("Use concurrent enrollment and respect the district's recommended unit limit.")).toEqual({ program_type: "concurrent", respect_recommended_limit: true });
+    expect(parseBulkGpaIntent("Set every current and planned course in my GPA calculator to an expected A and keep each one included.")).toEqual({ expectedGrade: "A", included: true });
+    expect(requestedCourseSort("Sort my entire course board into the app's standard order.")).toBe(true);
   });
 
   it("uses one cross-feature operation when schedule and degree bookmarks are cleared together", () => {

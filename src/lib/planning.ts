@@ -588,6 +588,7 @@ export interface SuggestedPlanContext {
   rigor?: "balanced" | "advanced" | "lighter";
   maxCoursesPerTerm?: number | null;
   startingMathCourse?: string | null;
+  startingLanguageCourse?: string | null;
   includeCollegeCourses?: boolean;
   interests?: readonly string[];
 }
@@ -703,6 +704,26 @@ function plannerLanguageIdentity(course: Course) {
           ? 1
           : null;
   return { family, level };
+}
+
+function acceleratedLanguagePlacementAllowed(
+  course: Course,
+  grade: GradeLevel,
+  priorCourses: Course[],
+  context: Pick<SuggestedPlanContext, "startingLanguageCourse" | "rigor">
+) {
+  if (!context.startingLanguageCourse || context.rigor !== "advanced" || course.grade_levels.includes(grade)) return false;
+  const identity = plannerLanguageIdentity(course);
+  const priorLevel = Math.max(0, ...priorCourses
+    .map(plannerLanguageIdentity)
+    .filter((candidate) => candidate.family === identity.family)
+    .map((candidate) => candidate.level ?? 0));
+  const firstListedGrade = Math.min(...course.grade_levels);
+  return Boolean(identity.family && identity.level)
+    && priorLevel > 0
+    && identity.level === priorLevel + 1
+    && course.grade_levels.length > 0
+    && firstListedGrade === grade + 1;
 }
 
 function plannerStageScore(course: Course, area: RequirementArea, grade: GradeLevel, priorCourses: Course[]): number {
@@ -876,6 +897,15 @@ export function generateSuggestedPlan(
     if (explicitMath) addCourse(explicitMath, planningStartGrade, undefined, true);
   }
 
+  if (context.startingLanguageCourse) {
+    const requested = context.startingLanguageCourse;
+    const explicitLanguage = courses
+      .filter((course) => plannerLanguageIdentity(course).family && plannerCourseMatches(course, requested))
+      .sort((left, right) => Number(verifiedMappedCourseIds.has(right.id)) - Number(verifiedMappedCourseIds.has(left.id))
+        || left.name.localeCompare(right.name))[0];
+    if (explicitLanguage) addCourse(explicitLanguage, planningStartGrade, undefined, true);
+  }
+
   const preferredFlowForGrade = (grade: GradeLevel) => context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.preferred_course_names
     ?? (isDtech ? FLOW_BY_GRADE[grade] : []);
   for (const grade of planningGrades) {
@@ -890,6 +920,7 @@ export function generateSuggestedPlan(
       const course = candidates[0];
       if (!course) continue;
       if (context.startingMathCourse && plannerMathRank(course) !== null && generated.some((row) => row.grade_level === grade && plannerMathRank(courseMap.get(row.course_id)!) !== null)) continue;
+      if (context.startingLanguageCourse && plannerLanguageIdentity(course).family && generated.some((row) => row.grade_level === grade && row.course_id && plannerLanguageIdentity(courseMap.get(row.course_id)!).family)) continue;
       const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;
       const term: PlanCourse["term"] = course.term_type === "semester"
         ? semesterIndex % 2 === 0 ? "fall" : "spring"
@@ -938,6 +969,9 @@ export function generateSuggestedPlan(
       .filter(({ row, course: candidate }) => row.grade_level === grade && courseMatchesArea(candidate, area))
       .reduce((total, { row }) => total + Number(row.credits ?? 0), 0);
     const areaCourseCount = (area: RequirementArea) => allPlannedCourses().filter(({ course: candidate }) => courseMatchesArea(candidate, area)).length;
+    const areaCreditsTotal = (area: RequirementArea) => allPlannedCourses()
+      .filter(({ course: candidate }) => courseMatchesArea(candidate, area))
+      .reduce((total, { row }) => total + Number(row.credits ?? 0), 0);
     const targetLoadForGrade = (grade: GradeLevel) => Math.max(1, Math.min(
       maximumPerTerm ?? context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.target_total_courses ?? 6,
       12
@@ -958,7 +992,8 @@ export function generateSuggestedPlan(
           .filter((candidate) => !existingIds.has(candidate.id))
           .filter((candidate) => candidate.grade_levels.length === 0
             || candidate.grade_levels.includes(grade)
-            || (area === "math" && acceleratedMathPlacementAllowed(candidate, grade, previousCourses, context)))
+            || (area === "math" && acceleratedMathPlacementAllowed(candidate, grade, previousCourses, context))
+            || (area === "world_language" && acceleratedLanguagePlacementAllowed(candidate, grade, previousCourses, context)))
           .filter((candidate) => includeCollegeCourses || Number(candidate.college_units ?? 0) === 0)
           .filter((candidate) => !courseNeedsExplicitPlanningIntent(candidate, context.interests ?? []))
           .map((candidate) => ({
@@ -978,7 +1013,8 @@ export function generateSuggestedPlan(
           candidate,
           grade,
           undefined,
-          area === "math" && acceleratedMathPlacementAllowed(candidate, grade, previousCourses, context)
+          (area === "math" && acceleratedMathPlacementAllowed(candidate, grade, previousCourses, context))
+            || (area === "world_language" && acceleratedLanguagePlacementAllowed(candidate, grade, previousCourses, context))
         ))?.candidate;
         if (!selected) break;
       }
@@ -1001,12 +1037,15 @@ export function generateSuggestedPlan(
       if (policyAreas.has("physical_education") || gradeIndex < peYears) fillAreaForGrade("physical_education", grade);
       if (policyAreas.has("design_lab") || gradeIndex < designLabYears) fillAreaForGrade("design_lab", grade);
       if (requiresEthnicStudies && areaCourseCount("ethnic_studies") === 0) fillAreaForGrade("ethnic_studies", grade, Math.max(5, requirementCredits("ethnic_studies")));
-      if ((policyAreas.has("personal_development") && areaCreditsInGrade("personal_development", grade) === 0)
-        || (!policyAreas.has("personal_development") && requirementCredits("personal_development") > 0 && areaCourseCount("personal_development") === 0)) {
-        fillAreaForGrade("personal_development", grade, requirementCredits("personal_development"));
+      const remainingPersonalDevelopment = Math.max(0, requirementCredits("personal_development") - areaCreditsTotal("personal_development"));
+      if (remainingPersonalDevelopment > 0 && areaCreditsInGrade("personal_development", grade) === 0
+        && (policyAreas.has("personal_development") || Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade))) {
+        fillAreaForGrade("personal_development", grade, Math.min(10, remainingPersonalDevelopment));
       }
       const languageTarget = advanced && courses.some((candidate) => courseMatchesArea(candidate, "world_language")) ? 2 : requirementYears("world_language");
-      if ((policyAreas.has("world_language") || areaCourseCount("world_language") < languageTarget) && Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade)) {
+      if ((policyAreas.has("world_language") || areaCourseCount("world_language") < languageTarget)
+        && areaCreditsInGrade("world_language", grade) === 0
+        && Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade)) {
         fillAreaForGrade("world_language", grade);
       }
       if ((policyAreas.has("visual_performing_arts") && areaCreditsInGrade("visual_performing_arts", grade) === 0)
@@ -1031,6 +1070,9 @@ export function generateSuggestedPlan(
           .filter((candidate) => candidate.grade_levels.length === 0 || candidate.grade_levels.includes(grade))
           .filter((candidate) => includeCollegeCourses || Number(candidate.college_units ?? 0) === 0)
           .filter((candidate) => !courseNeedsExplicitPlanningIntent(candidate, context.interests ?? []))
+          .filter((candidate) => !(coreAreas as RequirementArea[]).some((area) => area !== "design_lab"
+            && courseMatchesArea(candidate, area)
+            && areaCreditsInGrade(area, grade) > 0))
           .filter((candidate) => planningInterestMatches(candidate, interestText) || !coreAreas.some((area) => courseMatchesArea(candidate, area)))
           .map((candidate) => ({
             candidate,
