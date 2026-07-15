@@ -248,7 +248,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   isolation: isolate;
   overflow: hidden;
   position: relative;
-  background: #e8eff3;
+  background: #0c0d0f;
 }
 .auth-page::after {
   content: "";
@@ -256,28 +256,17 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   inset: 0;
   z-index: 1;
   background:
-    linear-gradient(90deg, rgb(232 239 243 / 0.08) 0%, rgb(232 239 243 / 0.22) 42%, rgb(232 239 243 / 0.68) 100%),
-    linear-gradient(0deg, rgb(64 88 106 / 0.12) 0%, transparent 42%, rgb(255 255 255 / 0.14) 100%);
+    linear-gradient(90deg, rgb(12 13 15 / 0.76) 0%, rgb(12 13 15 / 0.38) 38%, rgb(12 13 15 / 0.18) 68%, rgb(12 13 15 / 0.28) 100%),
+    linear-gradient(0deg, rgb(12 13 15 / 0.38) 0%, transparent 38%, rgb(12 13 15 / 0.16) 100%);
   pointer-events: none;
-}
-:root[data-theme="dark"] .auth-page { background: #27313a; }
-:root[data-theme="dark"] .auth-page::after {
-  background:
-    linear-gradient(90deg, rgb(39 49 58 / 0.3) 0%, rgb(39 49 58 / 0.12) 44%, rgb(39 49 58 / 0.56) 100%),
-    linear-gradient(0deg, rgb(20 26 31 / 0.22) 0%, transparent 42%, rgb(20 26 31 / 0.08) 100%);
 }
 .auth-page-background {
   position: absolute;
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(circle at 22% 8%, rgb(120 152 173 / 0.34), transparent 42%),
-    #e8eff3;
-}
-:root[data-theme="dark"] .auth-page-background {
-  background:
-    radial-gradient(circle at 22% 8%, rgb(169 198 218 / 0.18), transparent 42%),
-    #27313a;
+    radial-gradient(circle at 50% 18%, rgb(138 170 188 / 0.18), transparent 28%),
+    #0c0d0f;
 }
 .light-rays-container {
   width: 100%;
@@ -295,7 +284,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   overflow: hidden;
   padding: clamp(28px, 5vw, 72px);
   background: transparent;
-  color: #1c2932;
+  color: #f4f7f9;
   position: relative;
   z-index: 2;
 }
@@ -303,9 +292,11 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .auth-story-copy {
   position: relative;
   z-index: 2;
-  text-shadow: 0 1px 18px rgb(255 255 255 / 0.5);
+  text-shadow: 0 2px 24px rgb(0 0 0 / 0.48);
 }
-.auth-story > .wordmark { width: fit-content; color: #1c2932; }
+.auth-story > .wordmark { width: fit-content; color: #f4f7f9; }
+.auth-story .brand-mark-light { display: none; }
+.auth-story .brand-mark-dark { display: block; }
 .auth-story-copy {
   max-width: 660px;
   margin: auto 0 auto clamp(24px, 4.5vw, 72px);
@@ -328,16 +319,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .auth-story-copy > p:last-child {
   max-width: 46ch;
   margin: 24px 0 0;
-  color: rgb(28 41 50 / 0.74);
+  color: rgb(244 247 249 / 0.74);
   font-size: clamp(15px, 1.25vw, 18px);
   line-height: 1.5;
 }
-:root[data-theme="dark"] .auth-story { color: #f4f7f9; }
-:root[data-theme="dark"] .auth-story > .wordmark { color: #f4f7f9; }
-:root[data-theme="dark"] .auth-story > .wordmark,
-:root[data-theme="dark"] .auth-story-copy { text-shadow: 0 2px 24px rgb(0 0 0 / 0.38); }
-:root[data-theme="dark"] .auth-story-copy > p:last-child { color: rgb(244 247 249 / 0.74); }
-
 .auth-panel {
   display: grid;
   min-height: 100dvh;
@@ -373,40 +358,27 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   gap: 18px;
 }
 .auth-card {
-  --ink: #1c2932;
-  --ink-soft: #536672;
-  --ink-faint: #697b86;
-  --line: rgb(82 111 135 / 0.18);
-  --line-strong: rgb(82 111 135 / 0.3);
-  --surface-raised: rgb(255 255 255 / 0.72);
-  --surface-muted: rgb(231 238 243 / 0.78);
-  --spotlight-color: rgb(255 255 255 / 0.42);
+  --ink: #f4f7f9;
+  --ink-soft: rgb(244 247 249 / 0.74);
+  --ink-faint: rgb(244 247 249 / 0.56);
+  --line: rgb(255 255 255 / 0.11);
+  --line-strong: rgb(255 255 255 / 0.18);
+  --surface-raised: rgb(255 255 255 / 0.07);
+  --surface-muted: rgb(255 255 255 / 0.09);
+  --spotlight-color: rgb(255 255 255 / 0.1);
   width: 100%;
-  border: 1px solid rgb(82 111 135 / 0.24);
+  border: 1px solid rgb(255 255 255 / 0.16);
   border-radius: 12px;
-  background: rgb(248 251 252 / 0.82);
+  background: rgb(26 27 31 / 0.76);
   color: var(--ink);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.76),
-    0 12px 32px rgb(54 75 90 / 0.12);
+    inset 0 1px 0 rgb(255 255 255 / 0.07),
+    0 12px 32px rgb(0 0 0 / 0.18);
   padding: clamp(24px, 3vw, 34px);
   -webkit-backdrop-filter: blur(18px) saturate(115%);
   backdrop-filter: blur(18px) saturate(115%);
 }
 .auth-card .primary-button { color: #fff; }
-:root[data-theme="dark"] .auth-card {
-  --ink: #f4f7f9;
-  --ink-soft: rgb(244 247 249 / 0.74);
-  --ink-faint: rgb(244 247 249 / 0.58);
-  --line: rgb(169 198 218 / 0.14);
-  --line-strong: rgb(169 198 218 / 0.24);
-  --surface-raised: rgb(255 255 255 / 0.075);
-  --surface-muted: rgb(169 198 218 / 0.1);
-  --spotlight-color: rgb(169 198 218 / 0.12);
-  border-color: rgb(169 198 218 / 0.22);
-  background: rgb(42 52 61 / 0.84);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 12px 32px rgb(13 18 22 / 0.22);
-}
 :root[data-theme="dark"] .auth-card .primary-button { color: #17181b; }
 .auth-panel-inner { width: 100%; }
 .auth-switch {
@@ -502,9 +474,8 @@ input:focus, select:focus, textarea:focus {
 .auth-reset-invalid .auth-submit { width: 100%; }
 .inline-alert.success svg { margin-right: 6px; vertical-align: -4px; }
 .auth-guardrails { display: grid; gap: 8px; padding: 0 8px; }
-.auth-guardrails p { display: flex; align-items: flex-start; gap: 9px; margin: 0; color: rgb(28 41 50 / 0.68); font-size: 12px; line-height: 1.5; }
-.auth-guardrails svg { flex: 0 0 auto; color: var(--accent); margin-top: 1px; }
-:root[data-theme="dark"] .auth-guardrails p { color: rgb(244 247 249 / 0.68); }
+.auth-guardrails p { display: flex; align-items: flex-start; gap: 9px; margin: 0; color: rgb(244 247 249 / 0.68); font-size: 12px; line-height: 1.5; }
+.auth-guardrails svg { flex: 0 0 auto; color: rgb(244 247 249 / 0.74); margin-top: 1px; }
 .inline-alert {
   margin: 0 0 18px;
   border: 1px solid var(--line);
@@ -570,11 +541,10 @@ input:focus, select:focus, textarea:focus {
 
 @media (prefers-reduced-transparency: reduce) {
   .auth-card {
-    background: #f8fbfc;
+    background: #1a1b1f;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
-  :root[data-theme="dark"] .auth-card { background: #2a343d; }
 }
 
 @keyframes auth-card-enter {

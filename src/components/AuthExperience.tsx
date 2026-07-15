@@ -134,7 +134,7 @@ export default function AuthExperience() {
         <LightRays
           className="auth-page-background"
           raysOrigin="top-center"
-          raysColor={theme === "dark" ? "#e0edf5" : "#526f87"}
+          raysColor={theme === "dark" ? "#d7e7f0" : "#8aaabc"}
           raysSpeed={0.38}
           lightSpread={0.42}
           rayLength={3.2}
