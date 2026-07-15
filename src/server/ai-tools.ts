@@ -93,6 +93,19 @@ const toolArgumentSchemas = {
     source: z.enum(["high_school", "dtech", "smccd", "all"]).default("all"),
     grade_level: gradeSchema.optional()
   }),
+  resolve_academic_course_batch: z.object({
+    requests: z.array(z.object({
+      query: z.string().trim().min(1).max(100),
+      source: z.enum(["selected_school", "smccd"]),
+      grade_level: gradeSchema.optional(),
+      term: termSchema.nullable().default(null),
+      status: courseStatusSchema.default("planned")
+    })).max(30).default([]),
+    fill_remaining_graduation_requirements: z.boolean().default(false),
+    graduation_grade_level: gradeSchema.optional(),
+    graduation_status: courseStatusSchema.default("planned"),
+    respect_recommended_limit: z.boolean().default(true)
+  }).refine((value) => value.requests.length > 0 || value.fill_remaining_graduation_requirements, "At least one course request or graduation-gap fill is required."),
   get_graduation_progress: z.object({}),
   get_nearby_education_providers: z.object({}),
   get_transcript_sources: z.object({}),
@@ -272,6 +285,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "list_plan_courses", mutatesData: false, description: "List courses already in the active plan, with stable IDs, placement, school year, and Done/In progress/Planned state. Use filters for exact schedule periods; include_full_year includes year-round courses that occupy fall or spring.", arguments: '{"status":"completed|current|planned|all","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","include_full_year":boolean,"school_year":"YYYY-YYYY"}' },
   { name: "search_california_high_schools", mutatesData: false, description: "Search active California public and charter high schools by school, district, city, ZIP, or CDS code. Returns exact school IDs for changing the selected school.", arguments: '{"query":"string"}' },
   { name: "search_course_catalog", mutatesData: false, description: "Search the selected high school's approved catalog and/or the currently supported SMCCD catalog. Returns stable course IDs and never mixes high-school catalogs.", arguments: '{"query":"string","source":"high_school|smccd|all","grade_level":9|10|11|12}' },
+  { name: "resolve_academic_course_batch", mutatesData: false, description: "Resolve a complete mixed batch of explicit selected-school and SMCCD course names in one call, optionally filling every remaining verified graduation gap. Use this instead of repeated single-course searches for multi-course add requests. Preserve only explicitly stated placements; leave term null when the student did not state one so prerequisite-aware placement can choose a valid term. Returns exact IDs and an execution-ready add_academic_courses batch or exact unresolved items.", arguments: '{"requests":[{"query":"string","source":"selected_school|smccd","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year|null","status":"current|planned"}],"fill_remaining_graduation_requirements":boolean,"graduation_grade_level":9|10|11|12,"graduation_status":"current|planned","respect_recommended_limit":boolean}' },
   { name: "get_graduation_progress", mutatesData: false, description: "Read requirement-by-requirement completed, scheduled, and remaining credit evidence.", arguments: "{}" },
   { name: "get_nearby_education_providers", mutatesData: false, description: "Read community colleges discovered from the selected school's official address and approximate distance. This does not use precise student location or prove enrollment eligibility.", arguments: "{}" },
   { name: "get_transcript_sources", mutatesData: false, description: "Read transcript source labels and review state. Corrections require the separate exact correction tool and preserve the original evidence.", arguments: "{}" },
@@ -328,6 +342,7 @@ export function assistantToolLabel(name: string) {
     list_plan_courses: "Read course plan",
     search_california_high_schools: "Search California high schools",
     search_course_catalog: "Search course catalogs",
+    resolve_academic_course_batch: "Resolve academic course batch",
     get_graduation_progress: "Check graduation progress",
     get_nearby_education_providers: "Find nearby education providers",
     get_transcript_sources: "Read transcript sources",
@@ -535,6 +550,98 @@ function normalizedScheduleText(value: string | null | undefined) {
     .replace(/\bpre[ -]?calc(?:ulus)?\b/g, "precalculus")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
+}
+
+function normalizedBatchCatalogText(value: string | null | undefined) {
+  return normalizedScheduleText(value)
+    .replace(/\bcalc\b/g, "calculus")
+    .replace(/\beng\s+(?=c?\d)/g, "engl ")
+    .replace(/\bno\s+sql\b/g, "nosql")
+    .replace(/\biii\b/g, "3")
+    .replace(/\bii\b/g, "2")
+    .replace(/\bi\b/g, "1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function batchCatalogMatchScore(queryValue: string, candidateValue: string) {
+  const query = normalizedBatchCatalogText(queryValue);
+  const candidate = normalizedBatchCatalogText(candidateValue);
+  if (!query || !candidate) return -1;
+  if (!query.includes("physics") && candidate.includes("physics")) return -1;
+  let score = candidate === query ? 1000
+    : candidate.startsWith(`${query} `) || candidate.endsWith(` ${query}`) ? 850
+      : candidate.includes(query) ? 700
+        : -1;
+  const queryTokens = query.split(" ").filter(Boolean);
+  if (score < 0) {
+    if (!queryTokens.every((token) => candidate.includes(token))) return -1;
+    score = 500 + queryTokens.length * 10;
+  }
+  if (/^calculus [123]$/.test(query) && candidate.includes("analytic geometry")) score += 220;
+  if (/^calculus [123]$/.test(query) && candidate.includes("applied calculus")) score -= 120;
+  return score;
+}
+
+function batchSequenceIdentity(course: SmccdCourse) {
+  const title = normalizedBatchCatalogText(course.title);
+  const match = title.match(/^(.*?\b(?:calculus|language|spanish|french|chinese)\b.*?)\s+([123])$/);
+  if (!match) return null;
+  return { key: `${course.subject}:${match[1]}`, level: Number(match[2]) };
+}
+
+function batchPlacementIndex(gradeLevel: GradeLevel, term: PlanCourse["term"]) {
+  const termOffset = term === "fall" || term === "full_year" ? 0 : term === "spring" ? 1 : 2;
+  return gradeLevel * 4 + termOffset;
+}
+
+function assistantPlanCourseCandidate(
+  workspace: AssistantWorkspace,
+  entry: { source: "selected_school" | "smccd"; course_id: string; status: "current" | "planned"; grade_level: GradeLevel; term: PlanCourse["term"] },
+  smccdCourse: SmccdCourse | null,
+  index: number
+): PlanCourse {
+  const selectedSchoolCourse = entry.source === "selected_school"
+    ? workspace.courses.find((course) => course.id === entry.course_id) ?? null
+    : null;
+  const normalizedCode = smccdCourse ? normalizeCollegeCourseCode(smccdCourse.course_code) : null;
+  const equivalency = normalizedCode
+    ? workspace.equivalencies.find((candidate) => candidate.normalized_course_code === normalizedCode) ?? null
+    : null;
+  const collegeUnits = smccdCourse ? Number(smccdCourse.units_max ?? smccdCourse.units_min) : selectedSchoolCourse?.college_units ?? null;
+  const creditResolution = smccdCourse
+    ? resolveCollegeHighSchoolCredits({
+        collegeUnits: Number(collegeUnits ?? 0),
+        storedHighSchoolCredits: null,
+        equivalencyHighSchoolCredits: equivalency?.high_school_credits,
+        normalizedCourseCode: normalizedCode ?? ""
+      })
+    : null;
+  return {
+    id: `batch-candidate:${index}:${entry.course_id}`,
+    plan_version_id: workspace.activeVersion.id,
+    user_id: workspace.settings.id,
+    course_id: selectedSchoolCourse?.id ?? null,
+    custom_course_name: smccdCourse ? `${smccdCourse.course_code} ${smccdCourse.title}` : null,
+    smccd_course_id: smccdCourse?.id ?? null,
+    college_provider_code: smccdCourse ? "SMCCD" : null,
+    requirement_area_override: equivalency?.requirement_area ?? null,
+    source_review_item_id: null,
+    notes: null,
+    mapping_verified: selectedSchoolCourse
+      ? workspace.mappings.some((mapping) => mapping.course_id === selectedSchoolCourse.id && mapping.confidence === "verified")
+      : Boolean(equivalency),
+    is_weighted: smccdCourse ? true : Boolean(selectedSchoolCourse?.is_weighted),
+    credits: smccdCourse ? Number(creditResolution?.credits ?? 0) : Number(selectedSchoolCourse?.credits ?? 0),
+    college_units: collegeUnits == null ? null : Number(collegeUnits),
+    letter_grade: null,
+    user_edited: true,
+    grade_level: entry.grade_level,
+    school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, entry.grade_level),
+    term: entry.term,
+    status: entry.status,
+    sort_order: workspace.planCourses.length + index
+  };
 }
 
 function automaticPlanningPenalty(course: Course, interestText: string) {
@@ -1455,6 +1562,223 @@ export async function executeAssistantReadTool(
       }
     }
     return { summary: `Found ${matches.length} eligible catalog matches for ${String(argumentsValue.query)}.`, data: matches };
+  }
+
+  if (name === "resolve_academic_course_batch") {
+    const args = toolArgumentSchemas.resolve_academic_course_batch.parse(argumentsValue);
+    const entries: Array<{
+      source: "selected_school" | "smccd";
+      course_id: string;
+      status: "current" | "planned";
+      grade_level: GradeLevel;
+      term: PlanCourse["term"];
+    }> = [];
+    const resolved: Array<{ query: string; name: string; source: string; grade_level: GradeLevel; term: PlanCourse["term"] }> = [];
+    const unresolved: Array<{ query: string; reason: string }> = [];
+    const skippedExisting: Array<{ query: string; name: string }> = [];
+    const validationRows = [...workspace.planCourses];
+    const currentGrade = Math.max(9, Math.min(12, Number(workspace.settings.grade_level ?? 9))) as GradeLevel;
+    const targetGraduationGrade = args.graduation_grade_level
+      ?? Math.max(currentGrade, Number(workspace.settings.plan_end_grade ?? 12)) as GradeLevel;
+    const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
+
+    if (args.fill_remaining_graduation_requirements) {
+      const initialProgress = calculateRequirementProgress(workspace.requirements, validationRows, workspace.mappings, workspace.courses, workspace.equivalencies);
+      const openRequirementIds = new Set(initialProgress
+        .filter((item) => item.status === "missing" && !item.requirement.constraint_only)
+        .map((item) => item.requirement.id));
+      if (openRequirementIds.size) {
+        const generated = generateSuggestedPlan(
+          workspace.settings,
+          workspace.courses,
+          validationRows,
+          policy,
+          args.respect_recommended_limit,
+          {
+            schoolSlug: workspace.school.slug,
+            planningProfile: workspace.planningProfile,
+            requirements: workspace.requirements,
+            mappings: workspace.mappings,
+            startGrade: targetGraduationGrade,
+            maxCoursesPerTerm: 12,
+            includeCollegeCourses: false,
+            rigor: "balanced",
+            interests: []
+          }
+        );
+        for (const generatedRow of generated) {
+          const course = workspace.courses.find((candidate) => candidate.id === generatedRow.course_id);
+          if (!course) continue;
+          const entry = {
+            source: "selected_school" as const,
+            course_id: course.id,
+            status: args.graduation_status,
+            grade_level: targetGraduationGrade,
+            term: course.term_type === "year" ? "full_year" as const : generatedRow.term
+          };
+          const candidateRow = assistantPlanCourseCandidate(workspace, entry, null, validationRows.length);
+          const before = calculateRequirementProgress(workspace.requirements, validationRows, workspace.mappings, workspace.courses, workspace.equivalencies);
+          const after = calculateRequirementProgress(workspace.requirements, [...validationRows, candidateRow], workspace.mappings, workspace.courses, workspace.equivalencies);
+          const beforeById = new Map(before.map((item) => [item.requirement.id, item.verifiedProjectedCredits]));
+          const improvesOpenRequirement = after.some((item) => openRequirementIds.has(item.requirement.id)
+            && item.verifiedProjectedCredits > Number(beforeById.get(item.requirement.id) ?? 0));
+          if (!improvesOpenRequirement) continue;
+          const eligibility = dtechCatalogEligibility(course, entry.grade_level, validationRows, workspace.courses);
+          if (!eligibility.eligible) continue;
+          const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: entry.grade_level, term: entry.term }, workspace.courses, validationRows, workspace.plannedSmccdCourses, workspace.equivalencies);
+          if (prerequisite.result.status === "blocked") continue;
+          entries.push(entry);
+          validationRows.push(candidateRow);
+          resolved.push({ query: "remaining graduation requirements", name: course.name, source: workspace.school.short_name, grade_level: entry.grade_level, term: entry.term });
+          const updated = calculateRequirementProgress(workspace.requirements, validationRows, workspace.mappings, workspace.courses, workspace.equivalencies);
+          for (const item of updated) if (item.status !== "missing") openRequirementIds.delete(item.requirement.id);
+          if (!openRequirementIds.size) break;
+        }
+        if (openRequirementIds.size) {
+          const names = initialProgress.filter((item) => openRequirementIds.has(item.requirement.id)).map((item) => item.requirement.name);
+          unresolved.push({ query: "remaining graduation requirements", reason: `No placement-ready selected-school course could close: ${names.join(", ")}.` });
+        }
+      }
+    }
+
+    const needsSmccd = args.requests.some((request) => request.source === "smccd");
+    const smccdResult = needsSmccd ? await supabase.from("smccd_courses").select("*") : { data: [], error: null };
+    if (smccdResult.error) throw new Error(smccdResult.error.message);
+    const smccdCatalog = (smccdResult.data ?? []) as unknown as SmccdCourse[];
+    const existingSmccdIndex = createSmccdPlanCourseIndex(workspace.planCourses, workspace.plannedSmccdCourses);
+    const existingCollegeCounts = new Map<string, number>();
+    for (const row of workspace.planCourses) {
+      const college = row.smccd_course_id ? workspace.plannedSmccdCourses.find((course) => course.id === row.smccd_course_id)?.college_code : null;
+      if (college) existingCollegeCounts.set(college, (existingCollegeCounts.get(college) ?? 0) + 1);
+    }
+    const nearbyOrder = new Map(workspace.nearbyProviders.map((provider, index) => [provider.provider_code, index]));
+    const collegePreferenceScore = (course: SmccdCourse, query: string) => {
+      const normalizedQuery = normalizedBatchCatalogText(query);
+      const explicitlyRequested = normalizedQuery.includes(course.college_code.toLowerCase())
+        || (course.college_code === "CSM" && normalizedQuery.includes("college of san mateo"))
+        || (course.college_code === "SKY" && normalizedQuery.includes("skyline"))
+        || (course.college_code === "CAN" && /\bcanada\b/.test(normalizedQuery));
+      return Number(explicitlyRequested) * 10_000
+        + (existingCollegeCounts.get(course.college_code) ?? 0) * 100
+        - (nearbyOrder.get(course.college_code) ?? 50);
+    };
+
+    const resolvedRequests = args.requests.map((request, requestIndex) => {
+      if (request.source === "selected_school") {
+        const grade = request.grade_level ?? targetGraduationGrade;
+        const candidates = workspace.courses
+          .map((course) => ({ course, score: batchCatalogMatchScore(request.query, `${course.course_code ?? ""} ${course.name}`) }))
+          .filter((candidate) => candidate.score >= 0)
+          .filter(({ course }) => !validationRows.some((row) => row.course_id === course.id))
+          .filter(({ course }) => dtechCatalogEligibility(course, grade, validationRows, workspace.courses).eligible)
+          .sort((left, right) => right.score - left.score || left.course.name.localeCompare(right.course.name));
+        return { request, requestIndex, course: candidates[0]?.course ?? null, smccd: null };
+      }
+      const candidates = smccdCatalog
+        .map((course) => ({ course, score: batchCatalogMatchScore(request.query, `${course.course_code} ${course.title} ${course.college_code}`) }))
+        .filter((candidate) => candidate.score >= 0)
+        .filter(({ course }) => !smccdCourseAlreadyInPlanIndex(course, existingSmccdIndex))
+        .sort((left, right) => right.score - left.score
+          || collegePreferenceScore(right.course, request.query) - collegePreferenceScore(left.course, request.query)
+          || right.course.source_year.localeCompare(left.course.source_year)
+          || left.course.college_code.localeCompare(right.course.college_code));
+      return { request, requestIndex, course: null, smccd: candidates[0]?.course ?? null };
+    }).sort((left, right) => {
+      const leftExplicit = left.request.term ? 0 : 1;
+      const rightExplicit = right.request.term ? 0 : 1;
+      const leftPrerequisites = left.smccd?.prerequisites.length ?? left.course?.prerequisites.length ?? 0;
+      const rightPrerequisites = right.smccd?.prerequisites.length ?? right.course?.prerequisites.length ?? 0;
+      return leftExplicit - rightExplicit || leftPrerequisites - rightPrerequisites || left.requestIndex - right.requestIndex;
+    });
+
+    const lastSequencePlacement = new Map<string, { level: number; index: number }>();
+    for (const item of resolvedRequests) {
+      const { request } = item;
+      const selectedCourse = item.course;
+      const smccdCourse = item.smccd;
+      if (!selectedCourse && !smccdCourse) {
+        const already = request.source === "selected_school"
+          ? workspace.courses.find((course) => validationRows.some((row) => row.course_id === course.id) && batchCatalogMatchScore(request.query, `${course.course_code ?? ""} ${course.name}`) >= 0)
+          : workspace.plannedSmccdCourses.find((course) => batchCatalogMatchScore(request.query, `${course.course_code} ${course.title}`) >= 0);
+        if (already) skippedExisting.push({ query: request.query, name: "name" in already ? already.name : `${already.course_code} ${already.title}` });
+        else unresolved.push({ query: request.query, reason: `No eligible exact ${request.source === "smccd" ? "SMCCD" : workspace.school.short_name} catalog match was found.` });
+        continue;
+      }
+      const targetGrade = request.grade_level ?? targetGraduationGrade;
+      const defaultTerm: PlanCourse["term"] = selectedCourse?.term_type === "year" ? "full_year" : "fall";
+      const sequence = smccdCourse ? batchSequenceIdentity(smccdCourse) : null;
+      const previousSequencePlacement = sequence ? lastSequencePlacement.get(sequence.key) : null;
+      const placementCandidates: Array<{ grade_level: GradeLevel; term: PlanCourse["term"] }> = (request.term
+        ? [{ grade_level: targetGrade, term: request.term }]
+        : [
+            ...(!request.grade_level && targetGrade > 9 ? [{ grade_level: (targetGrade - 1) as GradeLevel, term: "summer" as const }] : []),
+            { grade_level: targetGrade, term: defaultTerm },
+            ...(!selectedCourse ? [{ grade_level: targetGrade, term: "spring" as const }] : []),
+            ...(targetGrade < 12 ? [{ grade_level: targetGrade, term: "summer" as const }] : [])
+          ])
+        .filter((placement) => !previousSequencePlacement
+          || sequence?.level === undefined
+          || sequence.level <= previousSequencePlacement.level
+          || batchPlacementIndex(placement.grade_level, placement.term) > previousSequencePlacement.index);
+      let selectedEntry: typeof entries[number] | null = null;
+      let blockedReason = "No prerequisite-valid placement was available.";
+      for (const placement of placementCandidates) {
+        try {
+          assertPlanningTermExists(placement.grade_level, placement.term);
+        } catch {
+          continue;
+        }
+        const entry = {
+          source: request.source,
+          course_id: (selectedCourse?.id ?? smccdCourse?.id)!,
+          status: request.status,
+          grade_level: placement.grade_level,
+          term: placement.term
+        };
+        const prerequisite = selectedCourse
+          ? evaluateDtechPlannerPrerequisites(selectedCourse, { gradeLevel: placement.grade_level, term: placement.term }, workspace.courses, validationRows, [...workspace.plannedSmccdCourses, ...smccdCatalog], workspace.equivalencies)
+          : evaluateSmccdPlannerPrerequisites(smccdCourse!, { gradeLevel: placement.grade_level, term: placement.term }, smccdCatalog, validationRows, workspace.courses);
+        if (prerequisite.result.status === "blocked") {
+          blockedReason = `${selectedCourse?.name ?? `${smccdCourse!.course_code} ${smccdCourse!.title}`} has an unmet prerequisite for the requested planning window.`;
+          continue;
+        }
+        selectedEntry = entry;
+        break;
+      }
+      if (!selectedEntry) {
+        unresolved.push({ query: request.query, reason: blockedReason });
+        continue;
+      }
+      entries.push(selectedEntry);
+      validationRows.push(assistantPlanCourseCandidate(workspace, selectedEntry, smccdCourse, validationRows.length));
+      if (sequence) lastSequencePlacement.set(sequence.key, { level: sequence.level, index: batchPlacementIndex(selectedEntry.grade_level, selectedEntry.term) });
+      resolved.push({
+        query: request.query,
+        name: selectedCourse?.name ?? `${smccdCourse!.course_code} ${smccdCourse!.title}`,
+        source: selectedCourse ? workspace.school.short_name : smccdCourse!.college_code,
+        grade_level: selectedEntry.grade_level,
+        term: selectedEntry.term
+      });
+    }
+
+    if (policy) {
+      const violations = evaluateEnrollmentSchedule(validationRows, policy).filter((evaluation) => evaluation.state === "blocked" || (args.respect_recommended_limit && evaluation.state === "over_policy"));
+      if (violations.length) unresolved.push({ query: "college schedule", reason: "The resolved batch exceeds the selected district enrollment boundary in one or more terms." });
+    }
+    const complete = unresolved.length === 0 && entries.length > 0;
+    return {
+      summary: complete
+        ? `Resolved ${entries.length} exact course placements as one execution-ready batch.`
+        : `Resolved ${entries.length} placements; ${unresolved.length} requested item${unresolved.length === 1 ? " remains" : "s remain"} unresolved.`,
+      data: {
+        complete,
+        entries,
+        resolved,
+        unresolved,
+        skipped_existing: skippedExisting,
+        respect_recommended_limit: args.respect_recommended_limit
+      }
+    };
   }
 
   if (name === "get_graduation_progress") {

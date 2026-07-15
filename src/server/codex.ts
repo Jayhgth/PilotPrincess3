@@ -530,6 +530,47 @@ interface AssistantChatToolActivity {
   error?: string;
 }
 
+function resolvedAcademicBatch(result: AssistantToolResult) {
+  const data = result.data && typeof result.data === "object" && !Array.isArray(result.data)
+    ? result.data as Record<string, unknown>
+    : null;
+  const entries = Array.isArray(data?.entries)
+    ? data.entries.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
+    : [];
+  if (data?.complete !== true || entries.length === 0) return null;
+  const resolved = Array.isArray(data.resolved)
+    ? data.resolved.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  return {
+    entries,
+    resolved,
+    respectRecommendedLimit: data.respect_recommended_limit !== false
+  };
+}
+
+function academicBatchProposal(batch: NonNullable<ReturnType<typeof resolvedAcademicBatch>>): AssistantChatToolActivity {
+  return {
+    id: crypto.randomUUID(),
+    name: "add_academic_courses",
+    label: assistantToolLabel("add_academic_courses"),
+    arguments: {
+      entries: batch.entries,
+      respect_recommended_limit: batch.respectRecommendedLimit
+    },
+    explanation: `Add all ${batch.entries.length} exact catalog-backed high-school and college placements resolved from the student's complete request as one reversible batch.`,
+    mutatesData: true,
+    status: "pending_confirmation"
+  };
+}
+
+function academicBatchMessage(batch: NonNullable<ReturnType<typeof resolvedAcademicBatch>>, reviewMode: AiReviewMode) {
+  const placements = batch.resolved.slice(0, 4).map((row) => `${String(row.name ?? "Course")} (${String(row.term ?? "term")}, grade ${String(row.grade_level ?? "")})`);
+  const detail = placements.length ? `: ${placements.join("; ")}${batch.resolved.length > placements.length ? `; +${batch.resolved.length - placements.length} more` : ""}` : "";
+  return reviewMode === "auto_review"
+    ? `I resolved all ${batch.entries.length} requested placements${detail}. Auto-review will apply or decline the exact reversible batch automatically.`
+    : `I resolved all ${batch.entries.length} requested placements${detail}. Review the exact reversible batch before applying it.`;
+}
+
 export interface AssistantChatResult {
   message: string;
   questions: AssistantQuestion[];
@@ -634,6 +675,60 @@ function requestedCourseBatch(normalized: string): CourseBatchRequest | null {
   return move ? { kind: "move", filters: { ...filters, status: move.source }, target: move.target } : null;
 }
 
+export function isCompoundCourseAdditionRequest(userMessage: string) {
+  const normalized = userMessage.toLowerCase();
+  return /\b(?:add|put|place|schedule|enroll)\b/.test(normalized)
+    && /\b(?:course|class|graduation|college|high[ -]?school|grade\s*(?:9|10|11|12))\b/.test(normalized)
+    && (/,|\band\b|\bremaining requirements?\b|\bclasses? needed\b/.test(normalized));
+}
+
+function splitRequestedCourseList(value: string) {
+  const expanded = value.replace(/([^,.;]+?\D)(\d+)\s*,\s*(\d+)\s*,?\s*and\s*(\d+)/gi, (_match, base: string, first: string, second: string, third: string) =>
+    `${base}${first}|${base}${second}|${base}${third}`
+  );
+  return expanded
+    .replace(/\s*,?\s+and\s+/gi, "|")
+    .split(/[|,]/)
+    .map((course) => course.trim().replace(/^(?:the\s+)?(?:course\s+)?/i, "").replace(/[.!?]+$/, ""))
+    .filter((course) => course.length > 0);
+}
+
+export function parseCompoundAcademicCourseRequest(userMessage: string) {
+  if (!isCompoundCourseAdditionRequest(userMessage)) return null;
+  const graduationMatch = userMessage.match(/(?:needed|required|remaining).{0,50}graduation.{0,24}(?:in|for)\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?/i)
+    ?? userMessage.match(/graduation.{0,50}(?:in|for)\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?/i);
+  const requests: Array<{
+    query: string;
+    source: "selected_school" | "smccd";
+    grade_level?: 9 | 10 | 11 | 12;
+    term: "fall" | "spring" | "summer" | "full_year" | null;
+    status: "planned";
+  }> = [];
+  const coveredRanges: Array<[number, number]> = [];
+  const placedPattern = /(?:put|place|add)\s+(?:them\s+)?in\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?\s+grade\s+(fall|spring|summer|full[ -]?year)\s+(.+?)(?=[.!?]|$)/gi;
+  for (const match of userMessage.matchAll(placedPattern)) {
+    const grade = Number(match[1]) as 9 | 10 | 11 | 12;
+    const term = match[2]!.toLowerCase().replace(/[ -]/g, "_") as "fall" | "spring" | "summer" | "full_year";
+    for (const query of splitRequestedCourseList(match[3]!)) requests.push({ query, source: "smccd", grade_level: grade, term, status: "planned" });
+    if (match.index !== undefined) coveredRanges.push([match.index, match.index + match[0].length]);
+  }
+  const collegePattern = /(?:from\s+(?:the\s+)?college|college)\s*,?\s*(?:courses?\s*)?(?:add|include|take)\s+(.+?)(?=[.!?]|$)/gi;
+  for (const match of userMessage.matchAll(collegePattern)) {
+    if (match.index !== undefined && coveredRanges.some(([start, end]) => match.index! >= start && match.index! < end)) continue;
+    for (const query of splitRequestedCourseList(match[1]!)) requests.push({ query, source: "smccd", term: null, status: "planned" });
+  }
+  const unique = [...new Map(requests.map((request) => [`${request.source}:${request.query.toLowerCase()}:${request.grade_level ?? ""}:${request.term ?? ""}`, request])).values()];
+  const fillRemaining = /\b(?:needed|required|remaining)\b.{0,40}\b(?:graduation|diploma)\b|\b(?:graduation|diploma)\b.{0,40}\b(?:needed|required|remaining)\b/i.test(userMessage);
+  if (!unique.length && !fillRemaining) return null;
+  return {
+    requests: unique,
+    fill_remaining_graduation_requirements: fillRemaining,
+    ...(graduationMatch ? { graduation_grade_level: Number(graduationMatch[1]) as 9 | 10 | 11 | 12 } : {}),
+    graduation_status: "planned" as const,
+    respect_recommended_limit: /\b(?:respect|stay within|keep within|recommended)\b.{0,28}\b(?:unit|limit|maximum)\b/i.test(userMessage)
+  };
+}
+
 export function requiredAssistantEvidenceRead(userMessage: string): { name: AssistantToolName; arguments: Record<string, unknown> } | null {
   const normalized = userMessage.toLowerCase();
   const transcript = /trans(?:cript|cipt)/.test(normalized);
@@ -711,6 +806,21 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     };
   }
   if (parseBulkGpaIntent(userMessage)) return { name: "get_gpa_scenario", arguments: {} };
+
+  if (isCompoundCourseAdditionRequest(userMessage)) {
+    const parsedBatch = parseCompoundAcademicCourseRequest(userMessage);
+    if (parsedBatch?.requests.length) return { name: "resolve_academic_course_batch", arguments: parsedBatch };
+    return {
+      name: "get_academic_context",
+      arguments: {
+        include_transcript_review: false,
+        planning_objectives: ["complete_diploma"],
+        ...(/\bgrade\s*(9|10|11|12)\b/.test(normalized)
+          ? { planning_start_grade: Number(normalized.match(/\bgrade\s*(9|10|11|12)\b/)?.[1]) }
+          : {})
+      }
+    };
+  }
 
   const exactCourseAddition = parseExactCourseAddition(userMessage);
   if (exactCourseAddition) {
@@ -1000,6 +1110,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "Apply the app's deterministic academic rules exactly for the currently selected school. Never substitute d.tech's sequence, catalog, graduation rules, weighting, or terminology for another school; d.tech-specific evidence is valid only when d.tech is selected. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved catalog/evidence says so. College units and high-school transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified selected-school crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college. Check cross-college prerequisite equivalence only through normalized identity and verified evidence.",
     "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated result; never substitute another school's courses, infer support/pathway needs, or call a partial plan complete.",
+    "For a request that adds multiple named courses, fills remaining graduation gaps, or mixes selected-school and college courses, call resolve_academic_course_batch exactly once instead of repeating search_course_catalog. Put every named course in requests, set fill_remaining_graduation_requirements when the student asks for needed or remaining diploma classes, and preserve an explicit grade or term only where the student actually stated it. A comma-separated placement phrase applies through the end of that phrase. Leave term null when it was not stated so the resolver can place prerequisite sequences safely. The resolver uses the saved district, existing plan, nearby-provider order, cross-college identity, and prerequisites to choose exact campuses and placements; do not ask the student to choose a campus unless they explicitly requested one. Its complete result is converted directly into one reversible add_academic_courses proposal; do not ask for course titles already derivable from graduation evidence.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change app data, use the mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, ask for an internal record ID, or silently truncate a large request. Prefer a batch or cross-feature tool so the full request is one coherent action. Pilot covers normal student settings, selected public/charter high school, selected California community-college district, all editable course variables and schedule placement, canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, source-backed enrollment preference, plan snapshots, and cross-feature academic-plan clearing/restoration. Read nearby districts before changing the college-district preference, and keep that preference distinct from concurrent/dual-enrollment policy or eligibility. Search first when an exact school, district, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
     "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and Auto-review will deny it.",
@@ -1252,6 +1363,22 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       try {
         const result = await options.executeReadTool(requiredRead.name, requiredRead.arguments);
         await options.onToolActivity({ ...activity, status: "completed", result });
+        if (requiredRead.name === "resolve_academic_course_batch") {
+          const batch = resolvedAcademicBatch(result);
+          if (batch) {
+            const proposal = academicBatchProposal(batch);
+            await options.onToolActivity(proposal);
+            return {
+              message: academicBatchMessage(batch, options.reviewMode),
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: [proposal]
+            };
+          }
+        }
         if (requiredRead.name === "get_academic_context" && result.data && typeof result.data === "object" && !Array.isArray(result.data)
           && /\b(clear|empty|wipe|remove|delete)\b/.test(options.userMessage.toLowerCase())
           && !/\b(without|do not|don't|dont|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(options.userMessage.toLowerCase())) {
@@ -1675,6 +1802,25 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             results.push({ tool: call.name, status: "failed", error: message });
           }
         }
+        const batchResolution = results.find((result) => result.tool === "resolve_academic_course_batch" && result.status === "completed");
+        const batchResult = batchResolution?.result && typeof batchResolution.result === "object" && !Array.isArray(batchResolution.result)
+          ? batchResolution.result as AssistantToolResult
+          : null;
+        const batch = batchResult ? resolvedAcademicBatch(batchResult) : null;
+        if (batch) {
+          const proposal = academicBatchProposal(batch);
+          await options.onToolActivity(proposal);
+          return {
+            message: academicBatchMessage(batch, options.reviewMode),
+            questions: [],
+            threadId: thread.id,
+            usage,
+            latencyMs: Date.now() - startedAt,
+            model,
+            proposals: [proposal],
+            memoryUpdates: latestMemoryUpdates
+          };
+        }
         prompt = [
           "Continue the same student conversation using these actual tool results.",
           "Answer with only the result that matters. Keep it to one to three short sentences or at most three compact bullets. Do not dump or restate the tool data. For an audit, distinguish confirmed mismatches from unresolved verification, name at most three exact affected records, count any remainder, and never convert a downstream planning gap into a source-data error.",
@@ -1701,6 +1847,17 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
 
       if (invalidResults.length > 0) {
         prompt = `The requested tools could not be called because their arguments were invalid. Correct the arguments or answer without the tool. Errors: ${JSON.stringify(invalidResults)}`;
+        continue;
+      }
+
+      if (isCompoundCourseAdditionRequest(options.userMessage) && parsed.data.questions.length > 0) {
+        latestMessage = "";
+        latestQuestions = [];
+        prompt = [
+          "Do not ask the student to choose course titles, a campus, internal IDs, or placements for this compound add request.",
+          "Call resolve_academic_course_batch now with every named course, use fill_remaining_graduation_requirements for the requested diploma gaps, and leave unstated terms null. The resolver will use saved provider preference and prerequisites, and a complete result will become one exact write automatically.",
+          `Student request: ${options.userMessage}`
+        ].join("\n\n");
         continue;
       }
 

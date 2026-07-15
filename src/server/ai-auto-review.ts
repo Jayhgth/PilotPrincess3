@@ -52,6 +52,7 @@ export async function reviewAssistantProposal(input: {
   arguments: Record<string, unknown>;
   explanation: string;
   model: AiModel;
+  verifiedBatchResolution?: boolean;
   signal?: AbortSignal;
 }): Promise<AutoReviewResult> {
   if (input.toolName === "undo_change" && /\b(?:undo|revert|restore|reverse|rollback|roll back|bring\b.+\bback)\b/i.test(input.userMessage)) {
@@ -80,6 +81,13 @@ export async function reviewAssistantProposal(input: {
           : "The verified schedule batch matches your explicit planning request."
       };
     }
+  }
+  if (input.toolName === "add_academic_courses" && input.verifiedBatchResolution) {
+    return {
+      decision: "approve",
+      risk: "medium",
+      summary: "The exact mixed course batch matches the server-validated catalog, graduation, placement, prerequisite, and enrollment resolution for this request."
+    };
   }
   const result = await runCodexStructured({
     feature: "assistant_auto_review",

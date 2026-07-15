@@ -68,12 +68,43 @@ export const POST: APIRoute = async ({ request }) => {
       summary: "A separate reviewer is checking this proposed change."
     });
     try {
+      let verifiedBatchResolution = false;
+      if (validated.name === "add_academic_courses") {
+        const resolution = await auth.supabase.from("ai_tool_calls")
+          .select("result")
+          .eq("turn_id", toolCall.turn_id)
+          .eq("user_id", auth.user.id)
+          .eq("tool_name", "resolve_academic_course_batch")
+          .eq("status", "completed")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const resultEnvelope = resolution.data?.result && typeof resolution.data.result === "object" && !Array.isArray(resolution.data.result)
+          ? resolution.data.result as Record<string, unknown>
+          : null;
+        const resolutionData = resultEnvelope?.data && typeof resultEnvelope.data === "object" && !Array.isArray(resultEnvelope.data)
+          ? resultEnvelope.data as Record<string, unknown>
+          : null;
+        const normalizedEntries = (value: unknown) => Array.isArray(value)
+          ? value.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry)).map((entry) => ({
+              source: entry.source,
+              course_id: entry.course_id,
+              status: entry.status,
+              grade_level: Number(entry.grade_level),
+              term: entry.term
+            }))
+          : [];
+        verifiedBatchResolution = resolutionData?.complete === true
+          && JSON.stringify(normalizedEntries(resolutionData.entries)) === JSON.stringify(normalizedEntries(validated.arguments.entries))
+          && (resolutionData.respect_recommended_limit !== false) === (validated.arguments.respect_recommended_limit !== false);
+      }
       review = await reviewAssistantProposal({
         userMessage: String((await auth.supabase.from("ai_messages").select("content").eq("turn_id", toolCall.turn_id).eq("role", "user").maybeSingle()).data?.content ?? ""),
         toolName: validated.name,
         arguments: validated.arguments,
         explanation: toolCall.explanation,
         model: preferences.model,
+        verifiedBatchResolution,
         signal: request.signal
       });
     } catch {

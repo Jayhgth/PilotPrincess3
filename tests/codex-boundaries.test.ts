@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
-import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-review";
+import { autoReviewResultSchema, buildAutoReviewPrompt, reviewAssistantProposal } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
@@ -100,6 +100,14 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("evaluate_gpa_scenario", { target_weighted_gpa: 4, choices: [] })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_enrollment_constraints", {})).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_course_schedule_options", { respect_recommended_limit: true })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("resolve_academic_course_batch", {
+      requests: [
+        { query: "linear algebra", source: "smccd", grade_level: 12, term: null, status: "planned" },
+        { query: "calc 2", source: "smccd", grade_level: 11, term: "summer", status: "planned" }
+      ],
+      fill_remaining_graduation_requirements: true,
+      graduation_grade_level: 12
+    })).toMatchObject({ mutatesData: false, arguments: { fill_remaining_graduation_requirements: true } });
     expect(parseAssistantToolCall("get_student_data_inventory", {})).toMatchObject({ mutatesData: false });
     expect(() => parseAssistantToolCall("get_academic_framework_progress", {})).toThrow();
     expect(parseAssistantToolCall("get_nearby_education_providers", {})).toMatchObject({ mutatesData: false });
@@ -141,7 +149,7 @@ describe("Codex feature boundaries", () => {
     expect(() => aiReviewModeSchema.parse("full_access")).toThrow();
   });
 
-  it("builds a separate autonomous review prompt and bounds its decision", () => {
+  it("builds a separate autonomous review prompt and bounds its decision", async () => {
     const prompt = buildAutoReviewPrompt({
       userMessage: "Use concurrent enrollment",
       toolName: "update_enrollment_preference",
@@ -157,6 +165,14 @@ describe("Codex feature boundaries", () => {
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
     expect(() => autoReviewResultSchema.parse({ decision: "manual", risk: "medium", summary: "Ask the student." })).toThrow();
+    await expect(reviewAssistantProposal({
+      userMessage: "Add all of these graduation and college courses.",
+      toolName: "add_academic_courses",
+      arguments: { entries: [], respect_recommended_limit: false },
+      explanation: "The server resolved the exact batch.",
+      model: "gpt-5.6-luna",
+      verifiedBatchResolution: true
+    })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
   });
 
   it("tells the assistant to read records and defer writes to the selected review mode", () => {
@@ -403,6 +419,24 @@ describe("Codex feature boundaries", () => {
         planning_objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"]
       }
     });
+    const compoundRequest = "Add the three classes needed for high school graduation in 12th. From college, add linear algebra, calc 3, physics with calculus 1, 2, and 3. Put in 11th grade summer calc 2, intercultural communication, eng c1000, nosql databases.";
+    const compoundArguments = parseCompoundAcademicCourseRequest(compoundRequest);
+    expect(compoundArguments).toMatchObject({
+      fill_remaining_graduation_requirements: true,
+      graduation_grade_level: 12,
+      requests: [
+        { query: "calc 2", source: "smccd", grade_level: 11, term: "summer" },
+        { query: "intercultural communication", source: "smccd", grade_level: 11, term: "summer" },
+        { query: "eng c1000", source: "smccd", grade_level: 11, term: "summer" },
+        { query: "nosql databases", source: "smccd", grade_level: 11, term: "summer" },
+        { query: "linear algebra", source: "smccd", term: null },
+        { query: "calc 3", source: "smccd", term: null },
+        { query: "physics with calculus 1", source: "smccd", term: null },
+        { query: "physics with calculus 2", source: "smccd", term: null },
+        { query: "physics with calculus 3", source: "smccd", term: null }
+      ]
+    });
+    expect(requiredAssistantEvidenceRead(compoundRequest)).toEqual({ name: "resolve_academic_course_batch", arguments: compoundArguments });
     expect(requiredAssistantEvidenceRead("Here are my answers:\n- **Keep college coursework within the 11-unit per-term district planning limit?** Yes (Recommended)")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true }
