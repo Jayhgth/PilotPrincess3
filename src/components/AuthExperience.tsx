@@ -40,9 +40,6 @@ export default function AuthExperience() {
     return new URLSearchParams(window.location.search).get("demo") === "login";
   }, []);
   const [mode, setMode] = useState<AuthMode>("sign-in");
-  const [theme, setTheme] = useState<"light" | "dark">(() =>
-    typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
-  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [preferredName, setPreferredName] = useState("");
@@ -61,13 +58,6 @@ export default function AuthExperience() {
       if (data.session) window.location.assign("/app");
     });
   }, [demoLoginPreview, supabase]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver(() => setTheme(root.dataset.theme === "dark" ? "dark" : "light"));
-    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => observer.disconnect();
-  }, []);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -134,15 +124,15 @@ export default function AuthExperience() {
         <LightRays
           className="auth-page-background"
           raysOrigin="top-center"
-          raysColor={theme === "dark" ? "#d7e7f0" : "#8aaabc"}
+          raysColor="#ffffff"
           raysSpeed={0.38}
-          lightSpread={0.42}
-          rayLength={3.2}
-          fadeDistance={1.15}
+          lightSpread={0.24}
+          rayLength={4.6}
+          fadeDistance={1.45}
           saturation={1}
           followMouse
           mouseInfluence={0.045}
-          distortion={0.025}
+          distortion={0.012}
         />
       </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">

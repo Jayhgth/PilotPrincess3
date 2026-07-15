@@ -114,9 +114,7 @@ void main() {
     color.rgb *= 1.0 - noiseAmount + noiseAmount * grain;
   }
   float brightness = 1.0 - coordinate.y / iResolution.y;
-  color.r *= 0.1 + brightness * 0.8;
-  color.g *= 0.3 + brightness * 0.6;
-  color.b *= 0.5 + brightness * 0.5;
+  color.rgb *= 0.35 + brightness * 0.65;
   if (saturation != 1.0) {
     float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
     color.rgb = mix(vec3(gray), color.rgb, saturation);
