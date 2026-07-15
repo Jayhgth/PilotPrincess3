@@ -18,22 +18,23 @@
 }
 
 :root[data-theme="dark"] .t3code-app {
-  --bg: #313338;
-  --surface: #383a40;
-  --surface-raised: #404249;
-  --surface-muted: #43454c;
-  --chrome-surface: #2b2d31;
-  --ink: #f2f3f5;
-  --ink-soft: #b5bac1;
-  --ink-faint: #abb0b8;
-  --line: #4a4d54;
-  --line-strong: #5b5e66;
-  --control-line: #858993;
+  --bg: color-mix(in srgb, #0a0a0a 95%, #ffffff);
+  --surface: color-mix(in srgb, var(--bg) 98%, #ffffff);
+  --surface-raised: color-mix(in srgb, var(--bg) 98%, #ffffff);
+  --surface-muted: rgb(255 255 255 / 0.04);
+  --chrome-surface: var(--bg);
+  --ink: #f5f5f5;
+  --ink-soft: color-mix(in srgb, #737373 90%, #ffffff);
+  --ink-faint: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+  --line: rgb(255 255 255 / 0.06);
+  --line-strong: rgb(255 255 255 / 0.08);
+  --control-line: rgb(255 255 255 / 0.10);
 }
 
 .t3code-app.app-shell {
   background-image: radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%);
 }
+:root[data-theme="dark"] .t3code-app.app-shell { background-image: none; }
 
 .t3code-app :is(input, select, textarea, button) { font-family: inherit; }
 .t3code-app .app-sidebar,

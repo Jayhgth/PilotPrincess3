@@ -14,6 +14,7 @@
   --accent: #526f87;
   --accent-hover: #425f76;
   --accent-soft: #e7eef3;
+  --accent-ink: #ffffff;
   --pilot-brand: #526f87;
   --pilot-soft: #e7eef3;
   --school-ui: #5f656b;
@@ -54,43 +55,45 @@
 }
 
 :root[data-theme="dark"] {
+  /* Mirrors the semantic dark palette in pingdotgg/t3code apps/web/src/index.css. */
   color-scheme: dark;
-  --bg: #313338;
-  --surface: #383a40;
-  --surface-raised: #404249;
-  --surface-muted: #43454c;
-  --chrome-surface: #2b2d31;
-  --ink: #f2f3f5;
-  --ink-soft: #b5bac1;
-  --ink-faint: #abb0b8;
-  --line: #4a4d54;
-  --line-strong: #5b5e66;
-  --control-line: #858993;
-  --accent: #a9c6da;
-  --accent-hover: #bdd5e3;
-  --accent-soft: #3c4b57;
-  --pilot-brand: #a9c6da;
-  --pilot-soft: #3c4b57;
-  --school-ui: #c5c7cb;
-  --school-soft: #484a4f;
-  --school-ink: #1f2124;
+  --bg: color-mix(in srgb, #0a0a0a 95%, #ffffff);
+  --surface: color-mix(in srgb, var(--bg) 98%, #ffffff);
+  --surface-raised: color-mix(in srgb, var(--bg) 98%, #ffffff);
+  --surface-muted: rgb(255 255 255 / 0.04);
+  --chrome-surface: var(--bg);
+  --ink: #f5f5f5;
+  --ink-soft: color-mix(in srgb, #737373 90%, #ffffff);
+  --ink-faint: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+  --line: rgb(255 255 255 / 0.06);
+  --line-strong: rgb(255 255 255 / 0.08);
+  --control-line: rgb(255 255 255 / 0.10);
+  --accent: oklch(0.588 0.217 264);
+  --accent-hover: color-mix(in oklab, oklch(0.588 0.217 264) 90%, transparent);
+  --accent-soft: rgb(255 255 255 / 0.04);
+  --accent-ink: #ffffff;
+  --pilot-brand: oklch(0.588 0.217 264);
+  --pilot-soft: rgb(255 255 255 / 0.04);
+  --school-ui: #a3a3a3;
+  --school-soft: rgb(255 255 255 / 0.04);
+  --school-ink: #0a0a0a;
   --dtech-brand: #ef5024;
   --dtech-ui: #ff8060;
-  --dtech-soft: #4c3029;
+  --dtech-soft: color-mix(in srgb, var(--dtech-brand) 12%, transparent);
   --dtech-ink: #20242c;
   --dual-brand: #8fb7df;
   --dual-ui: #78b7e7;
-  --dual-soft: #293e52;
+  --dual-soft: color-mix(in srgb, var(--dual-brand) 12%, transparent);
   --csm-brand: #82b4e3;
   --skyline-brand: #ff8583;
   --canada-brand: #7fc49f;
-  --success: #74b49d;
-  --success-soft: #2f4a40;
-  --warning: #d2ac6b;
-  --warning-soft: #52452f;
-  --danger: #df8585;
-  --danger-soft: #523337;
-  --shadow: 0 2px 8px rgb(0 0 0 / 0.22);
+  --success: #00d492;
+  --success-soft: color-mix(in srgb, #00bc7d 12%, transparent);
+  --warning: #ffb900;
+  --warning-soft: color-mix(in srgb, #fe9a00 12%, transparent);
+  --danger: #ff6467;
+  --danger-soft: color-mix(in srgb, #fb2c36 12%, transparent);
+  --shadow: 0 2px 8px rgb(0 0 0 / 0.35);
 }
 
 * { box-sizing: border-box; }
@@ -187,7 +190,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .primary-button.dtech-action:hover:not(:disabled) { background: color-mix(in srgb, var(--school-ui) 86%, var(--surface)); }
 .primary-button.college-action { background: var(--dual-brand); color: #fff; }
 .primary-button.college-action:hover:not(:disabled) { background: color-mix(in srgb, var(--dual-brand) 86%, black); }
-:root[data-theme="dark"] .primary-button.college-action { color: var(--dtech-ink); }
+:root[data-theme="dark"] .primary-button.college-action { color: #0a0a0a; }
 
 .primary-button,
 .secondary-button,
@@ -207,8 +210,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   white-space: nowrap;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, opacity 160ms ease;
 }
-.primary-button { background: var(--accent); color: #fff; }
-:root[data-theme="dark"] .primary-button { color: #17181b; }
+.primary-button { background: var(--accent); color: var(--accent-ink); }
 .primary-button:hover:not(:disabled) { background: var(--accent-hover); }
 .secondary-button { background: var(--surface-raised); border-color: var(--line); color: var(--ink); }
 .secondary-button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-muted); }
@@ -363,18 +365,18 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   gap: 18px;
 }
 .auth-card {
-  --ink: #f4f7f9;
-  --ink-soft: rgb(244 247 249 / 0.74);
-  --ink-faint: rgb(244 247 249 / 0.56);
-  --line: rgb(255 255 255 / 0.11);
-  --line-strong: rgb(255 255 255 / 0.18);
-  --surface-raised: rgb(255 255 255 / 0.07);
-  --surface-muted: rgb(255 255 255 / 0.09);
-  --spotlight-color: rgb(255 255 255 / 0.1);
+  --ink: #f5f5f5;
+  --ink-soft: color-mix(in srgb, #737373 90%, #ffffff);
+  --ink-faint: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+  --line: rgb(255 255 255 / 0.06);
+  --line-strong: rgb(255 255 255 / 0.08);
+  --surface-raised: rgb(255 255 255 / 0.04);
+  --surface-muted: rgb(255 255 255 / 0.04);
+  --spotlight-color: rgb(255 255 255 / 0.06);
   width: 100%;
-  border: 1px solid rgb(255 255 255 / 0.16);
+  border: 1px solid rgb(255 255 255 / 0.08);
   border-radius: 12px;
-  background: rgb(26 27 31 / 0.76);
+  background: rgb(27 27 27 / 0.78);
   color: var(--ink);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.07),
@@ -383,8 +385,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   -webkit-backdrop-filter: blur(18px) saturate(115%);
   backdrop-filter: blur(18px) saturate(115%);
 }
-.auth-card .primary-button { color: #fff; }
-:root[data-theme="dark"] .auth-card .primary-button { color: #17181b; }
+.auth-card .primary-button { color: var(--accent-ink); }
 .auth-panel-inner { width: 100%; }
 .auth-switch {
   display: grid;
@@ -518,12 +519,12 @@ input:focus, select:focus, textarea:focus {
 .enrollment-policy-dismiss:hover { background: #ffedd5; }
 .enrollment-policy-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 :root[data-theme="dark"] .enrollment-policy-callout {
-  --policy-warning-bg: #321c12;
-  --policy-warning-border: #7c3f22;
-  --policy-warning-ink: #fed7aa;
+  --policy-warning-bg: color-mix(in srgb, #fe9a00 12%, transparent);
+  --policy-warning-border: color-mix(in srgb, #fe9a00 28%, transparent);
+  --policy-warning-ink: #ffb900;
 }
-:root[data-theme="dark"] .enrollment-policy-dismiss { color: #fdba74; }
-:root[data-theme="dark"] .enrollment-policy-dismiss:hover { background: #4b2515; }
+:root[data-theme="dark"] .enrollment-policy-dismiss { color: #ffb900; }
+:root[data-theme="dark"] .enrollment-policy-dismiss:hover { background: rgb(255 255 255 / 0.04); }
 
 @media (max-width: 900px) {
   .auth-page { grid-template-columns: 1fr; }
@@ -546,7 +547,7 @@ input:focus, select:focus, textarea:focus {
 
 @media (prefers-reduced-transparency: reduce) {
   .auth-card {
-    background: #1a1b1f;
+    background: #1b1b1b;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -677,7 +678,7 @@ input:focus, select:focus, textarea:focus {
 }
 .onboarding-progress li.active { color: var(--ink); }
 .onboarding-progress li.active > span { border-color: var(--accent); background: var(--accent); color: #fff; }
-:root[data-theme="dark"] .onboarding-progress li.active > span { color: #17181b; }
+:root[data-theme="dark"] .onboarding-progress li.active > span { color: var(--accent-ink); }
 .onboarding-progress li.complete { color: var(--ink-soft); }
 .onboarding-progress li.complete > span { border-color: var(--accent); color: var(--accent); }
 .onboarding-stage {

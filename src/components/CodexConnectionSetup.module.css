@@ -41,7 +41,6 @@
 .modelList > label { min-height: 60px; }
 .modelList strong { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .modelList em { border-radius: 5px; background: var(--accent); color: #fff; padding: 2px 5px; font-size: 10px; font-style: normal; font-weight: 700; }
-:global(:root[data-theme="dark"]) .modelList em { color: #17181b; }
 
 .reasoning { display: grid; grid-template-columns: 90px auto minmax(0, 1fr); align-items: baseline; gap: 10px; color: var(--ink-soft); font-size: 12px; }
 .reasoning strong { color: var(--ink); font-size: 13px; }
