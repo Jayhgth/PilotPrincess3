@@ -37,6 +37,9 @@ describe("GPA scenario planning", () => {
     ]);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: "done", letter_grade: "B" });
+    expect(calculateGpaScenario(rows, [
+      { planCourseId: "plan", included: false, expectedGrade: "A" }
+    ]).missingExpectedGrades).toBe(0);
   });
 
   it("calculates the selected schedule and its A-grade ceiling", () => {
@@ -65,10 +68,4 @@ describe("GPA scenario planning", () => {
     expect(calculateGpaScenario(rows, choices).missingExpectedGrades).toBe(0);
   });
 
-  it("excludes current and planned courses from a scenario when unchecked", () => {
-    const rows = [row("done", "completed", "B"), row("current", "current", null), row("plan", "planned", null)];
-    const choices = initialGpaScenarioChoices(rows).map((choice) => ({ ...choice, included: false, expectedGrade: "A" }));
-    expect(scenarioRows(rows, choices).map((course) => course.id)).toEqual(["done"]);
-    expect(calculateGpaScenario(rows, choices).missingExpectedGrades).toBe(0);
-  });
 });

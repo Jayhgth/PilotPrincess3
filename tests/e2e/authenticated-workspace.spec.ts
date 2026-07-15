@@ -161,10 +161,11 @@ test.describe("authenticated student workspace", () => {
     await page.getByRole("button", { name: "Finish setup" }).click();
     await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
     await expect(page.locator(".school-chip")).toHaveAttribute("title", /AIMS College Prep High/);
-    await expect(page.getByText("Verify school catalog", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "High school diploma" })).toContainText("0 of 8 areas complete");
 
     await page.getByRole("button", { name: "Graduation", exact: true }).click();
-    await expect(page.getByText("Official diploma requirements are not available yet", { exact: true })).toBeVisible();
+    await expect(page.locator("p").filter({ hasText: "Official AIMS College Prep High rules." })).toBeVisible();
+    await expect(page.getByRole("button", { name: /AIMS Core Electives 40 credits/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: "California minimum", exact: true })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "UC A–G", exact: true })).toHaveCount(0);
 

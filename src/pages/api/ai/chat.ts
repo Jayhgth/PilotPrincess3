@@ -10,7 +10,7 @@ import { assistantUndoIntent, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, run
 import { assistantToolLabel, executeAssistantReadTool } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 import { retrieveAssistantKnowledge, type AssistantKnowledgeChunk } from "@/server/ai-knowledge";
-import { persistAssistantMemoryUpdates, retrieveAssistantMemories, type AssistantMemory } from "@/server/ai-memory";
+import { explicitDurableMemoryUpdates, persistAssistantMemoryUpdates, retrieveAssistantMemories, type AssistantMemory } from "@/server/ai-memory";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 
@@ -120,9 +120,9 @@ export const POST: APIRoute = async ({ request }) => {
     return jsonError(error instanceof Error ? error.message : "The images could not be uploaded.", 500);
   }
 
-  const toolHistoryLimit = assistantUndoIntent(parsed.data.message) ? 120 : 32;
+  const toolHistoryLimit = assistantUndoIntent(parsed.data.message) ? 120 : 10;
   const [historyResult, toolHistoryResult] = await Promise.all([
-    auth.supabase.from("ai_messages").select("*").eq("conversation_id", parsed.data.conversationId).neq("id", userMessageResult.data.id).order("created_at", { ascending: false }).limit(24),
+    auth.supabase.from("ai_messages").select("*").eq("conversation_id", parsed.data.conversationId).neq("id", userMessageResult.data.id).order("created_at", { ascending: false }).limit(12),
     auth.supabase.from("ai_tool_calls").select("id,tool_name,result,completed_at,mutates_data").eq("conversation_id", parsed.data.conversationId).eq("user_id", auth.user.id).eq("status", "completed").order("completed_at", { ascending: false }).limit(toolHistoryLimit)
   ]);
   if (historyResult.error) return jsonError(historyResult.error.message, 500);
@@ -328,9 +328,10 @@ export const POST: APIRoute = async ({ request }) => {
           page_context: { model: result.model, provider_thread_id: result.threadId, questions: sanitizeCodexValue(result.questions) }
         }).select("*").single();
         if (assistantResult.error) throw new Error(assistantResult.error.message);
-        if (result.memoryUpdates?.length) {
+        const durableMemoryUpdates = explicitDurableMemoryUpdates(parsed.data.message, result.memoryUpdates ?? []);
+        if (durableMemoryUpdates.length) {
           try {
-            const memoryChange = await persistAssistantMemoryUpdates(auth.supabase, auth.user.id, parsed.data.conversationId, turnId, result.memoryUpdates);
+            const memoryChange = await persistAssistantMemoryUpdates(auth.supabase, auth.user.id, parsed.data.conversationId, turnId, durableMemoryUpdates);
             record("memory.updated", { ...memoryChange, summary: `Updated ${memoryChange.remembered + memoryChange.forgotten} lightweight student ${memoryChange.remembered + memoryChange.forgotten === 1 ? "memory" : "memories"}.` });
           } catch (error) {
             record("memory.failed", { summary: error instanceof Error ? error.message : "Pilot memory could not be updated." });

@@ -601,15 +601,18 @@ export function generateSuggestedPlan(
   const isDtech = context.schoolSlug === "design-tech-high-school";
   const includeCollegeCourses = context.includeCollegeCourses !== false;
   const maximumPerTerm = context.maxCoursesPerTerm ?? null;
+  const verifiedMappedCourseIds = new Set((context.mappings ?? [])
+    .filter((mapping) => mapping.confidence === "verified")
+    .map((mapping) => mapping.course_id));
   const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => existing.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length
     + generated.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length;
 
-  function addCourse(course: Course, grade: GradeLevel, preferredTerm?: PlanCourse["term"]) {
+  function addCourse(course: Course, grade: GradeLevel, preferredTerm?: PlanCourse["term"], allowExplicitPlacement = false) {
     if (generated.length >= 40) return false;
     if (existingIds.has(course.id)) return false;
     if (!includeCollegeCourses && Number(course.college_units ?? 0) > 0) return false;
     if (!isDtech && course.grade_levels.length === 0) return false;
-    if (course.grade_levels.length > 0 && !course.grade_levels.includes(grade)) return false;
+    if (!allowExplicitPlacement && course.grade_levels.length > 0 && !course.grade_levels.includes(grade)) return false;
     const equivalenceKeys = courseEquivalenceKeys(course.name);
     if ([...equivalenceKeys].some((key) => existingNameKeys.has(key))) return false;
     const schoolYear = schoolYearForGrade(graduationYear, grade);
@@ -653,13 +656,19 @@ export function generateSuggestedPlan(
     const requested = context.startingMathCourse;
     const explicitMath = courses
       .filter((course) => normalizedPlannerText(course.subject).includes("math") && plannerCourseMatches(course, requested))
-      .sort((left, right) => Number(right.is_weighted) - Number(left.is_weighted) || left.name.localeCompare(right.name))[0];
-    if (explicitMath) addCourse(explicitMath, planningStartGrade);
+      .sort((left, right) => Number(verifiedMappedCourseIds.has(right.id)) - Number(verifiedMappedCourseIds.has(left.id))
+        || Number(right.is_weighted) - Number(left.is_weighted)
+        || left.name.localeCompare(right.name))[0];
+    if (explicitMath) addCourse(explicitMath, planningStartGrade, undefined, true);
   }
 
   if (isDtech) for (const grade of planningGrades) {
     for (const courseName of FLOW_BY_GRADE[grade]) {
-      const candidates = courses.filter((candidate) => candidate.name.toLowerCase().startsWith(courseName.toLowerCase()));
+      const candidates = courses
+        .filter((candidate) => candidate.name.toLowerCase().startsWith(courseName.toLowerCase()))
+        .sort((left, right) => Number(verifiedMappedCourseIds.has(right.id)) - Number(verifiedMappedCourseIds.has(left.id))
+          || (context.rigor === "advanced" ? Number(right.is_weighted) - Number(left.is_weighted) : context.rigor === "lighter" ? Number(left.is_weighted) - Number(right.is_weighted) : 0)
+          || left.name.localeCompare(right.name));
       const course = candidates[0];
       if (!course) continue;
       const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;

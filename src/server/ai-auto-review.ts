@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AiModel } from "@/lib/ai-preferences";
 import { assistantToolLabel, type AssistantToolName } from "@/server/ai-tools";
-import { runCodexStructured } from "@/server/codex";
+import { parseAssistantScheduleIntent, runCodexStructured } from "@/server/codex";
 
 export const autoReviewResultSchema = z.object({
   decision: z.enum(["approve", "deny"]),
@@ -34,7 +34,7 @@ export function buildAutoReviewPrompt(input: {
     "Approve when the student's message explicitly and unambiguously requests this exact change, the target and arguments match, and no missing fact needs interpretation.",
     "An explicit removal, grade edit, or move to Done may be approved. Use the risk label to describe impact, not to force a student confirmation.",
     "For undo_change, approve when the student explicitly asks to undo, revert, restore, or bring back the referenced recent change and the proposal targets the exact conversation action supplied by the server. The stored inverse and undo window are revalidated at execution.",
-    "For add_course_schedule, an explicit request to generate, suggest, or build a schedule may approve only the exact selected-school batch returned by the deterministic planner. The selected school must have at least one verified diploma requirement and verified course mappings, every requirement gap must be closed, every explicit starting-course, grade, workload, rigor, and college-course inclusion/exclusion constraint must be satisfied, and all existing current-plan courses must be retained. Never approve a zero-requirement result, partial plan, cross-school fallback, or batch whose explanation omits its addition count. A structured Yes answer to Pilot's explicit add-course question may also approve the shown batch; a structured Yes or No answer to Pilot's unit-limit question may approve the batch when the arguments match that answer. A No answer to an add-course question must never approve a write. Normal schedule revalidation still runs before insertion.",
+    "For add_course_schedule, an explicit request to generate, suggest, or build a schedule may approve only the exact selected-school batch returned by the deterministic planner. The selected school must have verified diploma evidence, every explicit starting-course, grade, workload, rigor, and college inclusion/exclusion constraint must match, and every requirement gap must be closed. Existing courses must be retained unless the student explicitly requested a clear-and-rebuild and replace_existing is true; transcript-backed rows are always retained. Never approve a partial plan, cross-school fallback, or mismatched replacement. Normal schedule revalidation still runs before insertion.",
     "For submit_shared_data_correction, approve only the submission of the exact evidence-backed pending proposal the student requested. This does not approve or publish the institutional correction; an administrator must review it separately.",
     "Deny when the request is ambiguous, the proposal is unrelated or broader than requested, it contradicts the request, depends on counselor or institutional judgment, attempts to certify an outcome, or bypasses product evidence rules.",
     "Normal RLS, transcript locks, eligibility, prerequisite, and record validation will run again after approval. Do not assume approval guarantees execution.",
@@ -54,6 +54,27 @@ export async function reviewAssistantProposal(input: {
   model: AiModel;
   signal?: AbortSignal;
 }): Promise<AutoReviewResult> {
+  if (input.toolName === "add_course_schedule") {
+    const intent = parseAssistantScheduleIntent(input.userMessage);
+    const proposedReplacement = input.arguments.replace_existing === true;
+    const proposedMath = String(input.arguments.starting_math_course ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const requestedMath = String(intent.startingMathCourse ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const mismatch = proposedReplacement !== intent.replaceExisting
+      || (requestedMath && !proposedMath.includes(requestedMath) && !requestedMath.includes(proposedMath))
+      || (intent.startGrade && Number(input.arguments.start_grade) !== intent.startGrade)
+      || (intent.includeCollegeCourses === false && input.arguments.include_college_courses !== false)
+      || (intent.maxCoursesPerTerm !== null && Number(input.arguments.max_courses_per_term) !== intent.maxCoursesPerTerm);
+    if (mismatch) return { decision: "deny", risk: "high", summary: "The proposed schedule does not match every constraint in your request, so it was not applied." };
+    if (/\b(generate|build|create|make|draft|suggest|plan|recommend)\b/i.test(input.userMessage)) {
+      return {
+        decision: "approve",
+        risk: proposedReplacement ? "medium" : "low",
+        summary: proposedReplacement
+          ? "The verified rebuild matches your explicit clear-and-replace request and will remain fully undoable."
+          : "The verified schedule batch matches your explicit planning request."
+      };
+    }
+  }
   const result = await runCodexStructured({
     feature: "assistant_auto_review",
     prompt: buildAutoReviewPrompt(input),

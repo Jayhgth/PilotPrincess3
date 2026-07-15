@@ -93,7 +93,8 @@ test.describe("statewide school parity", () => {
     await expect(page.locator(".school-chip")).toHaveAttribute("title", /AIMS College Prep High/);
     await expect(page.locator(".school-chip .institution-identity-mark")).toHaveCount(1);
     await page.getByRole("button", { name: "Graduation", exact: true }).click();
-    await expect(page.getByText("Official diploma requirements are not available yet", { exact: true })).toBeVisible();
+    await expect(page.locator("p").filter({ hasText: "Official AIMS College Prep High rules." })).toBeVisible();
+    await expect(page.getByRole("button", { name: /AIMS Core Electives 40 credits/ })).toBeVisible();
     await page.getByRole("button", { name: "Courses", exact: true }).click();
     await page.getByRole("button", { name: "Add courses" }).click();
     await expect(page.getByText("Advanced Environmental Science Honors", { exact: true })).toHaveCount(0);

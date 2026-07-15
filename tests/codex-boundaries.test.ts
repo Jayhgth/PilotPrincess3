@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseScheduleAnswer, requestedPreferredName, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -7,6 +7,7 @@ import { autoReviewResultSchema, buildAutoReviewPrompt } from "@/server/ai-auto-
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
+import { explicitDurableMemoryUpdates } from "@/server/ai-memory";
 
 describe("Codex feature boundaries", () => {
   it("keeps transcript text parsing and planning math deterministic", () => {
@@ -100,6 +101,7 @@ describe("Codex feature boundaries", () => {
     expect(() => parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toThrow();
     expect(parseAssistantToolCall("create_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("update_student_settings", { plan_start_grade: 11, plan_end_grade: 12 })).toMatchObject({ mutatesData: true });
+    expect(requestedPreferredName("Change my preferred name to Jay.")).toBe("Jay");
     expect(parseAssistantToolCall("submit_shared_data_correction", { entity_type: "school", target_table: "schools", target_id: "00000000-0000-4000-8000-000000000003", proposed_payload: { website_url: "https://example.edu" }, evidence_url: "https://example.edu", evidence_summary: "The official school homepage uses this address." })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("correct_transcript_course", { review_item_id: "00000000-0000-4000-8000-000000000002", weighted: true, reason: "The transcript marks this as honors." })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("save_prerequisite_evidence", { target_course_id: "CSM:MATH 200", clearance_type: "placement", authority: "SMCCD placement", evidence_summary: "Placed into MATH 200", source_url: null })).toMatchObject({ mutatesData: true });
@@ -116,7 +118,10 @@ describe("Codex feature boundaries", () => {
   });
 
   it("stores only bounded explicit lightweight memory updates", () => {
-    expect(assistantMemoryUpdateSchema.parse({ operation: "remember", key: "schedule_interests", category: "interest", content: "Interested in computer science and design.", tags: ["schedule", "courses"], importance: 4 })).toMatchObject({ key: "schedule_interests" });
+    const update = assistantMemoryUpdateSchema.parse({ operation: "remember", key: "schedule_interests", category: "interest", content: "Interested in computer science and design.", tags: ["schedule", "courses"], importance: 4 });
+    expect(update).toMatchObject({ key: "schedule_interests" });
+    expect(explicitDurableMemoryUpdates("Remember that I prefer computer science.", [update])).toEqual([update]);
+    expect(explicitDurableMemoryUpdates("Generate a rigorous computer science schedule for this plan.", [update])).toEqual([]);
     expect(() => assistantMemoryUpdateSchema.parse({ operation: "remember", key: "gpa", category: "context", content: null, tags: [], importance: 3 })).toThrow();
   });
 
@@ -142,7 +147,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
     expect(prompt).toContain("an explicit request to generate, suggest, or build a schedule may approve");
-    expect(prompt).toContain("a structured Yes or No answer to Pilot's unit-limit question may approve");
+    expect(prompt).toContain("unless the student explicitly requested a clear-and-rebuild and replace_existing is true");
     expect(prompt).toContain('"program_type":"concurrent"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
@@ -347,7 +352,7 @@ describe("Codex feature boundaries", () => {
     });
     expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true, rigor: "advanced", include_college_courses: true, objectives: ["complete_diploma"] }
+      arguments: { respect_recommended_limit: true, rigor: "advanced", include_college_courses: true, max_courses_per_term: 6, objectives: ["complete_diploma"] }
     });
     expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule for me. I'm starting math at precalc grade 9, want as high GPA as possible, and really good course rigor. No concurrent classes.")).toEqual({
       name: "get_course_schedule_options",
@@ -368,6 +373,18 @@ describe("Codex feature boundaries", () => {
         include_college_courses: false,
         starting_math_course: "precalc",
         start_grade: 9,
+        objectives: ["complete_diploma", "maximize_weighted_gpa"]
+      }
+    });
+    expect(requiredAssistantEvidenceRead("Clear my whole schedule. Generate a new one, math starting at pre-calc and maximize GPA with reasonable limitations and course rigor.")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: "advanced",
+        include_college_courses: true,
+        replace_existing: true,
+        max_courses_per_term: 7,
+        starting_math_course: "pre-calc",
         objectives: ["complete_diploma", "maximize_weighted_gpa"]
       }
     });

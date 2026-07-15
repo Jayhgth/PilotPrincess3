@@ -23,8 +23,9 @@ const undoSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("restore_plan_patch"),
-    rows: z.array(rowSchema).max(40),
-    inserted_plan_course_ids: z.array(z.uuid()).max(40),
+    rows: z.array(rowSchema).max(160),
+    gpa_rows: z.array(rowSchema).max(160).default([]),
+    inserted_plan_course_ids: z.array(z.uuid()).max(160),
     summary: z.string().min(1).max(500)
   }),
   z.object({
@@ -186,6 +187,16 @@ export async function undoAssistantToolCall(options: {
       if (undo.data.rows.length) {
         const rows = undo.data.rows.map((row) => pickRow(row, RESTORABLE_KEYS.plan_courses, options.userId));
         const restoration = await options.supabase.from("plan_courses").upsert(rows);
+        if (restoration.error) throw new Error(restoration.error.message);
+      }
+      if (undo.data.gpa_rows.length) {
+        const rows = undo.data.gpa_rows.map((row) => ({
+          user_id: options.userId,
+          plan_course_id: z.uuid().parse(row.plan_course_id),
+          included: z.boolean().parse(row.included),
+          expected_grade: z.enum(["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"]).nullable().parse(row.expected_grade)
+        }));
+        const restoration = await options.supabase.from("student_gpa_scenario_choices").upsert(rows, { onConflict: "user_id,plan_course_id" });
         if (restoration.error) throw new Error(restoration.error.message);
       }
     } else if (undo.data.kind === "restore_academic_plan") {

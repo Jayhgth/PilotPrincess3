@@ -658,10 +658,10 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
       || (/\bschedule\b/.test(normalized) && !/\b(meeting|appointment|calendar|study|homework|workout|sleep)\b/.test(normalized))
     );
   if (scheduleGenerationIntent) {
-    const startGrade = normalized.match(/\bgrade\s*(9|10|11|12)\b/)?.[1]
-      ?? normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/)?.[1];
-    const startingMathCourse = normalized.match(/\bstart(?:ing)?\s+math\s+(?:at|with|in)\s+([^,.]+?)(?=\s+(?:in\s+)?grade\s*(?:9|10|11|12)\b|[,.]|$)/)?.[1]?.trim() ?? null;
-    const excludesCollegeCourses = /\b(?:no|without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized);
+    const intent = parseAssistantScheduleIntent(userMessage);
+    const startGrade = intent.startGrade;
+    const startingMathCourse = intent.startingMathCourse;
+    const excludesCollegeCourses = intent.includeCollegeCourses === false;
     const objectives = [
       "complete_diploma",
       ...(/\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b|\b(?:as\s+)?high\s+(?:a\s+)?gpa\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
@@ -671,13 +671,13 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     const requestsAdvancedRigor = /\brigorous\b|\b(?:high|strong|good|advanced)\s+(?:course\s+)?rigor\b|\brigor\b.{0,20}\b(?:high|strong|good|advanced)\b/.test(normalized);
     const crossFeaturePlan = /\b(degree|degrees|major)\b/.test(normalized)
       || (!excludesCollegeCourses && /\b(college|concurrent|dual enrollment)\b/.test(normalized));
-    if (crossFeaturePlan) {
+    if (crossFeaturePlan && !intent.replaceExisting) {
       return {
         name: "get_academic_context",
         arguments: {
           include_transcript_review: false,
           planning_objectives: objectives,
-          ...(startGrade ? { planning_start_grade: Number(startGrade) } : {})
+          ...(startGrade ? { planning_start_grade: startGrade } : {})
         }
       };
     }
@@ -687,9 +687,11 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
         respect_recommended_limit: true,
         rigor: objectives.includes("maximize_weighted_gpa") || requestsAdvancedRigor ? "advanced" : "balanced",
         include_college_courses: !excludesCollegeCourses,
+        ...(intent.replaceExisting ? { replace_existing: true } : {}),
+        ...(intent.maxCoursesPerTerm !== null ? { max_courses_per_term: intent.maxCoursesPerTerm } : {}),
         ...(startingMathCourse ? { starting_math_course: startingMathCourse } : {}),
         objectives,
-        ...(startGrade ? { start_grade: Number(startGrade) } : {})
+        ...(startGrade ? { start_grade: startGrade } : {})
       }
     };
   }
@@ -705,6 +707,46 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   if (courseBatch) return { name: "list_plan_courses", arguments: courseBatch.filters };
 
   return null;
+}
+
+export interface AssistantScheduleIntent {
+  replaceExisting: boolean;
+  startGrade?: 9 | 10 | 11 | 12;
+  startingMathCourse: string | null;
+  includeCollegeCourses: boolean;
+  maxCoursesPerTerm: number | null;
+}
+
+/**
+ * Extracts only constraints that can be enforced deterministically by the
+ * schedule engine. This is intentionally independent of model wording so the
+ * same values reach preview, review, execution, and undo.
+ */
+export function parseAssistantScheduleIntent(userMessage: string): AssistantScheduleIntent {
+  const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
+  const startGradeMatch = normalized.match(/\bgrade\s*(9|10|11|12)\b/)
+    ?? normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/);
+  const startGrade = startGradeMatch ? Number(startGradeMatch[1]) as 9 | 10 | 11 | 12 : undefined;
+  const mathName = "(pre[ -]?calc(?:ulus)?|integrated math\\s*[123]|algebra\\s*(?:1|i|2|ii)|geometry|calculus(?:\\s+(?:ab|bc|i{1,3}|1|2|3))?)";
+  const startingMathCourse = [
+    new RegExp(`\\bmath\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${mathName}\\b`),
+    new RegExp(`\\bstart(?:ing)?\\s+math\\s+(?:at|with|in)\\s+${mathName}\\b`),
+    new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${mathName}\\b`),
+    new RegExp(`\\b${mathName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
+  ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
+  const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
+    && /\b(schedule|plan|courses|classes)\b/.test(normalized)
+    && /\b(all|every|whole|entire)\b/.test(normalized)
+    && !/\b(without|do not|don't|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
+  const includeCollegeCourses = !/\b(?:no|without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized);
+  const explicitMaximum = normalized.match(/\b(?:max(?:imum)?|limit(?:ed)? to|no more than)\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:courses|classes)(?:\s+per\s+term)?\b/)?.[1];
+  const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+  const maxCoursesPerTerm = explicitMaximum
+    ? Math.max(1, Math.min(12, numberWords[explicitMaximum] ?? Number(explicitMaximum)))
+    : /\b(reasonable|realistic|balanced|manageable)\b.{0,28}\b(limit|load|course|schedule)|\b(reasonable|realistic|balanced|manageable)\s+(?:limitations?|workload)\b/.test(normalized)
+      ? 7
+      : null;
+  return { replaceExisting: clearing, startGrade, startingMathCourse, includeCollegeCourses, maxCoursesPerTerm };
 }
 
 export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null {
@@ -740,6 +782,9 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
   const existingCount = Number(data.existing_course_count ?? data.existing_courses_retained ?? 0);
+  const retainedCount = Number(data.existing_courses_retained ?? 0);
+  const replacedCount = Number(data.existing_courses_replaced ?? 0);
+  const replacesExisting = data.replace_existing === true;
   const adjustments = Array.isArray(data.adjustments)
     ? data.adjustments.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
@@ -770,7 +815,11 @@ export function schedulePreview(data: Record<string, unknown>) {
     const rationale = String(adjustment.rationale ?? "Matches an explicit schedule constraint.").slice(0, 140);
     return `- Adjust ${course} from grade ${fromGrade} to grade ${grade} — ${rationale}`;
   });
-  const opening = adjustments.length
+  const opening = replacesExisting
+    ? courses.length
+      ? `I would replace ${replacedCount} editable courses with this ${courses.length}-course schedule and retain ${retainedCount} transcript-backed ${retainedCount === 1 ? "course" : "courses"}:`
+      : `I could not build a safe replacement schedule. Your ${replacedCount} editable courses remain unchanged.`
+    : adjustments.length
     ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them, adjust ${adjustments.length} existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${courses.length}:`
     : courses.length
       ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them and add ${courses.length}:`
@@ -782,7 +831,7 @@ export function schedulePreview(data: Record<string, unknown>) {
       : remainingGaps.length
     ? `${courses.length ? `After this ${courses.length === 1 ? "addition" : "batch"}` : "The current plan"}, ${remainingGaps.length} graduation ${remainingGaps.length === 1 ? "area remains" : "areas remain"} open: ${remainingGaps.slice(0, 3).map((gap) => `${String(gap.requirement ?? gap.area)} (${Number(gap.credits_remaining ?? 0)} credits)`).join(", ")}${remainingGaps.length > 3 ? `, plus ${remainingGaps.length - 3} more` : ""}. This is a partial completion, not a complete schedule.`
     : `${courses.length ? `After this ${courses.length === 1 ? "addition" : "batch"}` : "The current plan"}, all ${Number(coverage.requirement_count ?? 0)} tracked graduation areas have verified completed, in-progress, or planned coverage.`;
-  const whyOne = courses.length === 1 && existingCount > 0
+  const whyOne = !replacesExisting && courses.length === 1 && existingCount > 0
     ? `Only one new course is proposed because the other ${existingCount} courses are already in your current plan.`
     : null;
   return [opening, ...visibleAdjustments, ...visible, coverageLine, whyOne].filter(Boolean).join("\n\n");
@@ -858,7 +907,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
     "Never end with a promise such as 'I'll check' or 'let me look' without actually calling the relevant read tool in the same turn. If no tool can perform the promised work, state that limitation directly.",
     "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
-    "Maintain lightweight memory without asking for separate permission. In memory_updates, remember only durable preferences, goals, constraints, interests, or personal context explicitly stated by the student. Use stable lowercase keys such as schedule_rigor, schedule_interests, max_courses_per_term, starting_math_course, include_college_courses, preferred_college, or workload_constraint. Never store inferred traits, diagnoses, secrets, authentication data, raw transcript contents, grades, GPA, course rows, or other facts already owned by app tables. Use forget when the student retracts a remembered fact. Usually return zero to two memory updates.",
+    "Maintain lightweight memory only when the student explicitly frames information as durable (for example: remember this, from now on, always, usually, I prefer, or my long-term goal). A one-turn schedule instruction is not durable memory. Use stable lowercase keys for durable preferences and return zero to two updates. Never store inferred traits, secrets, transcript contents, grades, GPA, course rows, or facts already owned by app tables. Use forget only when the student explicitly retracts remembered context.",
     "Available tools:\n" + assistantToolCatalogPrompt(),
     knowledge.length
       ? `Retrieved application guidance (authoritative product context, not student-record evidence):\n${JSON.stringify(knowledge)}`
@@ -898,6 +947,11 @@ export function selectAssistantUndoTarget(userMessage: string, changes: readonly
   return ranked[0]?.score ? ranked[0].change : available[0];
 }
 
+export function requestedPreferredName(userMessage: string) {
+  const match = userMessage.trim().match(/\b(?:set|change|update)\s+my\s+preferred\s+name\s+to\s+(.{1,80}?)[.!?]?$/i);
+  return match?.[1]?.trim().replace(/^["“”']+|["“”']+$/g, "") || null;
+}
+
 export async function runAssistantChat(options: AssistantChatOptions): Promise<AssistantChatResult> {
   if (assistantUndoIntent(options.userMessage)) {
     const target = selectAssistantUndoTarget(options.userMessage, options.recentChanges ?? []);
@@ -928,6 +982,25 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       latencyMs: 0,
       model: options.model,
       proposals: [proposal]
+    };
+  }
+  const preferredName = requestedPreferredName(options.userMessage);
+  if (preferredName) {
+    const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(),
+      name: "update_student_settings",
+      label: assistantToolLabel("update_student_settings"),
+      arguments: { preferred_name: preferredName },
+      explanation: `Set the student's preferred name to ${preferredName}, exactly as requested.`,
+      mutatesData: true,
+      status: "pending_confirmation"
+    };
+    await options.onToolActivity(proposal);
+    return {
+      message: options.reviewMode === "auto_review"
+        ? `I prepared the exact preferred-name change to ${preferredName}. Auto-review will apply or decline it automatically.`
+        : `I prepared the exact preferred-name change to ${preferredName} for your approval.`,
+      questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
 
@@ -1128,7 +1201,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          if (ids.length !== courses.length || ids.length > 24) throw new Error("The generated schedule did not return a safe batch of course IDs.");
+          if (ids.length !== courses.length || ids.length > 40) throw new Error("The generated schedule did not return a safe batch of course IDs.");
           const preview = schedulePreview(data);
           if (!scheduleResultIsComplete(data)) {
             return {
@@ -1191,9 +1264,12 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               ...(requiredRead.arguments.start_grade ? { start_grade: requiredRead.arguments.start_grade } : {}),
               objectives: requiredRead.arguments.objectives ?? ["complete_diploma"],
               ...(requiredRead.arguments.starting_math_course ? { starting_math_course: requiredRead.arguments.starting_math_course } : {}),
-              include_college_courses: requiredRead.arguments.include_college_courses ?? true
+              include_college_courses: requiredRead.arguments.include_college_courses ?? true,
+              replace_existing: requiredRead.arguments.replace_existing ?? false
             },
-            explanation: `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses, adjust ${adjustments.length} exact existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
+            explanation: requiredRead.arguments.replace_existing === true
+              ? `Replace ${Number(data.existing_courses_replaced ?? 0)} editable courses with ${ids.length} exact verified courses, retain ${Number(data.existing_courses_retained ?? 0)} transcript-backed courses, and preserve every stated schedule constraint; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain.`
+              : `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses, adjust ${adjustments.length} exact existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
             mutatesData: true,
             status: "pending_confirmation"
           };
