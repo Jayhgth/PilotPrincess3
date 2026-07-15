@@ -7,7 +7,7 @@ import {
   extractCatalogCourses,
   extractGraduationRequirements,
   mergeOfficialCourses,
-  normalizeRequirementArea,
+  mappedRequirementAreasForCourse,
   readAcademicSource,
   ucopCourseValues,
   validateGraduationRequirements
@@ -20,7 +20,8 @@ const discoverOnly = args.includes("--discover-only");
 const argument = (name) => { const index = args.indexOf(name); return index >= 0 ? args[index + 1] : null; };
 const schoolCds = argument("--school-cds");
 const schoolName = argument("--school-name");
-const maxSchools = args.includes("--all") ? 10_000 : Math.max(1, Number(argument("--limit") ?? 25));
+const selectedOnly = args.includes("--selected");
+const maxSchools = args.includes("--all") || selectedOnly ? 10_000 : Math.max(1, Number(argument("--limit") ?? 25));
 const explicitSource = argument("--source-url");
 const CDE_DIRECTORY_URL = "https://www.cde.ca.gov/schooldirectory/report?rid=dl1&tp=txt";
 
@@ -32,11 +33,19 @@ if (!supabaseUrl || !key) throw new Error(dryRun || discoverOnly
 const supabase = createClient(supabaseUrl, key, { auth: { persistSession: false } });
 
 async function loadSchools() {
+  let selectedSchoolIds = null;
+  if (selectedOnly) {
+    const selected = await supabase.from("student_settings").select("school_id").not("school_id", "is", null);
+    if (selected.error) throw selected.error;
+    selectedSchoolIds = [...new Set((selected.data ?? []).map((row) => row.school_id).filter(Boolean))];
+    if (!selectedSchoolIds.length) return [];
+  }
   const rows = [];
   for (let from = 0; rows.length < maxSchools; from += 500) {
     let query = supabase.from("schools").select("*").in("status", ["active", "pending"]).in("governance_type", ["district", "charter"]).order("name").range(from, from + Math.min(499, maxSchools - rows.length - 1));
     if (schoolCds) query = query.eq("cds_code", schoolCds);
     if (schoolName) query = query.ilike("name", `%${schoolName}%`);
+    if (selectedSchoolIds) query = query.in("id", selectedSchoolIds);
     const { data, error } = await query;
     if (error) throw error;
     rows.push(...(data ?? []));
@@ -116,6 +125,62 @@ async function ensureCatalogVersion(school, year, sourceUrl) {
   return inserted.data.id;
 }
 
+function courseIdentityKey(value) {
+  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+async function reconcileLegacyCourseIdentities(school, catalogVersionId) {
+  const { data, error } = await supabase.from("courses")
+    .select("id,name,catalog_version_id,external_course_id,grade_levels,review_status")
+    .eq("school_id", school.id)
+    .eq("review_status", "approved");
+  if (error) throw error;
+  const currentRows = (data ?? []).filter((row) => row.catalog_version_id === catalogVersionId);
+  const canonicalByName = new Map();
+  for (const row of currentRows) {
+    const key = courseIdentityKey(row.name);
+    const existing = canonicalByName.get(key);
+    if (!existing || (row.grade_levels?.length ?? 0) > (existing.grade_levels?.length ?? 0)) canonicalByName.set(key, row);
+  }
+  const replacements = (data ?? []).flatMap((legacy) => {
+    if (legacy.catalog_version_id === catalogVersionId) return [];
+    const canonical = canonicalByName.get(courseIdentityKey(legacy.name));
+    return canonical && canonical.id !== legacy.id ? [{ legacy, canonical }] : [];
+  });
+  for (const { legacy, canonical } of replacements) {
+    const planUpdate = await supabase.from("plan_courses").update({ course_id: canonical.id }).eq("course_id", legacy.id);
+    if (planUpdate.error) throw planUpdate.error;
+    const legacyUpdate = await supabase.from("courses").update({ review_status: "rejected" }).eq("id", legacy.id);
+    if (legacyUpdate.error) throw legacyUpdate.error;
+  }
+  return replacements.length;
+}
+
+async function removeCurrentCatalogIdentityConflicts(school, catalogVersionId, incomingCourses) {
+  const { data, error } = await supabase.from("courses")
+    .select("id,name,catalog_version_id,external_course_id")
+    .eq("school_id", school.id);
+  if (error) throw error;
+  const byExternalId = new Map((data ?? []).filter((row) => row.external_course_id).map((row) => [row.external_course_id, row]));
+  const currentByName = new Map((data ?? []).filter((row) => row.catalog_version_id === catalogVersionId).map((row) => [row.name, row]));
+  for (const incoming of incomingCourses) {
+    const sourceIdentity = byExternalId.get(incoming.external_course_id);
+    const currentIdentity = currentByName.get(incoming.name);
+    if (!currentIdentity || sourceIdentity?.id === currentIdentity.id) continue;
+    if (!sourceIdentity) {
+      const adopted = await supabase.from("courses").update({ external_course_id: incoming.external_course_id }).eq("id", currentIdentity.id);
+      if (adopted.error) throw adopted.error;
+      byExternalId.set(incoming.external_course_id, { ...currentIdentity, external_course_id: incoming.external_course_id });
+      continue;
+    }
+    const planUpdate = await supabase.from("plan_courses").update({ course_id: sourceIdentity.id }).eq("course_id", currentIdentity.id);
+    if (planUpdate.error) throw planUpdate.error;
+    const removed = await supabase.from("courses").delete().eq("id", currentIdentity.id);
+    if (removed.error) throw removed.error;
+    currentByName.delete(incoming.name);
+  }
+}
+
 async function publishSchool(school, audit) {
   if (school.slug === "design-tech-high-school") return "preserved_curated";
   const requirementSource = audit.requirement_source;
@@ -124,6 +189,7 @@ async function publishSchool(school, audit) {
   const catalogVersionId = await ensureCatalogVersion(school, year, sourceUrl);
   if (audit.courses.length) {
     const rows = audit.courses.map((course) => ({ ...course, school_id: school.id, catalog_version_id: catalogVersionId, source_id: null }));
+    await removeCurrentCatalogIdentityConflicts(school, catalogVersionId, rows);
     for (let index = 0; index < rows.length; index += 200) {
       const result = await supabase.from("courses").upsert(rows.slice(index, index + 200), { onConflict: "school_id,external_course_id" });
       if (result.error) throw result.error;
@@ -137,6 +203,7 @@ async function publishSchool(school, audit) {
       if (result.error) throw result.error;
     }
   }
+  const reconciledLegacyCourses = await reconcileLegacyCourseIdentities(school, catalogVersionId);
   if (audit.course_source && audit.course_candidate) {
     await ensureSource(school, audit.course_candidate, audit.course_source, "course_catalog", year);
   }
@@ -162,6 +229,12 @@ async function publishSchool(school, audit) {
     }));
     const result = await supabase.from("graduation_requirements").upsert(requirementRows, { onConflict: "catalog_version_id,requirement_key" });
     if (result.error) throw result.error;
+    const superseded = await supabase.from("graduation_requirements")
+      .update({ review_status: "rejected" })
+      .eq("school_id", school.id)
+      .neq("catalog_version_id", catalogVersionId)
+      .eq("review_status", "approved");
+    if (superseded.error) throw superseded.error;
     const currentRequirements = await supabase.from("graduation_requirements").select("id,requirement_key").eq("catalog_version_id", catalogVersionId);
     if (currentRequirements.error) throw currentRequirements.error;
     const activeRequirementKeys = new Set(requirementRows.map((row) => row.requirement_key));
@@ -173,20 +246,18 @@ async function publishSchool(school, audit) {
 
     const [courseResult, requirementResult] = await Promise.all([
       supabase.from("courses").select("id,uc_ag_area,name,subject").eq("school_id", school.id).eq("catalog_version_id", catalogVersionId).eq("review_status", "approved"),
-      supabase.from("graduation_requirements").select("id,area").eq("school_id", school.id).eq("catalog_version_id", catalogVersionId).eq("review_status", "approved")
+      supabase.from("graduation_requirements").select("id,area,name,notes,constraint_only").eq("school_id", school.id).eq("catalog_version_id", catalogVersionId).eq("review_status", "approved")
     ]);
     if (courseResult.error) throw courseResult.error;
     if (requirementResult.error) throw requirementResult.error;
-    const requirementIdsByArea = new Map();
-    for (const row of requirementResult.data ?? []) requirementIdsByArea.set(row.area, [...(requirementIdsByArea.get(row.area) ?? []), row.id]);
-    const requirementByArea = new Map([...requirementIdsByArea].flatMap(([area, ids]) => ids.length === 1 ? [[area, ids[0]]] : []));
-    const areaForUc = { a: "social_science", b: "english", c: "math", d: "lab_science", e: "world_language", f: "visual_performing_arts", g: "electives" };
+    const requirementsByArea = new Map();
+    for (const row of requirementResult.data ?? []) requirementsByArea.set(row.area, [...(requirementsByArea.get(row.area) ?? []), row]);
     const mappings = (courseResult.data ?? []).flatMap((course) => {
-      const area = areaForUc[String(course.uc_ag_area ?? "").toLowerCase()]
-        ?? normalizeRequirementArea(`${course.subject ?? ""} ${course.name ?? ""}`);
-      const requirementId = area ? requirementByArea.get(area) : null;
-      if (!requirementId) return [];
-      return [{ course_id: course.id, requirement_id: requirementId, source_id: officialSourceId, confidence: "verified", is_user_override: false }];
+      return mappedRequirementAreasForCourse(course, requirementResult.data ?? []).flatMap((area) => {
+        const areaRequirements = requirementsByArea.get(area) ?? [];
+        if (areaRequirements.length !== 1) return [];
+        return [{ course_id: course.id, requirement_id: areaRequirements[0].id, source_id: officialSourceId, confidence: "verified", is_user_override: false }];
+      });
     });
     const currentRequirementIds = (requirementResult.data ?? []).map((row) => row.id);
     if (currentRequirementIds.length) {
@@ -196,9 +267,16 @@ async function publishSchool(school, audit) {
     if (mappings.length) {
       const mappingResult = await supabase.from("course_requirement_mappings").upsert(mappings, { onConflict: "course_id,requirement_id" });
       if (mappingResult.error) throw mappingResult.error;
+      const mappedCourseIds = [...new Set(mappings.map((mapping) => mapping.course_id))];
+      for (let index = 0; index < mappedCourseIds.length; index += 200) {
+        const planResult = await supabase.from("plan_courses").update({ mapping_verified: true }).in("course_id", mappedCourseIds.slice(index, index + 200));
+        if (planResult.error) throw planResult.error;
+      }
     }
   }
-  return "synced";
+  const schoolUpdate = await supabase.from("schools").update({ source_year: year }).eq("id", school.id);
+  if (schoolUpdate.error) throw schoolUpdate.error;
+  return reconciledLegacyCourses > 0 ? `synced_reconciled_${reconciledLegacyCourses}` : "synced";
 }
 
 async function auditSchool(school) {
@@ -264,7 +342,13 @@ async function auditSchool(school) {
 }
 
 const schools = await loadSchools();
-if (!schools.length) throw new Error("No matching California school was found.");
+if (!schools.length) {
+  if (selectedOnly) {
+    console.log("No selected California high schools require an academic-source sync.");
+    process.exit(0);
+  }
+  throw new Error("No matching California school was found.");
+}
 const authorityAudits = new Map();
 const districtWebsites = schools.some((school) => !school.district_website_url) ? await loadCdeDistrictWebsites() : new Map();
 const audits = [];
@@ -279,6 +363,7 @@ for (const school of schools) {
       official_course_count: audit.courses.length,
       ucop_course_count: audit.ucop_course_count,
       catalog_course_count: audit.catalog_course_count,
+      course_source: audit.course_source?.url ?? null,
       requirement_source: audit.requirement_source?.url ?? null,
       requirement_count: audit.requirements.length,
       requirement_validation: audit.validation,
@@ -287,7 +372,12 @@ for (const school of schools) {
       mode: dryRun ? "dry_run" : discoverOnly ? "discover_only" : publicationMode
     }, null, 2));
   } catch (error) {
-    console.error(JSON.stringify({ school: school.name, error: error instanceof Error ? error.message : String(error) }));
+    const message = error instanceof Error
+      ? error.message
+      : error && typeof error === "object"
+        ? JSON.stringify(error)
+        : String(error);
+    console.error(JSON.stringify({ school: school.name, error: message }));
     if (schoolCds || schoolName) process.exitCode = 1;
   }
 }

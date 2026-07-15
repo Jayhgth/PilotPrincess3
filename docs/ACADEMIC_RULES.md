@@ -115,6 +115,7 @@ pnpm smccd:scrape
 pnpm smccd:requirements-migration
 pnpm smccd:validate
 pnpm schools:academics --discover-only --school-name "Carlmont High"
+pnpm schools:academics --selected
 pnpm schools:academics --all
 pnpm test
 supabase db lint --linked

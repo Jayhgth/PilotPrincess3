@@ -22,6 +22,12 @@ const undoSchema = z.discriminatedUnion("kind", [
     summary: z.string().min(1).max(500)
   }),
   z.object({
+    kind: z.literal("restore_plan_patch"),
+    rows: z.array(rowSchema).max(40),
+    inserted_plan_course_ids: z.array(z.uuid()).max(40),
+    summary: z.string().min(1).max(500)
+  }),
+  z.object({
     kind: z.literal("restore_academic_plan"),
     plan_rows: z.array(rowSchema).max(200),
     goal_rows: z.array(rowSchema).max(200),
@@ -172,6 +178,16 @@ export async function undoAssistantToolCall(options: {
       }
       const reviewRestoration = await options.supabase.from("catalog_review_items").update({ corrected_payload: undo.data.corrected_payload, status: undo.data.status }).eq("id", undo.data.review_item_id).eq("user_id", options.userId);
       if (reviewRestoration.error) throw new Error(reviewRestoration.error.message);
+    } else if (undo.data.kind === "restore_plan_patch") {
+      if (undo.data.inserted_plan_course_ids.length) {
+        const removal = await options.supabase.from("plan_courses").delete().in("id", undo.data.inserted_plan_course_ids).eq("user_id", options.userId);
+        if (removal.error) throw new Error(removal.error.message);
+      }
+      if (undo.data.rows.length) {
+        const rows = undo.data.rows.map((row) => pickRow(row, RESTORABLE_KEYS.plan_courses, options.userId));
+        const restoration = await options.supabase.from("plan_courses").upsert(rows);
+        if (restoration.error) throw new Error(restoration.error.message);
+      }
     } else if (undo.data.kind === "restore_academic_plan") {
       const planRows = undo.data.plan_rows.map((row) => pickRow(row, RESTORABLE_KEYS.plan_courses, options.userId));
       const goalRows = undo.data.goal_rows.map((row) => pickRow(row, RESTORABLE_KEYS.student_smccd_goals, options.userId));

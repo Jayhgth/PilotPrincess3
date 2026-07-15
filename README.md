@@ -1,6 +1,6 @@
 # Pilot Princess
 
-Pilot Princess is a source-backed academic planning workspace for California public and charter high-school students. It combines statewide school identity, official local diploma evidence, deterministic transcript import, course planning, nearby community-college discovery, and narrowly scoped Codex assistance. d.tech and SMCCD remain the deepest reviewed local integrations; the schema is designed to add other official local catalogs and providers without changing the student model.
+Pilot Princess is a source-backed academic planning workspace for California public and charter high-school students. It combines statewide school identity, official local diploma evidence, deterministic transcript import, course planning, nearby community-college discovery, and narrowly scoped Codex assistance. Every selected school uses the same versioned catalog, diploma, mapping, planning, and Pilot contracts; no school may borrow d.tech's sequence or another district's requirements.
 
 Current reference data is labeled 2025-26. Registration accepts any valid email address. Planning results are advisory and preserve source age, verification, and uncertainty.
 
@@ -57,6 +57,7 @@ California school identity comes from the official CDE public-school directory. 
 ```sh
 pnpm schools:sync
 pnpm schools:academics --dry-run --school-name "Carlmont High"
+pnpm schools:academics --selected
 pnpm schools:academics --all
 pnpm uc-ag:sync-schools
 pnpm uc-ag:sync-courses
@@ -64,7 +65,7 @@ pnpm providers:sync
 pnpm schools:audit
 ```
 
-The syncs are idempotent and retain source URLs, source dates, content hashes, source evidence, confidence, and review state. `schools:academics` uses a service role only for publishing; `--discover-only` and `--dry-run` perform read-only audits. District schools share the district's requirement authority while charter schools remain isolated. `schools:audit` checks every synced high school, college, and normalized district for identity, provenance, district linkage, and a deterministic public-address-based district default. Review ambiguous identities instead of selecting a fuzzy match.
+The syncs are idempotent and retain source URLs, source dates, content hashes, source evidence, confidence, and review state. `schools:academics` uses a service role only for publishing; `--discover-only` and `--dry-run` perform read-only audits. `--selected` refreshes every school currently used by a student account and is also run by the scheduled maintenance workflow. District schools share their district's requirement authority while charter schools remain isolated. `schools:audit` checks every synced high school, college, and normalized district for identity, provenance, district linkage, a deterministic public-address-based district default, and academic readiness for every selected school. Review ambiguous identities instead of selecting a fuzzy match.
 
 The checked-in SMCCD catalog and college-specific local-degree patterns are generated from the official 2025-26 Cañada College, College of San Mateo, and Skyline College catalogs and degree worksheets. CSM's 27-unit GE, Skyline's 24-unit GE plus separate graduation requirements, and Cañada's 25-unit GE remain distinct. Program scraping audits every official requirement table and course option before validation.
 

@@ -550,7 +550,10 @@ export interface SuggestedPlanContext {
 }
 
 function normalizedPlannerText(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return value.toLowerCase()
+    .replace(/\bpre[ -]?calc(?:ulus)?\b/g, "precalculus")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function plannerCourseMatches(candidate: Course, requested: string) {
@@ -692,10 +695,11 @@ export function generateSuggestedPlan(
           const leftInterest = interestText && normalizedPlannerText(`${left.name} ${left.subject} ${left.description ?? ""}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0;
           const rightInterest = interestText && normalizedPlannerText(`${right.name} ${right.subject} ${right.description ?? ""}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0;
           const rigorDelta = context.rigor === "advanced" ? Number(right.is_weighted) - Number(left.is_weighted) : context.rigor === "lighter" ? Number(left.is_weighted) - Number(right.is_weighted) : 0;
-          return rightInterest - leftInterest || rigorDelta || left.name.localeCompare(right.name);
+          return rightInterest - leftInterest || rigorDelta || left.prerequisites.length - right.prerequisites.length || left.name.localeCompare(right.name);
         });
       while (remaining > 0) {
         let added = false;
+        const rankByCourseId = new Map(mapped.map((course, rank) => [course.id, rank]));
         const placements = mapped.flatMap((course) => planningGrades
           .filter((grade) => !existingIds.has(course.id) && (course.grade_levels.length === 0 || course.grade_levels.includes(grade)))
           .map((grade) => ({
@@ -703,7 +707,10 @@ export function generateSuggestedPlan(
             grade,
             load: termLoad(grade, "fall") + termLoad(grade, "spring")
           })))
-          .sort((left, right) => left.load - right.load || left.grade - right.grade || left.course.name.localeCompare(right.course.name));
+          .sort((left, right) => Number(rankByCourseId.get(left.course.id) ?? Number.MAX_SAFE_INTEGER) - Number(rankByCourseId.get(right.course.id) ?? Number.MAX_SAFE_INTEGER)
+            || left.load - right.load
+            || left.grade - right.grade
+            || left.course.name.localeCompare(right.course.name));
         for (const { course: candidate, grade } of placements) {
           if (!addCourse(candidate, grade)) continue;
           remaining -= Math.max(0, Number(candidate.credits ?? 0));

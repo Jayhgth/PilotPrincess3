@@ -347,7 +347,18 @@ describe("Codex feature boundaries", () => {
     });
     expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toEqual({
       name: "get_course_schedule_options",
-      arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
+      arguments: { respect_recommended_limit: true, rigor: "advanced", include_college_courses: true, objectives: ["complete_diploma"] }
+    });
+    expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule for me. I'm starting math at precalc grade 9, want as high GPA as possible, and really good course rigor. No concurrent classes.")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: "advanced",
+        include_college_courses: false,
+        starting_math_course: "precalc",
+        start_grade: 9,
+        objectives: ["complete_diploma", "maximize_weighted_gpa"]
+      }
     });
     expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule. I'm starting math at precalc grade 9, want the highest GPA, and no concurrent classes.")).toEqual({
       name: "get_course_schedule_options",

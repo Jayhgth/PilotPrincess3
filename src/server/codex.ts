@@ -664,10 +664,11 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     const excludesCollegeCourses = /\b(?:no|without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized);
     const objectives = [
       "complete_diploma",
-      ...(/\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
+      ...(/\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b|\b(?:as\s+)?high\s+(?:a\s+)?gpa\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
       ...(/\b(most|multiple|maximize)\b.*\b(degree|degrees)\b|\bdegree overlap\b/.test(normalized) ? ["maximize_degree_overlap"] : []),
       ...(/\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
     ];
+    const requestsAdvancedRigor = /\brigorous\b|\b(?:high|strong|good|advanced)\s+(?:course\s+)?rigor\b|\brigor\b.{0,20}\b(?:high|strong|good|advanced)\b/.test(normalized);
     const crossFeaturePlan = /\b(degree|degrees|major)\b/.test(normalized)
       || (!excludesCollegeCourses && /\b(college|concurrent|dual enrollment)\b/.test(normalized));
     if (crossFeaturePlan) {
@@ -684,7 +685,7 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
       name: "get_course_schedule_options",
       arguments: {
         respect_recommended_limit: true,
-        rigor: objectives.includes("maximize_weighted_gpa") ? "advanced" : "balanced",
+        rigor: objectives.includes("maximize_weighted_gpa") || requestsAdvancedRigor ? "advanced" : "balanced",
         include_college_courses: !excludesCollegeCourses,
         ...(startingMathCourse ? { starting_math_course: startingMathCourse } : {}),
         objectives,
@@ -739,6 +740,9 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
   const existingCount = Number(data.existing_course_count ?? data.existing_courses_retained ?? 0);
+  const adjustments = Array.isArray(data.adjustments)
+    ? data.adjustments.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
   const coverage = data.graduation_coverage && typeof data.graduation_coverage === "object" && !Array.isArray(data.graduation_coverage)
     ? data.graduation_coverage as Record<string, unknown>
     : {};
@@ -759,9 +763,18 @@ export function schedulePreview(data: Record<string, unknown>) {
     const rationale = String(course.rationale ?? "Standard grade-level flow addition.").slice(0, 140);
     return `- Grade ${Number.isFinite(grade) ? grade : "?"}, ${term || "term not set"}: ${name} — ${rationale}`;
   });
-  const opening = courses.length
-    ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them and add ${courses.length}:`
-    : `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I found no additional selected-school courses that safely satisfy the verified requirements and constraints.`;
+  const visibleAdjustments = adjustments.map((adjustment) => {
+    const fromGrade = Number(adjustment.from_grade_level);
+    const grade = Number(adjustment.grade_level);
+    const course = String(adjustment.course ?? "Course").slice(0, 64);
+    const rationale = String(adjustment.rationale ?? "Matches an explicit schedule constraint.").slice(0, 140);
+    return `- Adjust ${course} from grade ${fromGrade} to grade ${grade} — ${rationale}`;
+  });
+  const opening = adjustments.length
+    ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them, adjust ${adjustments.length} existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${courses.length}:`
+    : courses.length
+      ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them and add ${courses.length}:`
+      : `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I found no additional selected-school courses that safely satisfy the verified requirements and constraints.`;
   const coverageLine = readiness.evidence_ready !== true
     ? `${String(readiness.selected_school ?? "The selected school")}'s official catalog, diploma requirements, and verified course mappings are not complete enough for Pilot to build or apply a trustworthy schedule. No other school's sequence will be substituted.`
     : constraintFailures.length
@@ -772,7 +785,7 @@ export function schedulePreview(data: Record<string, unknown>) {
   const whyOne = courses.length === 1 && existingCount > 0
     ? `Only one new course is proposed because the other ${existingCount} courses are already in your current plan.`
     : null;
-  return [opening, ...visible, coverageLine, whyOne].filter(Boolean).join("\n\n");
+  return [opening, ...visibleAdjustments, ...visible, coverageLine, whyOne].filter(Boolean).join("\n\n");
 }
 
 export function scheduleResultIsComplete(data: Record<string, unknown>) {
@@ -1100,8 +1113,11 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           const courses = Array.isArray(data.courses)
             ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
             : [];
+          const adjustments = Array.isArray(data.adjustments)
+            ? data.adjustments.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+            : [];
           const ids = courses.map((row) => row.course_id).filter((id): id is string => typeof id === "string");
-          if (!courses.length) {
+          if (!courses.length && !adjustments.length) {
             return {
               message: schedulePreview(data),
               questions: [],
@@ -1173,9 +1189,11 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               rigor: requiredRead.arguments.rigor ?? "balanced",
               max_courses_per_term: requiredRead.arguments.max_courses_per_term ?? null,
               ...(requiredRead.arguments.start_grade ? { start_grade: requiredRead.arguments.start_grade } : {}),
-              objectives: requiredRead.arguments.objectives ?? ["complete_diploma"]
+              objectives: requiredRead.arguments.objectives ?? ["complete_diploma"],
+              ...(requiredRead.arguments.starting_math_course ? { starting_math_course: requiredRead.arguments.starting_math_course } : {}),
+              include_college_courses: requiredRead.arguments.include_college_courses ?? true
             },
-            explanation: `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
+            explanation: `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses, adjust ${adjustments.length} exact existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
             mutatesData: true,
             status: "pending_confirmation"
           };

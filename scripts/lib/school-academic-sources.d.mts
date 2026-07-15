@@ -13,6 +13,8 @@ export function decodeHtmlEntities(value: unknown): string;
 export function academicAuthorityForSchool(school: { cds_code?: string | null; governance_type?: string | null; id: string }): string;
 export function discoverAcademicAuthorityRoots(rootUrls: string[]): Promise<string[]>;
 export function normalizeRequirementArea(title: unknown): string;
+export function gradeLevelsFromText(value: unknown): number[];
+export function mappedRequirementAreasForCourse(course: Record<string, unknown>, requirements?: Array<Record<string, unknown>>): string[];
 export function extractGraduationRequirements(text: unknown): ExtractedRequirement[];
 export function extractCatalogCourses(text: unknown, options?: { sourceUrl?: string }): Array<Record<string, unknown>>;
 export function mergeOfficialCourses(ucopCourses: Array<Record<string, unknown>>, catalogCourses: Array<Record<string, unknown>>): Array<Record<string, unknown>>;

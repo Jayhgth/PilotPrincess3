@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import * as cheerio from "cheerio";
 import { PDFParse } from "pdf-parse";
 
-const ACADEMIC_TERMS = /graduation|diploma|course(?:s|\s+catalog)|program\s+planning|academic\s+handbook|curriculum|codex/i;
-const REQUIREMENT_TERMS = /graduation\s+requirements?|diploma\s+requirements?|credits?\s+(?:and\s+course\s+)?requirements?|course\s+of\s+study/i;
+const ACADEMIC_TERMS = /graduation|diploma|promotion|retention|course(?:s|\s+catalog)|program\s+planning|academic\s+handbook|curriculum|codex/i;
+const REQUIREMENT_TERMS = /graduation\s+requirements?|diploma\s+requirements?|promotion|retention|credits?\s+(?:and\s+course\s+)?requirements?|course\s+of\s+study/i;
 const COURSE_TERMS = /course(?:s|\s+catalog)|program\s+planning|course\s+guide|curriculum|codex/i;
-const STRONG_ACADEMIC_SOURCE = /graduation[-/ _]+requirements?|diploma[-/ _]+requirements?|credits?[-/ _]+(?:and[-/ _]+course[-/ _]+)?requirements?|course[-/ _]+catalog|program[-/ _]+planning|course[-/ _]+guide|codex/i;
+const STRONG_ACADEMIC_SOURCE = /graduation[-/ _]+requirements?|diploma[-/ _]+requirements?|promotion|retention|credits?[-/ _]+(?:and[-/ _]+course[-/ _]+)?requirements?|course[-/ _]+catalog|program[-/ _]+planning|course[-/ _]+guide|codex/i;
 const DOCUMENT_EXTENSION = /\.(?:pdf|docx?)(?:$|[?#])/i;
+const execFileAsync = promisify(execFile);
 
 function canonicalAcademicSourceUrl(value) {
   const url = new URL(value);
@@ -59,16 +64,57 @@ export function normalizeRequirementArea(title) {
   if (/english|language arts|ela/.test(value)) return "english";
   if (/social|history|government|civics|economics/.test(value)) return "social_science";
   if (/math|algebra|geometry/.test(value)) return "math";
+  if (/career tech|(?:^|\s)cte(?:\s|$)|vocational/.test(value)) return "career_technical_education";
   if (/science|biology|chemistry|physics/.test(value)) return "lab_science";
   if (/physical education|\bpe\b|athletics/.test(value)) return "physical_education";
   if (/visual|performing|fine arts|\bvapa\b/.test(value)) return "visual_performing_arts";
   if (/world language|foreign language|language other than english|\blote\b/.test(value)) return "world_language";
-  if (/career tech|\bcte\b|vocational/.test(value)) return "career_technical_education";
   if (/ethnic studies/.test(value)) return "ethnic_studies";
   if (/elective/.test(value)) return "electives";
   if (/personal development|life skills|living skills|health/.test(value)) return "personal_development";
   if (/design lab/.test(value)) return "design_lab";
   return "other";
+}
+
+export function gradeLevelsFromText(value) {
+  const normalized = String(value ?? "").replace(/[‐‑‒–—]/g, "-");
+  const grades = new Set();
+  for (const match of normalized.matchAll(/\b(9|10|11|12)\s*-\s*(9|10|11|12)\b/g)) {
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    for (let grade = Math.min(start, end); grade <= Math.max(start, end); grade += 1) grades.add(grade);
+  }
+  for (const match of normalized.matchAll(/\b(9|10|11|12)\b/g)) grades.add(Number(match[1]));
+  return [...grades].sort((left, right) => left - right);
+}
+
+function advancedWorldLanguageCourse(course) {
+  const value = `${course.name ?? ""} ${course.course_code ?? ""}`.toLowerCase().replace(/[‐‑‒–—]/g, "-");
+  return /\b(?:iii|iv|v|vi|3|4|5|6)\b|\bap\s+(?:spanish|french|chinese|japanese|latin|german|italian|language)/i.test(value);
+}
+
+export function mappedRequirementAreasForCourse(course, requirements = []) {
+  const ucArea = ({ a: "social_science", b: "english", c: "math", d: "lab_science", e: "world_language", f: "visual_performing_arts", g: "electives" })[String(course.uc_ag_area ?? "").toLowerCase()] ?? null;
+  const namedArea = normalizeRequirementArea(`${course.name ?? ""} ${course.subject ?? ""}`);
+  const identity = `${course.name ?? ""} ${course.subject ?? ""}`;
+  const explicitCte = /career tech|\bcte\b|vocational/i.test(identity);
+  const explicitSocialCore = /\b(?:government|economics|ethnic studies|world history|u\.?s\.? history|united states history)\b/i.test(identity);
+  const explicitPhysicalEducation = /\bphysical education\b|\bpe\s*[1-4ivx]*\b/i.test(identity);
+  const primaryArea = explicitCte
+    ? "career_technical_education"
+    : explicitSocialCore
+      ? "social_science"
+      : explicitPhysicalEducation
+        ? "physical_education"
+        : ucArea ?? namedArea;
+  const areas = new Set(primaryArea && primaryArea !== "other" ? [primaryArea] : []);
+  const hasCteOrLanguagePathway = requirements.some((requirement) => requirement.area === "career_technical_education"
+    && /world language|foreign language|lote/i.test(`${requirement.name ?? ""} ${requirement.notes ?? ""}`));
+  if (hasCteOrLanguagePathway && primaryArea === "world_language" && advancedWorldLanguageCourse(course)) {
+    areas.add("career_technical_education");
+    areas.delete("world_language");
+  }
+  return [...areas];
 }
 
 function cleanedText(value) {
@@ -82,6 +128,9 @@ function cleanedText(value) {
 
 export function extractGraduationRequirements(text) {
   let source = cleanedText(text);
+  source = source
+    .replace(/Visual\s+(?:and\s+)?Performing[^\n]*?(\d+(?:\.\d+)?)\s+\D{0,4}(\d+(?:\.\d+)?)\s+\D{0,4}(\d+(?:\.\d+)?)[^\n]*\n\s*Arts/gi, "Visual and Performing Arts $1 $2 $3")
+    .replace(/([A-Za-z]+\s+Core)[^\n]*?(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)[^\n]*\n\s*Electives/gi, "$1 Electives $2 $3");
   const defaultPlan = source.match(/(?:^|\n)\s*(?:#{1,4}\s*)?(?:Section\s+[A-Z]:?\s*)?Plan\s*1\s*:\s*All Students/i);
   if (defaultPlan?.index !== undefined) {
     const fromDefaultPlan = source.slice(defaultPlan.index);
@@ -161,13 +210,15 @@ export function extractGraduationRequirements(text) {
     if (![...rows.values()].some((row) => row.area === area)) rows.set(`${area}:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, summaryRow);
   }
 
-  const linePattern = /(?:^|\n)\s*(English|Mathematics?|Math|Science|Social Studies|Social Science|Physical Education|P\.?E\.?|Visual(?: and| &) Performing Arts|Fine Arts|World Languages?|Foreign Languages?|Electives?|Life Skills|Health)\s*[:-]?\s*(\d+(?:\.\d+)?)\s*(?:credits?|units?)?\b/gim;
+  const linePattern = /(?:^|\n)\s*(English|Mathematics?|Math|Science|History|Social Studies|Social Science|Physical Education|P\.?E\.?|Visual(?: and| &) Performing Arts|Fine Arts|World Languages?|Foreign Languages?|(?:[A-Za-z]+\s+Core\s+)?Electives?|Life Skills|Health)\s*[:-]?\s*((?:\d+(?:\.\d+)?\s*){1,3})(?:credits?|units?)?\b/gim;
   for (const match of source.matchAll(linePattern)) {
     const area = normalizeRequirementArea(match[1]);
     if (area === "other" || [...rows.values()].some((row) => row.area === area)) continue;
     const context = source.slice(Math.max(0, match.index - 180), match.index + match[0].length + 120);
     if (/certificate of achievement/i.test(context)) continue;
-    const credits = Number(match[2]);
+    const values = [...match[2].matchAll(/\d+(?:\.\d+)?/g)].map((value) => Number(value[0]));
+    const credits = Number(values.at(-1));
+    if (values.length === 1 && credits <= 4 && !/(?:credits?|units?)/i.test(match[0])) continue;
     if (!Number.isFinite(credits) || credits <= 0 || credits > 120) continue;
     rows.set(`${area}:${match[1].toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, {
       area,
@@ -202,6 +253,40 @@ export function extractGraduationRequirements(text) {
   return [...rows.values()];
 }
 
+async function ocrAcademicImages($, pageUrl) {
+  const images = $("img").toArray().flatMap((element) => {
+    const label = decodeHtmlEntities($(element).attr("alt") || $(element).attr("title") || "");
+    const source = $(element).attr("data-src") || $(element).attr("src");
+    if (!source || !/(?:graduation|diploma|requirements?|course\s+catalog)/i.test(`${label} ${source}`)) return [];
+    try { return [{ label, url: new URL(source, pageUrl).toString() }]; } catch { return []; }
+  }).slice(0, 3);
+  if (!images.length) return "";
+  const directory = await mkdtemp(join(process.cwd(), ".pilot-ocr-"));
+  const extracted = [];
+  try {
+    for (let index = 0; index < images.length; index += 1) {
+      try {
+        const response = await fetch(images[index].url, { headers: { "user-agent": "PilotPrincess academic source sync", accept: "image/jpeg,image/png" }, signal: AbortSignal.timeout(20_000) });
+        if (!response.ok) continue;
+        const input = join(directory, `source-${index}.jpg`);
+        const prepared = join(directory, `prepared-${index}.png`);
+        await writeFile(input, Buffer.from(await response.arrayBuffer()));
+        try {
+          await execFileAsync("magick", [input, "-resize", "200%", "-colorspace", "Gray", "-threshold", "55%", prepared], { timeout: 30_000, maxBuffer: 2_000_000 });
+        } catch {
+          try { await execFileAsync("convert", [input, "-resize", "200%", "-colorspace", "Gray", "-threshold", "55%", prepared], { timeout: 30_000, maxBuffer: 2_000_000 }); }
+          catch { await writeFile(prepared, await readFile(input)); }
+        }
+        const result = await execFileAsync("tesseract", [prepared, "stdout", "--psm", "6"], { timeout: 45_000, maxBuffer: 8_000_000 });
+        if (result.stdout.trim()) extracted.push(`OCR_IMAGE ${images[index].label || images[index].url}\n${result.stdout}`);
+      } catch { /* image-only evidence remains unavailable when OCR tooling is absent */ }
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return extracted.join("\n");
+}
+
 function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -232,7 +317,7 @@ function extractDocumentCatalogCourses(text, sourceUrl) {
     ["BUSINESS/MARKETING", "Business"], ["COMPUTER SCIENCE", "Computer Science"], ["ENGLISH", "English"],
     ["MATHEMATICS", "Mathematics"], ["MATH", "Mathematics"], ["PHYSICAL EDUCATION", "Physical Education"],
     ["SCIENCE", "Science"], ["SOCIAL STUDIES", "Social Science"], ["VISUAL & PERFORMING ARTS", "Visual and Performing Arts"],
-    ["WORLD LANGUAGES", "World Language"], ["NON DEPARTMENTAL", "Elective"]
+    ["WORLD LANGUAGES", "World Language"], ["NON DEPARTMENTAL", "Elective"], ["AP CAPSTONE", "Elective"]
   ]);
   let subject = "Elective";
   const courses = [];
@@ -245,15 +330,16 @@ function extractDocumentCatalogCourses(text, sourceUrl) {
     const gradeLineIndex = metadata.findIndex((value) => /^(?:recommended\s+)?grades?\s*:?[\s,0-9-]+$/i.test(value));
     if (gradeLineIndex < 0) continue;
     const gradeLine = metadata[gradeLineIndex];
-    const gradeLevels = [...new Set([...gradeLine.matchAll(/\b(9|10|11|12)\b/g)].map((match) => Number(match[1])))];
+    const gradeLevels = gradeLevelsFromText(gradeLine);
     if (!gradeLevels.length) continue;
-    const name = line.replace(/^[+*#^]+/, "").replace(/\s*-\s*(?:H?P|AS)\s*$/i, "").replace(/\s+/g, " ").trim();
+    const name = line.replace(/^[+*#^]+/, "").replace(/\s*-\s*(?:H?P|AS)\s*[,.;:]?\s*$/i, "").replace(/[,\s]+$/, "").replace(/\s+/g, " ").trim();
+    if (/\bI\s*,\s*II\s*,\s*III\s*,\s*IV\b/i.test(name)) continue;
     const normalizedName = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     if (!normalizedName || seen.has(normalizedName)) continue;
     seen.add(normalizedName);
     const prerequisiteIndex = metadata.findIndex((value) => /^prerequisites?\s*:/i.test(value));
     const prerequisites = prerequisiteIndex >= 0
-      ? [metadata.slice(prerequisiteIndex, gradeLineIndex).join(" ").replace(/^prerequisites?\s*:\s*/i, "").trim()].filter(Boolean)
+      ? [metadata.slice(prerequisiteIndex, gradeLineIndex).join(" ").replace(/^prerequisites?\s*:\s*/i, "").trim()].filter((value) => value && !/^(?:none|n\/a|na)$/i.test(value))
       : [];
     const descriptionStart = index + 1 + gradeLineIndex + 1;
     let descriptionEnd = Math.min(lines.length, descriptionStart + 30);
@@ -312,7 +398,7 @@ export function extractCatalogCourses(text, { sourceUrl = "official-catalog" } =
     if (!normalizedName || seen.has(normalizedName)) return [];
     seen.add(normalizedName);
     const pathway = cells[pathwayIndex] ?? "";
-    const gradeLevels = [...new Set([...String(pathway).matchAll(/\b(?:grade\s*)?(9|10|11|12)\b/gi)].map((match) => Number(match[1])))];
+    const gradeLevels = gradeLevelsFromText(pathway);
     const agValue = cells[agIndex] ?? "";
     const agArea = agValue.match(/(?:^|\W)([a-g])(?:\W|$)/i)?.[1]?.toLowerCase() ?? null;
     const semester = /(?:one|1)[ -]semester|semester class|fall semester|spring semester/i.test(`${name} ${description}`);
@@ -340,8 +426,17 @@ export function extractCatalogCourses(text, { sourceUrl = "official-catalog" } =
 }
 
 export function mergeOfficialCourses(ucopCourses, catalogCourses) {
-  const normalize = (name) => decodeHtmlEntities(name).toLowerCase().replace(/\b(?:honors?|h)\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
-  const catalogByName = new Map(catalogCourses.map((course) => [normalize(course.name), course]));
+  const normalize = (name) => decodeHtmlEntities(name).toLowerCase()
+    .replace(/\bpre[ -]?calc(?:ulus)?\b/g, "precalculus")
+    .replace(/\b(?:hp|hon)\b/g, "honors")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const catalogByName = new Map();
+  for (const course of catalogCourses) {
+    const key = normalize(course.name);
+    const existing = catalogByName.get(key);
+    if (!existing || course.grade_levels.length > existing.grade_levels.length) catalogByName.set(key, course);
+  }
   const ucopByExactName = new Map();
   for (const course of ucopCourses) {
     const key = decodeHtmlEntities(course.name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -510,6 +605,7 @@ export async function readAcademicSource(url) {
     try { text = (await parser.getText()).text; } finally { await parser.destroy(); }
   } else if (contentType.includes("html")) {
     const $ = cheerio.load(buffer.toString("utf8"));
+    const imageText = await ocrAcademicImages($, response.url);
     $("script,style,noscript,svg,nav,footer").remove();
     const structuredTables = $("tr").toArray().flatMap((row) => {
       const cells = $(row).find("th,td").toArray().map((cell) => decodeHtmlEntities($(cell).text())).filter(Boolean);
@@ -523,7 +619,7 @@ export async function readAcademicSource(url) {
       .map((element) => $(element).text())
       .filter((value) => value.trim().length > 0)
       .sort((left, right) => right.length - left.length);
-    text = `${semanticRoots[0] || $("body").text()}${structuredTables ? `\n${structuredTables}` : ""}`;
+    text = `${semanticRoots[0] || $("body").text()}${structuredTables ? `\n${structuredTables}` : ""}${imageText ? `\n${imageText}` : ""}`;
   } else {
     text = buffer.toString("utf8");
   }

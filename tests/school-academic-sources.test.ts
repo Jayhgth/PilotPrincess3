@@ -4,6 +4,8 @@ import {
   decodeHtmlEntities,
   extractCatalogCourses,
   extractGraduationRequirements,
+  gradeLevelsFromText,
+  mappedRequirementAreasForCourse,
   mergeOfficialCourses,
   normalizeRequirementArea,
   ucopCourseValues,
@@ -111,6 +113,27 @@ HTML_TABLE\tLiving Skills\t5\t0
     expect(validateGraduationRequirements(rows)).toMatchObject({ publishable: true, credits_total: 220 });
   });
 
+  it("extracts an official image-only graduation table from OCR text without treating years as credits", () => {
+    const rows = extractGraduationRequirements(`
+AIMS HS A-G+ Graduation Standards
+English 4 4 40
+Math 3 4 40
+Science 2 4 40
+History 2 4 40
+Visual Performing 1 2 20 N/A
+Arts
+PE 2 2 20
+Foreign Language 2 2 20
+Electives 1
+AIMS Core 4 40
+Electives requirement, see the course guide.
+`);
+    const byArea = new Map(rows.map((row) => [row.area, row]));
+    expect(byArea.get("visual_performing_arts")?.credits_required).toBe(20);
+    expect(byArea.get("electives")?.credits_required).toBe(40);
+    expect(validateGraduationRequirements(rows)).toMatchObject({ publishable: true, credits_total: 260 });
+  });
+
   it("extracts full official spreadsheet catalogs and keeps non-A-G offerings", () => {
     const courses = extractCatalogCourses(`Course Name,Description,Typical Pathway by Grade,Prerequisites,UC A-G approved\nEthnic Studies,History and identity,9,None,A (History)\nGovernment,Fall semester class,12,US History,A (History)\nYearbook,Student publication,9-12,None,No`);
     expect(courses).toHaveLength(3);
@@ -134,6 +157,50 @@ English I develops writing and literary analysis.
     expect(courses).toHaveLength(2);
     expect(courses[0]).toMatchObject({ name: "AP COMPUTER SCIENCE A", subject: "Computer Science", grade_levels: [11, 12], is_honors: true });
     expect(courses[1]).toMatchObject({ name: "ENGLISH I", subject: "English", grade_levels: [9] });
+  });
+
+  it("expands grade ranges instead of dropping their middle grades", () => {
+    expect(gradeLevelsFromText("Grades 9-12")).toEqual([9, 10, 11, 12]);
+    expect(gradeLevelsFromText("Recommended grades 10, 11-12")).toEqual([10, 11, 12]);
+  });
+
+  it("maps local course identity before A-G electives and honors an advanced-language pathway", () => {
+    const requirements = [{ area: "career_technical_education", name: "Career Technical Education or advanced World Language", notes: "Third level of world language or one year of CTE." }];
+    expect(mappedRequirementAreasForCourse({ name: "CTE- AP Computer Science A", subject: "Computer Science", uc_ag_area: "g" }, requirements)).toEqual(["career_technical_education"]);
+    expect(mappedRequirementAreasForCourse({ name: "Spanish III", subject: "World Language", uc_ag_area: "e" }, requirements)).toEqual(["career_technical_education"]);
+    expect(mappedRequirementAreasForCourse({ name: "Spanish II", subject: "World Language", uc_ag_area: "e" }, requirements)).toEqual(["world_language"]);
+    expect(mappedRequirementAreasForCourse({ name: "AP Psychology", subject: "Social Science", uc_ag_area: "g" }, requirements)).toEqual(["electives"]);
+    expect(mappedRequirementAreasForCourse({ name: "Economics", subject: "Elective", uc_ag_area: "g" }, requirements)).toEqual(["social_science"]);
+  });
+
+  it("merges local placement metadata into the matching honors variant only", () => {
+    const ucop = [
+      { ...ucopCourseValues({ courseId: "regular", title: "Precalculus", disciplineName: "Mathematics", subjectAreaCode: "c", courseLengthId: 2, isHonors: 0 }), grade_levels: [] },
+      { ...ucopCourseValues({ courseId: "honors", title: "Pre-Calc Honors", disciplineName: "Mathematics", subjectAreaCode: "c", courseLengthId: 2, isHonors: 1 }), grade_levels: [] }
+    ];
+    const local = [
+      { ...ucop[0], external_course_id: "local-regular", name: "PRE-CALCULUS", grade_levels: [10, 11, 12], is_honors: false, is_weighted: false },
+      { ...ucop[1], external_course_id: "local-honors", name: "PRECALCULUS HONORS", grade_levels: [9, 10, 11, 12], is_honors: true, is_weighted: true }
+    ];
+    const merged = mergeOfficialCourses(ucop, local);
+    expect(merged.find((course) => course.external_course_id === "regular")?.grade_levels).toEqual([10, 11, 12]);
+    expect(merged.find((course) => course.external_course_id === "honors")?.grade_levels).toEqual([9, 10, 11, 12]);
+  });
+
+  it("does not publish catalog section headings as schedulable courses", () => {
+    const courses = extractCatalogCourses(`
+NON DEPARTMENTAL
+AP CAPSTONE
+AP SEMINAR-HP (ELECTIVE)
+Prerequisites: None
+Grades 10, 11
+The first course in the AP Capstone sequence.
+AVID I, II, III, IV
+Grades 9-12
+Program heading.
+`);
+    expect(courses.map((course) => course.name)).toEqual(["AP SEMINAR-HP (ELECTIVE)"]);
+    expect(courses[0]?.prerequisites).toEqual([]);
   });
 
   it("normalizes common local requirement labels without forcing unknown labels", () => {

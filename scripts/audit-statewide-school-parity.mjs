@@ -43,6 +43,7 @@ const [schools, providers, districts] = await Promise.all([
   readAll("education_providers", "id,provider_code,provider_type,district_name,district_code,name,website_url,status,latitude,longitude,source_url", "id"),
   readAll("college_districts", "district_code,name,status,source_url", "district_code")
 ]);
+const selectedSettings = serviceRoleKey ? await readAll("student_settings", "id,school_id", "id") : [];
 
 const eligibleSchools = schools.filter((school) => ["active", "pending"].includes(school.status)
   && ["district", "charter"].includes(school.governance_type)
@@ -58,6 +59,32 @@ for (const school of eligibleSchools) {
   if (school.cds_code) cdsCodes.add(school.cds_code);
   if (!school.directory_source_url) errors.push(`${school.name}: missing CDE directory provenance`);
   if (!school.name || !school.short_name) errors.push(`${school.id}: missing school identity`);
+}
+
+const selectedSchoolIds = new Set(selectedSettings.map((row) => row.school_id).filter(Boolean));
+const academicReadiness = [];
+for (const school of eligibleSchools.filter((row) => selectedSchoolIds.has(row.id))) {
+  const [courseResult, requirementResult, mappingResult] = await Promise.all([
+    supabase.from("courses").select("id,grade_levels").eq("school_id", school.id).eq("review_status", "approved"),
+    supabase.from("graduation_requirements").select("id", { count: "exact", head: true }).eq("school_id", school.id).eq("review_status", "approved"),
+    supabase.from("course_requirement_mappings").select("id,courses!inner(school_id)", { count: "exact", head: true }).eq("courses.school_id", school.id).eq("confidence", "verified")
+  ]);
+  if (courseResult.error || requirementResult.error || mappingResult.error) {
+    errors.push(`${school.name}: academic readiness could not be audited`);
+    continue;
+  }
+  const placementReady = (courseResult.data ?? []).filter((course) => Array.isArray(course.grade_levels) && course.grade_levels.length > 0).length;
+  const readiness = {
+    school: school.name,
+    approved_courses: courseResult.data?.length ?? 0,
+    placement_ready_courses: placementReady,
+    approved_requirements: requirementResult.count ?? 0,
+    verified_mappings: mappingResult.count ?? 0
+  };
+  academicReadiness.push(readiness);
+  if (readiness.placement_ready_courses === 0 || readiness.approved_requirements < 6 || readiness.verified_mappings === 0) {
+    errors.push(`${school.name}: selected-school catalog, diploma rules, or verified mappings are incomplete`);
+  }
 }
 
 for (const provider of collegeProviders) {
@@ -117,6 +144,9 @@ const report = {
   districts_checked: districts.filter((district) => district.status === "active").length,
   districts_suggested_to_at_least_one_school: districtSuggestionCounts.size,
   dtech_default_district: dtechClosestProvider?.provider.district_name ?? null,
+  selected_schools_checked_for_academic_readiness: academicReadiness.length,
+  selected_schools_academically_ready: academicReadiness.filter((row) => row.placement_ready_courses > 0 && row.approved_requirements >= 6 && row.verified_mappings > 0).length,
+  selected_school_academic_readiness: academicReadiness,
   errors: errors.slice(0, 100),
   error_count: errors.length
 };

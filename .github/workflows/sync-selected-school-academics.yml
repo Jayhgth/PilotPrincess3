@@ -1,0 +1,42 @@
+name: Sync selected school academics
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+    inputs:
+      school_name:
+        description: Optional California high school name; leave blank to refresh every selected school.
+        required: false
+        type: string
+
+concurrency:
+  group: selected-school-academics
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y imagemagick tesseract-ocr
+      - name: Refresh official catalogs and diploma rules
+        env:
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SCHOOL_NAME: ${{ inputs.school_name }}
+        run: |
+          if [ -n "$SCHOOL_NAME" ]; then
+            pnpm schools:academics --school-name "$SCHOOL_NAME"
+          else
+            pnpm schools:academics --selected
+          fi

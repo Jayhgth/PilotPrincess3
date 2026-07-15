@@ -584,7 +584,7 @@ describe("planning", () => {
     const catalog = [
       course({ id: "carlmont-english-9", name: "English I AS", grade_levels: [9], credits: 10 }),
       course({ id: "carlmont-english-10", name: "English II AS", grade_levels: [10], credits: 10 }),
-      course({ id: "carlmont-precalc", name: "Precalculus Honors", subject: "Mathematics", grade_levels: [9, 10, 11, 12], credits: 10, is_honors: true, is_weighted: true }),
+      course({ id: "carlmont-precalc", name: "Pre-Calc Honors", subject: "Mathematics", grade_levels: [9, 10, 11, 12], credits: 10, is_honors: true, is_weighted: true }),
       course({ id: "dtech-only", name: "Foundation in Design Thinking", subject: "Design Lab", grade_levels: [9], credits: 10 }),
       course({ id: "college-math", name: "MATH 251 Calculus I", subject: "Mathematics", grade_levels: [9, 10, 11, 12], credits: 10, college_units: 5, is_weighted: true })
     ];
