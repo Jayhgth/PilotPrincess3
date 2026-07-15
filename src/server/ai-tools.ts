@@ -18,6 +18,7 @@ import type {
   PlanCourse,
   PlanVersion,
   School,
+  SchoolPlanningProfile,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
   SmccdPrerequisiteClearance,
@@ -276,7 +277,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "evaluate_gpa_scenario", mutatesData: false, description: "Evaluate grade assumptions for courses already in the current four-year plan, including its all-A ceiling. This cannot predict grades or invent a new schedule.", arguments: '{"target_weighted_gpa":number,"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
   { name: "get_gpa_scenario", mutatesData: false, description: "Read the saved GPA-planner inclusion and expected-grade choices for every current or planned course.", arguments: "{}" },
   { name: "get_enrollment_constraints", mutatesData: false, description: "Read source-backed concurrent or dual-enrollment limits and evaluate the saved college schedule by term.", arguments: "{}" },
-  { name: "get_course_schedule_options", mutatesData: false, description: "Generate a selected-school schedule only from that school's verified catalog, diploma requirements, mappings, and the student's exact constraints. Set replace_existing only when the student explicitly asks to clear and rebuild the schedule; transcript-backed evidence remains locked. It fails closed when school evidence is incomplete and never substitutes another school's courses.", arguments: '{"respect_recommended_limit":boolean,"interests":["string"],"rigor":"balanced|advanced|lighter","max_courses_per_term":number|null,"start_grade":9|10|11|12,"starting_math_course":"string|null","include_college_courses":boolean,"replace_existing":boolean,"objectives":["complete_diploma|maximize_weighted_gpa|maximize_degree_overlap|align_major"]}' },
+  { name: "get_course_schedule_options", mutatesData: false, description: "Generate a schedule from the selected school's retrieved planning profile, verified catalog, diploma mappings, prerequisites, and the student's exact constraints. The profile controls grade loads, required on-campus subjects, normal course flow, and whether college coursework is integrated or supplemental. Set replace_existing only when the student explicitly asks to clear and rebuild; transcript evidence remains locked. It fails closed instead of borrowing another school's policy.", arguments: '{"respect_recommended_limit":boolean,"interests":["string"],"rigor":"balanced|advanced|lighter","max_courses_per_term":number|null,"start_grade":9|10|11|12,"starting_math_course":"string|null","include_college_courses":boolean,"replace_existing":boolean,"objectives":["complete_diploma|maximize_weighted_gpa|maximize_degree_overlap|align_major"]}' },
   { name: "get_prerequisite_evidence", mutatesData: false, description: "Read official prerequisite evaluation and any student-submitted clearance evidence for one selected-school or SMCCD course.", arguments: '{"course_id":"string"}' },
   { name: "get_degree_progress", mutatesData: false, description: "Read deterministic requirement-level evidence for one bookmarked SMCCD associate degree. Omit program_id only when one bookmark is sufficient context.", arguments: '{"program_id":"string|optional"}' },
   { name: "get_college_goal", mutatesData: false, description: "Read all bookmarked SMCCD associate degrees.", arguments: "{}" },
@@ -379,6 +380,7 @@ export function parseAssistantToolCall(name: string, argumentsValue: unknown) {
 interface AssistantWorkspace {
   settings: StudentSettings;
   school: School;
+  planningProfile: SchoolPlanningProfile | null;
   plan: FourYearPlan;
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
@@ -417,6 +419,7 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
   return {
     settings: bootstrap.settings,
     school: bootstrap.school,
+    planningProfile: bootstrap.school_planning_profile,
     plan: bootstrap.plan,
     activeVersion: bootstrap.active_version,
     planCourses: bootstrap.plan_courses,
@@ -457,6 +460,24 @@ function calculatedWorkspace(workspace: AssistantWorkspace) {
     overviewProgress,
     graduationProgress,
     gpa: calculateGpa(workspace.planCourses, workspace.equivalencies)
+  };
+}
+
+function compactPlanningProfile(profile: SchoolPlanningProfile | null) {
+  if (!profile) return null;
+  return {
+    academic_year: profile.academic_year,
+    title: profile.title,
+    college_course_posture: profile.college_course_posture,
+    college_eligible_grades: profile.college_eligible_grades,
+    always_high_school_areas: profile.always_high_school_areas,
+    grade_rules: Object.fromEntries(Object.entries(profile.grade_rules).map(([grade, rule]) => [grade, rule ? {
+      minimum_high_school_courses: rule.minimum_high_school_courses,
+      target_total_courses: rule.target_total_courses,
+      required_areas: rule.required_areas
+    } : null])),
+    guidance_notes: profile.guidance_notes,
+    source_urls: profile.source_urls
   };
 }
 
@@ -550,6 +571,7 @@ function scheduleQualityFailures(
   const endGrade = Math.max(startGrade, workspace.settings.plan_end_grade ?? 12) as GradeLevel;
   const planningGrades = ([9, 10, 11, 12] as GradeLevel[]).filter((grade) => grade >= startGrade && grade <= endGrade);
   const advanced = preferences.rigor === "advanced" || preferences.objectives?.includes("maximize_weighted_gpa");
+  const gradeRule = (grade: GradeLevel) => workspace.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`];
   const textForRow = (row: PlanCourse) => {
     const course = row.course_id ? courseById.get(row.course_id) : null;
     return normalizedScheduleText(`${course?.name ?? row.custom_course_name ?? ""} ${course?.subject ?? ""}`);
@@ -566,6 +588,23 @@ function scheduleQualityFailures(
   const generatedYearRows = (grade: GradeLevel) => generatedRows.filter((row) => row.grade_level === grade);
   for (const grade of planningGrades) {
     const rows = yearRows(grade);
+    const policyRule = gradeRule(grade);
+    for (const area of policyRule?.required_areas ?? []) {
+      if (!rows.some((row) => rowMatchesArea(row, area))) failures.push(`Grade ${grade} is missing the school-required ${area.replaceAll("_", " ")} area.`);
+    }
+    for (const area of workspace.planningProfile?.always_high_school_areas ?? []) {
+      if (!rows.some((row) => rowMatchesArea(row, area) && !row.smccd_course_id && Number(row.college_units ?? 0) === 0)) {
+        failures.push(`Grade ${grade} must take ${area.replaceAll("_", " ")} at ${workspace.school.short_name}.`);
+      }
+    }
+    if (policyRule) {
+      for (const term of ["fall", "spring"] as const) {
+        const highSchoolLoad = rows.filter((row) => (row.term === term || row.term === "full_year") && !row.smccd_course_id && Number(row.college_units ?? 0) === 0).length;
+        if (highSchoolLoad < policyRule.minimum_high_school_courses) {
+          failures.push(`Grade ${grade} ${term} has ${highSchoolLoad} high-school courses; ${workspace.school.short_name} requires at least ${policyRule.minimum_high_school_courses}.`);
+        }
+      }
+    }
     if (advanced && !rows.some((row) => rowMatchesArea(row, "english"))) failures.push(`Grade ${grade} is missing English.`);
     if (advanced && !rows.some((row) => rowMatchesArea(row, "math"))) failures.push(`Grade ${grade} is missing mathematics.`);
     for (const area of ["english", "math", "physical_education"]) {
@@ -575,9 +614,9 @@ function scheduleQualityFailures(
   }
   const hasSocialRequirement = workspace.requirements.some((requirement) => requirement.area === "social_science" && requirement.credits_required > 0);
   if (hasSocialRequirement) {
-    if (planningGrades.includes(10) && !yearRows(10).some((row) => /\b(?:world|european) history\b/.test(textForRow(row)))) failures.push("Grade 10 is missing the World History sequence.");
-    if (planningGrades.includes(11) && !yearRows(11).some((row) => /\b(?:u s|us|united states|american) history\b/.test(textForRow(row)))) failures.push("Grade 11 is missing the U.S. History sequence.");
-    if (planningGrades.includes(12)) {
+    if (planningGrades.includes(10) && (!workspace.planningProfile || gradeRule(10)?.required_areas.includes("social_science")) && !yearRows(10).some((row) => /\b(?:world|european) history\b/.test(textForRow(row)))) failures.push("Grade 10 is missing the World History sequence.");
+    if (planningGrades.includes(11) && (!workspace.planningProfile || gradeRule(11)?.required_areas.includes("social_science")) && !yearRows(11).some((row) => /\b(?:u s|us|united states|american) history\b/.test(textForRow(row)))) failures.push("Grade 11 is missing the U.S. History sequence.");
+    if (planningGrades.includes(12) && (!workspace.planningProfile || gradeRule(12)?.required_areas.includes("social_science"))) {
       const seniorHistory = yearRows(12).map(textForRow);
       if (!seniorHistory.some((text) => /\bgovernment\b|\bcivics\b/.test(text)) || !seniorHistory.some((text) => /\beconomics\b/.test(text))) {
         failures.push("Grade 12 must include both Government and Economics.");
@@ -585,10 +624,10 @@ function scheduleQualityFailures(
     }
   }
   const hasPeRequirement = workspace.requirements.some((requirement) => requirement.area === "physical_education" && requirement.credits_required > 0);
-  if (hasPeRequirement && planningGrades.includes(9) && !yearRows(9).some((row) => /\b(?:pe|physical education)\s*(?:1|i)\b/.test(textForRow(row)))) {
+  if (hasPeRequirement && planningGrades.includes(9) && (!workspace.planningProfile || gradeRule(9)?.required_areas.includes("physical_education")) && !yearRows(9).some((row) => /\b(?:pe|physical education)\s*(?:1|i)\b/.test(textForRow(row)))) {
     failures.push("Grade 9 is missing the first-year physical education course.");
   }
-  if (hasPeRequirement && planningGrades.includes(10) && !yearRows(10).some((row) => /\b(?:pe|physical education)\s*(?:2|ii)\b/.test(textForRow(row)))) {
+  if (hasPeRequirement && planningGrades.includes(10) && (!workspace.planningProfile || gradeRule(10)?.required_areas.includes("physical_education")) && !yearRows(10).some((row) => /\b(?:pe|physical education)\s*(?:2|ii)\b/.test(textForRow(row)))) {
     failures.push("Grade 10 is missing the second-year physical education course.");
   }
   const hasScienceRequirement = workspace.requirements.some((requirement) => requirement.area === "lab_science" && requirement.credits_required >= 20);
@@ -630,9 +669,12 @@ function scheduleQualityFailures(
   if (loads.length) {
     const maximum = Math.max(...loads.map((load) => load.count));
     const minimum = Math.min(...loads.map((load) => load.count));
-    const target = Math.max(1, Math.min(preferences.maxCoursesPerTerm ?? 6, 6));
+    const targetForGrade = (grade: GradeLevel) => Math.max(1, Math.min(preferences.maxCoursesPerTerm ?? gradeRule(grade)?.target_total_courses ?? 6, 12));
     if (maximum - minimum > 1) failures.push(`The proposed yearly load is unbalanced (${minimum} to ${maximum} courses per term).`);
-    if (advanced && minimum < Math.max(1, target - 1)) failures.push(`At least one planned term has fewer than ${Math.max(1, target - 1)} courses without a stated lighter-load request.`);
+    for (const load of loads) {
+      const minimumExpected = Math.max(1, targetForGrade(load.grade) - (advanced ? 1 : 0));
+      if (load.count < minimumExpected) failures.push(`Grade ${load.grade} ${load.term} has fewer than the ${minimumExpected}-course school-policy target.`);
+    }
     if (preferences.maxCoursesPerTerm && maximum > preferences.maxCoursesPerTerm) failures.push(`The proposed schedule exceeds the ${preferences.maxCoursesPerTerm}-course workload cap.`);
   }
   return [...new Set(failures)];
@@ -741,6 +783,7 @@ function generateValidatedSchedule(
     respectRecommendedLimit,
     {
       schoolSlug: workspace.school.slug,
+      planningProfile: workspace.planningProfile,
       requirements: workspace.requirements,
       mappings: workspace.mappings,
       startGrade: preferences.startGrade,
@@ -1215,6 +1258,7 @@ export async function executeAssistantReadTool(
           tracked_requirement_areas: workspace.settings.tracked_requirement_areas
         },
         school: { id: workspace.school.id, name: workspace.school.name, short_name: workspace.school.short_name },
+        school_planning_policy: compactPlanningProfile(workspace.planningProfile),
         plan: { id: workspace.plan.id, active_version_id: workspace.activeVersion.id, courses: planRows },
         graduation: calculated.graduationProgress.map((item) => ({
           area: item.requirement.area,
@@ -1580,6 +1624,7 @@ export async function executeAssistantReadTool(
         respect_recommended_limit: args.respect_recommended_limit,
         requested_preferences: { interests: args.interests, rigor: args.rigor, max_courses_per_term: args.max_courses_per_term, start_grade: args.start_grade ?? workspace.settings.plan_start_grade ?? workspace.settings.grade_level, starting_math_course: args.starting_math_course, include_college_courses: args.include_college_courses, replace_existing: args.replace_existing, objectives: args.objectives },
         remembered_preferences_considered: workspace.memories.filter((memory) => ["schedule_interests", "schedule_rigor", "max_courses_per_term"].includes(memory.memory_key)).map((memory) => memory.memory_key),
+        school_planning_policy: compactPlanningProfile(workspace.planningProfile),
         provider: policy?.provider_name ?? null,
         recommended_max_units: policy?.recommended_max_units ?? null,
         absolute_max_units: policy?.absolute_max_units ?? null,

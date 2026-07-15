@@ -13,6 +13,7 @@ import type {
   PlanCourse,
   PlanVersion,
   School,
+  SchoolPlanningProfile,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
   SmccdProgram,
@@ -58,6 +59,7 @@ export interface WorkspaceBootstrap {
 }
 
 export interface AssistantWorkspaceBootstrap extends WorkspaceBootstrap {
+  school_planning_profile: SchoolPlanningProfile | null;
   transcript_sources: OfficialSource[];
   transcript_review_items: CatalogReviewItem[];
   prerequisite_clearances: SmccdPrerequisiteClearance[];
@@ -128,6 +130,7 @@ export function normalizeAssistantWorkspaceBootstrap(value: unknown): AssistantW
   const snapshot = value as Partial<AssistantWorkspaceBootstrap>;
   return {
     ...workspace,
+    school_planning_profile: snapshot.school_planning_profile ?? null,
     transcript_sources: Array.isArray(snapshot.transcript_sources) ? snapshot.transcript_sources : [],
     transcript_review_items: Array.isArray(snapshot.transcript_review_items) ? snapshot.transcript_review_items : [],
     prerequisite_clearances: Array.isArray(snapshot.prerequisite_clearances) ? snapshot.prerequisite_clearances : [],

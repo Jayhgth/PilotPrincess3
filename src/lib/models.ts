@@ -51,6 +51,31 @@ export interface School {
   directory_updated_at: string | null;
 }
 
+export type CollegeCoursePosture = "integrated" | "supplemental" | "explicit_only";
+
+export interface SchoolPlanningGradeRule {
+  minimum_high_school_courses: number;
+  target_total_courses: number;
+  required_areas: RequirementArea[];
+  preferred_course_names: string[];
+}
+
+export interface SchoolPlanningProfile {
+  id: string;
+  school_id: string;
+  academic_year: string;
+  title: string;
+  source_urls: string[];
+  status: "verified" | "needs_review" | "retired";
+  college_course_posture: CollegeCoursePosture;
+  college_eligible_grades: GradeLevel[];
+  always_high_school_areas: RequirementArea[];
+  grade_rules: Partial<Record<`${GradeLevel}`, SchoolPlanningGradeRule>>;
+  guidance_notes: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface StudentSettings {
   id: string;
   school_id: string | null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, StudentSettings } from "@/lib/models";
+import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch } from "@/lib/planning";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 
@@ -89,6 +89,27 @@ describe("core academic planning contracts", () => {
     });
     expect(generated[0]).toMatchObject({ course_id: "precalc", grade_level: 9, is_weighted: true });
     expect(generated.every((row) => row.course_id === "precalc")).toBe(true);
+  });
+
+  it("uses a retrieved school planning profile instead of a global course flow", () => {
+    const geometry = course("geometry", "Geometry", "Mathematics", [9]);
+    const algebra = course("algebra", "Algebra I", "Mathematics", [9]);
+    const journalism = course("journalism", "Journalism", "Electives", [9]);
+    const electiveRequirement: GraduationRequirement = { ...requirement, id: "electives", area: "electives", name: "Electives", credits_required: 10, years_required: 1 };
+    const profile: SchoolPlanningProfile = {
+      id: "profile", school_id: "school", academic_year: "2026-27", title: "Official planning guide", source_urls: ["https://school.example/guide"], status: "verified",
+      college_course_posture: "supplemental", college_eligible_grades: [11, 12], always_high_school_areas: [], guidance_notes: [], created_at: "2026-07-15", updated_at: "2026-07-15",
+      grade_rules: { "9": { minimum_high_school_courses: 2, target_total_courses: 2, required_areas: ["math"], preferred_course_names: ["Geometry"] } }
+    };
+    const generated = generateSuggestedPlan({ ...settings, plan_end_grade: 9 }, [algebra, geometry, journalism], [], null, true, {
+      schoolSlug: "example-high", planningProfile: profile, requirements: [{ ...requirement, credits_required: 10, years_required: 1 }, electiveRequirement],
+      mappings: [
+        { id: "algebra-map", course_id: algebra.id, requirement_id: requirement.id, confidence: "verified", is_user_override: false },
+        { id: "geometry-map", course_id: geometry.id, requirement_id: requirement.id, confidence: "verified", is_user_override: false },
+        { id: "journalism-map", course_id: journalism.id, requirement_id: electiveRequirement.id, confidence: "verified", is_user_override: false }
+      ], startGrade: 9
+    });
+    expect(generated.map((row) => row.course_id)).toEqual(["geometry", "journalism"]);
   });
 
   it("builds a balanced selected-school sequence before safe electives", async () => {

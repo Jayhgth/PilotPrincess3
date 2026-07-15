@@ -215,12 +215,12 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("explicitly attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible image content only as context for this turn");
     expect(prompt).toContain("ask up to three short structured questions");
-    expect(prompt).toContain("Show a structured grade-by-grade plan");
+    expect(prompt).toContain("Build and explain one grade at a time");
     expect(prompt).toContain("current four-year plan");
-    expect(prompt).toContain("Never call a partial result complete");
+    expect(prompt).toContain("call a partial plan complete");
     expect(prompt).toContain("Schedule generation evidence contract");
     expect(prompt).toContain("authoritative product context, not student-record evidence");
-    expect(prompt).toContain("claim workload personalization without student-supplied context");
+    expect(prompt).toContain("pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint");
     expect(prompt).toContain("Never end with a promise such as 'I'll check'");
     expect(prompt).toContain("ACTION CONTEXT");
     expect(prompt).toContain("Recent conversation change ledger");

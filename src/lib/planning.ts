@@ -8,6 +8,7 @@ import type {
   PlanCourse,
   RequirementArea,
   RequirementProgress,
+  SchoolPlanningProfile,
   SmccdHighSchoolEquivalency,
   StudentSettings
 } from "@/lib/models";
@@ -580,6 +581,7 @@ export interface GeneratedPlanCourse {
 
 export interface SuggestedPlanContext {
   schoolSlug: string;
+  planningProfile?: SchoolPlanningProfile | null;
   requirements?: readonly GraduationRequirement[];
   mappings?: readonly CourseRequirementMapping[];
   startGrade?: GradeLevel;
@@ -601,6 +603,16 @@ function plannerCourseMatches(candidate: Course, requested: string) {
   const course = normalizedPlannerText(`${candidate.course_code ?? ""} ${candidate.name}`);
   const query = normalizedPlannerText(requested);
   return Boolean(query && (course.includes(query) || query.includes(normalizedPlannerText(candidate.name))));
+}
+
+function plannerCourseMatchScore(candidate: Course, requested: string) {
+  const name = normalizedPlannerText(candidate.name);
+  const identity = normalizedPlannerText(`${candidate.course_code ?? ""} ${candidate.name}`);
+  const query = normalizedPlannerText(requested);
+  if (!query) return 0;
+  if (name === query) return 3;
+  if (name.startsWith(query) || name.endsWith(query)) return 2;
+  return identity.includes(query) || query.includes(name) ? 1 : 0;
 }
 
 const AUTOMATIC_PLANNING_REQUIRES_INTENT = /\b(?:phoenix|credit recovery|support|intervention|intensive|academic literacy|study skills|iep|office aide|student aide|student clerk|teacher assistant|teaching assistant|technical assistant|peer tutor|peer mentor|leadership|student government|community service|work experience|internship|early childhood|child development|avid|career pathway)\b/;
@@ -817,15 +829,20 @@ export function generateSuggestedPlan(
     if (explicitMath) addCourse(explicitMath, planningStartGrade, undefined, true);
   }
 
-  if (isDtech) for (const grade of planningGrades) {
-    for (const courseName of FLOW_BY_GRADE[grade]) {
+  const preferredFlowForGrade = (grade: GradeLevel) => context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.preferred_course_names
+    ?? (isDtech ? FLOW_BY_GRADE[grade] : []);
+  for (const grade of planningGrades) {
+    for (const courseName of preferredFlowForGrade(grade)) {
       const candidates = courses
-        .filter((candidate) => candidate.name.toLowerCase().startsWith(courseName.toLowerCase()))
+        .filter((candidate) => plannerCourseMatches(candidate, courseName))
+        .filter((candidate) => candidate.grade_levels.length === 0 || candidate.grade_levels.includes(grade))
         .sort((left, right) => Number(verifiedMappedCourseIds.has(right.id)) - Number(verifiedMappedCourseIds.has(left.id))
           || (context.rigor === "advanced" ? Number(right.is_weighted) - Number(left.is_weighted) : context.rigor === "lighter" ? Number(left.is_weighted) - Number(right.is_weighted) : 0)
+          || plannerCourseMatchScore(right, courseName) - plannerCourseMatchScore(left, courseName)
           || left.name.localeCompare(right.name));
       const course = candidates[0];
       if (!course) continue;
+      if (context.startingMathCourse && plannerMathRank(course) !== null && generated.some((row) => row.grade_level === grade && plannerMathRank(courseMap.get(row.course_id)!) !== null)) continue;
       const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;
       const term: PlanCourse["term"] = course.term_type === "semester"
         ? semesterIndex % 2 === 0 ? "fall" : "spring"
@@ -834,7 +851,7 @@ export function generateSuggestedPlan(
     }
   }
 
-  if (!isDtech && context.requirements?.length && context.mappings?.length) {
+  if (context.requirements?.length && context.mappings?.length) {
     const verifiedRequirements = context.requirements.filter((requirement) => requirement.confidence === "verified" && requirement.review_status === "approved");
     const verifiedMappings = context.mappings.filter((mapping) => mapping.confidence === "verified");
     const interestText = normalizedPlannerText((context.interests ?? []).join(" "));
@@ -874,7 +891,10 @@ export function generateSuggestedPlan(
       .filter(({ row, course: candidate }) => row.grade_level === grade && courseMatchesArea(candidate, area))
       .reduce((total, { row }) => total + Number(row.credits ?? 0), 0);
     const areaCourseCount = (area: RequirementArea) => allPlannedCourses().filter(({ course: candidate }) => courseMatchesArea(candidate, area)).length;
-    const targetLoad = Math.max(1, Math.min(maximumPerTerm ?? 6, 6));
+    const targetLoadForGrade = (grade: GradeLevel) => Math.max(1, Math.min(
+      maximumPerTerm ?? context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.target_total_courses ?? 6,
+      12
+    ));
     const priorCourses = (grade: GradeLevel) => allPlannedCourses().filter(({ row }) => row.grade_level < grade).map(({ course: candidate }) => candidate);
     const requiresEthnicStudies = requirementCredits("ethnic_studies") > 0 || verifiedRequirements.some((requirement) => requirement.area === "social_science"
       && /\bethnic studies\b/i.test(`${requirement.name} ${requirement.notes ?? ""}`));
@@ -910,25 +930,32 @@ export function generateSuggestedPlan(
     // Build one year at a time. Within each year, establish the core subject
     // sequence before considering enrichment or elective space.
     for (const [gradeIndex, grade] of planningGrades.entries()) {
+      const policyAreas = new Set(context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.required_areas ?? []);
       const advanced = context.rigor === "advanced";
       const englishYears = Math.max(requirementYears("english"), advanced ? planningGrades.length : 0);
       const mathYears = Math.max(requirementYears("math"), advanced || context.startingMathCourse ? planningGrades.length : 0);
       const scienceYears = Math.max(requirementYears("lab_science"), advanced ? Math.min(3, planningGrades.length) : 0);
       const peYears = requirementYears("physical_education");
-      if (gradeIndex < englishYears) fillAreaForGrade("english", grade);
-      if (gradeIndex < mathYears) fillAreaForGrade("math", grade);
-      if (grade >= 10 && requirementCredits("social_science") > 0) fillAreaForGrade("social_science", grade);
-      if (gradeIndex < scienceYears) fillAreaForGrade("lab_science", grade);
-      if (gradeIndex < peYears) fillAreaForGrade("physical_education", grade);
+      const designLabYears = requirementYears("design_lab");
+      if (policyAreas.has("english") || gradeIndex < englishYears) fillAreaForGrade("english", grade);
+      if (policyAreas.has("math") || gradeIndex < mathYears) fillAreaForGrade("math", grade);
+      if (policyAreas.has("social_science") || (grade >= 10 && requirementCredits("social_science") > 0)) fillAreaForGrade("social_science", grade);
+      if (policyAreas.has("lab_science") || gradeIndex < scienceYears) fillAreaForGrade("lab_science", grade);
+      if (policyAreas.has("physical_education") || gradeIndex < peYears) fillAreaForGrade("physical_education", grade);
+      if (policyAreas.has("design_lab") || gradeIndex < designLabYears) fillAreaForGrade("design_lab", grade);
       if (requiresEthnicStudies && areaCourseCount("ethnic_studies") === 0) fillAreaForGrade("ethnic_studies", grade, Math.max(5, requirementCredits("ethnic_studies")));
-      if (requirementCredits("personal_development") > 0 && areaCourseCount("personal_development") === 0) {
+      if ((policyAreas.has("personal_development") && areaCreditsInGrade("personal_development", grade) === 0)
+        || (!policyAreas.has("personal_development") && requirementCredits("personal_development") > 0 && areaCourseCount("personal_development") === 0)) {
         fillAreaForGrade("personal_development", grade, requirementCredits("personal_development"));
       }
       const languageTarget = advanced && courses.some((candidate) => courseMatchesArea(candidate, "world_language")) ? 2 : requirementYears("world_language");
-      if (areaCourseCount("world_language") < languageTarget && Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoad) {
+      if ((policyAreas.has("world_language") || areaCourseCount("world_language") < languageTarget) && Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade)) {
         fillAreaForGrade("world_language", grade);
       }
-      if (requirementCredits("visual_performing_arts") > 0 && areaCourseCount("visual_performing_arts") === 0) fillAreaForGrade("visual_performing_arts", grade);
+      if ((policyAreas.has("visual_performing_arts") && areaCreditsInGrade("visual_performing_arts", grade) === 0)
+        || (!policyAreas.has("visual_performing_arts") && requirementCredits("visual_performing_arts") > 0 && areaCourseCount("visual_performing_arts") === 0)) {
+        fillAreaForGrade("visual_performing_arts", grade);
+      }
       if (requirementTargetCredits("career_technical_education") > 0 && areaCourseCount("career_technical_education") === 0) {
         fillAreaForGrade("career_technical_education", grade, requirementTargetCredits("career_technical_education"));
       }
@@ -937,10 +964,10 @@ export function generateSuggestedPlan(
     // Balance only after the core passes. Elective fill is intentionally
     // conservative: no recovery/support/pathway course is inferred, and a
     // second core course in the same year is not used as generic filler.
-    const coreAreas: RequirementArea[] = ["english", "math", "social_science", "lab_science", "physical_education", "world_language", "visual_performing_arts", "ethnic_studies", "personal_development", "career_technical_education"];
+    const coreAreas: RequirementArea[] = ["english", "math", "social_science", "lab_science", "physical_education", "world_language", "visual_performing_arts", "ethnic_studies", "personal_development", "career_technical_education", "design_lab"];
     for (const grade of planningGrades) {
       let attempts = 0;
-      while (Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoad && attempts < courses.length) {
+      while (Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade) && attempts < courses.length) {
         attempts += 1;
         const ranked = courses
           .filter((candidate) => !existingIds.has(candidate.id))

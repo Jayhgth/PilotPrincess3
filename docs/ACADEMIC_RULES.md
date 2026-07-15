@@ -44,6 +44,12 @@ Only the selected school's published official diploma requirements are calculate
 
 Local requirements are versioned by academic authority: district schools share their district rules and charter schools use their own CDS-scoped authority. The source discovery job follows official school-to-district navigation, checks official site maps and linked document hosts, records content hashes and exact evidence, and publishes only when all four core areas plus a complete local set validate. Default all-student plans are kept separate from transfer, foster-youth, or other exception plans. Required pathways whose credits are already part of electives are tracked as constraints and excluded from aggregate credit totals.
 
+## School planning profiles
+
+`school_planning_profiles` keeps scheduling guidance separate from diploma-credit rules. A verified profile supplies grade-specific minimum and target loads, required subject areas, normal course names, subjects that must remain at the high school, and the school's sourced posture toward college coursework. Pilot retrieves only the selected school's compact profile with the workspace; school-specific prose is not copied into the global prompt.
+
+d.tech's profile preserves annual on-campus English and Design Lab plus its integrated concurrent-enrollment model. Carlmont's profile preserves its six-course norm, five-course senior minimum, and restricted seventh-course exceptions. Schools without a verified profile use only their verified catalog and diploma mappings and cannot receive unsupported school-specific claims.
+
 ## Catalog eligibility
 
 The catalogs answer: what can the student still take in the planning year, why is it available, what evidence controls readiness, and what will be added?
