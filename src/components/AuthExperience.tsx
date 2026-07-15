@@ -8,7 +8,8 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 import BrandMark from "@/components/BrandMark";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
-const LightRays = lazy(() => import("@/components/reactbits/LightRays"));
+const ColorBends = lazy(() => import("@/components/reactbits/ColorBends"));
+const AUTH_COLOR_BENDS = ["#38bdf8"];
 
 type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
@@ -121,18 +122,22 @@ export default function AuthExperience() {
   return (
     <main className="auth-page">
       <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
-        <LightRays
+        <ColorBends
           className="auth-page-background"
-          raysOrigin="top-center"
-          raysColor="#ffffff"
-          raysSpeed={0.38}
-          lightSpread={0.24}
-          rayLength={4.6}
-          fadeDistance={1.45}
-          saturation={1}
-          followMouse
-          mouseInfluence={0.045}
-          distortion={0.012}
+          rotation={90}
+          speed={0.2}
+          colors={AUTH_COLOR_BENDS}
+          transparent={false}
+          autoRotate={0.8}
+          scale={1}
+          frequency={1}
+          warpStrength={1}
+          mouseInfluence={0.5}
+          parallax={0.35}
+          noise={0.05}
+          iterations={1}
+          intensity={1.2}
+          bandWidth={5.6}
         />
       </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">
