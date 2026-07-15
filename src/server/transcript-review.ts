@@ -88,7 +88,7 @@ export function transcriptReviewRows(
       ...(transcriptClassification === "custom" ? [`No exact selected-school catalog match was found for ${selectedSchoolLabel}. This course will remain custom until reviewed.`] : []),
       ...(isCollegeCourse && !smccdMatch ? ["No exact SMCCD catalog match was found for this college course code."] : []),
       ...(normalizedCourse.grade_level === null ? ["Grade level was not explicit in the transcript."] : []),
-      ...(normalizedCourse.credits === null && match?.credits === null ? ["Credits need manual confirmation."] : [])
+      ...(!isCollegeCourse && normalizedCourse.credits === null && match?.credits === null ? ["Credits need manual confirmation."] : [])
     ];
     return {
       user_id: userId,

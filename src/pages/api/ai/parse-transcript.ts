@@ -6,7 +6,7 @@ import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { normalizeSmccdCourseCode } from "@/lib/smccd";
 import type { CatalogReviewItem, Course, PlanCourse, SmccdCourse } from "@/lib/models";
-import { resolveTranscriptWeighting, type TranscriptCoursePayload } from "@/lib/transcript";
+import { inferTranscriptGradeLevel, resolveTranscriptWeighting, type TranscriptCoursePayload } from "@/lib/transcript";
 import {
   parsedTranscriptJsonSchema,
   parsedTranscriptSchema,
@@ -15,7 +15,7 @@ import {
 import { CODEX_RUNTIME_CAPABILITIES, runCodexStructuredStream } from "@/server/codex";
 import { codexTraceSummary } from "@/server/codex-events";
 import { extractSource } from "@/server/source-extraction";
-import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
+import { parseDtechTranscriptText, parseSmccdTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
 import {
   reconcileTranscriptReviewRows,
   transcriptReviewRows
@@ -109,8 +109,15 @@ export const POST: APIRoute = async ({ request }) => {
     let aiTrace: ReturnType<typeof codexTraceSummary> | null = null;
     let aiThreadId: string | null = null;
     let aiUsage: { input_tokens: number; cached_input_tokens: number; output_tokens: number; reasoning_output_tokens: number } | null = null;
-    const hasDtechLayout = selectedSchoolIsDtech || /Design Tech High School/i.test(extractedText) || /\bGR\s+Course\b[\s\S]{0,500}\bS0\b[\s\S]{0,120}\bS1\b[\s\S]{0,120}\bS2\b/i.test(layoutText || extractedText);
-    if (extractedText.trim() && hasDtechLayout) {
+    const documentText = `${extractedText}\n${layoutText}`;
+    const hasSmccdLayout = /San Mateo County CC District[\s\S]{0,300}Unofficial Academic Transcript/i.test(documentText);
+    const hasDtechLayout = /Design Tech High School/i.test(documentText) || /\bGR\s+Course\b[\s\S]{0,500}\bS0\b[\s\S]{0,120}\bS1\b[\s\S]{0,120}\bS2\b/i.test(layoutText || extractedText);
+    if (extractedText.trim() && layoutText.trim() && hasSmccdLayout) {
+      const parserStartedAt = Date.now();
+      parsedResult = parseSmccdTranscriptText(extractedText, layoutText);
+      parserLatencyMs = Date.now() - parserStartedAt;
+      parserMethod = "deterministic_text";
+    } else if (extractedText.trim() && hasDtechLayout) {
       const parserStartedAt = Date.now();
       parsedResult = parseDtechTranscriptText(extractedText, layoutText);
       parserLatencyMs = Date.now() - parserStartedAt;
@@ -153,6 +160,22 @@ export const POST: APIRoute = async ({ request }) => {
       aiTrace = codexTraceSummary(codexResult.events);
       aiThreadId = codexResult.threadId;
       aiUsage = codexResult.usage;
+    }
+
+    const { data: studentSettings, error: studentSettingsError } = await auth.supabase
+      .from("student_settings")
+      .select("graduation_year")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (studentSettingsError) throw studentSettingsError;
+    if (studentSettings?.graduation_year) {
+      parsedResult = {
+        ...parsedResult,
+        courses: parsedResult.courses.map((course) => ({
+          ...course,
+          grade_level: course.grade_level ?? inferTranscriptGradeLevel(course.school_year, studentSettings.graduation_year)
+        }))
+      };
     }
 
     const catalogQuery = auth.supabase

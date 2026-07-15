@@ -168,6 +168,13 @@ export function visibleTranscriptUncertaintyNotes(
   });
 }
 
+export function inferTranscriptGradeLevel(schoolYear: string | null | undefined, graduationYear: number | null | undefined) {
+  const schoolYearEnd = schoolYear?.match(/^\d{4}-(\d{4})$/)?.[1];
+  if (!schoolYearEnd || !graduationYear) return null;
+  const grade = 12 - (graduationYear - Number(schoolYearEnd));
+  return grade >= 9 && grade <= 12 ? grade as GradeLevel : null;
+}
+
 export function transcriptPlanCourseDraft(
   payload: TranscriptCoursePayload,
   settings: StudentSettings,
@@ -179,7 +186,8 @@ export function transcriptPlanCourseDraft(
   const resolution = resolveTranscriptCourse(payload, courses);
   const matched = resolution.matchedCourse;
   const fallbackGrade = Math.max(9, Math.min(12, (settings.grade_level ?? 9) - 1)) as GradeLevel;
-  const grade = Math.max(9, Math.min(12, Number(payload.grade_level ?? fallbackGrade))) as GradeLevel;
+  const inferredGrade = inferTranscriptGradeLevel(payload.school_year, settings.graduation_year);
+  const grade = Math.max(9, Math.min(12, Number(payload.grade_level ?? inferredGrade ?? fallbackGrade))) as GradeLevel;
   const equivalency = findHighSchoolEquivalency(payload, equivalencies);
   const isSmccdCourse = resolution.classification === "smccd_catalog" || resolution.classification === "smccd_unmatched";
   const collegeUnits = payload.college_units ?? matched?.college_units ?? null;

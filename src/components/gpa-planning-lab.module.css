@@ -38,9 +38,8 @@
 .includeControl { display: grid; width: 28px; height: 34px; place-items: center; cursor: pointer; }
 .scenarioCheckbox { display: grid; width: 16px; height: 16px; place-items: center; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface-raised); color: var(--surface-raised); box-shadow: 0 1px 2px rgb(35 38 43 / .08); cursor: pointer; transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease; }
 .scenarioCheckbox:hover { border-color: color-mix(in srgb, var(--accent) 72%, var(--line-strong)); }
-.scenarioCheckbox[data-focused] { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
-.scenarioCheckbox[data-checked] { border-color: var(--accent); background: var(--accent); color: white; }
-.checkboxIndicator { display: grid; place-items: center; }
+.includeControl:focus-within .scenarioCheckbox { outline: 0; box-shadow: 0 0 0 3px var(--accent-soft); }
+.scenarioCheckbox[data-checked="true"] { border-color: var(--accent); background: var(--accent); color: white; }
 .gradeControl { display: block; }
 .gradeControl select { width: 62px; min-height: 30px; padding: 3px 6px; font-size: 11px; }
 .empty { display: flex; align-items: center; gap: 10px; min-height: 66px; padding: 12px; border-radius: 8px; background: var(--surface-muted); color: var(--ink-soft); }

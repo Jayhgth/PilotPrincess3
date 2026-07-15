@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseDtechTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
+import { inferTranscriptGradeLevel } from "@/lib/transcript";
+import { parseDtechTranscriptText, parseSmccdTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
 
 const TRANSCRIPT_TEXT = `
 GR Course S0 CR S1 CR S2 CR GR Course S0 CR S1 CR S2 CR
@@ -58,7 +59,7 @@ describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
 
-    expect(TRANSCRIPT_PARSER_VERSION).toBe("dtech-layout-text-1.6.0");
+    expect(TRANSCRIPT_PARSER_VERSION).toBe("transcript-layout-text-1.7.0");
     expect(result.courses).toHaveLength(6);
     expect(result.academic_years).toEqual(["2024-2025", "2025-2026"]);
     expect(result.summary).toContain("2 SMCCD course rows");
@@ -207,6 +208,53 @@ Comments
       institution_name: "College of San Mateo",
       term: "fall"
     });
+
+    const flattenedMissingRightColumn = `
+25-26 Design Tech High School
+11 * English 3 A 5.0 A 5.0
+11 * Physics B 5.0
+Comments
+`;
+    const merged = parseDtechTranscriptText(flattenedMissingRightColumn, layout);
+    expect(merged.courses).toHaveLength(6);
+    expect(merged.courses.map((course) => course.course_code)).toContain("HIST 101");
+  });
+
+  it("extracts every completed SMCCD row and excludes in-progress courses", () => {
+    const source = `
+San Mateo County CC District
+Unofficial Academic Transcript
+INSTITUTION CREDIT
+Term: Fall 2025
+Subject   Course             Campus       Level    Title                        Grade      Credit     Quality    R
+CIS       127                College of   01       HTML5 and CSS                A          3.000      12.00
+                             San Mateo
+ETHN      103                Skyline      01       Asian American US            A          3.000      12.00
+                             College               Institutions
+Term Totals
+COURSE(S) IN PROGRESS
+Term: Fall 2026
+MATH      270                College of   01       Linear Algebra               3.000
+`;
+    const result = parseSmccdTranscriptText(source, source);
+
+    expect(result.courses).toHaveLength(2);
+    expect(result.summary).toContain("2 completed SMCCD course rows");
+    expect(result.courses[0]).toMatchObject({
+      course_name: "CIS 127 HTML5 and CSS",
+      course_code: "CIS 127",
+      institution_name: "College of San Mateo",
+      school_year: "2025-2026",
+      term: "fall",
+      college_units: 3,
+      weighted: true
+    });
+    expect(result.courses[1]).toMatchObject({
+      course_name: "ETHN 103 Asian American US Institutions",
+      institution_name: "Skyline College"
+    });
+    expect(inferTranscriptGradeLevel("2023-2024", 2027)).toBe(9);
+    expect(inferTranscriptGradeLevel("2025-2026", 2027)).toBe(11);
   });
 
   it("uses flattened text for institution identity when positioned columns reorder sections", () => {

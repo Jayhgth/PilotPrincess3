@@ -3,7 +3,6 @@ import {
   CheckIcon as Check,
   InfoIcon as Info
 } from "@phosphor-icons/react";
-import { Checkbox } from "@base-ui/react/checkbox";
 import { useEffect, useMemo, useState } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import AnimatedList from "@/components/reactbits/AnimatedList";
@@ -166,14 +165,16 @@ export default function GpaPlanningLab({
               </div>
               <div className={styles.courseControls}>
                 <label className={styles.includeControl} title={choice?.included === false ? "Include in GPA scenario" : "Exclude from GPA scenario"}>
-                  <Checkbox.Root
+                  <input
                     aria-label={`Include ${displayName} in GPA scenario`}
+                    className="sr-only"
                     checked={choice?.included ?? true}
-                    className={styles.scenarioCheckbox}
-                    onCheckedChange={(checked) => updateChoice(row.id, { included: checked })}
-                  >
-                    <Checkbox.Indicator className={styles.checkboxIndicator}><Check aria-hidden size={11} weight="bold" /></Checkbox.Indicator>
-                  </Checkbox.Root>
+                    type="checkbox"
+                    onChange={(event) => updateChoice(row.id, { included: event.currentTarget.checked })}
+                  />
+                  <span aria-hidden className={styles.scenarioCheckbox} data-checked={choice?.included ?? true}>
+                    {(choice?.included ?? true) && <Check size={11} weight="bold" />}
+                  </span>
                 </label>
                 <label className={styles.gradeControl}><span className="sr-only">Expected grade for {displayName}</span><select aria-label={`Expected grade for ${displayName}`} value={choice?.expectedGrade ?? ""} disabled={choice?.included === false} onChange={(event) => updateChoice(row.id, { expectedGrade: event.target.value || null })}>{LETTER_GRADES.filter((grade) => !["IP", "P"].includes(grade)).map((grade) => <option value={grade} key={grade || "unset"}>{grade || "Grade"}</option>)}</select></label>
               </div>

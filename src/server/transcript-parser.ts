@@ -8,7 +8,7 @@ const DISTRICT_COLLEGES = ["College of San Mateo", "Skyline College", "Cañada C
 const PDF_PAGE_MARKER_PATTERN = /^\[\[PILOT_PDF_PAGE:\d+\]\]$/;
 const TRANSCRIPT_COLUMN_MARKER = "[[PILOT_TRANSCRIPT_COLUMN]]";
 
-export const TRANSCRIPT_PARSER_VERSION = "dtech-layout-text-1.6.0";
+export const TRANSCRIPT_PARSER_VERSION = "transcript-layout-text-1.7.0";
 
 type TranscriptTerm = "fall" | "spring" | "summer" | "full_year";
 
@@ -313,13 +313,17 @@ function mergeTranscriptRepresentations(
       evidence: `${course.evidence} Semester placement was read from the positioned S0/S1/S2 columns.`
     };
   });
-  const collegeCourseCount = courses.filter((course) => course.institution_name && isDistrictCollege(course.institution_name)).length;
+  const positionedOnly = positioned.courses.filter((_, index) => !claimed.has(index));
+  const mergedCourses = [...courses, ...positionedOnly];
+  const academicYears = [...new Set([...flattened.academic_years, ...positioned.academic_years])].sort();
+  const collegeCourseCount = mergedCourses.filter((course) => course.institution_name && isDistrictCollege(course.institution_name)).length;
   return {
     ...flattened,
-    summary: courses.length
-      ? `Deterministically extracted ${courses.length} completed course rows across ${flattened.academic_years.length} school years, including ${collegeCourseCount} SMCCD course rows.`
+    summary: mergedCourses.length
+      ? `Deterministically extracted ${mergedCourses.length} completed course rows across ${academicYears.length} school years, including ${collegeCourseCount} SMCCD course rows.`
       : flattened.summary,
-    courses,
+    academic_years: academicYears,
+    courses: mergedCourses,
     conflicts: [...new Set([
       ...positioned.conflicts,
       ...flattened.conflicts.filter((conflict) => !conflict.includes("semester column was not available"))
@@ -333,4 +337,96 @@ export function parseDtechTranscriptText(text: string, layoutText = ""): ParsedT
   const positioned = parseTranscriptRepresentation(linearizeTranscriptColumns(layoutText));
   if (flattened.courses.length === 0) return positioned;
   return mergeTranscriptRepresentations(flattened, positioned);
+}
+
+const SMCCD_COURSE_ROW_PATTERN = /^([A-Z]{2,5})\s+([A-Z]?\d{2,4}(?:\.\d+)?)\s+(College of|Skyline|Canada|Cañada)\s+01\s+(.+?)\s+(A\+|A-|A|B\+|B-|B|C\+|C-|C|D\+|D-|D|F|P|NP)\s+(\d{1,2}\.\d{3})\s+\d+(?:\.\d+)?\s*$/;
+
+function smccdSchoolYear(term: Exclude<TranscriptTerm, "full_year">, year: number) {
+  return term === "spring" ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+}
+
+function smccdInstitution(value: string) {
+  if (/^College of$/i.test(value)) return "College of San Mateo";
+  if (/^Skyline$/i.test(value)) return "Skyline College";
+  return "Cañada College";
+}
+
+export function parseSmccdTranscriptText(text: string, layoutText = ""): ParsedTranscriptResult {
+  const input = layoutText.trim() || text;
+  const lines = input.split(/\r?\n/);
+  const courses: ParsedTranscriptResult["courses"] = [];
+  const academicYears = new Set<string>();
+  let term: Exclude<TranscriptTerm, "full_year"> | null = null;
+  let termYear: number | null = null;
+  let pending: { titleParts: string[]; courseIndex: number } | null = null;
+  let inProgress = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (/^COURSE\(S\) IN PROGRESS$/i.test(line)) {
+      inProgress = true;
+      pending = null;
+      continue;
+    }
+    if (inProgress) continue;
+    const termMatch = line.match(/^Term:\s*(Fall|Spring|Summer)\s+(\d{4})$/i);
+    if (termMatch) {
+      term = termMatch[1].toLowerCase() as Exclude<TranscriptTerm, "full_year">;
+      termYear = Number(termMatch[2]);
+      pending = null;
+      continue;
+    }
+    if (/^(Term Totals|Transcript Totals|Subject\s+Course|Current Term|Cumulative|Additional Standing|Dean's List|\[\[PILOT_PDF_PAGE:)/i.test(line)) {
+      pending = null;
+      continue;
+    }
+
+    const courseMatch = line.match(SMCCD_COURSE_ROW_PATTERN);
+    if (courseMatch && term && termYear) {
+      const [, subject, number, campus, title, letterGrade, unitsText] = courseMatch;
+      const schoolYear = smccdSchoolYear(term, termYear);
+      academicYears.add(schoolYear);
+      const institution = smccdInstitution(campus);
+      courses.push({
+        course_name: `${subject} ${number} ${title}`,
+        course_code: `${subject} ${number}`,
+        subject,
+        grade_level: null,
+        school_year: schoolYear,
+        term,
+        letter_grade: letterGrade,
+        credits: null,
+        weighted: true,
+        institution_name: institution,
+        college_units: Number(unitsText),
+        confidence: "verified",
+        evidence: `${term[0].toUpperCase()}${term.slice(1)} ${termYear} ${institution}: grade ${letterGrade}, ${Number(unitsText)} college units.`
+      });
+      pending = { titleParts: [title], courseIndex: courses.length - 1 };
+      continue;
+    }
+
+    if (pending && rawLine.length >= 49) {
+      const titleContinuation = rawLine.slice(48).trim();
+      if (titleContinuation && !/^\d/.test(titleContinuation)) {
+        pending.titleParts.push(titleContinuation);
+        const course = courses[pending.courseIndex];
+        const title = pending.titleParts.join(" ").replace(/\s+/g, " ").trim();
+        course.course_name = `${course.course_code} ${title}`;
+      }
+    }
+  }
+
+  const studentName = text.match(/STUDENT INFORMATION\s+Name\s+([^\n]+)/i)?.[1]?.trim() ?? null;
+  return {
+    summary: courses.length
+      ? `Deterministically extracted ${courses.length} completed SMCCD course rows across ${academicYears.size} school years. In-progress courses were excluded.`
+      : "No completed SMCCD course rows were detected in the transcript text.",
+    student_name: studentName,
+    school_name: null,
+    academic_years: [...academicYears].sort(),
+    courses,
+    conflicts: [],
+    counselor_questions: []
+  };
 }
