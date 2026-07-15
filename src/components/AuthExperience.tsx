@@ -8,23 +8,7 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 import BrandMark from "@/components/BrandMark";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
 
-const Hyperspeed = lazy(() => import("@/components/reactbits/Hyperspeed"));
-const AUTH_HYPERSPEED_OPTIONS = {
-  distortion: "turbulentDistortion",
-  lanesPerRoad: 3,
-  lightPairsPerRoadWay: 34,
-  totalSideLightSticks: 28,
-  colors: {
-    roadColor: 0x08090b,
-    islandColor: 0x0c0d0f,
-    background: 0x0c0d0f,
-    shoulderLines: 0x3b2029,
-    brokenLines: 0x321c24,
-    leftCars: [0x843148, 0xb84d6a, 0xd58aa0],
-    rightCars: [0xf0a5bb, 0xc45f7c, 0x7b2a41],
-    sticks: 0xb84d6a
-  }
-};
+const LightRays = lazy(() => import("@/components/reactbits/LightRays"));
 
 type AuthMode = "sign-in" | "sign-up" | "forgot-password";
 
@@ -56,6 +40,9 @@ export default function AuthExperience() {
     return new URLSearchParams(window.location.search).get("demo") === "login";
   }, []);
   const [mode, setMode] = useState<AuthMode>("sign-in");
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [preferredName, setPreferredName] = useState("");
@@ -74,6 +61,13 @@ export default function AuthExperience() {
       if (data.session) window.location.assign("/app");
     });
   }, [demoLoginPreview, supabase]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => setTheme(root.dataset.theme === "dark" ? "dark" : "light"));
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -137,9 +131,18 @@ export default function AuthExperience() {
   return (
     <main className="auth-page">
       <Suspense fallback={<div aria-hidden="true" className="auth-page-background" />}>
-        <Hyperspeed
+        <LightRays
           className="auth-page-background"
-          effectOptions={AUTH_HYPERSPEED_OPTIONS}
+          raysOrigin="top-center"
+          raysColor={theme === "dark" ? "#e0edf5" : "#526f87"}
+          raysSpeed={0.38}
+          lightSpread={0.42}
+          rayLength={3.2}
+          fadeDistance={1.15}
+          saturation={1}
+          followMouse
+          mouseInfluence={0.045}
+          distortion={0.025}
         />
       </Suspense>
       <section className="auth-story" aria-labelledby="auth-title">
