@@ -2299,16 +2299,18 @@ textarea,
 .course-plan-drag-guide.active { color: var(--accent); font-weight: 650; }
 .course-plan-drag-guide.active svg { color: var(--accent); }
 .course-grade-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
-.course-grade-tabs button { display: grid; min-width: 0; gap: 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink-soft); padding: 9px 12px 8px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease; }
+.course-grade-tabs button { display: grid; min-width: 0; gap: 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink); opacity: 1; padding: 9px 12px 8px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease, box-shadow 120ms ease; }
 .course-grade-tabs button:hover { background: var(--surface-muted); color: var(--ink); }
 .course-grade-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent); outline-offset: -3px; }
 .course-grade-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
-.course-grade-tabs button.completed:not([aria-selected="true"]) { color: var(--ink-faint); }
+.course-grade-tabs button.past { color: var(--ink-faint); opacity: .48; }
+.course-grade-tabs button.past[aria-selected="true"] { opacity: .66; }
 .course-grade-tabs.dragging-course button.drag-available { border-bottom-color: color-mix(in srgb, var(--accent) 22%, var(--line-strong)); background: color-mix(in srgb, var(--accent-soft) 24%, transparent); }
 .course-grade-tabs.dragging-course button.drag-available:hover,
 .course-grade-tabs.dragging-course button.drag-available.drop-target { border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface)); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent); }
 .course-grade-tabs span { overflow: hidden; font-size: var(--type-body); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.course-grade-tabs small { overflow: hidden; color: var(--ink-faint); font-size: var(--type-supporting); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.course-grade-tabs small { overflow: hidden; color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
+.course-grade-tabs button.past small { color: currentColor; }
 .course-year-board { display: grid; gap: 14px; }
 .course-year { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
 .course-year-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2332,7 +2334,7 @@ textarea,
 .kanban-course.sorting-over:not(.dragging) { border-color: color-mix(in srgb, var(--accent) 48%, var(--line)); }
 .kanban-course.confirming-remove { border-color: color-mix(in srgb, var(--danger) 48%, var(--line)); }
 .kanban-course.locked { background: color-mix(in srgb, var(--surface-raised) 84%, var(--surface-muted)); }
-.kanban-course.completed { opacity: .58; }
+.kanban-course.completed { opacity: .42; }
 .kanban-course-main { display: grid; min-height: 70px; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 7px; padding: 9px 40px 9px 7px; text-align: left; }
 .kanban-course.draggable .kanban-course-main { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .kanban-course.draggable .kanban-course-main:active { cursor: grabbing; }

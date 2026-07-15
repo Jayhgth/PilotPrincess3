@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { compareCourseBoardRowsForTerm, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
@@ -38,6 +39,23 @@ const requirement: GraduationRequirement = {
 };
 
 describe("core academic planning contracts", () => {
+  it("keeps pass/fail courses at the bottom of saved and rendered term order", () => {
+    const rows = [
+      plan({ id: "pass-fail", grade_level: 11, term: "spring", status: "completed", letter_grade: "P", sort_order: 0 }),
+      plan({ id: "high-school", grade_level: 11, term: "spring", status: "current", letter_grade: null, sort_order: 2 }),
+      plan({ id: "full-year", grade_level: 11, term: "full_year", status: "current", letter_grade: null, sort_order: 1 }),
+      plan({ id: "college", grade_level: 11, term: "spring", status: "current", letter_grade: null, sort_order: 4, smccd_course_id: "CSM:MATH 251", college_units: 5 })
+    ];
+    const orderedIds = orderedCourseIdsForAutomaticBoardSort(rows, 11);
+    expect(orderedIds).toEqual(["college", "full-year", "high-school", "pass-fail"]);
+
+    const savedOrder = new Map(orderedIds.map((id, index) => [id, index]));
+    const rendered = rows
+      .map((row) => ({ ...row, sort_order: savedOrder.get(row.id)! }))
+      .sort(compareCourseBoardRowsForTerm("spring"));
+    expect(rendered.at(-1)?.id).toBe("pass-fail");
+  });
+
   it("caps completed, current, and planned credit at the requirement", () => {
     expect(appliedCreditBreakdown({ required: 30, completed: 10, current: 20, planned: 20 })).toEqual({
       completed: 10, current: 20, planned: 0, remaining: 0, total: 30, unverified: 0

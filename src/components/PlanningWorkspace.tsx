@@ -894,7 +894,7 @@ export default function PlanningWorkspace() {
     const nextRows = previousRows.map((row) => ({ ...row, sort_order: orderById.get(row.id) ?? row.sort_order }));
     const changedRows = nextRows.filter((row) => previousById.get(row.id)?.sort_order !== row.sort_order);
     if (changedRows.length === 0) {
-      notify("Courses are already sorted with college courses first.");
+      notify("Courses are already sorted with college courses first and pass/fail courses last.");
       return;
     }
 
@@ -909,14 +909,14 @@ export default function PlanningWorkspace() {
         }));
         throw error;
       }
-      void logEvent("plan_edited", { action: "sort_courses", order: "college_first" });
+      void logEvent("plan_edited", { action: "sort_courses", order: "college_first_pass_fail_last" });
       return true;
     }).then((succeeded) => {
       if (!succeeded) {
         setPlanCourses(previousRows);
         return;
       }
-      notifyUndo("Courses sorted with college courses first.", async () => {
+      notifyUndo("Courses sorted with college courses first and pass/fail courses last.", async () => {
         const changedIds = new Set(changedRows.map((row) => row.id));
         const results = await Promise.all(changedRows.flatMap((row) => {
           const previous = previousById.get(row.id);

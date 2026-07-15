@@ -51,9 +51,13 @@ export function compareCourseBoardRows(left: PlanCourse, right: PlanCourse) {
 
 export function compareCourseBoardRowsForTerm(term: CourseBoardTerm) {
   return (left: PlanCourse, right: PlanCourse) => {
+    const leftPassFail = isPassFailPlanCourse(left) ? 1 : 0;
+    const rightPassFail = isPassFailPlanCourse(right) ? 1 : 0;
     const leftContinuation = term === "spring" && left.term === "full_year" ? 1 : 0;
     const rightContinuation = term === "spring" && right.term === "full_year" ? 1 : 0;
-    return leftContinuation - rightContinuation || compareCourseBoardRows(left, right);
+    return leftPassFail - rightPassFail
+      || leftContinuation - rightContinuation
+      || compareCourseBoardRows(left, right);
   };
 }
 
