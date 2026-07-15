@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, StudentSettings } from "@/lib/models";
-import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch } from "@/lib/planning";
+import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 
 const settings: StudentSettings = {
@@ -120,6 +120,7 @@ describe("core academic planning contracts", () => {
       { ...requirement, id: "science-req", area: "lab_science", name: "Science", credits_required: 20, years_required: 2 },
       { ...requirement, id: "pe-req", area: "physical_education", name: "PE", credits_required: 20, years_required: 2 },
       { ...requirement, id: "ethnic-req", area: "ethnic_studies", name: "Ethnic Studies", credits_required: 10, years_required: 1 },
+      { ...requirement, id: "life-req", area: "personal_development", name: "Life Skills", credits_required: 2.5, years_required: null },
       { ...requirement, id: "arts-req", area: "visual_performing_arts", name: "Arts", credits_required: 10, years_required: 1 },
       { ...requirement, id: "elective-req", area: "electives", name: "Electives", credits_required: 50, years_required: 5 }
     ];
@@ -130,7 +131,7 @@ describe("core academic planning contracts", () => {
       course("english-3", "AP Language & Composition", "English", [11], true),
       course("english-4", "AP Literature & Composition", "English", [12], true),
       course("precalc", "Pre-Calc Honors", "Math", [10, 11, 12], true),
-      course("calc-ab", "AP Calculus AB", "Math", [10, 11, 12], true),
+      course("calc-ab", "AP Calculus AB", "Math", [11, 12], true),
       course("calc-bc", "AP Calculus BC", "Math", [11, 12], true),
       course("multi", "Multivariable Calculus", "Math", [12], true),
       course("world", "AP World History", "History", [10], true),
@@ -144,6 +145,7 @@ describe("core academic planning contracts", () => {
       course("pe-2", "PE 2", "Physical Education", [10]),
       course("pe-weight", "PE Weight Training", "Physical Education", [10]),
       course("ethnic", "Ethnic Studies", "Social Studies", [9]),
+      { ...semester(course("life", "Life Skills", "Social Studies", [9])), credits: 2.5 },
       course("art", "Art", "Visual and Performing Arts", [9]),
       { ...course("spanish-1", "Spanish I", "World Language", [10]), uc_ag_area: "E" },
       { ...course("spanish-2", "Spanish II", "World Language", [11]), uc_ag_area: "E" },
@@ -162,7 +164,7 @@ describe("core academic planning contracts", () => {
       ...["world", "us", "government", "economics"].map((id) => [id, "social_science"] as const),
       ...["biology", "chemistry", "physics"].map((id) => [id, "lab_science"] as const),
       ...["pe-1", "pe-2", "pe-weight"].map((id) => [id, "physical_education"] as const),
-      ["ethnic", "ethnic_studies"], ["art", "visual_performing_arts"]
+      ["ethnic", "ethnic_studies"], ["life", "personal_development"], ["art", "visual_performing_arts"]
     ]);
     const mappings: CourseRequirementMapping[] = localCourses.map((row, index) => ({
       id: `map-${index}`,
@@ -171,20 +173,32 @@ describe("core academic planning contracts", () => {
       confidence: "verified",
       is_user_override: false
     }));
+    const profile: SchoolPlanningProfile = {
+      id: "carlmont-profile", school_id: "school", academic_year: "2026-27", title: "Carlmont planning guide", source_urls: ["https://school.example/guide"], status: "verified",
+      college_course_posture: "supplemental", college_eligible_grades: [10, 11, 12], always_high_school_areas: [], guidance_notes: [], created_at: "2026-07-15", updated_at: "2026-07-15",
+      grade_rules: {
+        "9": { minimum_high_school_courses: 6, target_total_courses: 6, required_areas: ["english", "social_science", "math", "lab_science", "physical_education"], preferred_course_names: ["English I", "Life Skills", "Ethnic Studies", "PE 1", "Biology"] },
+        "10": { minimum_high_school_courses: 6, target_total_courses: 6, required_areas: ["english", "social_science", "math", "lab_science", "physical_education"], preferred_course_names: ["English II", "AP World History", "PE 2"] },
+        "11": { minimum_high_school_courses: 6, target_total_courses: 6, required_areas: ["english", "social_science"], preferred_course_names: ["AP Language & Composition", "AP US History"] },
+        "12": { minimum_high_school_courses: 5, target_total_courses: 6, required_areas: ["english", "social_science"], preferred_course_names: ["AP Literature & Composition", "American Government", "Economics"] }
+      }
+    };
     const generated = generateSuggestedPlan(settings, localCourses, [], null, true, {
-      schoolSlug: "carlmont-high", requirements, mappings, startGrade: 9, startingMathCourse: "pre-calc",
+      schoolSlug: "carlmont-high", planningProfile: profile, requirements, mappings, startGrade: 9, startingMathCourse: "pre-calc",
       rigor: "advanced", maxCoursesPerTerm: 6, includeCollegeCourses: false
     });
     const names = new Map(localCourses.map((row) => [row.id, row.name]));
     for (const grade of [9, 10, 11, 12] as const) {
       const rows = generated.filter((row) => row.grade_level === grade);
-      expect(rows.filter((row) => row.term === "fall" || row.term === "full_year")).toHaveLength(6);
-      expect(rows.filter((row) => row.term === "spring" || row.term === "full_year")).toHaveLength(6);
+      expect(scheduleTermLoad(generated.map((row) => ({ ...row, custom_course_name: null, smccd_course_id: null })), localCourses, grade, "fall")).toBe(6);
+      expect(scheduleTermLoad(generated.map((row) => ({ ...row, custom_course_name: null, smccd_course_id: null })), localCourses, grade, "spring")).toBe(6);
       expect(rows.filter((row) => areaByCourseId.get(row.course_id) === "english")).toHaveLength(1);
       expect(rows.filter((row) => areaByCourseId.get(row.course_id) === "math")).toHaveLength(1);
     }
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "physical_education").map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "PE 1"], [10, "PE 2"]]);
+    expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "math").map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "Pre-Calc Honors"], [10, "AP Calculus AB"], [11, "AP Calculus BC"], [12, "Multivariable Calculus"]]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "social_science").map((row) => names.get(row.course_id))).toEqual(["AP World History", "AP US History", "American Government", "Economics"]);
+    expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "visual_performing_arts")).toHaveLength(1);
     expect(generated.map((row) => names.get(row.course_id))).not.toContain("Phoenix Credit Recovery");
     expect(generated.map((row) => names.get(row.course_id))).not.toContain("Early Childhood Education");
 

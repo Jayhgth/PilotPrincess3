@@ -24,6 +24,20 @@ const DTECH_PREREQUISITE_ALIASES: Readonly<Record<string, readonly string[]>> = 
   "Calculus / Calculus Honors": ["Calculus"]
 };
 
+function impliedMathPrerequisiteAliases(course: Course) {
+  const text = `${course.course_code ?? ""} ${course.name}`.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  if (/\bmultivariable\b/.test(text)) return ["Algebra I", "Geometry", "Algebra II", "Algebra II/Trig", "Precalculus", "Precalculus Honors", "AP Calculus AB", "AP Calculus BC"];
+  if (/\bcalculus\b/.test(text)) return ["Algebra I", "Geometry", "Algebra II", "Algebra II/Trig", "Precalculus", "Precalculus Honors"];
+  if (/\bprecalculus\b|\bpre calculus\b/.test(text)) return ["Algebra I", "Geometry", "Algebra II", "Algebra II/Trig"];
+  if (/\balgebra (?:ii|2)\b/.test(text)) return ["Algebra I", "Geometry"];
+  if (/\bgeometry\b/.test(text)) return ["Algebra I"];
+  return [];
+}
+
+function plannerPrerequisiteAliases(course: Course) {
+  return [...new Set([...(DTECH_PREREQUISITE_ALIASES[course.name] ?? []), ...impliedMathPrerequisiteAliases(course)])];
+}
+
 export type PlannerTerm = PlanCourse["term"];
 
 export interface PlannerPrerequisiteTarget {
@@ -56,9 +70,7 @@ function dtechPrerequisiteCatalog(courses: readonly Course[], sourceLabel = "Off
     id: course.id,
     code: course.course_code,
     name: course.name,
-    ...(DTECH_PREREQUISITE_ALIASES[course.name]
-      ? { aliases: DTECH_PREREQUISITE_ALIASES[course.name] }
-      : {}),
+    ...(plannerPrerequisiteAliases(course).length ? { aliases: plannerPrerequisiteAliases(course) } : {}),
     gradeLevels: course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12),
     prerequisites: course.prerequisites,
     ...(course.source_id ? { sourceId: course.source_id } : {}),
@@ -99,9 +111,7 @@ export function plannerCourseInputs(
       ...(dtech ? { courseId: dtech.id } : row.smccd_course_id ? { courseId: row.smccd_course_id } : {}),
       code,
       name,
-      ...(dtech && DTECH_PREREQUISITE_ALIASES[dtech.name]
-        ? { aliases: DTECH_PREREQUISITE_ALIASES[dtech.name] }
-        : {}),
+      ...(dtech && plannerPrerequisiteAliases(dtech).length ? { aliases: plannerPrerequisiteAliases(dtech) } : {}),
       status: row.status,
       ...(plannedTermIndex(row) !== undefined ? { termIndex: plannedTermIndex(row) } : {}),
       gradeLevel: row.grade_level,

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 const qaEmail = process.env.QA_EMAIL;
@@ -6,7 +7,7 @@ const qaPassword = process.env.QA_PASSWORD;
 const supabaseUrl = process.env.PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.PUBLIC_SUPABASE_ANON_KEY;
 const liveConfigured = process.env.RUN_LIVE_PILOT === "1"
-  && Boolean(qaEmail && qaPassword && supabaseUrl && supabaseAnonKey);
+  && Boolean(supabaseUrl && supabaseAnonKey);
 
 type Proposal = { id: string; name: string };
 
@@ -81,18 +82,28 @@ test.describe("live Pilot behavior", () => {
   let accessToken: string;
   let userId: string;
   let schoolId: string;
+  let ephemeralAccount = false;
 
   test.beforeEach(async ({ request }) => {
     supabase = createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
-    const signIn = await supabase.auth.signInWithPassword({ email: qaEmail!, password: qaPassword! });
-    if (signIn.error || !signIn.data.session) throw signIn.error ?? new Error("The QA account could not sign in.");
+    const signIn = qaEmail && qaPassword
+      ? await supabase.auth.signInWithPassword({ email: qaEmail, password: qaPassword })
+      : await supabase.auth.signUp({
+          email: `pilot-live-${randomUUID()}@example.com`,
+          password: `Pp-${randomUUID()}!9a`,
+          options: { data: { preferred_name: "Pilot QA" } }
+        });
+    if (signIn.error || !signIn.data.session || !signIn.data.user) throw signIn.error ?? new Error("The QA account could not sign in.");
+    ephemeralAccount = !(qaEmail && qaPassword);
     accessToken = signIn.data.session.access_token;
     userId = signIn.data.user.id;
 
-    const reset = await authorizedPost(request, "/api/admin/reset", accessToken, {});
-    expect(reset.ok(), await reset.text()).toBe(true);
+    if (!ephemeralAccount) {
+      const reset = await authorizedPost(request, "/api/admin/reset", accessToken, {});
+      expect(reset.ok(), await reset.text()).toBe(true);
+    }
     const school = await supabase.from("schools").select("id").eq("slug", "ca-41690624130993").single();
     if (school.error) throw school.error;
     schoolId = school.data.id;
@@ -124,6 +135,11 @@ test.describe("live Pilot behavior", () => {
     expect(preferences.ok(), await preferences.text()).toBe(true);
     const reviewMode = await authorizedPost(request, "/api/ai/review-mode", accessToken, { mode: "auto_review" });
     expect(reviewMode.ok(), await reviewMode.text()).toBe(true);
+  });
+
+  test.afterEach(async () => {
+    if (ephemeralAccount) await supabase.rpc("delete_current_user_account");
+    ephemeralAccount = false;
   });
 
   test("remembers constraints, completes exact writes, and refuses account deletion", async ({ request }) => {
@@ -172,20 +188,11 @@ test.describe("live Pilot behavior", () => {
     const beforeRows = await supabase.from("plan_courses").select("id").eq("user_id", userId).is("source_review_item_id", null);
     if (beforeRows.error) throw beforeRows.error;
     const editableIdsBefore = new Set((beforeRows.data ?? []).map((row) => row.id));
-    const unavailableSequenceTurn = await sendTurn(
-      request,
-      accessToken,
-      conversationId,
-      "Clear my whole schedule. Generate a new one, math starting at pre-calc in grade 9 and maximize GPA as much as possible with reasonable limitations and course rigor. No concurrent classes."
-    );
-    expect(unavailableSequenceTurn.proposals).toHaveLength(0);
-    expect(unavailableSequenceTurn.message).toMatch(/Grade 10 is missing mathematics|left your current four-year plan unchanged/i);
-
     const scheduleTurn = await sendTurn(
       request,
       accessToken,
       conversationId,
-      "Clear my whole schedule. Generate a new one, math starting at Algebra I in grade 9 and maximize GPA as much as possible with reasonable limitations and course rigor. No concurrent classes."
+      "Clear my whole schedule. Generate a new one, math starting at pre-calc in grade 9 and maximize GPA as much as possible with reasonable limitations and course rigor. No concurrent classes."
     );
     const scheduleTools = await supabase.from("ai_tool_calls")
       .select("tool_name, status, result")
@@ -198,7 +205,7 @@ test.describe("live Pilot behavior", () => {
     if (proposalRecord.error) throw proposalRecord.error;
     expect(proposalRecord.data.arguments).toMatchObject({
       replace_existing: true,
-      starting_math_course: "algebra i",
+      starting_math_course: "pre-calc",
       start_grade: 9,
       max_courses_per_term: 6,
       rigor: "advanced",
@@ -211,10 +218,17 @@ test.describe("live Pilot behavior", () => {
     expect(rebuiltRows.data?.filter((row) => !row.source_review_item_id).every((row) => !editableIdsBefore.has(row.id))).toBe(true);
     expect(rebuiltRows.data?.every((row) => row.source_review_item_id || Number(row.college_units ?? 0) === 0)).toBe(true);
     const rebuiltCourseIds = (rebuiltRows.data ?? []).map((row) => row.course_id).filter((id): id is string => Boolean(id));
-    const rebuiltCourses = await supabase.from("courses").select("id,name").in("id", rebuiltCourseIds);
+    const rebuiltCourses = await supabase.from("courses").select("id,name,subject,uc_ag_area").in("id", rebuiltCourseIds);
     if (rebuiltCourses.error) throw rebuiltCourses.error;
     const courseNameById = new Map((rebuiltCourses.data ?? []).map((course) => [course.id, course.name]));
-    expect(rebuiltRows.data?.some((row) => row.grade_level === 9 && /algebra\s*(?:i|1)\b/i.test(courseNameById.get(row.course_id ?? "") ?? ""))).toBe(true);
+    expect(rebuiltRows.data?.some((row) => row.grade_level === 9 && /pre[ -]?calc/i.test(courseNameById.get(row.course_id ?? "") ?? ""))).toBe(true);
+    for (const grade of [9, 10, 11, 12]) {
+      const gradeCourseIds = new Set(rebuiltRows.data?.filter((row) => row.grade_level === grade).map((row) => row.course_id));
+      expect(rebuiltCourses.data?.some((course) => gradeCourseIds.has(course.id) && (/math|calculus|statistics/i.test(`${course.name} ${course.subject}`) || /^c\b/i.test(course.uc_ag_area ?? ""))), `Grade ${grade} math`).toBe(true);
+    }
+    const grade10Ids = new Set(rebuiltRows.data?.filter((row) => row.grade_level === 10).map((row) => row.course_id));
+    expect(rebuiltCourses.data?.some((course) => grade10Ids.has(course.id) && /science|biology|chemistry|physics/i.test(`${course.name} ${course.subject}`)), "Grade 10 science").toBe(true);
+    expect(rebuiltCourses.data?.filter((course) => /ceramic|\bart\b|music|choir|theater|drama|dance/i.test(course.name)).length).toBe(1);
 
     const undoTurn = await sendTurn(request, accessToken, conversationId, "Undo that schedule change.");
     expect(undoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);

@@ -644,6 +644,51 @@ function plannerMathRank(course: Course) {
   return null;
 }
 
+function acceleratedMathPlacementAllowed(
+  course: Course,
+  grade: GradeLevel,
+  priorCourses: Course[],
+  context: Pick<SuggestedPlanContext, "startingMathCourse" | "rigor">
+) {
+  if (!context.startingMathCourse || context.rigor !== "advanced" || course.grade_levels.includes(grade)) return false;
+  const rank = plannerMathRank(course);
+  const priorRank = Math.max(0, ...priorCourses.map((candidate) => plannerMathRank(candidate) ?? 0));
+  const firstListedGrade = Math.min(...course.grade_levels);
+  return rank !== null
+    && priorRank > 0
+    && rank > priorRank
+    && course.grade_levels.length > 0
+    && firstListedGrade === grade + 1;
+}
+
+type ScheduleLoadRow = Pick<PlanCourse, "course_id" | "grade_level" | "term" | "college_units"> & {
+  custom_course_name?: string | null;
+  smccd_course_id?: string | null;
+};
+
+/**
+ * Counts actual timetable slots rather than raw records. Some schools store a
+ * short freshman Life Skills component separately even though it shares the
+ * year-long Social Studies slot with Ethnic Studies.
+ */
+export function scheduleTermLoad(
+  rows: readonly ScheduleLoadRow[],
+  courses: readonly Course[],
+  grade: GradeLevel,
+  term: "fall" | "spring",
+  highSchoolOnly = false
+) {
+  const courseById = new Map(courses.map((course) => [course.id, course]));
+  const matching = rows.filter((row) => row.grade_level === grade
+    && (row.term === term || row.term === "full_year")
+    && (!highSchoolOnly || (!row.smccd_course_id && Number(row.college_units ?? 0) === 0)));
+  const nameFor = (row: ScheduleLoadRow) => normalizedPlannerText(
+    row.course_id ? courseById.get(row.course_id)?.name ?? row.custom_course_name ?? "" : row.custom_course_name ?? ""
+  );
+  const hasEthnicStudies = matching.some((row) => /\bethnic studies\b/.test(nameFor(row)));
+  return matching.filter((row) => !(hasEthnicStudies && /\blife skills\b/.test(nameFor(row)))).length;
+}
+
 function plannerLanguageIdentity(course: Course) {
   const text = normalizedPlannerText(`${course.name} ${course.subject}`);
   const family = ["spanish", "french", "chinese", "mandarin", "japanese", "latin", "german", "italian", "american sign language", "asl"]
@@ -771,8 +816,10 @@ export function generateSuggestedPlan(
   const verifiedMathCourseIds = new Set((context.mappings ?? [])
     .filter((mapping) => mapping.confidence === "verified" && mathRequirementIds.has(mapping.requirement_id))
     .map((mapping) => mapping.course_id));
-  const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => existing.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length
-    + generated.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length;
+  const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => term === "summer"
+    ? existing.filter((row) => row.grade_level === grade && row.term === "summer").length
+      + generated.filter((row) => row.grade_level === grade && row.term === "summer").length
+    : scheduleTermLoad([...existing, ...generated], courses, grade, term);
 
   function addCourse(course: Course, grade: GradeLevel, preferredTerm?: PlanCourse["term"], allowExplicitPlacement = false) {
     if (generated.length >= 40) return false;
@@ -903,15 +950,20 @@ export function generateSuggestedPlan(
       let attempts = 0;
       while (areaCreditsInGrade(area, grade) < targetCredits && attempts < 3) {
         attempts += 1;
+        const previousCourses = priorCourses(grade);
+        const hasVerifiedAreaMappings = [...areasByCourse.values()].some((areas) => areas.has(area));
         const ranked = courses
           .filter((candidate) => courseMatchesArea(candidate, area))
+          .filter((candidate) => !hasVerifiedAreaMappings || areasByCourse.get(candidate.id)?.has(area))
           .filter((candidate) => !existingIds.has(candidate.id))
-          .filter((candidate) => candidate.grade_levels.length === 0 || candidate.grade_levels.includes(grade))
+          .filter((candidate) => candidate.grade_levels.length === 0
+            || candidate.grade_levels.includes(grade)
+            || (area === "math" && acceleratedMathPlacementAllowed(candidate, grade, previousCourses, context)))
           .filter((candidate) => includeCollegeCourses || Number(candidate.college_units ?? 0) === 0)
           .filter((candidate) => !courseNeedsExplicitPlanningIntent(candidate, context.interests ?? []))
           .map((candidate) => ({
             candidate,
-            stage: plannerStageScore(candidate, area, grade, priorCourses(grade)),
+            stage: plannerStageScore(candidate, area, grade, previousCourses),
             coverage: Number(Number(candidate.credits ?? 0) >= Math.max(0, targetCredits - areaCreditsInGrade(area, grade))),
             interest: planningInterestMatches(candidate, interestText) ? 1 : 0
           }))
@@ -922,7 +974,12 @@ export function generateSuggestedPlan(
             || (context.rigor === "advanced" ? Number(right.candidate.is_weighted) - Number(left.candidate.is_weighted) : context.rigor === "lighter" ? Number(left.candidate.is_weighted) - Number(right.candidate.is_weighted) : 0)
             || left.candidate.prerequisites.length - right.candidate.prerequisites.length
             || left.candidate.name.localeCompare(right.candidate.name));
-        const selected = ranked.find(({ candidate }) => addCourse(candidate, grade))?.candidate;
+        const selected = ranked.find(({ candidate }) => addCourse(
+          candidate,
+          grade,
+          undefined,
+          area === "math" && acceleratedMathPlacementAllowed(candidate, grade, previousCourses, context)
+        ))?.candidate;
         if (!selected) break;
       }
     };
