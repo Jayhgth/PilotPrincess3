@@ -16,6 +16,9 @@
   --accent-soft: #f1e2e6;
   --pilot-brand: #843148;
   --pilot-soft: #f1e2e6;
+  --school-ui: #5f656b;
+  --school-soft: #e8eaec;
+  --school-ink: #ffffff;
   --dtech-brand: #ef5024;
   --dtech-ui: #a63b22;
   --dtech-soft: #f4eae6;
@@ -68,6 +71,9 @@
   --accent-soft: #51313b;
   --pilot-brand: #d58aa0;
   --pilot-soft: #51313b;
+  --school-ui: #c5c7cb;
+  --school-soft: #484a4f;
+  --school-ink: #1f2124;
   --dtech-brand: #ef5024;
   --dtech-ui: #ff8060;
   --dtech-soft: #4c3029;
@@ -168,13 +174,14 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .institution-canada { --institution-color: var(--canada-brand); }
 .institution-smccd { --institution-color: var(--dual-ui); }
 .institution-dtech { --institution-color: var(--dtech-ui); }
+.institution-high-school { --institution-color: var(--school-ui); }
 
 .unified-catalog.source-dtech .primary-button,
 .unified-catalog.source-high_school .primary-button,
-.primary-button.dtech-action { background: var(--dtech-brand); color: var(--dtech-ink); }
+.primary-button.dtech-action { background: var(--school-ui); color: var(--school-ink); }
 .unified-catalog.source-dtech .primary-button:hover:not(:disabled),
 .unified-catalog.source-high_school .primary-button:hover:not(:disabled),
-.primary-button.dtech-action:hover:not(:disabled) { background: color-mix(in srgb, var(--dtech-brand) 86%, white); }
+.primary-button.dtech-action:hover:not(:disabled) { background: color-mix(in srgb, var(--school-ui) 86%, var(--surface)); }
 .primary-button.college-action { background: var(--dual-brand); color: #fff; }
 .primary-button.college-action:hover:not(:disabled) { background: color-mix(in srgb, var(--dual-brand) 86%, black); }
 :root[data-theme="dark"] .primary-button.college-action { color: var(--dtech-ink); }
@@ -1296,10 +1303,10 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .catalog-status.current { color: var(--accent); }
 .catalog-status.completed { color: var(--success); }
 .catalog-status.planned { color: var(--warning); }
-/* Shared d.tech and SMCCD course browser */
+/* Shared high-school and college course browser */
 .unified-catalog {
-  --catalog-brand: var(--dtech-ui);
-  --catalog-brand-soft: var(--dtech-soft);
+  --catalog-brand: var(--school-ui);
+  --catalog-brand-soft: var(--school-soft);
   width: 100%;
 }
 .unified-catalog.source-smccd {
@@ -1697,9 +1704,9 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .workspace-tabs button.active,
 .workspace-tabs button:focus-visible { border-bottom-color: var(--tab-indicator); outline: none; }
 .workspace-tabs button strong { color: var(--ink-faint); font-size: 12px; }
-.course-workspace-tabs button:nth-child(2) { --tab-indicator: var(--dtech-ui); }
+.course-workspace-tabs button:nth-child(2) { --tab-indicator: var(--school-ui); }
 .course-workspace-tabs button:nth-child(3) { --tab-indicator: var(--dual-ui); }
-.course-workspace-tabs button:nth-child(2).active { color: var(--dtech-ui); }
+.course-workspace-tabs button:nth-child(2).active { color: var(--school-ui); }
 .course-workspace-tabs button:nth-child(3).active { color: var(--dual-ui); }
 .dual-enrollment-tabs button.active { color: var(--dual-ui); }
 
@@ -1717,6 +1724,8 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .overview-course-name-list strong { font-size: var(--type-supporting); }
 .overview-course-name-list small { color: var(--ink-faint); font-size: var(--type-supporting); }
 .overview-course-name-list .overview-course-source { color: var(--institution-color, var(--ink-faint)); font-weight: 650; }
+.overview-course-name-list .overview-course-source.institution-dtech,
+.overview-course-name-list .overview-course-source.institution-high-school { --institution-color: var(--school-ui); }
 .overview-course-name-list > b { color: var(--ink-soft); font-size: var(--type-supporting); }
 .overview-course-empty { border-radius: 6px; background: color-mix(in srgb, var(--surface) 65%, transparent); padding: 10px; font-size: var(--type-supporting) !important; }
 .overview-path-gaps { display: grid; gap: 5px; }
