@@ -6,6 +6,7 @@ import type {
   GraduationRequirement,
   GradeLevel,
   PlanCourse,
+  RequirementArea,
   RequirementProgress,
   SmccdHighSchoolEquivalency,
   StudentSettings
@@ -44,8 +45,6 @@ export const REQUIREMENT_LABELS = {
   ethnic_studies: "Ethnic Studies",
   other: "Other diploma requirement"
 } as const;
-
-const DTECH_SCHOOL_ID = "d7ec0000-0000-4000-8000-000000000001";
 
 export const GRADE_LEVELS: GradeLevel[] = [9, 10, 11, 12];
 export const LETTER_GRADES = ["", "A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F", "P", "IP"];
@@ -179,6 +178,10 @@ export function calculateRequirementProgress(
   equivalencies: SmccdHighSchoolEquivalency[] = []
 ): RequirementProgress[] {
   const courseMap = new Map(courses.map((course) => [course.id, course]));
+  const hasVerifiedCatalogCredit = (row: PlanCourse) => {
+    const course = row.course_id ? courseMap.get(row.course_id) : null;
+    return row.mapping_verified || Boolean(course && course.confidence === "verified" && course.review_status === "approved");
+  };
   const equivalencyMap = new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency]));
   const mappingsByCourse = new Map<string, CourseRequirementMapping[]>();
   for (const mapping of mappings) {
@@ -186,6 +189,33 @@ export function calculateRequirementProgress(
     existing.push(mapping);
     mappingsByCourse.set(mapping.course_id, existing);
   }
+  const electiveOverflow = requirements.some((requirement) => requirement.area === "electives")
+    ? (() => {
+        const reserved = calculateRequirementProgress(requirements.filter((requirement) => requirement.area !== "electives"), planCourses, mappings, courses, equivalencies)
+          .reduce((totals, item) => {
+            const applied = appliedCreditBreakdown({
+              required: item.requirement.credits_required,
+              completed: item.completedCredits,
+              current: item.currentCredits,
+              planned: item.plannedCredits
+            });
+            return {
+              completed: totals.completed + applied.completed,
+              current: totals.current + applied.current,
+              planned: totals.planned + applied.planned
+            };
+          }, { completed: 0, current: 0, planned: 0 });
+        const available = planCourses.filter(hasVerifiedCatalogCredit).reduce((totals, row) => {
+          totals[row.status] += resolvePlanCourseHighSchoolCredits(row, equivalencies).credits;
+          return totals;
+        }, { completed: 0, current: 0, planned: 0 });
+        return {
+          completed: Math.max(0, available.completed - reserved.completed),
+          current: Math.max(0, available.current - reserved.current),
+          planned: Math.max(0, available.planned - reserved.planned)
+        };
+      })()
+    : null;
 
   return requirements.map((requirement) => {
     let completedCredits = 0;
@@ -210,10 +240,12 @@ export function calculateRequirementProgress(
             (candidate) => candidate.requirement_id === requirement.id
           )
         : null;
-      if (!overrideMatches && !mapping) continue;
+      const countsAsExcessElective = requirement.area === "electives" && hasVerifiedCatalogCredit(planCourse);
+      if (!overrideMatches && !mapping && !countsAsExcessElective) continue;
 
       const credits = resolvePlanCourseHighSchoolCredits(planCourse, equivalencies).credits;
-      if ((!overrideMatches && mapping?.confidence === "uncertain") || !planCourse.mapping_verified) {
+      const lacksVerifiedEvidence = requirement.area === "electives" ? !countsAsExcessElective : !planCourse.mapping_verified;
+      if ((!overrideMatches && mapping?.confidence === "uncertain") || lacksVerifiedEvidence) {
         unverifiedCredits += credits;
         unverifiedRows.push({
           id: planCourse.id,
@@ -247,6 +279,12 @@ export function calculateRequirementProgress(
     const contributionNotes = new Map<string, string>();
     const unusedNotes = new Map<string, string>();
     let usesRuleAllocation = false;
+    if (requirement.area === "electives" && electiveOverflow) {
+      completedCredits = electiveOverflow.completed;
+      currentCredits = electiveOverflow.current;
+      plannedCredits = electiveOverflow.planned;
+      ruleWarnings.push("Elective progress uses verified credits remaining after all other diploma requirements are reserved.");
+    }
     if (requirement.area === "world_language") {
       const proficiencyRows = verifiedRows.filter((row) => {
         const evidence = row.equivalent ?? row.name;
@@ -284,7 +322,7 @@ export function calculateRequirementProgress(
         );
       }
     }
-    if (requirement.area === "social_science" && (!requirement.school_id || requirement.school_id === DTECH_SCHOOL_ID)) {
+    if (requirement.area === "social_science") {
       usesRuleAllocation = true;
       const allocation = { completed: 0, current: 0, planned: 0 };
       const statusOrder: PlanCourse["status"][] = ["completed", "current", "planned"];
@@ -295,6 +333,7 @@ export function calculateRequirementProgress(
         if (government && economics) return "government_economics";
         if (government) return "government";
         if (economics) return "economics";
+        if (/\bethnic studies\b/.test(evidence)) return "ethnic_studies";
         if (/\bu\.?s\.? history\b|\bunited states history\b/.test(evidence)) return "us_history";
         if (/\bworld history\b|\bwestern civilization\b/.test(evidence)) return "world_history";
         return "other";
@@ -319,6 +358,7 @@ export function calculateRequirementProgress(
       };
       const worldHistoryApplied = allocate(socialRows.filter((row) => row.lane === "world_history"), 10);
       const usHistoryApplied = allocate(socialRows.filter((row) => row.lane === "us_history"), 10);
+      const ethnicStudiesApplied = allocate(socialRows.filter((row) => row.lane === "ethnic_studies"), requirement.credits_required > 30 ? 7.5 : 0);
       let governmentEconomicsApplied = allocate(socialRows.filter((row) => row.lane === "government_economics"), 10);
       if (governmentEconomicsApplied < 10) {
         const governmentApplied = allocate(socialRows.filter((row) => row.lane === "government"), Math.min(5, 10 - governmentEconomicsApplied));
@@ -334,15 +374,16 @@ export function calculateRequirementProgress(
       if (worldHistoryApplied < 10) ruleWarnings.push(`${10 - worldHistoryApplied} World History credits still need coverage.`);
       if (usHistoryApplied < 10) ruleWarnings.push(`${10 - usHistoryApplied} US History credits still need coverage.`);
       if (governmentEconomicsApplied < 10) ruleWarnings.push(`${10 - governmentEconomicsApplied} Government & Economics credits still need coverage.`);
+      if (requirement.credits_required > 30 && ethnicStudiesApplied < 7.5) ruleWarnings.push(`${7.5 - ethnicStudiesApplied} Ethnic Studies credits still need coverage.`);
     }
     if (requirement.area === "lab_science") {
       usesRuleAllocation = true;
       const allocation = { completed: 0, current: 0, planned: 0 };
       const statusOrder: PlanCourse["status"][] = ["completed", "current", "planned"];
-      const classify = (name: string) => /\bbiol(?:ogy)?\b|biological/i.test(name)
+      const classify = (name: string) => /\bbiol(?:ogy)?\b|biological|life science/i.test(name)
         ? "biology"
-        : /\bchem(?:istry)?\b/i.test(name)
-          ? "chemistry"
+        : /\bchem(?:istry)?\b|\bphysics?\b|physical science/i.test(name)
+          ? "physical"
           : "other";
       const scienceRows = verifiedRows.map((row) => ({ ...row, lane: classify(row.name), remaining: row.credits }));
       const allocate = (candidates: typeof scienceRows, limit: number) => {
@@ -360,13 +401,13 @@ export function calculateRequirementProgress(
         return limit - remaining;
       };
       const biologyApplied = allocate(scienceRows.filter((row) => row.lane === "biology"), 10);
-      const chemistryApplied = allocate(scienceRows.filter((row) => row.lane === "chemistry"), 10);
+      const physicalApplied = allocate(scienceRows.filter((row) => row.lane === "physical"), 10);
       allocate(scienceRows.filter((row) => row.remaining > 0), 10);
       completedCredits = allocation.completed;
       currentCredits = allocation.current;
       plannedCredits = allocation.planned;
       if (biologyApplied < 10) ruleWarnings.push(`${10 - biologyApplied} Biology credits still need coverage.`);
-      if (chemistryApplied < 10) ruleWarnings.push(`${10 - chemistryApplied} Chemistry credits still need coverage.`);
+      if (physicalApplied < 10) ruleWarnings.push(`${10 - physicalApplied} Physical Science credits still need coverage.`);
     }
 
     if (!usesRuleAllocation) {
@@ -562,6 +603,116 @@ function plannerCourseMatches(candidate: Course, requested: string) {
   return Boolean(query && (course.includes(query) || query.includes(normalizedPlannerText(candidate.name))));
 }
 
+const AUTOMATIC_PLANNING_REQUIRES_INTENT = /\b(?:phoenix|credit recovery|support|intervention|intensive|academic literacy|study skills|iep|office aide|student aide|student clerk|teacher assistant|teaching assistant|technical assistant|peer tutor|peer mentor|leadership|student government|community service|work experience|internship|early childhood|child development|avid|career pathway)\b/;
+
+function planningInterestMatches(course: Course, interestText: string) {
+  if (!interestText) return false;
+  const courseText = normalizedPlannerText(`${course.name} ${course.subject} ${course.description ?? ""}`);
+  return courseText.split(" ").some((token) => token.length > 3 && interestText.includes(token));
+}
+
+/** Courses that need an expressed support need, pathway choice, or student interest. */
+export function courseNeedsExplicitPlanningIntent(course: Course, interests: readonly string[] = []) {
+  const courseText = normalizedPlannerText(`${course.name} ${course.subject}`);
+  const interestText = normalizedPlannerText(interests.join(" "));
+  const catalogChoicePlaceholder = /\bor\b/.test(normalizedPlannerText(course.name)) && /\b(?:chinese|french|spanish|language)\b/.test(normalizedPlannerText(course.name));
+  return (catalogChoicePlaceholder || AUTOMATIC_PLANNING_REQUIRES_INTENT.test(courseText)) && !planningInterestMatches(course, interestText);
+}
+
+function plannerMathRank(course: Course) {
+  const text = normalizedPlannerText(`${course.course_code ?? ""} ${course.name}`);
+  if (/\bmultivariable\b|\blinear algebra\b/.test(text)) return 7;
+  if (/\bcalculus bc\b|\bcalculus 2\b|\bcalculus ii\b/.test(text)) return 6;
+  if (/\bcalculus ab\b|\bcalculus 1\b|\bcalculus i\b/.test(text)) return 5;
+  if (/\bprecalculus\b/.test(text)) return 4;
+  if (/\bstatistics\b/.test(text)) return 3.5;
+  if (/\balgebra 2\b|\balgebra ii\b|\bintegrated math 3\b/.test(text)) return 3;
+  if (/\bgeometry\b|\bintegrated math 2\b/.test(text)) return 2;
+  if (/\balgebra 1\b|\balgebra i\b|\bintegrated math 1\b/.test(text)) return 1;
+  return null;
+}
+
+function plannerLanguageIdentity(course: Course) {
+  const text = normalizedPlannerText(`${course.name} ${course.subject}`);
+  const family = ["spanish", "french", "chinese", "mandarin", "japanese", "latin", "german", "italian", "american sign language", "asl"]
+    .find((candidate) => text.includes(candidate)) ?? null;
+  const level = /\b(?:ap|level 4|iv|4)\b/.test(text)
+    ? 4
+    : /\b(?:iii|3)\b/.test(text)
+      ? 3
+      : /\b(?:ii|2)\b/.test(text)
+        ? 2
+        : /\b(?:i|1)\b/.test(text)
+          ? 1
+          : null;
+  return { family, level };
+}
+
+function plannerStageScore(course: Course, area: RequirementArea, grade: GradeLevel, priorCourses: Course[]): number {
+  const text = normalizedPlannerText(`${course.course_code ?? ""} ${course.name} ${course.subject}`);
+  if (area === "english") {
+    const expected = grade === 9
+      ? /\benglish (?:i|1)\b/
+      : grade === 10
+        ? /\benglish (?:ii|2)\b/
+        : grade === 11
+          ? /\benglish (?:iii|3)\b|\bap\b.*\b(?:language|composition)\b/
+          : /\benglish (?:iv|4)\b|\berwc\b|\bap\b.*\bliterature\b/;
+    if (expected.test(text)) return 140;
+    if (/\benglish (?:i|ii|iii|iv|1|2|3|4)\b|\berwc\b|\bap\b.*\b(?:language|literature|composition)\b/.test(text)) return -120;
+    return 10;
+  }
+  if (area === "math") {
+    const rank = plannerMathRank(course);
+    if (!rank) return -120;
+    const priorRank = Math.max(0, ...priorCourses.map((candidate) => plannerMathRank(candidate) ?? 0));
+    const priorText = normalizedPlannerText(priorCourses.map((candidate) => candidate.name).join(" "));
+    if (/\bprecalculus honors\b/.test(text) && !/\balgebra (?:ii|2)\b.*\btrig/.test(priorText)) return 120;
+    if (!priorRank) return 100 - rank;
+    if (rank === priorRank + 1) return 150;
+    if (rank > priorRank) return 110 - (rank - priorRank);
+    return -120;
+  }
+  if (area === "social_science") {
+    const expected = grade === 10
+      ? /\b(?:world|european) history\b/
+      : grade === 11
+        ? /\b(?:u s|us|united states|american) history\b/
+        : grade === 12
+          ? /\bgovernment\b|\bcivics\b|\beconomics\b/
+          : /$a/;
+    return expected.test(text) ? 140 : -120;
+  }
+  if (area === "lab_science") {
+    if (/\bap physics c\b/.test(text) && !priorCourses.some((candidate) => /\bcalculus\b/.test(normalizedPlannerText(candidate.name)))) return -120;
+    if (grade === 9) return /\bbiology\b|\blife science\b/.test(text) ? 140 : 10;
+    if (grade === 10) return /\bchemistry\b|\bphysical science\b/.test(text) ? 140 : 10;
+    if (grade === 11) return /\bphysics\b/.test(text) ? 140 : 20;
+    return 20;
+  }
+  if (area === "physical_education") {
+    if (grade === 9) return /\b(?:pe|physical education)\s*(?:1|i)\b/.test(text) ? 140 : /\b(?:2|ii)\b/.test(text) ? -120 : 10;
+    if (grade === 10) return /\b(?:pe|physical education)\s*(?:2|ii)\b/.test(text) ? 140 : /\b(?:1|i)\b/.test(text) ? -120 : 10;
+  }
+  if (area === "world_language") {
+    const identity = plannerLanguageIdentity(course);
+    if (!identity.family || !identity.level) return -120;
+    const priorLanguages = priorCourses.map(plannerLanguageIdentity).filter((candidate) => candidate.family && candidate.level);
+    const chosenFamily = priorLanguages[0]?.family ?? identity.family;
+    const priorLevel = Math.max(0, ...priorLanguages.filter((candidate) => candidate.family === chosenFamily).map((candidate) => candidate.level ?? 0));
+    if (identity.family !== chosenFamily) return -120;
+    if (!priorLevel) return identity.level === 1 ? 140 : -120;
+    return identity.level === priorLevel + 1 ? 140 : -120;
+  }
+  if (area === "career_technical_education") {
+    const identity = plannerLanguageIdentity(course);
+    return identity.family ? plannerStageScore(course, "world_language", grade, priorCourses) + 20 : 10;
+  }
+  if (area === "ethnic_studies") return /\bethnic studies\b/.test(text) ? 140 : -120;
+  if (area === "personal_development") return /\blife skills\b|\bhealth\b/.test(text) ? 140 : -120;
+  return 10;
+}
+
 export function generateSuggestedPlan(
   settings: StudentSettings,
   courses: Course[],
@@ -603,6 +754,10 @@ export function generateSuggestedPlan(
   const maximumPerTerm = context.maxCoursesPerTerm ?? null;
   const verifiedMappedCourseIds = new Set((context.mappings ?? [])
     .filter((mapping) => mapping.confidence === "verified")
+    .map((mapping) => mapping.course_id));
+  const mathRequirementIds = new Set((context.requirements ?? []).filter((requirement) => requirement.area === "math").map((requirement) => requirement.id));
+  const verifiedMathCourseIds = new Set((context.mappings ?? [])
+    .filter((mapping) => mapping.confidence === "verified" && mathRequirementIds.has(mapping.requirement_id))
     .map((mapping) => mapping.course_id));
   const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => existing.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length
     + generated.filter((row) => row.grade_level === grade && (row.term === term || (term !== "summer" && row.term === "full_year"))).length;
@@ -655,8 +810,8 @@ export function generateSuggestedPlan(
   if (context.startingMathCourse) {
     const requested = context.startingMathCourse;
     const explicitMath = courses
-      .filter((course) => normalizedPlannerText(course.subject).includes("math") && plannerCourseMatches(course, requested))
-      .sort((left, right) => Number(verifiedMappedCourseIds.has(right.id)) - Number(verifiedMappedCourseIds.has(left.id))
+      .filter((course) => (verifiedMathCourseIds.has(course.id) || /\bmath\b|\balgebra\b|\bgeometry\b|\bcalculus\b|\bstatistics\b/.test(normalizedPlannerText(`${course.name} ${course.subject}`))) && plannerCourseMatches(course, requested))
+      .sort((left, right) => Number(verifiedMathCourseIds.has(right.id)) - Number(verifiedMathCourseIds.has(left.id))
         || Number(right.is_weighted) - Number(left.is_weighted)
         || left.name.localeCompare(right.name))[0];
     if (explicitMath) addCourse(explicitMath, planningStartGrade, undefined, true);
@@ -684,49 +839,127 @@ export function generateSuggestedPlan(
     const verifiedMappings = context.mappings.filter((mapping) => mapping.confidence === "verified");
     const interestText = normalizedPlannerText((context.interests ?? []).join(" "));
     const courseById = new Map(courses.map((course) => [course.id, course]));
-    const initialProgress = calculateRequirementProgress(verifiedRequirements, existing, verifiedMappings, courses);
-    const neededCredits = new Map(initialProgress.map((item) => [item.requirement.id, Math.max(0, item.requirement.credits_required - item.verifiedProjectedCredits)]));
-    for (const row of generated) {
-      for (const mapping of verifiedMappings.filter((candidate) => candidate.course_id === row.course_id)) {
-        neededCredits.set(mapping.requirement_id, Math.max(0, (neededCredits.get(mapping.requirement_id) ?? 0) - Number(row.credits ?? 0)));
+    const requirementById = new Map(verifiedRequirements.map((requirement) => [requirement.id, requirement]));
+    const areasByCourse = new Map<string, Set<RequirementArea>>();
+    for (const mapping of verifiedMappings) {
+      const area = requirementById.get(mapping.requirement_id)?.area;
+      if (!area) continue;
+      const values = areasByCourse.get(mapping.course_id) ?? new Set<RequirementArea>();
+      values.add(area);
+      areasByCourse.set(mapping.course_id, values);
+    }
+    const requirementCredits = (area: RequirementArea) => Math.max(0, ...verifiedRequirements.filter((requirement) => requirement.area === area && !requirement.constraint_only).map((requirement) => Number(requirement.credits_required)));
+    const requirementTargetCredits = (area: RequirementArea) => Math.max(0, ...verifiedRequirements.filter((requirement) => requirement.area === area).map((requirement) => Number(requirement.credits_required)));
+    const requirementYears = (area: RequirementArea) => Math.max(0, ...verifiedRequirements.filter((requirement) => requirement.area === area && !requirement.constraint_only).map((requirement) => Number(requirement.years_required ?? Math.ceil(requirement.credits_required / 10))));
+    const courseMatchesArea = (candidate: Course, area: RequirementArea) => {
+      if (areasByCourse.get(candidate.id)?.has(area)) return true;
+      const text = normalizedPlannerText(`${candidate.name} ${candidate.subject}`);
+      const ag = normalizedPlannerText(candidate.uc_ag_area ?? "");
+      if (area === "english") return /^b\b/.test(ag) || /\benglish\b/.test(text);
+      if (area === "math") return /^c\b/.test(ag) || /\bmath\b|\balgebra\b|\bgeometry\b|\bcalculus\b|\bstatistics\b/.test(text);
+      if (area === "social_science") return /^a\b/.test(ag) || /\bhistory\b|\bgovernment\b|\bcivics\b|\beconomics\b/.test(text);
+      if (area === "lab_science") return /^d\b/.test(ag) || (!/\bsocial science\b/.test(text) && /\bscience\b|\bbiology\b|\bchemistry\b|\bphysics\b/.test(text));
+      if (area === "world_language") return /^e\b/.test(ag) || Boolean(plannerLanguageIdentity(candidate).family);
+      if (area === "visual_performing_arts") return /^f\b/.test(ag) || /\bart\b|\bmusic\b|\btheater\b|\bdrama\b|\bdance\b/.test(text);
+      if (area === "physical_education") return /\bphysical education\b|\bpe\s*(?:1|2|i|ii)?\b/.test(text);
+      if (area === "ethnic_studies") return /\bethnic studies\b/.test(text);
+      if (area === "personal_development") return /\blife skills\b|\bhealth\b/.test(text);
+      return false;
+    };
+    const allPlannedCourses = () => [...existing, ...generated].flatMap((row) => {
+      const candidate = row.course_id ? courseById.get(row.course_id) : null;
+      return candidate ? [{ row, course: candidate }] : [];
+    });
+    const areaCreditsInGrade = (area: RequirementArea, grade: GradeLevel) => allPlannedCourses()
+      .filter(({ row, course: candidate }) => row.grade_level === grade && courseMatchesArea(candidate, area))
+      .reduce((total, { row }) => total + Number(row.credits ?? 0), 0);
+    const areaCourseCount = (area: RequirementArea) => allPlannedCourses().filter(({ course: candidate }) => courseMatchesArea(candidate, area)).length;
+    const targetLoad = Math.max(1, Math.min(maximumPerTerm ?? 6, 6));
+    const priorCourses = (grade: GradeLevel) => allPlannedCourses().filter(({ row }) => row.grade_level < grade).map(({ course: candidate }) => candidate);
+    const requiresEthnicStudies = requirementCredits("ethnic_studies") > 0 || verifiedRequirements.some((requirement) => requirement.area === "social_science"
+      && /\bethnic studies\b/i.test(`${requirement.name} ${requirement.notes ?? ""}`));
+
+    const fillAreaForGrade = (area: RequirementArea, grade: GradeLevel, targetCredits = 10) => {
+      let attempts = 0;
+      while (areaCreditsInGrade(area, grade) < targetCredits && attempts < 3) {
+        attempts += 1;
+        const ranked = courses
+          .filter((candidate) => courseMatchesArea(candidate, area))
+          .filter((candidate) => !existingIds.has(candidate.id))
+          .filter((candidate) => candidate.grade_levels.length === 0 || candidate.grade_levels.includes(grade))
+          .filter((candidate) => includeCollegeCourses || Number(candidate.college_units ?? 0) === 0)
+          .filter((candidate) => !courseNeedsExplicitPlanningIntent(candidate, context.interests ?? []))
+          .map((candidate) => ({
+            candidate,
+            stage: plannerStageScore(candidate, area, grade, priorCourses(grade)),
+            coverage: Number(Number(candidate.credits ?? 0) >= Math.max(0, targetCredits - areaCreditsInGrade(area, grade))),
+            interest: planningInterestMatches(candidate, interestText) ? 1 : 0
+          }))
+          .filter((entry) => entry.stage >= 0)
+          .sort((left, right) => right.stage - left.stage
+            || right.coverage - left.coverage
+            || right.interest - left.interest
+            || (context.rigor === "advanced" ? Number(right.candidate.is_weighted) - Number(left.candidate.is_weighted) : context.rigor === "lighter" ? Number(left.candidate.is_weighted) - Number(right.candidate.is_weighted) : 0)
+            || left.candidate.prerequisites.length - right.candidate.prerequisites.length
+            || left.candidate.name.localeCompare(right.candidate.name));
+        const selected = ranked.find(({ candidate }) => addCourse(candidate, grade))?.candidate;
+        if (!selected) break;
+      }
+    };
+
+    // Build one year at a time. Within each year, establish the core subject
+    // sequence before considering enrichment or elective space.
+    for (const [gradeIndex, grade] of planningGrades.entries()) {
+      const advanced = context.rigor === "advanced";
+      const englishYears = Math.max(requirementYears("english"), advanced ? planningGrades.length : 0);
+      const mathYears = Math.max(requirementYears("math"), advanced || context.startingMathCourse ? planningGrades.length : 0);
+      const scienceYears = Math.max(requirementYears("lab_science"), advanced ? Math.min(3, planningGrades.length) : 0);
+      const peYears = requirementYears("physical_education");
+      if (gradeIndex < englishYears) fillAreaForGrade("english", grade);
+      if (gradeIndex < mathYears) fillAreaForGrade("math", grade);
+      if (grade >= 10 && requirementCredits("social_science") > 0) fillAreaForGrade("social_science", grade);
+      if (gradeIndex < scienceYears) fillAreaForGrade("lab_science", grade);
+      if (gradeIndex < peYears) fillAreaForGrade("physical_education", grade);
+      if (requiresEthnicStudies && areaCourseCount("ethnic_studies") === 0) fillAreaForGrade("ethnic_studies", grade, Math.max(5, requirementCredits("ethnic_studies")));
+      if (requirementCredits("personal_development") > 0 && areaCourseCount("personal_development") === 0) {
+        fillAreaForGrade("personal_development", grade, requirementCredits("personal_development"));
+      }
+      const languageTarget = advanced && courses.some((candidate) => courseMatchesArea(candidate, "world_language")) ? 2 : requirementYears("world_language");
+      if (areaCourseCount("world_language") < languageTarget && Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoad) {
+        fillAreaForGrade("world_language", grade);
+      }
+      if (requirementCredits("visual_performing_arts") > 0 && areaCourseCount("visual_performing_arts") === 0) fillAreaForGrade("visual_performing_arts", grade);
+      if (requirementTargetCredits("career_technical_education") > 0 && areaCourseCount("career_technical_education") === 0) {
+        fillAreaForGrade("career_technical_education", grade, requirementTargetCredits("career_technical_education"));
       }
     }
-    for (const requirement of verifiedRequirements) {
-      let remaining = neededCredits.get(requirement.id) ?? 0;
-      if (remaining <= 0 || requirement.constraint_only) continue;
-      const mapped = verifiedMappings
-        .filter((mapping) => mapping.requirement_id === requirement.id)
-        .map((mapping) => courseById.get(mapping.course_id))
-        .filter((course): course is Course => Boolean(course))
-        .filter((course) => course.grade_levels.length > 0)
-        .filter((course) => includeCollegeCourses || Number(course.college_units ?? 0) === 0)
-        .sort((left, right) => {
-          const leftInterest = interestText && normalizedPlannerText(`${left.name} ${left.subject} ${left.description ?? ""}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0;
-          const rightInterest = interestText && normalizedPlannerText(`${right.name} ${right.subject} ${right.description ?? ""}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0;
-          const rigorDelta = context.rigor === "advanced" ? Number(right.is_weighted) - Number(left.is_weighted) : context.rigor === "lighter" ? Number(left.is_weighted) - Number(right.is_weighted) : 0;
-          return rightInterest - leftInterest || rigorDelta || left.prerequisites.length - right.prerequisites.length || left.name.localeCompare(right.name);
-        });
-      while (remaining > 0) {
-        let added = false;
-        const rankByCourseId = new Map(mapped.map((course, rank) => [course.id, rank]));
-        const placements = mapped.flatMap((course) => planningGrades
-          .filter((grade) => !existingIds.has(course.id) && (course.grade_levels.length === 0 || course.grade_levels.includes(grade)))
-          .map((grade) => ({
-            course,
-            grade,
-            load: termLoad(grade, "fall") + termLoad(grade, "spring")
-          })))
-          .sort((left, right) => Number(rankByCourseId.get(left.course.id) ?? Number.MAX_SAFE_INTEGER) - Number(rankByCourseId.get(right.course.id) ?? Number.MAX_SAFE_INTEGER)
-            || left.load - right.load
-            || left.grade - right.grade
-            || left.course.name.localeCompare(right.course.name));
-        for (const { course: candidate, grade } of placements) {
-          if (!addCourse(candidate, grade)) continue;
-          remaining -= Math.max(0, Number(candidate.credits ?? 0));
-          added = true;
-          break;
-        }
-        if (!added) break;
+
+    // Balance only after the core passes. Elective fill is intentionally
+    // conservative: no recovery/support/pathway course is inferred, and a
+    // second core course in the same year is not used as generic filler.
+    const coreAreas: RequirementArea[] = ["english", "math", "social_science", "lab_science", "physical_education", "world_language", "visual_performing_arts", "ethnic_studies", "personal_development", "career_technical_education"];
+    for (const grade of planningGrades) {
+      let attempts = 0;
+      while (Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoad && attempts < courses.length) {
+        attempts += 1;
+        const ranked = courses
+          .filter((candidate) => !existingIds.has(candidate.id))
+          .filter((candidate) => candidate.grade_levels.length === 0 || candidate.grade_levels.includes(grade))
+          .filter((candidate) => includeCollegeCourses || Number(candidate.college_units ?? 0) === 0)
+          .filter((candidate) => !courseNeedsExplicitPlanningIntent(candidate, context.interests ?? []))
+          .filter((candidate) => planningInterestMatches(candidate, interestText) || !coreAreas.some((area) => courseMatchesArea(candidate, area)))
+          .map((candidate) => ({
+            candidate,
+            interest: planningInterestMatches(candidate, interestText) ? 1 : 0,
+            academic: /\bcomputer|engineering|psychology|business|journalism|research|seminar|art|music|language\b/.test(normalizedPlannerText(`${candidate.name} ${candidate.subject}`)) ? 1 : 0
+          }))
+          .sort((left, right) => right.interest - left.interest
+            || right.academic - left.academic
+            || (context.rigor === "advanced" ? Number(right.candidate.is_weighted) - Number(left.candidate.is_weighted) : context.rigor === "lighter" ? Number(left.candidate.is_weighted) - Number(right.candidate.is_weighted) : 0)
+            || left.candidate.prerequisites.length - right.candidate.prerequisites.length
+            || left.candidate.name.localeCompare(right.candidate.name));
+        const selected = ranked.find(({ candidate }) => addCourse(candidate, grade))?.candidate;
+        if (!selected) break;
       }
     }
   }

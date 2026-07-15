@@ -86,6 +86,16 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     throw new Error("The workspace returned an invalid bootstrap response.");
   }
   const snapshot = value as Partial<WorkspaceBootstrap>;
+  const requirements = Array.isArray(snapshot.requirements) ? snapshot.requirements : [];
+  const planCourses = Array.isArray(snapshot.plan_courses) ? snapshot.plan_courses : [];
+  const catalogVersionIds = new Set(requirements.map((requirement) => requirement.catalog_version_id).filter((id): id is string => Boolean(id)));
+  const plannedCourseIds = new Set(planCourses.map((course) => course.course_id).filter((id): id is string => Boolean(id)));
+  const rawCourses = Array.isArray(snapshot.courses) ? snapshot.courses : [];
+  const courses = catalogVersionIds.size
+    ? rawCourses.filter((course) => catalogVersionIds.has(course.catalog_version_id) || plannedCourseIds.has(course.id))
+    : rawCourses;
+  const courseIds = new Set(courses.map((course) => course.id));
+  const requirementIds = new Set(requirements.map((requirement) => requirement.id));
   return {
     settings: snapshot.settings ?? null,
     plan: snapshot.plan ?? null,
@@ -96,14 +106,14 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     college_district: snapshot.college_district ?? null,
     is_admin: snapshot.is_admin === true,
     sources: Array.isArray(snapshot.sources) ? snapshot.sources : [],
-    courses: Array.isArray(snapshot.courses) ? snapshot.courses : [],
-    requirements: Array.isArray(snapshot.requirements) ? snapshot.requirements : [],
-    mappings: Array.isArray(snapshot.mappings) ? snapshot.mappings : [],
+    courses,
+    requirements,
+    mappings: Array.isArray(snapshot.mappings) ? snapshot.mappings.filter((mapping) => courseIds.has(mapping.course_id) && requirementIds.has(mapping.requirement_id)) : [],
     course_designations: Array.isArray(snapshot.course_designations) ? snapshot.course_designations : [],
     equivalencies: Array.isArray(snapshot.equivalencies) ? snapshot.equivalencies : [],
     review_items: Array.isArray(snapshot.review_items) ? snapshot.review_items : [],
     enrollment_policies: Array.isArray(snapshot.enrollment_policies) ? snapshot.enrollment_policies : [],
-    plan_courses: Array.isArray(snapshot.plan_courses) ? snapshot.plan_courses : [],
+    plan_courses: planCourses,
     gpa_scenario_choices: Array.isArray(snapshot.gpa_scenario_choices) ? snapshot.gpa_scenario_choices : [],
     planned_smccd_courses: Array.isArray(snapshot.planned_smccd_courses) ? snapshot.planned_smccd_courses : [],
     degree_goals: Array.isArray(snapshot.degree_goals) ? snapshot.degree_goals : [],

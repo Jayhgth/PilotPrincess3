@@ -112,7 +112,15 @@ async function ensureSource(school, candidate, source, sourceType, year) {
 async function ensureCatalogVersion(school, year, sourceUrl) {
   let { data, error } = await supabase.from("catalog_versions").select("id").eq("school_id", school.id).eq("academic_year", year).maybeSingle();
   if (error) throw error;
-  if (data) return data.id;
+  if (data) {
+    const retired = await supabase.from("catalog_versions").update({ is_current: false }).eq("school_id", school.id).neq("id", data.id).eq("is_current", true);
+    if (retired.error) throw retired.error;
+    const activated = await supabase.from("catalog_versions").update({ is_current: true }).eq("id", data.id);
+    if (activated.error) throw activated.error;
+    return data.id;
+  }
+  const retired = await supabase.from("catalog_versions").update({ is_current: false }).eq("school_id", school.id).eq("is_current", true);
+  if (retired.error) throw retired.error;
   const sourceResult = await supabase.from("official_sources").insert({
     school_id: school.id, user_id: null, title: `Official ${school.name} academic sources`, kind: "official_url",
     source_url: sourceUrl, source_year: year, is_official: true, parse_status: "complete", confidence: "verified", document_type: "course_catalog"

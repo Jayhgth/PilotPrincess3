@@ -32,6 +32,7 @@ import type {
 import {
   calculateGpa,
   calculateRequirementProgress,
+  courseNeedsExplicitPlanningIntent,
   courseDisplayName,
   dtechGradePoint,
   generateSuggestedPlan,
@@ -521,6 +522,122 @@ function automaticPlanningPenalty(course: Course, interestText: string) {
   return 0;
 }
 
+function scheduleQualityFailures(
+  workspace: AssistantWorkspace,
+  generatedRows: PlanCourse[],
+  adjustedPlanCourses: PlanCourse[],
+  preferences: {
+    interests?: string[];
+    rigor?: "balanced" | "advanced" | "lighter";
+    startGrade?: GradeLevel;
+    maxCoursesPerTerm?: number | null;
+    objectives?: string[];
+  }
+) {
+  const failures: string[] = [];
+  const requirementById = new Map(workspace.requirements.map((requirement) => [requirement.id, requirement]));
+  const areasByCourse = new Map<string, Set<string>>();
+  for (const mapping of workspace.mappings.filter((candidate) => candidate.confidence === "verified")) {
+    const area = requirementById.get(mapping.requirement_id)?.area;
+    if (!area) continue;
+    const values = areasByCourse.get(mapping.course_id) ?? new Set<string>();
+    values.add(area);
+    areasByCourse.set(mapping.course_id, values);
+  }
+  const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
+  const combined = [...adjustedPlanCourses, ...generatedRows];
+  const startGrade = preferences.startGrade ?? workspace.settings.plan_start_grade ?? workspace.settings.grade_level ?? 9;
+  const endGrade = Math.max(startGrade, workspace.settings.plan_end_grade ?? 12) as GradeLevel;
+  const planningGrades = ([9, 10, 11, 12] as GradeLevel[]).filter((grade) => grade >= startGrade && grade <= endGrade);
+  const advanced = preferences.rigor === "advanced" || preferences.objectives?.includes("maximize_weighted_gpa");
+  const textForRow = (row: PlanCourse) => {
+    const course = row.course_id ? courseById.get(row.course_id) : null;
+    return normalizedScheduleText(`${course?.name ?? row.custom_course_name ?? ""} ${course?.subject ?? ""}`);
+  };
+  const rowMatchesArea = (row: PlanCourse, area: string) => {
+    if (row.requirement_area_override === area || (row.course_id && areasByCourse.get(row.course_id)?.has(area))) return true;
+    const text = textForRow(row);
+    if (area === "english") return /\benglish\b/.test(text);
+    if (area === "math") return /\bmath\b|\balgebra\b|\bgeometry\b|\bcalculus\b|\bstatistics\b/.test(text);
+    if (area === "physical_education") return /\bphysical education\b|\bpe\s*(?:1|2|i|ii)?\b/.test(text);
+    return false;
+  };
+  const yearRows = (grade: GradeLevel) => combined.filter((row) => row.grade_level === grade);
+  const generatedYearRows = (grade: GradeLevel) => generatedRows.filter((row) => row.grade_level === grade);
+  for (const grade of planningGrades) {
+    const rows = yearRows(grade);
+    if (advanced && !rows.some((row) => rowMatchesArea(row, "english"))) failures.push(`Grade ${grade} is missing English.`);
+    if (advanced && !rows.some((row) => rowMatchesArea(row, "math"))) failures.push(`Grade ${grade} is missing mathematics.`);
+    for (const area of ["english", "math", "physical_education"]) {
+      const count = generatedYearRows(grade).filter((row) => rowMatchesArea(row, area)).length;
+      if (count > 1) failures.push(`Grade ${grade} has ${count} automatically selected ${area.replaceAll("_", " ")} courses.`);
+    }
+  }
+  const hasSocialRequirement = workspace.requirements.some((requirement) => requirement.area === "social_science" && requirement.credits_required > 0);
+  if (hasSocialRequirement) {
+    if (planningGrades.includes(10) && !yearRows(10).some((row) => /\b(?:world|european) history\b/.test(textForRow(row)))) failures.push("Grade 10 is missing the World History sequence.");
+    if (planningGrades.includes(11) && !yearRows(11).some((row) => /\b(?:u s|us|united states|american) history\b/.test(textForRow(row)))) failures.push("Grade 11 is missing the U.S. History sequence.");
+    if (planningGrades.includes(12)) {
+      const seniorHistory = yearRows(12).map(textForRow);
+      if (!seniorHistory.some((text) => /\bgovernment\b|\bcivics\b/.test(text)) || !seniorHistory.some((text) => /\beconomics\b/.test(text))) {
+        failures.push("Grade 12 must include both Government and Economics.");
+      }
+    }
+  }
+  const hasPeRequirement = workspace.requirements.some((requirement) => requirement.area === "physical_education" && requirement.credits_required > 0);
+  if (hasPeRequirement && planningGrades.includes(9) && !yearRows(9).some((row) => /\b(?:pe|physical education)\s*(?:1|i)\b/.test(textForRow(row)))) {
+    failures.push("Grade 9 is missing the first-year physical education course.");
+  }
+  if (hasPeRequirement && planningGrades.includes(10) && !yearRows(10).some((row) => /\b(?:pe|physical education)\s*(?:2|ii)\b/.test(textForRow(row)))) {
+    failures.push("Grade 10 is missing the second-year physical education course.");
+  }
+  const hasScienceRequirement = workspace.requirements.some((requirement) => requirement.area === "lab_science" && requirement.credits_required >= 20);
+  if (hasScienceRequirement && planningGrades.length === 4) {
+    const scienceTexts = combined.filter((row) => rowMatchesArea(row, "lab_science")).map(textForRow);
+    if (!scienceTexts.some((text) => /\bbiology\b|\blife science\b/.test(text))) failures.push("The four-year plan is missing a life science course.");
+    if (!scienceTexts.some((text) => /\bchemistry\b|\bphysics\b|\bphysical science\b/.test(text))) failures.push("The four-year plan is missing a physical science course.");
+    if (advanced) {
+      for (const grade of planningGrades.filter((candidate) => candidate <= 11)) {
+        if (!yearRows(grade).some((row) => rowMatchesArea(row, "lab_science"))) failures.push(`Grade ${grade} is missing science in the advanced sequence.`);
+      }
+    }
+  }
+  for (const row of generatedRows) {
+    const course = row.course_id ? courseById.get(row.course_id) : null;
+    if (course && courseNeedsExplicitPlanningIntent(course, preferences.interests ?? [])) {
+      failures.push(`${course.name} needs an explicit student need or interest before automatic placement.`);
+    }
+  }
+  for (const row of combined) {
+    const text = textForRow(row);
+    const priorOrConcurrentMath = combined.filter((candidate) => candidate.grade_level <= row.grade_level && rowMatchesArea(candidate, "math")).map(textForRow);
+    const priorMath = combined.filter((candidate) => candidate.grade_level < row.grade_level && rowMatchesArea(candidate, "math")).map(textForRow);
+    if (/\bap physics c\b/.test(text) && !priorOrConcurrentMath.some((candidate) => /\bcalculus\b/.test(candidate))) {
+      failures.push(`${courseById.get(row.course_id ?? "")?.name ?? "AP Physics C"} requires concurrent or prior calculus.`);
+    }
+    if (/\bap statistics\b/.test(text) && !priorMath.some((candidate) => /\bprecalculus\b/.test(candidate))) {
+      failures.push("AP Statistics requires prior Precalculus in this catalog-backed plan.");
+    }
+    if (/\bap calculus\b/.test(text) && !priorMath.some((candidate) => /\bprecalculus\b/.test(candidate))) {
+      failures.push(`${courseById.get(row.course_id ?? "")?.name ?? "AP Calculus"} requires prior Precalculus.`);
+    }
+  }
+  const loads = planningGrades.flatMap((grade) => (["fall", "spring"] as const).map((term) => ({
+    grade,
+    term,
+    count: yearRows(grade).filter((row) => row.term === term || row.term === "full_year").length
+  })));
+  if (loads.length) {
+    const maximum = Math.max(...loads.map((load) => load.count));
+    const minimum = Math.min(...loads.map((load) => load.count));
+    const target = Math.max(1, Math.min(preferences.maxCoursesPerTerm ?? 6, 6));
+    if (maximum - minimum > 1) failures.push(`The proposed yearly load is unbalanced (${minimum} to ${maximum} courses per term).`);
+    if (advanced && minimum < Math.max(1, target - 1)) failures.push(`At least one planned term has fewer than ${Math.max(1, target - 1)} courses without a stated lighter-load request.`);
+    if (preferences.maxCoursesPerTerm && maximum > preferences.maxCoursesPerTerm) failures.push(`The proposed schedule exceeds the ${preferences.maxCoursesPerTerm}-course workload cap.`);
+  }
+  return [...new Set(failures)];
+}
+
 function scheduleWorkspaceWithPlacementAdjustments(
   workspace: AssistantWorkspace,
   preferences: { rigor: "balanced" | "advanced" | "lighter"; startGrade?: GradeLevel; startingMathCourse?: string | null }
@@ -682,14 +799,16 @@ function generateValidatedSchedule(
       ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))
     ];
     const progress = calculateRequirementProgress(workspace.requirements, planWithAccepted, workspace.mappings, workspace.courses, workspace.equivalencies);
-    const gap = progress.find((item) => item.status === "missing" && !unfillableRequirementIds.has(item.requirement.id));
+    const gap = progress.find((item) => item.status === "missing" && !item.requirement.constraint_only && !unfillableRequirementIds.has(item.requirement.id));
     if (!gap) break;
     const mappedIds = new Set(workspace.mappings
       .filter((mapping) => mapping.requirement_id === gap.requirement.id && mapping.confidence === "verified")
       .map((mapping) => mapping.course_id));
     const ranked = workspace.courses
       .filter((course) => mappedIds.has(course.id) && !planWithAccepted.some((row) => row.course_id === course.id))
+      .filter((course) => workspace.school.slug === "design-tech-high-school" || course.grade_levels.length > 0)
       .filter((course) => preferences.includeCollegeCourses !== false || Number(course.college_units ?? 0) === 0)
+      .filter((course) => !courseNeedsExplicitPlanningIntent(course, preferences.interests))
       .map((course) => ({
         course,
         interestScore: interestText && [course.name, course.subject, course.description ?? ""].join(" ").toLowerCase().split(/\s+/).some((token) => token.length > 3 && interestText.includes(token)) ? 1 : 0,
@@ -701,11 +820,12 @@ function generateValidatedSchedule(
         || left.course.name.localeCompare(right.course.name));
     let added = false;
     for (const { course } of ranked) {
-      const grade = ([9, 10, 11, 12] as GradeLevel[]).find((candidateGrade) =>
-        candidateGrade >= currentGrade && candidateGrade <= finalGrade && (!course.grade_levels.length || course.grade_levels.includes(candidateGrade))
-      );
+      const termLoadForGrade = (grade: GradeLevel, term: "fall" | "spring") => planWithAccepted.filter((row) => row.grade_level === grade && (row.term === term || row.term === "full_year")).length;
+      const grade = ([9, 10, 11, 12] as GradeLevel[])
+        .filter((candidateGrade) => candidateGrade >= currentGrade && candidateGrade <= finalGrade && (!course.grade_levels.length || course.grade_levels.includes(candidateGrade)))
+        .sort((left, right) => Math.max(termLoadForGrade(left, "fall"), termLoadForGrade(left, "spring")) - Math.max(termLoadForGrade(right, "fall"), termLoadForGrade(right, "spring")) || left - right)[0];
       if (!grade) continue;
-      const load = (term: "fall" | "spring") => planWithAccepted.filter((row) => row.grade_level === grade && (row.term === term || row.term === "full_year")).length;
+      const load = (term: "fall" | "spring") => termLoadForGrade(grade, term);
       const term: PlanCourse["term"] = course.term_type === "year" ? "full_year" : load("fall") <= load("spring") ? "fall" : "spring";
       if (effectiveMaxCoursesPerTerm) {
         const terms = term === "full_year" ? ["fall", "spring"] : [term];
@@ -740,13 +860,124 @@ function generateValidatedSchedule(
     }
     if (!added) unfillableRequirementIds.add(gap.requirement.id);
   }
+
+  // Eligibility and prerequisite checks can reject a course selected by the
+  // first pass. Rebalance those holes with safe placement-ready electives,
+  // without inventing a second core course or a support/pathway need.
+  const requirementAreaById = new Map(workspace.requirements.map((requirement) => [requirement.id, requirement.area]));
+  const mappedAreasByCourse = new Map<string, Set<string>>();
+  for (const mapping of workspace.mappings.filter((mapping) => mapping.confidence === "verified")) {
+    const area = requirementAreaById.get(mapping.requirement_id);
+    if (!area) continue;
+    const values = mappedAreasByCourse.get(mapping.course_id) ?? new Set<string>();
+    values.add(area);
+    mappedAreasByCourse.set(mapping.course_id, values);
+  }
+  const coreAreas = new Set(["english", "math", "social_science", "lab_science", "physical_education", "personal_development", "ethnic_studies"]);
+  const targetLoad = Math.max(1, Math.min(effectiveMaxCoursesPerTerm ?? 6, 6));
+  if (effectiveRigor === "advanced") {
+    for (const grade of ([9, 10, 11] as GradeLevel[]).filter((candidate) => candidate >= currentGrade && candidate <= finalGrade)) {
+      const planWithAccepted = [...workspace.planCourses, ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))];
+      const hasScience = planWithAccepted.some((row) => row.grade_level === grade && row.course_id && mappedAreasByCourse.get(row.course_id)?.has("lab_science"));
+      if (hasScience) continue;
+      const usedCourseIds = new Set(planWithAccepted.map((row) => row.course_id).filter(Boolean));
+      const fallLoad = planWithAccepted.filter((row) => row.grade_level === grade && (row.term === "fall" || row.term === "full_year")).length;
+      const springLoad = planWithAccepted.filter((row) => row.grade_level === grade && (row.term === "spring" || row.term === "full_year")).length;
+      const candidates = workspace.courses
+        .filter((course) => !usedCourseIds.has(course.id) && course.grade_levels.includes(grade) && mappedAreasByCourse.get(course.id)?.has("lab_science"))
+        .filter((course) => !courseNeedsExplicitPlanningIntent(course, preferences.interests))
+        .sort((left, right) => Number(right.credits ?? 0) - Number(left.credits ?? 0)
+          || Number(right.is_weighted) - Number(left.is_weighted)
+          || left.prerequisites.length - right.prerequisites.length
+          || left.name.localeCompare(right.name));
+      for (const course of candidates) {
+        const term: PlanCourse["term"] = course.term_type === "year" ? "full_year" : fallLoad <= springLoad ? "fall" : "spring";
+        const affectedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
+        if (affectedTerms.some((termName) => (termName === "fall" ? fallLoad : springLoad) >= targetLoad)) continue;
+        if (!dtechCatalogEligibility(course, grade, planWithAccepted, workspace.courses).eligible) continue;
+        const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
+        if (prerequisite.result.status === "blocked") continue;
+        accepted.push({
+          course_id: course.id,
+          grade_level: grade,
+          school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, grade),
+          term,
+          status: grade === currentGrade ? "current" : "planned",
+          credits: course.credits,
+          college_units: course.college_units,
+          college_provider_code: null,
+          is_weighted: course.is_weighted,
+          mapping_verified: true,
+          user_edited: false
+        });
+        break;
+      }
+    }
+  }
+  const unfillableLoads = new Set<string>();
+  for (let pass = 0; pass < 40 && accepted.length < 40; pass += 1) {
+    const planWithAccepted = [...workspace.planCourses, ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))];
+    const loads = ([9, 10, 11, 12] as GradeLevel[])
+      .filter((grade) => grade >= currentGrade && grade <= finalGrade)
+      .map((grade) => ({
+        grade,
+        fall: planWithAccepted.filter((row) => row.grade_level === grade && (row.term === "fall" || row.term === "full_year")).length,
+        spring: planWithAccepted.filter((row) => row.grade_level === grade && (row.term === "spring" || row.term === "full_year")).length
+      }))
+      .sort((left, right) => Math.min(left.fall, left.spring) - Math.min(right.fall, right.spring) || left.grade - right.grade);
+    const open = loads.find((load) => Math.min(load.fall, load.spring) < targetLoad && !unfillableLoads.has(`${load.grade}:${load.fall <= load.spring ? "fall" : "spring"}`));
+    if (!open) break;
+    const usedCourseIds = new Set(planWithAccepted.map((row) => row.course_id).filter(Boolean));
+    const ranked = workspace.courses
+      .filter((course) => !usedCourseIds.has(course.id) && course.grade_levels.includes(open.grade) && Number(course.college_units ?? 0) === 0)
+      .filter((course) => !courseNeedsExplicitPlanningIntent(course, preferences.interests))
+      .filter((course) => ![...(mappedAreasByCourse.get(course.id) ?? [])].some((area) => coreAreas.has(area)))
+      .filter((course) => !/\bworld language\b|\blote\b|\b(?:spanish|french|chinese|mandarin|japanese|latin|german|italian)\b/.test(normalizedScheduleText(`${course.name} ${course.subject}`)))
+      .map((course) => ({
+        course,
+        mappedElective: Number(mappedAreasByCourse.get(course.id)?.has("electives") ?? false),
+        interest: Number(Boolean(interestText && [course.name, course.subject, course.description ?? ""].join(" ").toLowerCase().split(/\s+/).some((token) => token.length > 3 && interestText.includes(token)))),
+        penalty: automaticPlanningPenalty(course, interestText)
+      }))
+      .sort((left, right) => right.interest - left.interest
+        || right.mappedElective - left.mappedElective
+        || left.penalty - right.penalty
+        || (effectiveRigor === "advanced" ? Number(right.course.is_weighted) - Number(left.course.is_weighted) : effectiveRigor === "lighter" ? Number(left.course.is_weighted) - Number(right.course.is_weighted) : 0)
+        || left.course.prerequisites.length - right.course.prerequisites.length
+        || left.course.name.localeCompare(right.course.name));
+    let added = false;
+    for (const { course } of ranked) {
+      const term: PlanCourse["term"] = course.term_type === "year" ? "full_year" : open.fall <= open.spring ? "fall" : "spring";
+      const affectedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
+      if (affectedTerms.some((termName) => (termName === "fall" ? open.fall : open.spring) >= targetLoad)) continue;
+      if (!dtechCatalogEligibility(course, open.grade, planWithAccepted, workspace.courses).eligible) continue;
+      const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: open.grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
+      if (prerequisite.result.status === "blocked") continue;
+      accepted.push({
+        course_id: course.id,
+        grade_level: open.grade,
+        school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, open.grade),
+        term,
+        status: open.grade === currentGrade ? "current" : "planned",
+        credits: course.credits,
+        college_units: course.college_units,
+        college_provider_code: null,
+        is_weighted: course.is_weighted,
+        mapping_verified: workspace.mappings.some((mapping) => mapping.course_id === course.id && mapping.confidence === "verified"),
+        user_edited: false
+      });
+      added = true;
+      break;
+    }
+    if (!added) unfillableLoads.add(`${open.grade}:${open.fall <= open.spring ? "fall" : "spring"}`);
+  }
   return { additions: accepted, adjustments: prepared.adjustments, planCourses: workspace.planCourses, replacedRows };
 }
 
 function analyzeGeneratedSchedule(
   workspace: AssistantWorkspace,
   generated: ReturnType<typeof generateSuggestedPlan>,
-  preferences: { interests?: string[]; rigor?: "balanced" | "advanced" | "lighter"; startGrade?: GradeLevel; startingMathCourse?: string | null; includeCollegeCourses?: boolean } = {},
+  preferences: { interests?: string[]; rigor?: "balanced" | "advanced" | "lighter"; maxCoursesPerTerm?: number | null; startGrade?: GradeLevel; startingMathCourse?: string | null; includeCollegeCourses?: boolean; objectives?: string[] } = {},
   adjustedPlanCourses: PlanCourse[] = workspace.planCourses,
   adjustments: SchedulePlacementAdjustment[] = [],
   replaceExisting = false
@@ -846,9 +1077,11 @@ function analyzeGeneratedSchedule(
     return row.grade_level === requestedStartGrade && Boolean(query) && candidate.includes(query);
   });
   const collegeExclusionSatisfied = preferences.includeCollegeCourses !== false || generated.every((row) => Number(row.college_units ?? 0) === 0);
+  const qualityFailures = scheduleQualityFailures(workspace, generatedRows, adjustedPlanCourses, preferences);
   const constraintFailures = [
     ...(!startingMathSatisfied ? [`No verified ${preferences.startingMathCourse} course was placed in grade ${requestedStartGrade}.`] : []),
-    ...(!collegeExclusionSatisfied ? ["The proposed batch includes college coursework even though it was excluded."] : [])
+    ...(!collegeExclusionSatisfied ? ["The proposed batch includes college coursework even though it was excluded."] : []),
+    ...qualityFailures
   ];
   const sourceReadiness = {
     selected_school: workspace.school.name,
@@ -883,6 +1116,10 @@ function analyzeGeneratedSchedule(
     constraint_validation: {
       satisfied: constraintFailures.length === 0,
       failures: constraintFailures
+    },
+    quality_validation: {
+      satisfied: qualityFailures.length === 0,
+      failures: qualityFailures
     },
     graduation_coverage: {
       requirement_count: after.length,
@@ -1330,7 +1567,7 @@ export async function executeAssistantReadTool(
     const args = toolArgumentSchemas.get_course_schedule_options.parse(argumentsValue);
     const policy = policyForPreference(workspace.enrollmentPolicies, workspace.enrollmentPreference);
     const generated = generateValidatedSchedule(workspace, policy, args.respect_recommended_limit, { interests: args.interests, rigor: args.rigor, maxCoursesPerTerm: args.max_courses_per_term, startGrade: args.start_grade, startingMathCourse: args.starting_math_course, includeCollegeCourses: args.include_college_courses, replaceExisting: args.replace_existing, objectives: args.objectives });
-    const analysis = analyzeGeneratedSchedule(workspace, generated.additions, { interests: args.interests, rigor: args.rigor, startGrade: args.start_grade, startingMathCourse: args.starting_math_course, includeCollegeCourses: args.include_college_courses }, generated.planCourses, generated.adjustments, args.replace_existing);
+    const analysis = analyzeGeneratedSchedule(workspace, generated.additions, { interests: args.interests, rigor: args.rigor, maxCoursesPerTerm: args.max_courses_per_term, startGrade: args.start_grade, startingMathCourse: args.starting_math_course, includeCollegeCourses: args.include_college_courses, objectives: args.objectives }, generated.planCourses, generated.adjustments, args.replace_existing);
     return {
       summary: !analysis.source_readiness.evidence_ready
         ? `${workspace.school.short_name}'s official planning evidence is incomplete, so Pilot did not generate or apply a substitute schedule.`
@@ -1619,7 +1856,7 @@ export async function executeAssistantMutationTool(
     const selected = args.course_ids.map((id) => availableById.get(id));
     if (selected.some((row) => !row)) throw new Error("One or more schedule suggestions are stale or no longer satisfy the plan rules. Generate the options again.");
     const selectedRows = selected as typeof available.additions;
-    const analysis = analyzeGeneratedSchedule(workspace, selectedRows, { interests: args.interests, rigor: args.rigor, startGrade: args.start_grade, startingMathCourse: args.starting_math_course, includeCollegeCourses: args.include_college_courses }, available.planCourses, available.adjustments, args.replace_existing);
+    const analysis = analyzeGeneratedSchedule(workspace, selectedRows, { interests: args.interests, rigor: args.rigor, maxCoursesPerTerm: args.max_courses_per_term, startGrade: args.start_grade, startingMathCourse: args.starting_math_course, includeCollegeCourses: args.include_college_courses, objectives: args.objectives }, available.planCourses, available.adjustments, args.replace_existing);
     if (!analysis.source_readiness.evidence_ready) {
       throw new Error(`${workspace.school.short_name}'s verified catalog, diploma requirements, or course mappings are incomplete. Pilot will not substitute another school's sequence.`);
     }

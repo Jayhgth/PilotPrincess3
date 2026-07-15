@@ -172,11 +172,20 @@ test.describe("live Pilot behavior", () => {
     const beforeRows = await supabase.from("plan_courses").select("id").eq("user_id", userId).is("source_review_item_id", null);
     if (beforeRows.error) throw beforeRows.error;
     const editableIdsBefore = new Set((beforeRows.data ?? []).map((row) => row.id));
-    const scheduleTurn = await sendTurn(
+    const unavailableSequenceTurn = await sendTurn(
       request,
       accessToken,
       conversationId,
       "Clear my whole schedule. Generate a new one, math starting at pre-calc in grade 9 and maximize GPA as much as possible with reasonable limitations and course rigor. No concurrent classes."
+    );
+    expect(unavailableSequenceTurn.proposals).toHaveLength(0);
+    expect(unavailableSequenceTurn.message).toMatch(/Grade 10 is missing mathematics|left your current four-year plan unchanged/i);
+
+    const scheduleTurn = await sendTurn(
+      request,
+      accessToken,
+      conversationId,
+      "Clear my whole schedule. Generate a new one, math starting at Algebra I in grade 9 and maximize GPA as much as possible with reasonable limitations and course rigor. No concurrent classes."
     );
     const scheduleTools = await supabase.from("ai_tool_calls")
       .select("tool_name, status, result")
@@ -189,9 +198,9 @@ test.describe("live Pilot behavior", () => {
     if (proposalRecord.error) throw proposalRecord.error;
     expect(proposalRecord.data.arguments).toMatchObject({
       replace_existing: true,
-      starting_math_course: "pre-calc",
+      starting_math_course: "algebra i",
       start_grade: 9,
-      max_courses_per_term: 7,
+      max_courses_per_term: 6,
       rigor: "advanced",
       include_college_courses: false
     });
@@ -205,7 +214,7 @@ test.describe("live Pilot behavior", () => {
     const rebuiltCourses = await supabase.from("courses").select("id,name").in("id", rebuiltCourseIds);
     if (rebuiltCourses.error) throw rebuiltCourses.error;
     const courseNameById = new Map((rebuiltCourses.data ?? []).map((course) => [course.id, course.name]));
-    expect(rebuiltRows.data?.some((row) => row.grade_level === 9 && /pre[ -]?calc/i.test(courseNameById.get(row.course_id ?? "") ?? ""))).toBe(true);
+    expect(rebuiltRows.data?.some((row) => row.grade_level === 9 && /algebra\s*(?:i|1)\b/i.test(courseNameById.get(row.course_id ?? "") ?? ""))).toBe(true);
 
     const undoTurn = await sendTurn(request, accessToken, conversationId, "Undo that schedule change.");
     expect(undoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);

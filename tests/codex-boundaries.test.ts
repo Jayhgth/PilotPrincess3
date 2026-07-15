@@ -383,7 +383,7 @@ describe("Codex feature boundaries", () => {
         rigor: "advanced",
         include_college_courses: true,
         replace_existing: true,
-        max_courses_per_term: 7,
+        max_courses_per_term: 6,
         starting_math_course: "pre-calc",
         objectives: ["complete_diploma", "maximize_weighted_gpa"]
       }

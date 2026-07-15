@@ -17,7 +17,7 @@ function canonicalAcademicSourceUrl(value) {
   const url = new URL(value);
   const googleDocument = url.pathname.match(/^\/document\/d\/([^/]+)/);
   if (url.hostname === "docs.google.com" && googleDocument) {
-    return `https://docs.google.com/document/d/${googleDocument[1]}/export?format=pdf`;
+    return `https://docs.google.com/document/d/${googleDocument[1]}/export?format=txt`;
   }
   const googleSheet = url.pathname.match(/^\/spreadsheets\/d\/([^/]+)/);
   if (url.hostname === "docs.google.com" && googleSheet) {
@@ -79,12 +79,12 @@ export function normalizeRequirementArea(title) {
 export function gradeLevelsFromText(value) {
   const normalized = String(value ?? "").replace(/[‐‑‒–—]/g, "-");
   const grades = new Set();
-  for (const match of normalized.matchAll(/\b(9|10|11|12)\s*-\s*(9|10|11|12)\b/g)) {
+  for (const match of normalized.matchAll(/\b(9|10|11|12)(?:st|nd|rd|th)?\s*-\s*(9|10|11|12)(?:st|nd|rd|th)?\b/gi)) {
     const start = Number(match[1]);
     const end = Number(match[2]);
     for (let grade = Math.min(start, end); grade <= Math.max(start, end); grade += 1) grades.add(grade);
   }
-  for (const match of normalized.matchAll(/\b(9|10|11|12)\b/g)) grades.add(Number(match[1]));
+  for (const match of normalized.matchAll(/\b(9|10|11|12)(?:st|nd|rd|th)?\b/gi)) grades.add(Number(match[1]));
   return [...grades].sort((left, right) => left - right);
 }
 
@@ -98,9 +98,12 @@ export function mappedRequirementAreasForCourse(course, requirements = []) {
   const namedArea = normalizeRequirementArea(`${course.name ?? ""} ${course.subject ?? ""}`);
   const identity = `${course.name ?? ""} ${course.subject ?? ""}`;
   const explicitCte = /career tech|\bcte\b|vocational/i.test(identity);
+  const explicitPersonalDevelopment = /\blife skills\b|\bhealth(?: education)?\b/i.test(identity);
   const explicitSocialCore = /\b(?:government|economics|ethnic studies|world history|u\.?s\.? history|united states history)\b/i.test(identity);
   const explicitPhysicalEducation = /\bphysical education\b|\bpe\s*[1-4ivx]*\b/i.test(identity);
-  const primaryArea = explicitCte
+  const primaryArea = explicitPersonalDevelopment
+    ? "personal_development"
+    : explicitCte
     ? "career_technical_education"
     : explicitSocialCore
       ? "social_science"
@@ -126,8 +129,22 @@ function cleanedText(value) {
     .trim();
 }
 
+function graduationRequirementScope(value) {
+  const candidates = [...value.matchAll(/(?:^|\n)\s*[^\n]{0,90}(?:graduation|diploma)\s+requirements?[^\n]*/gim)].map((match) => {
+    const start = match.index ?? 0;
+    const window = value.slice(start, start + 14_000);
+    const nextSection = window.slice(match[0].length).search(/(?:^|\n)\s*(?:college admissions? requirements?|planning resources?|four[- ]year educational plan|list of course offerings|course descriptions?)\s*(?:\n|$)/im);
+    const text = nextSection >= 0 ? window.slice(0, match[0].length + nextSection) : window;
+    const score = [/(?:^|\n)\s*english\b/im, /(?:^|\n)\s*math(?:ematics)?\b/im, /(?:^|\n)\s*science\b/im,
+      /(?:^|\n)\s*(?:social studies|history)\b/im, /(?:^|\n)\s*physical education\b/im, /\bcredits?\b/i]
+      .reduce((total, pattern) => total + Number(pattern.test(text)), 0);
+    return { text, score };
+  }).sort((left, right) => right.score - left.score || left.text.length - right.text.length);
+  return candidates[0]?.score >= 5 ? candidates[0].text : value;
+}
+
 export function extractGraduationRequirements(text) {
-  let source = cleanedText(text);
+  let source = graduationRequirementScope(cleanedText(text));
   source = source
     .replace(/Visual\s+(?:and\s+)?Performing[^\n]*?(\d+(?:\.\d+)?)\s+\D{0,4}(\d+(?:\.\d+)?)\s+\D{0,4}(\d+(?:\.\d+)?)[^\n]*\n\s*Arts/gi, "Visual and Performing Arts $1 $2 $3")
     .replace(/([A-Za-z]+\s+Core)[^\n]*?(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)[^\n]*\n\s*Electives/gi, "$1 Electives $2 $3");
@@ -210,7 +227,7 @@ export function extractGraduationRequirements(text) {
     if (![...rows.values()].some((row) => row.area === area)) rows.set(`${area}:${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, summaryRow);
   }
 
-  const linePattern = /(?:^|\n)\s*(English|Mathematics?|Math|Science|History|Social Studies|Social Science|Physical Education|P\.?E\.?|Visual(?: and| &) Performing Arts|Fine Arts|World Languages?|Foreign Languages?|(?:[A-Za-z]+\s+Core\s+)?Electives?|Life Skills|Health)\s*[:-]?\s*((?:\d+(?:\.\d+)?\s*){1,3})(?:credits?|units?)?\b/gim;
+  const linePattern = /(?:^|\n)\s*(English|Mathematics?|Math|Science|History|Social Studies|Social Science|Physical Education|P\.?E\.?|Visual(?: and| &| or) Performing Arts?|Fine Arts|World Languages?|Foreign Languages?|(?:[A-Za-z]+\s+Core\s+)?Electives?|Life Skills|Health)\s*[:-]?\s*((?:\d+(?:\.\d+)?\s*){1,3})(?:credits?|units?)?\b/gim;
   for (const match of source.matchAll(linePattern)) {
     const area = normalizeRequirementArea(match[1]);
     if (area === "other" || [...rows.values()].some((row) => row.area === area)) continue;
@@ -231,7 +248,7 @@ export function extractGraduationRequirements(text) {
     });
   }
 
-  const cteLanguage = source.match(/(?:CTE|Career Technical Education)\s+or\s+World Language[^\n]{0,80}|Students who do not take a third level of world language must take a year of Career Technical Education/i);
+  const cteLanguage = source.match(/(?:CTE(?:\s*\([^)]*\))?|Career Technical Education)\s+or\s+(?:a\s+)?(?:third level of )?World Language[^\n]{0,80}|Students who do not take a third level of world language must take a year of Career Technical Education/i);
   if (cteLanguage && ![...rows.values()].some((row) => row.area === "career_technical_education")) {
     rows.set("career_technical_education:cte-or-advanced-world-language", {
       area: "career_technical_education",
@@ -243,6 +260,13 @@ export function extractGraduationRequirements(text) {
       evidence: cteLanguage[0].trim(),
       confidence: "verified"
     });
+  }
+
+  const ethnicStudiesEvidence = source.match(/\d+(?:\.\d+)?\s+credits?\s+of\s+Ethnic Studies[^\n]*/i)?.[0] ?? null;
+  const scienceEvidence = source.match(/\d+(?:\.\d+)?\s+credits?\s+of\s+Life Science[^\n]*[\s\S]{0,100}?\d+(?:\.\d+)?\s+credits?\s+of\s+Physical Science/i)?.[0] ?? null;
+  for (const row of rows.values()) {
+    if (row.area === "social_science" && ethnicStudiesEvidence) row.notes = `Includes ${ethnicStudiesEvidence.replace(/^.*?credits?\s+of\s+/i, "")}`;
+    if (row.area === "lab_science" && scienceEvidence) row.notes = scienceEvidence.replace(/\s+/g, " ").trim();
   }
 
   const summaryCoreAreas = ["english", "social_science", "math", "lab_science"];
@@ -311,13 +335,26 @@ function parseCsv(text) {
   return rows;
 }
 
-function extractDocumentCatalogCourses(text, sourceUrl) {
-  const lines = String(text ?? "").split("\n").map((line) => line.replace(/\s+/g, " ").trim());
+function documentGradeMetadataIndex(values) {
+  return values.findIndex((value) => /^(?:recommended\s+)?grades?\s*:?\s*[0-9,\s-]+$/i.test(value)
+    || /\b(?:all\s+)?(?:9|10|11|12)(?:st|nd|rd|th)?\s+grade\b/i.test(value));
+}
+
+function expandedDocumentCourseNames(value) {
+  const cleaned = value.replace(/^[+*#^]+/, "").replace(/\s*-\s*(?:H?P|AS)\s*[,.;:]?\s*$/i, "").replace(/[,\s]+$/, "").replace(/\s+/g, " ").trim();
+  const choices = cleaned.split(/\s+OR\s+/i)
+    .map((choice) => choice.replace(/\s*-\s*(?:H?P|AS)\s*[,.;:]?\s*$/i, "").trim())
+    .filter(Boolean);
+  return choices.length > 1 && choices.length <= 6 ? choices : [cleaned];
+}
+
+export function extractDocumentCatalogCourses(text, sourceUrl) {
+  const lines = String(text ?? "").split("\n").map((line) => line.replace(/[‐‑‒–—]/g, "-").replace(/\s+/g, " ").trim());
   const sectionNames = new Map([
     ["BUSINESS/MARKETING", "Business"], ["COMPUTER SCIENCE", "Computer Science"], ["ENGLISH", "English"],
     ["MATHEMATICS", "Mathematics"], ["MATH", "Mathematics"], ["PHYSICAL EDUCATION", "Physical Education"],
     ["SCIENCE", "Science"], ["SOCIAL STUDIES", "Social Science"], ["VISUAL & PERFORMING ARTS", "Visual and Performing Arts"],
-    ["WORLD LANGUAGES", "World Language"], ["NON DEPARTMENTAL", "Elective"], ["AP CAPSTONE", "Elective"]
+    ["WORLD LANGUAGE", "World Language"], ["WORLD LANGUAGES", "World Language"], ["NON DEPARTMENTAL", "Elective"], ["AP CAPSTONE", "Elective"]
   ]);
   let subject = "Elective";
   const courses = [];
@@ -327,26 +364,23 @@ function extractDocumentCatalogCourses(text, sourceUrl) {
     if (sectionNames.has(line)) { subject = sectionNames.get(line); continue; }
     if (!/^[+*#^]?[A-Z][A-Z0-9 &/.,'():+-]{2,110}$/.test(line) || /^(?:COURSE OFFERINGS|PREREQUISITES?|GRADES?|PAGE|TOTAL|SCOPE|SEQUENCE)$/i.test(line)) continue;
     const metadata = lines.slice(index + 1, index + 7);
-    const gradeLineIndex = metadata.findIndex((value) => /^(?:recommended\s+)?grades?\s*:?[\s,0-9-]+$/i.test(value));
+    const gradeLineIndex = documentGradeMetadataIndex(metadata);
     if (gradeLineIndex < 0) continue;
     const gradeLine = metadata[gradeLineIndex];
     const gradeLevels = gradeLevelsFromText(gradeLine);
     if (!gradeLevels.length) continue;
-    const name = line.replace(/^[+*#^]+/, "").replace(/\s*-\s*(?:H?P|AS)\s*[,.;:]?\s*$/i, "").replace(/[,\s]+$/, "").replace(/\s+/g, " ").trim();
-    if (/\bI\s*,\s*II\s*,\s*III\s*,\s*IV\b/i.test(name)) continue;
-    const normalizedName = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    if (!normalizedName || seen.has(normalizedName)) continue;
-    seen.add(normalizedName);
-    const prerequisiteIndex = metadata.findIndex((value) => /^prerequisites?\s*:/i.test(value));
+    const names = expandedDocumentCourseNames(line);
+    if (names.some((name) => /\bI\s*,\s*II\s*,\s*III\s*,\s*IV\b/i.test(name))) continue;
+    const prerequisiteIndex = metadata.findIndex((value) => /^(?:suggested\s+)?prerequisites?\s*:/i.test(value));
     const prerequisites = prerequisiteIndex >= 0
-      ? [metadata.slice(prerequisiteIndex, gradeLineIndex).join(" ").replace(/^prerequisites?\s*:\s*/i, "").trim()].filter((value) => value && !/^(?:none|n\/a|na)$/i.test(value))
+      ? [metadata.slice(prerequisiteIndex, gradeLineIndex).join(" ").replace(/^(?:suggested\s+)?prerequisites?\s*:\s*/i, "").trim()].filter((value) => value && !/^(?:none|n\/a|na)$/i.test(value))
       : [];
     const descriptionStart = index + 1 + gradeLineIndex + 1;
     let descriptionEnd = Math.min(lines.length, descriptionStart + 30);
     for (let candidateIndex = descriptionStart; candidateIndex < descriptionEnd; candidateIndex += 1) {
       const candidate = lines[candidateIndex];
       if (!/^[+*#^]?[A-Z][A-Z0-9 &/.,'():+-]{2,110}$/.test(candidate)) continue;
-      if (lines.slice(candidateIndex + 1, candidateIndex + 7).some((value) => /^(?:recommended\s+)?grades?\s*:?[\s,0-9-]+$/i.test(value))) {
+      if (documentGradeMetadataIndex(lines.slice(candidateIndex + 1, candidateIndex + 7)) >= 0) {
         descriptionEnd = candidateIndex;
         break;
       }
@@ -354,26 +388,32 @@ function extractDocumentCatalogCourses(text, sourceUrl) {
     const description = lines.slice(descriptionStart, descriptionEnd)
       .filter((value) => value && !/^\d+$|^\d{1,2}\/\d{1,2}\/\d{4}$|^-- \d+ of \d+ --$/.test(value))
       .join(" ").slice(0, 1800).trim();
-    const semester = /(?:one|1)[ -]semester|semester class|fall semester|spring semester/i.test(`${name} ${description}`);
-    const isHonors = /\b(?:honors?|ap|ib)\b|(?:^|-)HP$/i.test(line);
-    courses.push({
-      external_course_id: `catalog:${createHash("sha256").update(`${sourceUrl}|${normalizedName}`).digest("hex").slice(0, 24)}`,
-      course_code: null,
-      name,
-      subject,
-      course_type: "high_school",
-      grade_levels: gradeLevels,
-      credits: semester ? 5 : 10,
-      college_units: null,
-      term_type: semester ? "semester" : "year",
-      uc_ag_area: null,
-      prerequisites,
-      description: description || null,
-      is_honors: isHonors,
-      is_weighted: isHonors,
-      confidence: "verified",
-      review_status: "approved"
-    });
+    for (const name of names) {
+      const normalizedName = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (!normalizedName || seen.has(normalizedName)) continue;
+      seen.add(normalizedName);
+      const quarterLong = /\bquarter[ -]long course\b/i.test(`${name} ${description}`);
+      const semester = quarterLong || /(?:one|1)[ -]semester|semester class|fall semester|spring semester/i.test(`${name} ${description}`);
+      const isHonors = /\b(?:honors?|ap|ib)\b|(?:^|-)HP$/i.test(line);
+      courses.push({
+        external_course_id: `catalog:${createHash("sha256").update(`${sourceUrl}|${normalizedName}`).digest("hex").slice(0, 24)}`,
+        course_code: null,
+        name,
+        subject,
+        course_type: "high_school",
+        grade_levels: gradeLevels,
+        credits: quarterLong ? 2.5 : semester ? 5 : 10,
+        college_units: null,
+        term_type: semester ? "semester" : "year",
+        uc_ag_area: null,
+        prerequisites,
+        description: description || null,
+        is_honors: isHonors,
+        is_weighted: isHonors,
+        confidence: "verified",
+        review_status: "approved"
+      });
+    }
   }
   return courses;
 }
