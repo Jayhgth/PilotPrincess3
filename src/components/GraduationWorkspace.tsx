@@ -153,6 +153,7 @@ function DiplomaView({
         unit="cr"
       />
       {selected && <EvidencePanel
+        school={school}
         title={selected.requirement.name}
         description={selected.requirement.notes ?? `${selected.requirement.credits_required} verified credits required.`}
         status={selected.status === "complete" ? "Complete" : selected.status === "on_track" ? "Covered by plan" : `${formatValue(Math.max(0, Number(selected.requirement.credits_required) - selected.verifiedProjectedCredits))} credits open`}
@@ -218,6 +219,7 @@ function RequirementIndex({
 }
 
 function EvidencePanel({
+  school,
   title,
   description,
   status,
@@ -228,6 +230,7 @@ function EvidencePanel({
   warnings,
   action
 }: {
+  school: School;
   title: string;
   description: string;
   status: string;
@@ -241,16 +244,18 @@ function EvidencePanel({
   return <section className="graduation-evidence-panel" aria-live="polite">
     <header><div><span>Selected requirement</span><h2>{title}</h2><p>{description}</p></div><strong className={`eligibility-status ${tone}`}>{status}</strong></header>
     {warnings.length > 0 && <div className="evidence-warning"><Warning size={16} /><span>{warnings.join(" ")}</span></div>}
-    <EvidenceCourseSection title="Credits that count" rows={contributions} mode="applied" />
-    {unverified.length > 0 && <EvidenceCourseSection title="Needs verification" rows={unverified} mode="unverified" />}
-    {unused.length > 0 && <EvidenceCourseSection title="Verified but not needed here" rows={unused} mode="unused" />}
+    <EvidenceCourseSection title="Credits that count" rows={contributions} mode="applied" school={school} />
+    {unverified.length > 0 && <EvidenceCourseSection title="Needs verification" rows={unverified} mode="unverified" school={school} />}
+    {unused.length > 0 && <EvidenceCourseSection title="Verified but not needed here" rows={unused} mode="unused" school={school} />}
     {action}
   </section>;
 }
 
-function EvidenceCourseSection({ title, rows, mode }: { title: string; rows: RequirementCourseEvidence[]; mode: "applied" | "unverified" | "unused" }) {
+function EvidenceCourseSection({ title, rows, mode, school }: { title: string; rows: RequirementCourseEvidence[]; mode: "applied" | "unverified" | "unused"; school: School }) {
   return <div className="evidence-section"><h3>{title}</h3>{rows.length ? <div className="evidence-course-list">{rows.map((row) => <div className="evidence-course-row" key={`${mode}-${row.planCourseId}`}>
-    <InstitutionMark institution={row.institution} decorative />
+    {row.institution === "high_school"
+      ? <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} decorative />
+      : <InstitutionMark institution={row.institution} decorative />}
     <span><strong>{row.courseName}</strong><small>Grade {row.gradeLevel} · {statusLabel(row.status)}{row.note ? ` · ${row.note}` : ""}</small></span>
     <b>{mode === "applied" ? `${formatValue(row.creditsApplied)} cr` : mode === "unused" ? `${formatValue(row.creditsAvailable - row.creditsApplied)} unused` : "Excluded"}</b>
   </div>)}</div> : <p className="evidence-empty">No course currently contributes to this requirement.</p>}</div>;

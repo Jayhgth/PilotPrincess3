@@ -51,7 +51,7 @@ function plannedTermIndex(course: PlanCourse): number | undefined {
   return plannerTargetTermIndex(course.grade_level, course.term);
 }
 
-function dtechPrerequisiteCatalog(courses: readonly Course[]): CatalogCourse[] {
+function dtechPrerequisiteCatalog(courses: readonly Course[], sourceLabel = "Official high school course catalog"): CatalogCourse[] {
   return courses.map((course) => ({
     id: course.id,
     code: course.course_code,
@@ -62,7 +62,7 @@ function dtechPrerequisiteCatalog(courses: readonly Course[]): CatalogCourse[] {
     gradeLevels: course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12),
     prerequisites: course.prerequisites,
     ...(course.source_id ? { sourceId: course.source_id } : {}),
-    sourceLabel: "Official d.tech course catalog",
+    sourceLabel,
     confidence: course.confidence
   }));
 }
@@ -135,7 +135,7 @@ export function evaluateDtechPlannerPrerequisites(
   equivalencies: readonly SmccdHighSchoolEquivalency[] = [],
   sourceLabel = "Official high school course catalog"
 ): PlannerPrerequisiteEvaluation {
-  const catalog = dtechPrerequisiteCatalog(dtechCourses);
+  const catalog = dtechPrerequisiteCatalog(dtechCourses, sourceLabel);
   const parsed = parsePrerequisites(course.prerequisites, {
     catalog,
     ...(course.source_id ? { sourceId: course.source_id } : {}),

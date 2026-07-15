@@ -38,6 +38,7 @@ import type {
   GradeLevel,
   PlanCourse,
   PlanVersion,
+  School,
   SmccdCollege,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
@@ -51,6 +52,7 @@ import type {
 interface Props {
   embedded?: boolean;
   surface?: SmccdSection;
+  school: School;
   supabase: SupabaseClient;
   session: Session;
   settings: StudentSettings;
@@ -162,6 +164,7 @@ export async function preloadSmccdPlannerData(supabase: SupabaseClient) {
 export default function SmccdPlanner({
   embedded = false,
   surface = "courses",
+  school,
   supabase,
   session,
   settings,
@@ -526,7 +529,7 @@ export default function SmccdPlanner({
         mapping_verified: Boolean(selectedEquivalency),
         user_edited: true,
         notes: selectedEquivalency
-          ? `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. The official d.tech equivalency chart (updated 2021) lists ${selectedEquivalency.high_school_credits} high-school credits as ${selectedEquivalency.high_school_equivalent}. Confirm current approval, prerequisites, schedule, and transcript delivery.`
+          ? `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. The official ${school.short_name} equivalency source lists ${selectedEquivalency.high_school_credits} high-school credits as ${selectedEquivalency.high_school_equivalent}. Confirm current approval, prerequisites, schedule, and transcript delivery.`
           : `${SMCCD_COLLEGE_NAMES[selectedCourse.college_code]} ${selectedCourse.source_year} catalog. ${creditResolution.credits > 0 ? `${collegeUnits} college units are provisionally represented as ${creditResolution.credits} high-school credits for GPA calculations. ` : "High-school credit is unresolved. "}Verify schedule availability, prerequisites, high school approval, and transcript delivery.`,
         requirement_area_override: selectedEquivalency?.requirement_area ?? null,
         sort_order: planCourses.length
@@ -535,7 +538,7 @@ export default function SmccdPlanner({
       onCourseAdded?.(data as unknown as PlanCourse, selectedCourse);
       setSelectedCourse(null);
       setNotice(selectedEquivalency
-        ? `${selectedCourse.course_code} added with the source-backed d.tech equivalency. Confirm that the 2021 chart is still current.`
+        ? `${selectedCourse.course_code} added with the source-backed ${school.short_name} equivalency. Confirm that the source is still current.`
         : `${selectedCourse.course_code} added to the academic plan as unverified.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The course could not be added.");

@@ -14,7 +14,7 @@ export interface HighSchoolCreditResolution {
   normalizedCourseCode: string | null;
 }
 
-export const COLLEGE_HIGH_SCHOOL_CREDIT_POLICY = "Use exact d.tech equivalencies first; otherwise 3 to under 5 college units count as 5 high-school credits and 5 or more units count as 10.";
+export const COLLEGE_HIGH_SCHOOL_CREDIT_POLICY = "Use a verified selected-school equivalency first; otherwise 3 to under 5 college units count as 5 high-school credits and 5 or more units count as 10.";
 
 function positiveNumber(value: number | null | undefined) {
   const parsed = Number(value ?? 0);

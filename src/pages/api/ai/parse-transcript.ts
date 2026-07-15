@@ -117,7 +117,7 @@ export const POST: APIRoute = async ({ request }) => {
       parserMethod = "deterministic_text";
     } else {
       if (!aiPreferences.enabled || !aiPreferences.approvedAt) {
-        throw new Error("This transcript does not use the verified d.tech text layout. Connect Pilot Assistant for selected-school transcript interpretation, or enter the courses manually.");
+        throw new Error("This transcript needs selected-school interpretation. Connect Pilot Assistant, or enter the courses manually.");
       }
       const prompt = [
         `Extract only courses explicitly shown as completed or carrying a final grade from this ${selectedSchool?.name ?? "selected high school"} transcript. The source may contain readable text, images, or both.`,

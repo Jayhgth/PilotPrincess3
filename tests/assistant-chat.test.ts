@@ -38,7 +38,7 @@ describe("assistant chat helpers", () => {
     expect(changeDetailsFromContext({ data: { course_code: "MATH 200", grade_level: 12, equivalency_verified: true, plan_course_id: "private-id", removed_count: 1 } })).toEqual([
       { label: "Course", value: "MATH 200" },
       { label: "Grade", value: "12" },
-      { label: "d.tech equivalency reviewed", value: "Yes" },
+      { label: "School equivalency reviewed", value: "Yes" },
       { label: "Courses removed", value: "1" }
     ]);
     expect(changeDetailsFromContext({ data: { courses_removed: 10, transcript_courses_retained: 50, degree_bookmarks_removed: 3, gpa_assumptions_removed: 8 } })).toEqual([

@@ -1333,11 +1333,12 @@ export default function PlanningWorkspace() {
     const overviewCourse = (row: PlanCourse) => {
       const collegeCode = row.smccd_course_id ? plannedSmccdMap.get(row.smccd_course_id)?.college_code : null;
       const isCollegeCourse = Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0);
+      const isMissingSelectedSchoolCourse = Boolean(row.course_id && !courseMap.has(row.course_id));
       return {
         id: row.id,
         name: courseDisplayName(row, courseMap),
-        source: collegeCode ?? (isCollegeCourse ? "College" : "d.tech"),
-        institution: collegeCode ?? (isCollegeCourse ? "smccd" : "dtech")
+        source: collegeCode ?? (isCollegeCourse ? "College" : isMissingSelectedSchoolCourse ? "Needs review" : school?.short_name ?? "High school"),
+        institution: collegeCode ?? (isCollegeCourse ? "smccd" : isMissingSelectedSchoolCourse ? "unverified" : "high-school")
       };
     };
     const currentPeriod = academicPeriodForDate();
@@ -1474,7 +1475,7 @@ export default function PlanningWorkspace() {
                 <span role="cell" data-label="Grade">{grade}</span><span role="cell" data-label="Credits">{String(credits)}</span><span role="cell" data-label="Year">{year}</span><span role="cell" data-label="Status" className={imported ? "transcript-imported" : needsReview ? "transcript-review-needed" : resolution.classification === "dtech_intersession" ? "transcript-intersession-ready" : ""}>{status}</span>
               </div>
               {visibleNotes.length > 0 && <p className="transcript-row-warning">{visibleNotes.join(" ")}</p>}
-              {!imported && <details className="transcript-row-editor"><summary>Edit extracted data</summary><TranscriptCourseEditor value={displayPayload as unknown as TranscriptCoursePayload} onChange={(next) => setReviewDrafts((current) => ({ ...current, [item.id]: JSON.stringify(next) }))} onIgnore={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)} /></details>}
+              {!imported && <details className="transcript-row-editor"><summary>Edit extracted data</summary><TranscriptCourseEditor value={displayPayload as unknown as TranscriptCoursePayload} schoolName={school?.short_name ?? "the selected school"} isDtechSchool={school?.slug === "design-tech-high-school"} onChange={(next) => setReviewDrafts((current) => ({ ...current, [item.id]: JSON.stringify(next) }))} onIgnore={() => void saveReview(item, "rejected")} disabled={Boolean(busyLabel)} /></details>}
             </article>;
           })}</div>
           </div>
@@ -1542,6 +1543,7 @@ export default function PlanningWorkspace() {
           degreePlanner={<SmccdPlanner
             embedded
             surface="degree"
+            school={school}
             supabase={supabase}
             session={session}
             settings={settings}
@@ -1556,6 +1558,7 @@ export default function PlanningWorkspace() {
           generalEducationPlanner={<SmccdPlanner
             embedded
             surface="general_education"
+            school={school}
             supabase={supabase}
             session={session}
             settings={settings}
@@ -1573,9 +1576,11 @@ export default function PlanningWorkspace() {
   }
 
   function renderGpa() {
+    if (!school) return null;
     return <div className="gpa-page page-frame"><GpaPlanningLab
       rows={planCourses}
       courses={courses}
+      school={school}
       smccdCourses={plannedSmccdCourses}
       equivalencies={equivalencies}
       choices={gpaScenarioChoices}
@@ -1664,7 +1669,7 @@ export default function PlanningWorkspace() {
   }
 
   function renderCourses() {
-    if (!supabase || !session || !settings || !activeVersion) return null;
+    if (!supabase || !session || !settings || !activeVersion || !school) return null;
     const activeEnrollmentPolicy = enrollmentPreference ? policyForPreference(enrollmentPolicies, enrollmentPreference) : null;
     const enrollmentWarnings = activeEnrollmentPolicy
       ? evaluateEnrollmentSchedule(planCourses, activeEnrollmentPolicy).filter((term) => term.state !== "within")
@@ -1684,6 +1689,7 @@ export default function PlanningWorkspace() {
       {courseArea === "mine" ? renderMineCourses() : courseArea === "dtech" ? renderDtechCatalog() : <SmccdPlanner
         embedded
         surface="courses"
+        school={school}
         supabase={supabase}
         session={session}
         settings={settings}

@@ -199,7 +199,7 @@ export function calculateRequirementProgress(
       name: string;
       equivalent: string | null;
       gradeLevel: PlanCourse["grade_level"];
-      institution: "dtech" | "smccd" | "CSM" | "SKY" | "CAN";
+      institution: "high_school" | "smccd" | "CSM" | "SKY" | "CAN";
     }> = [];
     const unverifiedRows: typeof verifiedRows = [];
 
@@ -419,9 +419,9 @@ export function calculateRequirementProgress(
   });
 }
 
-function institutionForPlanCourse(planCourse: PlanCourse): "dtech" | "smccd" | "CSM" | "SKY" | "CAN" {
+function institutionForPlanCourse(planCourse: PlanCourse): "high_school" | "smccd" | "CSM" | "SKY" | "CAN" {
   const college = planCourse.smccd_course_id?.split(":", 1)[0];
-  return college === "CSM" || college === "SKY" || college === "CAN" ? college : planCourse.smccd_course_id ? "smccd" : "dtech";
+  return college === "CSM" || college === "SKY" || college === "CAN" ? college : planCourse.smccd_course_id ? "smccd" : "high_school";
 }
 
 function allocateEvidenceByStatus(
@@ -448,7 +448,7 @@ function requirementEvidence(
     credits: number;
     name: string;
     gradeLevel: PlanCourse["grade_level"];
-    institution: "dtech" | "smccd" | "CSM" | "SKY" | "CAN";
+    institution: "high_school" | "smccd" | "CSM" | "SKY" | "CAN";
   },
   creditsApplied: number,
   note: string | null

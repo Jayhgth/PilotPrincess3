@@ -7,6 +7,7 @@ import { Checkbox } from "@base-ui/react/checkbox";
 import { useEffect, useMemo, useState } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import AnimatedList from "@/components/reactbits/AnimatedList";
+import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import InstitutionMark from "@/components/InstitutionMark";
 import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import { calculateGpaScenario, initialGpaScenarioChoices, setAllGpaScenarioGrades, type GpaScenarioChoice } from "@/lib/gpa-planner";
@@ -15,6 +16,7 @@ import { courseDisplayName, LETTER_GRADES } from "@/lib/planning";
 import type {
   Course,
   PlanCourse,
+  School,
   SmccdCourse,
   SmccdHighSchoolEquivalency,
 } from "@/lib/models";
@@ -23,6 +25,7 @@ import styles from "./gpa-planning-lab.module.css";
 interface Props {
   rows: PlanCourse[];
   courses: Course[];
+  school: School;
   smccdCourses: SmccdCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
   choices: GpaScenarioChoice[];
@@ -43,8 +46,7 @@ function displayNumber(value: number) {
   return value.toFixed(Number.isInteger(value) ? 0 : 1);
 }
 
-function institutionFor(row: PlanCourse, smccdMap: Map<string, SmccdCourse>): { code: InstitutionKey; label: string } {
-  if (!row.smccd_course_id && !row.college_provider_code && Number(row.college_units ?? 0) <= 0) return { code: "dtech", label: "High school" };
+function collegeInstitutionFor(row: PlanCourse, smccdMap: Map<string, SmccdCourse>) {
   const code = (row.smccd_course_id ? smccdMap.get(row.smccd_course_id)?.college_code : null) ?? "smccd";
   return { code: code as InstitutionKey, label: code === "smccd" ? "College" : code };
 }
@@ -52,6 +54,7 @@ function institutionFor(row: PlanCourse, smccdMap: Map<string, SmccdCourse>): { 
 export default function GpaPlanningLab({
   rows,
   courses,
+  school,
   smccdCourses,
   equivalencies,
   choices,
@@ -147,15 +150,18 @@ export default function GpaPlanningLab({
             itemKey={(row) => row.id}
             renderItem={(row) => {
               const choice = effectiveChoices.find((candidate) => candidate.planCourseId === row.id);
-              const institution = institutionFor(row, smccdMap);
+              const isCollegeCourse = Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0);
+              const institution = isCollegeCourse ? collegeInstitutionFor(row, smccdMap) : null;
               const displayName = courseDisplayName(row, courseMap);
               const highSchoolCredits = resolvePlanCourseHighSchoolCredits(row, equivalencies);
               return <article className={styles.courseRow} data-excluded={choice?.included === false}>
               <div className={styles.courseIdentity}>
-                <InstitutionMark institution={institution.code} decorative />
+                {institution
+                  ? <InstitutionMark institution={institution.code} decorative />
+                  : <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} decorative />}
                 <div>
                   <strong>{displayName}</strong>
-                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{highSchoolCredits.collegeUnits > 0 ? ` · ${institution.label} · ${displayNumber(highSchoolCredits.collegeUnits)} units` : ""}</span>
+                  <span>{row.status === "current" ? "In progress" : "Planned"} · Grade {row.grade_level} · {termLabel(row.term)}{highSchoolCredits.collegeUnits > 0 ? ` · ${institution?.label ?? "College"} · ${displayNumber(highSchoolCredits.collegeUnits)} units` : ""}</span>
                 </div>
               </div>
               <div className={styles.courseControls}>

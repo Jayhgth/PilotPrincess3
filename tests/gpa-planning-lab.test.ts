@@ -2,7 +2,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import GpaPlanningLab from "@/components/GpaPlanningLab";
-import type { PlanCourse } from "@/lib/models";
+import type { PlanCourse, School } from "@/lib/models";
+
+const school = {
+  name: "Carlmont High",
+  short_name: "Carlmont",
+  website_url: "https://www.carlmonths.org"
+} as School;
 
 function row(id: string, college = false): PlanCourse {
   return {
@@ -35,6 +41,7 @@ describe("GPA planning lab", () => {
     const html = renderToStaticMarkup(createElement(GpaPlanningLab, {
       rows: [row("high-school"), row("college", true)],
       courses: [],
+      school,
       smccdCourses: [],
       equivalencies: [],
       choices: [],
@@ -47,6 +54,8 @@ describe("GPA planning lab", () => {
     expect(html).toContain("Set all");
     expect(html).toContain("High school");
     expect(html).toContain("College");
+    expect(html).toContain("carlmonths.org/favicon.ico");
+    expect(html).not.toContain("d.tech");
     expect(html.match(/data-react-bits="animated-list"/g)).toHaveLength(2);
     expect(html).toContain("Expected grade for English 4");
     expect(html).toContain("3 units");
@@ -63,6 +72,7 @@ describe("GPA planning lab", () => {
     const html = renderToStaticMarkup(createElement(GpaPlanningLab, {
       rows: [row("high-school")],
       courses: [],
+      school,
       smccdCourses: [],
       equivalencies: [],
       choices: [{ planCourseId: "high-school", included: false, expectedGrade: "B" }],

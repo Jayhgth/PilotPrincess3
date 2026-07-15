@@ -482,7 +482,7 @@ export interface RequirementCourseEvidence {
   creditsApplied: number;
   creditsAvailable: number;
   gradeLevel: GradeLevel;
-  institution: "dtech" | "smccd" | SmccdCollege["code"];
+  institution: "high_school" | "dtech" | "smccd" | SmccdCollege["code"];
   note: string | null;
 }
 

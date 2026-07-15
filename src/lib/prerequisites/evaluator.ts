@@ -320,7 +320,7 @@ function evaluateCourseRule(rule: CourseRule, input: PrerequisiteEvaluationInput
       observedGrade: course.grade ?? undefined,
       ...(course.termIndex !== undefined ? { observedTermIndex: course.termIndex } : {})
     })),
-    questions: [`Does d.tech accept any grade or evidence other than ${rule.minimumGrade} or better for ${rule.course.name}?`]
+    questions: [`Does the selected high school accept any grade or evidence other than ${rule.minimumGrade} or better for ${rule.course.name}?`]
   };
 }
 

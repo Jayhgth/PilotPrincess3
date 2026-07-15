@@ -159,6 +159,8 @@ describe("graduation requirement calculations", () => {
     expect(progress.verifiedProjectedCredits).toBe(10);
     expect(progress.percent).toBe(25);
     expect(progress.status).toBe("missing");
+    expect(progress.contributions[0].institution).toBe("high_school");
+    expect(progress.unverifiedCourses[0].institution).toBe("high_school");
   });
 
   it("caps overall graduation progress at each requirement maximum", () => {

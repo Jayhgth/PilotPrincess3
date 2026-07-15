@@ -3,6 +3,8 @@ import type { TranscriptCoursePayload } from "@/lib/transcript";
 
 interface TranscriptCourseEditorProps {
   value: TranscriptCoursePayload;
+  schoolName: string;
+  isDtechSchool: boolean;
   onChange: (next: TranscriptCoursePayload) => void;
   onIgnore: () => void;
   disabled: boolean;
@@ -19,7 +21,7 @@ function optionalNumber(value: string) {
   return Number.isFinite(number) ? number : null;
 }
 
-export default function TranscriptCourseEditor({ value, onChange, onIgnore, disabled }: TranscriptCourseEditorProps) {
+export default function TranscriptCourseEditor({ value, schoolName, isDtechSchool, onChange, onIgnore, disabled }: TranscriptCourseEditorProps) {
   function update(next: Partial<TranscriptCoursePayload>) {
     // Keep parser metadata and future payload keys that this editor does not expose.
     onChange({ ...value, ...next });
@@ -86,14 +88,14 @@ export default function TranscriptCourseEditor({ value, onChange, onIgnore, disa
         <select value={value.transcript_classification ?? ""} onChange={(event) => update({ transcript_classification: event.target.value ? event.target.value as TranscriptCoursePayload["transcript_classification"] : undefined })}>
           <option value="">Detect automatically</option>
           <option value="high_school_catalog">Selected-school catalog course</option>
-          <option value="dtech_catalog">d.tech catalog course</option>
-          <option value="dtech_intersession">d.tech intersession</option>
+          {(isDtechSchool || value.transcript_classification === "dtech_catalog") && <option value="dtech_catalog">d.tech catalog course</option>}
+          {(isDtechSchool || value.transcript_classification === "dtech_intersession") && <option value="dtech_intersession">d.tech intersession</option>}
           <option value="smccd_catalog">College catalog course</option>
           <option value="smccd_unmatched">Unmatched college course</option>
           <option value="custom">Custom course</option>
         </select>
       </label>
-      <p className="form-hint full">GPA weighting follows the institution, the reviewed transcript, and the selected school's approved catalog. d.tech courses require an explicit Honors title.</p>
+      <p className="form-hint full">GPA weighting follows the institution, the reviewed transcript, and {schoolName}'s approved catalog.{isDtechSchool ? " d.tech courses require an explicit Honors title." : ""}</p>
     </div>
     <p className="form-hint">Changes are saved when this row is imported.</p>
     <button className="quiet-button small" type="button" onClick={onIgnore} disabled={disabled}><X size={15} /> Ignore row</button>
