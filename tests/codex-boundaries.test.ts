@@ -11,7 +11,8 @@ import { explicitDurableMemoryUpdates } from "@/server/ai-memory";
 import { asAssistantRecord, assistantQuestionsFromContext, changeDetailsFromContext } from "@/lib/assistant-chat";
 
 describe("Codex feature boundaries", () => {
-  it("keeps transcript text parsing and planning math deterministic", () => {
+  it("keeps parsing, review, and runtime output bounded", () => {
+    {
     const featureMap = Object.fromEntries(CODEX_FEATURES.map((feature) => [feature.id, feature.usesCodex]));
     const configuredModel = process.env.CODEX_MODEL;
     delete process.env.CODEX_MODEL;
@@ -32,9 +33,9 @@ describe("Codex feature boundaries", () => {
     expect(status.accessPolicy).toContain("sent to OpenAI Codex");
     expect(status.retentionPolicy).toContain("No local Codex CLI session history");
     expect(status.capabilities).toEqual(CODEX_RUNTIME_CAPABILITIES);
-  });
+    }
 
-  it("builds one inspectable review prompt with the access and mutation boundary", () => {
+    {
     const prompt = buildTransparentReviewPrompt("gpa_review", "SNAPSHOT: {\"weighted\":4.2}");
 
     expect(prompt).toContain("Feature: gpa_review");
@@ -42,9 +43,9 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Never imply that you changed the student's plan.");
     expect(prompt).toContain("no more than three observations");
     expect(prompt).toContain("SNAPSHOT: {\"weighted\":4.2}");
-  });
+    }
 
-  it("turns nested Codex runtime errors into a useful message", () => {
+    {
     const error = new Error(JSON.stringify({
       type: "error",
       status: 400,
@@ -57,9 +58,9 @@ describe("Codex feature boundaries", () => {
     expect(codexErrorMessage(error, "Codex failed.")).toBe(
       "This server is still running an older Codex CLI. Restart the app to load the upgraded runtime."
     );
-  });
+    }
 
-  it("bounds and redacts sensitive SDK event payload values", () => {
+    {
     expect(sanitizeCodexText("Authorization: Bearer secret-token-value")).toBe("Authorization: Bearer [redacted]");
     expect(sanitizeCodexText("key=sk-proj-abcdefghijklmnop")).toBe("key=[redacted]");
     expect(sanitizeCodexValue({ clientSecret: "visible", nested: { refresh_token: "also-visible", safe: "keep" } })).toEqual({
@@ -70,15 +71,17 @@ describe("Codex feature boundaries", () => {
     expect(asAssistantRecord(["legacy payload"])).toEqual({});
     expect(assistantQuestionsFromContext(null)).toEqual([]);
     expect(changeDetailsFromContext("legacy payload")).toEqual([]);
+    }
   });
 
-  it("accepts a useful short answer and rejects report-length output", () => {
+  it("validates questions, tools, memory, and models", () => {
+    {
     const answer = "Design Lab is the only open requirement. Add one verified 10-credit option, then confirm it with your counselor.";
     expect(assistantTurnSchema.parse({ assistant_message: answer, tool_calls: [] }).assistant_message).toBe(answer);
     expect(() => assistantTurnSchema.parse({ assistant_message: "x".repeat(ASSISTANT_MESSAGE_MAX_LENGTH + 1), tool_calls: [] })).toThrow();
-  });
+    }
 
-  it("accepts bounded structured student questions without treating them as tools", () => {
+    {
     const parsed = assistantTurnSchema.parse({
       assistant_message: "Choose the school year for this course.",
       questions: [{
@@ -90,9 +93,9 @@ describe("Codex feature boundaries", () => {
       tool_calls: []
     });
     expect(parsed.questions[0]?.options).toHaveLength(2);
-  });
+    }
 
-  it("validates exact tool arguments and marks writes for confirmation", () => {
+    {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
@@ -128,26 +131,28 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
     expect(() => parseAssistantToolCall("unknown_removed_tool", {})).toThrow();
-  });
+    }
 
-  it("stores only bounded explicit lightweight memory updates", () => {
+    {
     const update = assistantMemoryUpdateSchema.parse({ operation: "remember", key: "schedule_interests", category: "interest", content: "Interested in computer science and design.", tags: ["schedule", "courses"], importance: 4 });
     expect(update).toMatchObject({ key: "schedule_interests" });
     expect(explicitDurableMemoryUpdates("Remember that I prefer computer science.", [update])).toEqual([update]);
     expect(explicitDurableMemoryUpdates("Generate a rigorous computer science schedule for this plan.", [update])).toEqual([]);
     expect(() => assistantMemoryUpdateSchema.parse({ operation: "remember", key: "gpa", category: "context", content: null, tags: [], importance: 3 })).toThrow();
+    }
   });
 
-  it("allowlists the onboarding model choices and recommends Luna", () => {
+  it("enforces reviewer, prompt, retrieval, and undo contracts", async () => {
+    {
     expect(AI_MODEL_OPTIONS[0]).toMatchObject({ value: "gpt-5.6-luna", recommended: true });
     expect(aiModelSchema.parse("gpt-5.5")).toBe("gpt-5.5");
     expect(() => aiModelSchema.parse("arbitrary-model")).toThrow();
     expect(AI_REASONING_OPTIONS.map((option) => option.value)).toEqual(["low", "medium", "high"]);
     expect(aiReasoningEffortSchema.parse("high")).toBe("high");
     expect(() => aiReasoningEffortSchema.parse("unbounded")).toThrow();
-  });
+    }
 
-  it("builds a separate autonomous review prompt and bounds its decision", async () => {
+    {
     const prompt = buildAutoReviewPrompt({
       userMessage: "Use concurrent enrollment",
       toolName: "update_enrollment_preference",
@@ -207,9 +212,9 @@ describe("Codex feature boundaries", () => {
       explanation: "Apply the complete validated grade-12 rebuild.",
       model: "gpt-5.6-luna"
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
-  });
+    }
 
-  it("tells the assistant to read records and defer writes to the mandatory safety review", () => {
+    {
     const prompt = assistantConversationPrompt({
       history: [{
         role: "tool",
@@ -279,9 +284,9 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("Recent conversation change ledger");
     expect(prompt).toContain("Recent conversation tool evidence");
     expect(prompt).toContain("never claim there is nothing to restore");
-  });
+    }
 
-  it("routes schedule questions to bounded application guidance tags", () => {
+    {
     expect(assistantKnowledgeTags("Create a schedule with SMCCD classes")).toEqual([
       "assistant",
       "courses",
@@ -295,9 +300,11 @@ describe("Codex feature boundaries", () => {
       "transcript"
     ]);
     expect(assistantKnowledgeTags("Bring the previous change back")).toContain("history");
+    }
   });
 
-  it("resolves referential undo requests against the exact recent conversation action", async () => {
+  it("grounds schedule generation and expanded app controls", async () => {
+    {
     const change: AssistantRecentChange = {
       toolCallId: "00000000-0000-4000-8000-000000000010",
       toolName: "remove_plan_courses",
@@ -326,9 +333,9 @@ describe("Codex feature boundaries", () => {
     expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() + 60_000).toISOString() }).available).toBe(true);
     expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() - 60_000).toISOString() }).available).toBe(true);
     expect(assistantUndoAvailability({ undo: { kind: "delete_rows", table: "plan_courses", ids: [crypto.randomUUID()], summary: "Removed" }, undo_expires_at: new Date(Date.now() + 60_000).toISOString(), undone_at: new Date().toISOString() }).available).toBe(false);
-  });
+    }
 
-  it("explains schedule additions relative to the existing current plan", () => {
+    {
     const result = {
       existing_course_count: 50,
       courses: [{
@@ -369,9 +376,9 @@ describe("Codex feature boundaries", () => {
       constraint_validation: { satisfied: true, failures: [] },
       graduation_coverage: { requirement_count: 0, all_requirements_covered_after: false, remaining_gaps: [] }
     })).toContain("No other school's sequence will be substituted");
-  });
+    }
 
-  it("accepts the expanded student-data tools in structured assistant output", () => {
+    {
     expect(assistantTurnSchema.parse({ assistant_message: "I prepared the update.", tool_calls: [{
       name: "update_enrollment_preference",
       arguments_json: '{"program_type":"concurrent"}',
@@ -382,17 +389,19 @@ describe("Codex feature boundaries", () => {
       arguments_json: '{"target_weighted_gpa":4.5,"choices":[]}',
       explanation: "Evaluate the saved schedule."
     }] }).tool_calls[0]?.name).toBe("evaluate_gpa_scenario");
-  });
+    }
 
-  it("requires deterministic evidence before answering transcript audits", () => {
+    {
     expect(requiredAssistantEvidenceRead("Double check my transcript and parsed data for errors")).toEqual({
       name: "audit_transcript_data",
       arguments: { include_source_text: true }
     });
     expect(requiredAssistantEvidenceRead("What is a transcript?")).toBeNull();
+    }
   });
 
-  it("builds policy-backed schedule options before asking about the default-on unit limit", () => {
+  it("requires evidence and exact compound operations", () => {
+    {
     expect(requiredAssistantEvidenceRead("Suggest a schedule for me.")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
@@ -515,9 +524,9 @@ describe("Codex feature boundaries", () => {
     expect(parseEnrollmentPreference("Use concurrent enrollment and respect the district's recommended unit limit.")).toEqual({ program_type: "concurrent", respect_recommended_limit: true });
     expect(parseBulkGpaIntent("Set every current and planned course in my GPA calculator to an expected A and keep each one included.")).toEqual({ expectedGrade: "A", included: true });
     expect(requestedCourseSort("Sort my entire course board into the app's standard order.")).toBe(true);
-  });
+    }
 
-  it("uses one cross-feature operation when schedule and degree bookmarks are cleared together", () => {
+    {
     expect(requiredAssistantEvidenceRead("Clear my whole schedule and all degree bookmarks")).toEqual({
       name: "get_academic_context",
       arguments: { include_transcript_review: false }
@@ -536,14 +545,14 @@ describe("Codex feature boundaries", () => {
         planning_objectives: ["complete_diploma"]
       }
     });
-  });
+    }
 
-  it("rejects ungrounded promises to inspect app data later", () => {
+    {
     expect(assistantMessagePromisesFutureWork("I’ll check the schedule options first, then tailor the recommendation.")).toBe(true);
     expect(assistantMessagePromisesFutureWork("Grade 12 has three open course options.")).toBe(false);
-  });
+    }
 
-  it("loads exact plan IDs before bulk course changes", () => {
+    {
     expect(requiredAssistantEvidenceRead("Remove all my in progress classes.")).toEqual({
       name: "list_plan_courses",
       arguments: { status: "current" }
@@ -587,5 +596,6 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("move_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()], status: "completed" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("search_smccd_programs", { query: "computer science", college: "CSM", award_type: "AS" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("undo_change", { tool_call_id: crypto.randomUUID() })).toMatchObject({ mutatesData: true });
+    }
   });
 });

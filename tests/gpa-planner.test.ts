@@ -29,7 +29,8 @@ function row(id: string, status: PlanCourse["status"], grade: string | null, wei
 }
 
 describe("GPA scenario planning", () => {
-  it("never removes or overwrites completed evidence", () => {
+  it("preserves evidence and calculates GPA scenarios", () => {
+    {
     const rows = [row("done", "completed", "B"), row("plan", "planned", null)];
     const result = scenarioRows(rows, [
       { planCourseId: "done", included: false, expectedGrade: "A" },
@@ -40,9 +41,9 @@ describe("GPA scenario planning", () => {
     expect(calculateGpaScenario(rows, [
       { planCourseId: "plan", included: false, expectedGrade: "A" }
     ]).missingExpectedGrades).toBe(0);
-  });
+    }
 
-  it("calculates the selected schedule and its A-grade ceiling", () => {
+    {
     const rows = [row("done", "completed", "B"), row("honors", "planned", null, true)];
     const result = evaluateGpaScenario(rows, [{ planCourseId: "honors", included: true, expectedGrade: "B" }], 4);
     expect(result.baseline.projectedWeighted).toBe(3);
@@ -51,21 +52,23 @@ describe("GPA scenario planning", () => {
     expect(result.targetReachable).toBe(true);
     expect(result.targetGrade).toBe("A");
     expect(result.targetAlreadyReached).toBe(false);
+    }
   });
 
-  it("reports missing grade assumptions and unreachable targets", () => {
+  it("reports assumptions and applies bulk grades", () => {
+    {
     const rows = [row("done", "completed", "C"), row("plan", "planned", null)];
     const choices = initialGpaScenarioChoices(rows);
     const result = evaluateGpaScenario(rows, choices, 4.5);
     expect(result.missingExpectedGrades).toBe(1);
     expect(result.targetReachable).toBe(false);
-  });
+    }
 
-  it("sets one selected grade across every open-course assumption", () => {
+    {
     const rows = [row("current", "current", null), row("plan", "planned", null, true)];
     const choices = setAllGpaScenarioGrades(initialGpaScenarioChoices(rows), "B+");
     expect(choices.map((choice) => choice.expectedGrade)).toEqual(["B+", "B+"]);
     expect(calculateGpaScenario(rows, choices).missingExpectedGrades).toBe(0);
+    }
   });
-
 });

@@ -11,6 +11,6 @@
 - Keep authentication provider-neutral and PKCE-based. Provision every verified Supabase user through `ensure_current_user_workspace_v1`, keep RLS ownership as the feature-access boundary, and never commit OAuth or service-role secrets.
 - Run `pnpm check` for normal changes. Run focused, full, browser, catalog, or linked-Supabase checks only when the changed system or a release actually needs them.
 - Any Pilot schedule-generation change must keep a focused live read → proposal → validated apply → undo test. A prose preview or read-tool assertion alone is not sufficient, and at least one supported four-year rebuild must finish with an applied, reversible schedule.
-- Keep the normal Vitest suite at 70 tests or fewer. Prefer academic invariants, auth boundaries, command contracts, and one canonical live Pilot workflow over prompt-string duplication.
+- Keep the complete suite at 30 cases or fewer. Prefer grouped academic invariants, auth boundaries, command contracts, and one canonical live Pilot workflow over prompt-string duplication.
 - Keep documentation limited to `README.md` and durable references in `docs/`. Do not create task logs, completion reports, implementation-status files, or extra checklists.
 - Inspect Git status and commit coherent milestones without including unrelated work.

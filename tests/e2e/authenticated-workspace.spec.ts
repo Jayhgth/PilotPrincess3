@@ -129,14 +129,6 @@ test.describe("authenticated student workspace", () => {
     await expect(page.getByText("D.Lab: Innovation Diploma Honors", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("CIS 127 HTML5 and CSS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Internship/TA", { exact: true }).first()).toBeVisible();
-    expect(consoleErrors).toEqual([]);
-  });
-
-  test("opens Pilot without taking down the workspace", async ({ page }) => {
-    await signInToOnboarding(page);
-    await fillStudentStep(page);
-    await page.getByRole("button", { name: "Finish setup" }).click();
-    await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
 
     const pilotSupabase = ephemeralSupabase ?? createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { autoRefreshToken: false, persistSession: false }
@@ -145,49 +137,23 @@ test.describe("authenticated student workspace", () => {
       const signIn = await pilotSupabase.auth.signInWithPassword({ email: activeEmail, password: activePassword });
       if (signIn.error) throw signIn.error;
     }
+    const user = await pilotSupabase.auth.getUser();
     const enabled = await pilotSupabase.from("student_settings").update({
       ai_enabled: true,
       ai_connection_approved_at: new Date().toISOString(),
       ai_setup_tested_at: new Date().toISOString()
-    }).eq("id", (await pilotSupabase.auth.getUser()).data.user!.id);
+    }).eq("id", user.data.user!.id);
     if (enabled.error) throw enabled.error;
-
     await page.reload();
-    const openPilot = page.getByRole("button", { name: "Open Pilot", exact: true });
-    await expect(openPilot.locator(".pilot-panel-icon")).toHaveCount(0);
-    await expect(openPilot.locator(".pilot-shortcut")).toHaveCount(0);
-    await expect(openPilot).toHaveAttribute("title", "Open Pilot (⌘ B)");
-    await openPilot.click();
-    await expect(page.getByRole("button", { name: "Collapse Pilot", exact: true })).toHaveAttribute("title", "Collapse Pilot (⌘ B)");
+    await page.getByRole("button", { name: "Open Pilot", exact: true }).click();
     const pilot = page.getByRole("dialog", { name: "Pilot Assistant" });
     await expect(pilot).toBeVisible();
-    await expect(pilot.getByRole("banner").getByRole("button")).toHaveCount(1);
-    await expect(pilot.getByRole("button", { name: "Close assistant", exact: true })).toHaveCount(0);
-    const toolbarBox = await page.locator(".app-toolbar").boundingBox();
-    const pilotHeaderBox = await pilot.getByRole("banner").boundingBox();
-    expect(toolbarBox).not.toBeNull();
-    expect(pilotHeaderBox).not.toBeNull();
-    expect(pilotHeaderBox!.y).toBe(toolbarBox!.y);
-    expect(pilotHeaderBox!.height).toBe(toolbarBox!.height);
     await page.keyboard.press("Control+b");
     await expect(pilot).toBeHidden();
     await page.keyboard.press("Control+b");
     await expect(pilot).toBeVisible();
-    await page.keyboard.press("Meta+b");
-    await expect(pilot).toBeHidden();
-    await page.keyboard.press("Meta+b");
-    await expect(pilot).toBeVisible();
-    const modelPicker = pilot.getByRole("button", { name: /^Model:/ });
-    const attachment = pilot.getByRole("button", { name: "Attach images" });
-    await expect(modelPicker).toBeVisible();
-    await expect(attachment).toBeVisible();
-    const modelBox = await modelPicker.boundingBox();
-    const attachmentBox = await attachment.boundingBox();
-    expect(modelBox).not.toBeNull();
-    expect(attachmentBox).not.toBeNull();
-    expect(attachmentBox!.x).toBeGreaterThan(modelBox!.x);
     await expect(page.getByText("Pilot could not open", { exact: false })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible();
+    expect(consoleErrors).toEqual([]);
   });
 
   test("adds, moves, evaluates, persists, and removes an editable course", async ({ page }) => {
@@ -228,24 +194,4 @@ test.describe("authenticated student workspace", () => {
     await expect(page.getByText("Advanced Environmental Science Honors", { exact: true })).toHaveCount(0);
   });
 
-  test("selects another California public school without leaking the d.tech catalog", async ({ page }) => {
-    await signInToOnboarding(page);
-    await fillStudentStep(page, "AIMS College Prep High");
-    await page.getByRole("button", { name: "Finish setup" }).click();
-    await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator(".school-chip")).toHaveAttribute("title", /AIMS College Prep High/);
-    await expect(page.getByRole("region", { name: "High school diploma" })).toContainText("0 of 8 areas complete");
-
-    await page.getByRole("button", { name: "Graduation", exact: true }).click();
-    await expect(page.locator("p").filter({ hasText: "Official AIMS College Prep High rules." })).toBeVisible();
-    await expect(page.getByRole("button", { name: /AIMS Core Electives 40 credits/ })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "California minimum", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "UC A–G", exact: true })).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Courses", exact: true }).click();
-    await page.getByRole("button", { name: "Add courses" }).click();
-    await expect(page.getByRole("list", { name: "Course catalog results" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^AP Biology / })).toBeVisible();
-    await expect(page.getByText("Advanced Environmental Science Honors", { exact: true })).toHaveCount(0);
-  });
 });

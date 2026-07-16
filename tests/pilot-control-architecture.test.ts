@@ -4,19 +4,22 @@ import { parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 
 describe("Pilot complete academic control", () => {
-  it.each([9, 10, 11, 12] as const)("routes a complete mixed plan starting in grade %i", (grade) => {
-    const read = requiredAssistantEvidenceRead(`Create a full schedule starting from ${grade}th grade with concurrent and high school courses for the highest GPA, most degrees, and my major`);
-    expect(read).toEqual({
-      name: "get_academic_context",
-      arguments: {
-        include_transcript_review: false,
-        planning_start_grade: grade,
-        planning_objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"]
-      }
-    });
+  it("routes complete mixed plans from every supported starting grade", () => {
+    for (const grade of [9, 10, 11, 12] as const) {
+      const read = requiredAssistantEvidenceRead(`Create a full schedule starting from ${grade}th grade with concurrent and high school courses for the highest GPA, most degrees, and my major`);
+      expect(read).toEqual({
+        name: "get_academic_context",
+        arguments: {
+          include_transcript_review: false,
+          planning_start_grade: grade,
+          planning_objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"]
+        }
+      });
+    }
   });
 
-  it("validates one reversible mixed high-school and college schedule batch", () => {
+  it("enforces reversible app-wide Pilot control and safety boundaries", async () => {
+    {
     const call = parseAssistantToolCall("add_academic_courses", {
       entries: [
         { source: "selected_school", course_id: crypto.randomUUID(), status: "current", grade_level: 9, term: "full_year" },
@@ -27,9 +30,9 @@ describe("Pilot complete academic control", () => {
     });
     expect(call.mutatesData).toBe(true);
     expect(call.arguments.entries).toHaveLength(3);
-  });
+    }
 
-  it("covers transcript repair, GPA assumptions, degree goals, ordinary profile data, and compound clearing", () => {
+    {
     expect(parseAssistantToolCall("get_academic_context", { include_transcript_review: true }).mutatesData).toBe(false);
     expect(parseAssistantToolCall("correct_transcript_course", {
       review_item_id: crypto.randomUUID(),
@@ -44,18 +47,18 @@ describe("Pilot complete academic control", () => {
     expect(parseAssistantToolCall("update_student_settings", { preferred_name: "Jay", plan_start_grade: 9, plan_end_grade: 12, ui_theme: "dark" }).mutatesData).toBe(true);
     expect(() => parseAssistantToolCall("update_student_settings", { ai_review_mode: "manual" })).toThrow();
     expect(parseAssistantToolCall("clear_academic_plan", { courses: true, degree_bookmarks: true, gpa_scenario: true }).mutatesData).toBe(true);
-  });
+    }
 
-  it("keeps stored inverses available without an arbitrary clock deadline", () => {
+    {
     const result = {
       undo: { kind: "restore_academic_plan", plan_rows: [], goal_rows: [], gpa_rows: [], summary: "Restored the academic plan." },
       undo_expires_at: "2020-01-01T00:00:00.000Z"
     };
     expect(assistantUndoAvailability(result).available).toBe(true);
     expect(assistantUndoAvailability({ ...result, undone_at: new Date().toISOString() }).available).toBe(false);
-  });
+    }
 
-  it("grounds the model in the GPA, credit, equivalency, GE, and durable-history contracts", () => {
+    {
     const prompt = assistantConversationPrompt({
       history: [],
       userMessage: "Optimize my four-year plan",
@@ -83,10 +86,11 @@ describe("Pilot complete academic control", () => {
     expect(prompt).toContain("independent safety review");
     expect(prompt).not.toContain("Current page context");
     expect(prompt).not.toContain("Selected change-review mode");
-  });
+    }
 
-  it("does not expose account deletion or arbitrary database operations", () => {
+    {
     expect(() => parseAssistantToolCall("delete_account", {})).toThrow("Unknown student-data tool");
     expect(() => parseAssistantToolCall("run_sql", { sql: "delete from auth.users" })).toThrow("Unknown student-data tool");
+    }
   });
 });

@@ -58,7 +58,8 @@ const TRANSCRIPT_LAYOUT = [
 ].join("\n");
 
 describe("deterministic d.tech transcript parser", () => {
-  it("extracts high-school and SMCCD rows without an LLM", () => {
+  it("extracts and reconciles deterministic transcript rows", () => {
+    {
     expect(transcriptMimeType("application/octet-stream", "DTech June 2026.pdf")).toBe("application/pdf");
     expect(transcriptMimeType("application/x-download", "DTech June 2026.pdf")).toBe("application/pdf");
     expect(transcriptMimeType("", "completed-courses.CSV")).toBe("text/csv");
@@ -98,9 +99,9 @@ describe("deterministic d.tech transcript parser", () => {
       term: "full_year",
       weighted: false
     });
-  });
+    }
 
-  it("joins wrapped course titles and preserves reviewable grade conflicts", () => {
+    {
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
     const programming = result.courses.find((course) => course.course_code === "CIS 255");
     const dlab = result.courses.find((course) => course.course_name.includes("CoDesigners"));
@@ -114,16 +115,18 @@ describe("deterministic d.tech transcript parser", () => {
     });
     expect(dlab).toMatchObject({ letter_grade: "A-", credits: 10, confidence: "likely", weighted: true });
     expect(result.conflicts).toEqual([]);
+    }
   });
 
-  it("does not invent a completed row when no final grade is printed", () => {
+  it("handles pass-fail, missing-term, and multi-page layouts", () => {
+    {
     const result = parseDtechTranscriptText("25-26 Skyline College\n11 * ETHN 103 Asian American US Institutions");
 
     expect(result.courses).toEqual([]);
     expect(result.conflicts[0]).toContain("No final grade and credit pair");
-  });
+    }
 
-  it("classifies quarter-coded P and F rows as d.tech intersession pass/fail courses", () => {
+    {
     const result = parseDtechTranscriptText(`
 25-26 Design Tech High School
 11 Q1 Documentary Film P 2.5
@@ -150,9 +153,9 @@ Comments
       weighted: false
     });
     expect(result.courses[1].evidence).not.toContain("Personal Development credit");
-  });
+    }
 
-  it("does not silently invent a semester when flattened text loses the column", () => {
+    {
     const result = parseDtechTranscriptText(`
 25-26 College of San Mateo
 11 * CIS 127 HTML5 and CSS A 5.0
@@ -161,9 +164,11 @@ Comments
 
     expect(result.courses[0]).toMatchObject({ term: "full_year", confidence: "uncertain" });
     expect(result.conflicts[0]).toContain("semester column was not available");
+    }
   });
 
-  it("reads both table columns and continues across PDF pages", () => {
+  it("captures complete college history without false completion", () => {
+    {
     const header = placeCells("GR Course", { summer: "S0 CR", fall: "S1 CR", spring: "S2 CR" });
     const layout = [
       "[[PILOT_PDF_PAGE:1]]",
@@ -233,9 +238,9 @@ Comments
     const merged = parseDtechTranscriptText(flattenedMissingRightColumn, layout);
     expect(merged.courses).toHaveLength(6);
     expect(merged.courses.map((course) => course.course_code)).toContain("HIST 101");
-  });
+    }
 
-  it("extracts every completed SMCCD row and excludes in-progress courses", () => {
+    {
     const source = `
 San Mateo County CC District
 Unofficial Academic Transcript
@@ -270,9 +275,9 @@ MATH      270                College of   01       Linear Algebra               
     });
     expect(inferTranscriptGradeLevel("2023-2024", 2027)).toBe(9);
     expect(inferTranscriptGradeLevel("2025-2026", 2027)).toBe(11);
-  });
+    }
 
-  it("uses flattened text for institution identity when positioned columns reorder sections", () => {
+    {
     const flattened = `
 23-24 College of San Mateo
 9 * CIS 110 Introduction to CIS A 5.0
@@ -300,5 +305,6 @@ Comments
       letter_grade: "P"
     });
     expect(result.summary).toContain("1 SMCCD course row");
+    }
   });
 });

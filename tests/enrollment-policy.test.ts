@@ -58,12 +58,13 @@ function row(id: string, units: number, term: PlanCourse["term"], overrides: Par
 }
 
 describe("enrollment policy evaluation", () => {
-  it("keeps source-backed limits in policy data and uses the saved enrollment type", () => {
+  it("selects and aggregates enrollment policy limits", () => {
+    {
     expect(policyForPreference([policy], preference)?.id).toBe(policy.id);
     expect(selectedEnrollmentLimit(policy)).toBe(11);
-  });
+    }
 
-  it("aggregates units across all SMCCD colleges within the same term", () => {
+    {
     const [term] = evaluateEnrollmentSchedule([
       row("CIS 117", 4, "fall"),
       row("MATH 200", 5, "fall", { smccd_course_id: "SKY:MATH 200" }),
@@ -71,24 +72,27 @@ describe("enrollment policy evaluation", () => {
     ], policy);
     expect(term).toMatchObject({ units: 12, selectedLimit: 11, state: "review" });
     expect(term?.courseIds).toHaveLength(3);
+    }
   });
 
-  it("treats full-year college rows as load in both fall and spring", () => {
+  it("classifies term loads and ignores unrelated rows", () => {
+    {
     const terms = evaluateEnrollmentSchedule([row("CIS 117", 4, "full_year")], policy);
     expect(terms.map((term) => [term.term, term.units])).toEqual([["fall", 4], ["spring", 4]]);
-  });
+    }
 
-  it("distinguishes conservative, fee, and absolute thresholds", () => {
+    {
     expect(evaluateEnrollmentSchedule([row("A", 11.5, "fall")], policy)[0]?.state).toBe("over_policy");
     expect(evaluateEnrollmentSchedule([row("A", 12, "fall")], policy)[0]?.state).toBe("review");
     expect(evaluateEnrollmentSchedule([row("A", 20, "fall")], policy)[0]?.state).toBe("blocked");
-  });
+    }
 
-  it("ignores completed rows and other providers", () => {
+    {
     const terms = evaluateEnrollmentSchedule([
       row("completed", 12, "fall", { status: "completed" }),
       row("other", 12, "fall", { smccd_course_id: null, college_provider_code: "CCSF" })
     ], policy);
     expect(terms).toEqual([]);
+    }
   });
 });
