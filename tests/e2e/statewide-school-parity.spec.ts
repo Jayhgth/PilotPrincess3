@@ -92,6 +92,9 @@ test.describe("statewide school parity", () => {
     await chooseSchoolAndFinish(page, "AIMS College Prep High");
     await expect(page.locator(".school-chip")).toHaveAttribute("title", /AIMS College Prep High/);
     await expect(page.locator(".school-chip .institution-identity-mark")).toHaveCount(1);
+    await page.evaluate(() => window.localStorage.setItem("pilot-princess:sidebar-width", "64"));
+    await page.reload();
+    await expect(page.locator(".school-chip .institution-identity-mark")).toBeVisible();
     await page.getByRole("button", { name: "Graduation", exact: true }).click();
     await expect(page.locator("p").filter({ hasText: "Official AIMS College Prep High rules." })).toBeVisible();
     await expect(page.getByRole("button", { name: /AIMS Core Electives 40 credits/ })).toBeVisible();

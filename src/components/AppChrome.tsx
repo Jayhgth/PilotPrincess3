@@ -159,7 +159,7 @@ export default function AppChrome<ViewId extends string>({
       <div className="sidebar-footer">
         <div className="school-chip" title={`${school.short_name}, ${school.source_year ?? "Current"} sources`}>
           <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} decorative />
-          <span><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
+          <span className="school-chip-copy"><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
         </div>
         <div className="sidebar-account-actions">
           <button className="sidebar-utility" onClick={onSettings} type="button" title="Settings"><GearSix size={17} /><span>Settings</span></button>

@@ -60,7 +60,7 @@
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-top { justify-content: center; padding-inline: 8px; }
   :root[data-sidebar-collapsed="true"] .t3code-app .wordmark > span,
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-nav button > span,
-  :root[data-sidebar-collapsed="true"] .t3code-app .school-chip > span,
+  :root[data-sidebar-collapsed="true"] .t3code-app .school-chip-copy,
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-utility > span { display: none; }
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-nav,
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-footer { padding-inline: 8px; }

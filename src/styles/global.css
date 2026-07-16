@@ -850,7 +850,7 @@ input:focus, select:focus, textarea:focus {
   padding: 7px 10px;
   color: var(--ink-soft);
 }
-.school-chip span { display: grid; }
+.school-chip-copy { display: grid; }
 .school-chip strong { color: var(--ink); font-size: 12px; }
 .school-chip small { margin-top: 2px; color: var(--ink-faint); font-size: 12px; }
 .mobile-close, .mobile-bar, .nav-backdrop { display: none; }
