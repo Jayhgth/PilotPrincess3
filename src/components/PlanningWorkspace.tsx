@@ -87,6 +87,7 @@ import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } 
 import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
+import { transcriptMimeType } from "@/lib/transcript-file";
 import AppChrome from "@/components/AppChrome";
 import PilotErrorBoundary from "@/components/PilotErrorBoundary";
 import SettingsDialog from "@/components/SettingsDialog";
@@ -988,7 +989,7 @@ export default function PlanningWorkspace() {
       async () => {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
         const storagePath = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
-        const mimeType = file.type || "application/octet-stream";
+        const mimeType = transcriptMimeType(file.type, file.name);
         const kind: "upload" | "screenshot" = mimeType.startsWith("image/") ? "screenshot" : "upload";
         const { error: uploadError } = await supabase.storage
           .from("source-uploads")

@@ -21,6 +21,7 @@ import {
   transcriptReviewRows
 } from "@/server/transcript-review";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
+import { transcriptMimeType } from "@/lib/transcript-file";
 
 export const prerender = false;
 
@@ -83,7 +84,7 @@ export const POST: APIRoute = async ({ request }) => {
       if (downloadError || !file) throw new Error("The transcript file could not be downloaded.");
       const extracted = await extractSource(
         Buffer.from(await file.arrayBuffer()),
-        source.mime_type ?? file.type,
+        transcriptMimeType(source.mime_type ?? file.type, basename(source.storage_path)),
         basename(source.storage_path),
         scratchDirectory,
         { preserveTableLayout: true }
@@ -421,7 +422,7 @@ export const POST: APIRoute = async ({ request }) => {
       })
       .eq("id", job.id);
     return new Response(
-      JSON.stringify({ summary: fallbackPayload.summary, courseCount: 0, reviewItems: [], fallbackUsed: true }),
+      JSON.stringify({ summary: fallbackPayload.summary, courseCount: 0, reviewItems: [], fallbackUsed: true, parseError: message }),
       { headers: { "content-type": "application/json" } }
     );
   } finally {

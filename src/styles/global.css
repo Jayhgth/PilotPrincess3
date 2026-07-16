@@ -738,9 +738,17 @@ input:focus, select:focus, textarea:focus {
 .onboarding-replay-summary strong { font-size: 12px; }
 .onboarding-replay-summary p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .transcript-summary { margin: 0; border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 14px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
-.transcript-review-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
-.transcript-review-heading strong { font-size: 14px; }
-.transcript-review-heading span { color: var(--ink-faint); font-size: 12px; }
+.transcript-review-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; }
+.transcript-review-heading > span { display: grid; gap: 2px; }
+.transcript-review-heading strong { color: var(--ink); font-size: 14px; }
+.transcript-review-heading small,
+.transcript-review-heading em { color: var(--ink-faint); font-size: 12px; font-style: normal; }
+.onboarding-transcript-table { max-height: min(44vh, 430px); overflow-y: auto; }
+.onboarding-transcript-table .transcript-course-head { position: sticky; z-index: 1; top: 0; background: var(--surface-raised); }
+.onboarding-transcript-table label { display: block; cursor: pointer; }
+.onboarding-transcript-table label:has(input:checked) { background: var(--accent-soft); }
+.onboarding-transcript-skip { margin: 20px 0 0; border-top: 1px solid var(--line); padding-top: 14px; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.onboarding-transcript-skip strong { color: var(--ink); }
 .transcript-course-list { display: grid; max-height: 390px; overflow-y: auto; border-top: 1px solid var(--line-strong); }
 .transcript-course-list label {
   display: grid;

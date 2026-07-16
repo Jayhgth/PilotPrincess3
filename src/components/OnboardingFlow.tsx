@@ -37,6 +37,7 @@ import BrandMark from "@/components/BrandMark";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
+import { transcriptMimeType } from "@/lib/transcript-file";
 
 type OnboardingStage = "student" | "assistant" | "transcript";
 
@@ -347,21 +348,21 @@ export default function OnboardingFlow({
     return payload;
   }
 
-  async function parseTranscript() {
+  async function parseTranscript(file = transcriptFile) {
     setError(null);
-    if (!transcriptFile) {
+    if (!file) {
       setError("Choose a transcript file first.");
       return;
     }
     setBusyLabel("Reading transcript");
     try {
-      const safeName = transcriptFile.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
       const storagePath = `${session.user.id}/${crypto.randomUUID()}-${safeName}`;
-      const mimeType = transcriptFile.type || "application/octet-stream";
+      const mimeType = transcriptMimeType(file.type, file.name);
       const kind: "upload" | "screenshot" = mimeType.startsWith("image/") ? "screenshot" : "upload";
       const { error: uploadError } = await supabase.storage
         .from("source-uploads")
-        .upload(storagePath, transcriptFile, { contentType: mimeType, upsert: false });
+        .upload(storagePath, file, { contentType: mimeType, upsert: false });
       if (uploadError) throw uploadError;
       const { data: existingTranscript } = await supabase
         .from("official_sources")
@@ -374,7 +375,7 @@ export default function OnboardingFlow({
       const sourceValues = {
           school_id: activeSchool.id,
           user_id: session.user.id,
-          title: transcriptFile.name,
+          title: file.name,
           kind,
           storage_path: storagePath,
           raw_text: null,
@@ -412,13 +413,23 @@ export default function OnboardingFlow({
       setTranscriptSummary(`${String(result.summary ?? "Transcript review ready.")} ${parserNote}`);
       setTranscriptAiTransparency(result.aiUsed === true ? result.aiTransparency as typeof transcriptAiTransparency : null);
       if (items.length === 0) {
-        setError("No completed courses were extracted. The source is saved for manual review.");
+        setError(String(result.parseError ?? "No completed courses were extracted. Choose another file or finish setup and review it later in Catalog."));
       }
     } catch (caught) {
       setError(onboardingErrorMessage(caught, "The transcript could not be parsed."));
     } finally {
       setBusyLabel(null);
     }
+  }
+
+  function chooseTranscript(file: File | null) {
+    setTranscriptFile(file);
+    setTranscriptItems([]);
+    setSelectedTranscriptIds(new Set());
+    setTranscriptSummary(null);
+    setTranscriptAiTransparency(null);
+    setError(null);
+    if (file) void parseTranscript(file);
   }
 
   async function finishOnboarding() {
@@ -578,14 +589,15 @@ export default function OnboardingFlow({
             {isReplay ? <div className="onboarding-replay-summary">
               <CheckCircle size={20} weight="duotone" />
               <div><strong>{completedCourseCount} completed {completedCourseCount === 1 ? "course" : "courses"} will stay in your plan</strong><p>Finish to save profile and assistant changes. Exit onboarding to discard them.</p></div>
-            </div> : transcriptItems.length === 0 ? <div className="transcript-entry">
-              <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB.</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" onChange={(event) => setTranscriptFile(event.target.files?.[0] ?? null)} /></label>
-              <button className="secondary-button" type="button" onClick={() => void parseTranscript()} disabled={Boolean(busyLabel) || !transcriptFile}><FileText size={17} /> {busyLabel === "Reading transcript" ? "Reading transcript" : "Read transcript"}</button>
+            </div> : transcriptItems.length === 0 ? <div className="transcript-entry" aria-busy={busyLabel === "Reading transcript"}>
+              <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>{busyLabel === "Reading transcript" ? "Uploading and reading completed courses…" : "PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB."}</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" disabled={Boolean(busyLabel)} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ""; chooseTranscript(file); }} /></label>
             </div> : <div className="transcript-review">
               {transcriptSummary && <p className="transcript-summary">{transcriptSummary}</p>}
               {transcriptAiTransparency && <TranscriptAiRunDetails run={transcriptAiTransparency} summary="Inspect Codex vision run" />}
-              <div className="transcript-review-heading"><strong>{academicTranscriptItems.length} GPA courses found</strong><span>Select the rows to import.</span></div>
-              <div className="transcript-course-list">{academicTranscriptItems.map((item) => {
+              <div className="transcript-review-heading"><span><strong>Courses found</strong><small>{selectedTranscriptIds.size} of {transcriptItems.length} selected</small></span><em>Check the rows to import as completed.</em></div>
+              <div className="transcript-course-table onboarding-transcript-table" role="table" aria-label="Extracted GPA courses">
+                <div className="transcript-course-head" role="row"><span role="columnheader">Course</span><span role="columnheader">Grade</span><span role="columnheader">Credits</span><span role="columnheader">Year</span><span role="columnheader">Status</span></div>
+                <div className="transcript-course-rows">{academicTranscriptItems.map((item) => {
                 const payload = payloadFor(item);
                 const selected = selectedTranscriptIds.has(item.id);
                 const resolution = resolveTranscriptCourse(payload, schoolCourses);
@@ -596,11 +608,12 @@ export default function OnboardingFlow({
                     : resolution.classification === "smccd_unmatched"
                       ? "College review"
                       : "Custom course";
-                return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.letter_grade ? `Grade ${payload.letter_grade}` : "Grade needs review"}{payload.grade_level ? `, taken in grade ${payload.grade_level}` : ""}{payload.credits !== null && payload.credits !== undefined ? `, ${payload.credits} credits` : ""}</small></span><em>{identityLabel}, {resolution.identityResolved ? "resolved" : item.confidence}</em></label>;
-              })}</div>
+                return <label className="transcript-course-item" key={item.id}><span className="transcript-course-row" role="row"><span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${courseTitle(item)}`} checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.institution_name ?? activeSchool.short_name}</small></span></span><span role="cell" data-label="Grade">{payload.letter_grade ?? "Review"}</span><span role="cell" data-label="Credits">{payload.credits ?? payload.college_units ?? "Review"}</span><span role="cell" data-label="Year">{payload.school_year ?? (payload.grade_level ? `Grade ${payload.grade_level}` : "Review")}</span><span role="cell" data-label="Status" className={resolution.identityResolved ? "transcript-imported" : "transcript-review-needed"}>{identityLabel}</span></span></label>;
+              })}</div></div>
               {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass/fail courses</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA. Passed classes count toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); const passed = payload.letter_grade?.toUpperCase() === "P"; return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{passed ? `Pass, grade ${payload.grade_level}, ${payload.credits ?? 0} Personal Development credits` : `F, grade ${payload.grade_level}, no Personal Development credit`}</small></span><em>Pass/fail · Not in GPA</em></label>; })}</div></details>}
-              <button className="quiet-button" type="button" onClick={() => { setTranscriptFile(null); setTranscriptItems([]); setSelectedTranscriptIds(new Set()); setTranscriptSummary(null); setTranscriptAiTransparency(null); }}>Use a different transcript</button>
+              <button className="quiet-button" type="button" onClick={() => chooseTranscript(null)}>Use a different transcript</button>
             </div>}
+            {!isReplay && <p className="onboarding-transcript-skip"><strong>Incoming freshmen or don’t have a transcript yet?</strong> Press Finish setup to continue.</p>}
           </>}
 
           {error && <div className="inline-alert error" role="alert"><Warning size={17} /> {error}</div>}

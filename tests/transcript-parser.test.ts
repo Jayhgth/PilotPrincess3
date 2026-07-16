@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { inferTranscriptGradeLevel } from "@/lib/transcript";
 import { parseDtechTranscriptText, parseSmccdTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
+import { transcriptMimeType } from "@/lib/transcript-file";
 
 const TRANSCRIPT_TEXT = `
 GR Course S0 CR S1 CR S2 CR GR Course S0 CR S1 CR S2 CR
@@ -57,6 +58,9 @@ const TRANSCRIPT_LAYOUT = [
 
 describe("deterministic d.tech transcript parser", () => {
   it("extracts high-school and SMCCD rows without an LLM", () => {
+    expect(transcriptMimeType("application/octet-stream", "DTech June 2026.pdf")).toBe("application/pdf");
+    expect(transcriptMimeType("application/x-download", "DTech June 2026.pdf")).toBe("application/pdf");
+    expect(transcriptMimeType("", "completed-courses.CSV")).toBe("text/csv");
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
 
     expect(TRANSCRIPT_PARSER_VERSION).toBe("transcript-layout-text-1.7.0");
