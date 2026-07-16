@@ -352,7 +352,7 @@ function TurnActivity({ events, tools, running, reviewing }: {
   const hasPendingChange = tools.some((tool) => tool.status === "pending_confirmation");
   const forceOpen = running || hasFailure || hasRejectedChange || hasPendingChange;
   const startedAt = assistantTurnStartedAt(events);
-  const duration = assistantTurnDuration(events);
+  const duration = assistantTurnDuration(events, tools);
   if (!items.length && !tools.length && !running) return null;
   const toolCount = tools.length;
   const groupedTools = visibleToolCalls(tools, showAllTools);

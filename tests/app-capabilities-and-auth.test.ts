@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { affectedWorkspaceDomains, mutationReviewMode, pilotToolNamesForMessage } from "@/lib/app-capabilities";
 import { safeAuthRedirect } from "@/lib/auth";
+import { assistantTurnDuration, formatAssistantDuration } from "@/lib/assistant-display";
 
 describe("application capability and authentication boundaries", () => {
   it("enforces capability, review, and redirect boundaries", () => {
@@ -18,6 +19,13 @@ describe("application capability and authentication boundaries", () => {
     expect(mutationReviewMode("remove_plan_courses")).toBe("model");
     expect(pilotToolNamesForMessage("Change the app to dark mode")).toContain("update_student_settings");
     expect(affectedWorkspaceDomains("update_student_settings")).toEqual(["identity", "settings", "plan", "graduation", "pilot"]);
+    expect(formatAssistantDuration(420)).toBe("<1s");
+    expect(assistantTurnDuration([
+      { type: "turn.started", occurredAt: "2026-07-16T10:00:00.000Z" },
+      { type: "turn.completed", occurredAt: "2026-07-16T10:00:02.000Z", latencyMs: 0 },
+      { type: "safety_review.completed", occurredAt: "2026-07-16T10:00:05.000Z" },
+      { type: "tool.completed", occurredAt: "2026-07-16T10:00:07.000Z" }
+    ], [{ completed_at: "2026-07-16T10:00:08.000Z" }])).toBe("8s");
     }
 
     {

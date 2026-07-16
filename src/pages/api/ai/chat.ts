@@ -326,17 +326,18 @@ export const POST: APIRoute = async ({ request }) => {
           }
         }
         record("assistant.message", { message: assistantResult.data });
-        record("turn.completed", { turnId, latencyMs: result.latencyMs, model: result.model, usage: result.usage, proposalCount: result.proposals.length });
+        const turnLatencyMs = Date.now() - startedAt;
+        record("turn.completed", { turnId, latencyMs: turnLatencyMs, model: result.model, usage: result.usage, proposalCount: result.proposals.length });
         const title = conversationResult.data.title === "New conversation"
           ? (parsed.data.message || (attachmentRows.length === 1 ? attachmentRows[0].name : `${attachmentRows.length} images`)).replace(/\s+/g, " ").slice(0, 56)
           : conversationResult.data.title;
         await auth.supabase.from("ai_conversations").update({ title, updated_at: new Date().toISOString() }).eq("id", parsed.data.conversationId);
-        send({ kind: "turn.completed", turnId, assistantMessage: assistantResult.data, proposals: result.proposals, runtime: { model: result.model, threadId: result.threadId, usage: result.usage, latencyMs: result.latencyMs } });
+        send({ kind: "turn.completed", turnId, assistantMessage: assistantResult.data, proposals: result.proposals, runtime: { model: result.model, threadId: result.threadId, usage: result.usage, latencyMs: turnLatencyMs } });
         void auth.supabase.from("event_logs").insert({
           user_id: auth.user.id,
           event_name: "assistant_turn_completed",
           feature_name: "global_assistant",
-          latency_ms: result.latencyMs,
+          latency_ms: turnLatencyMs,
           success: true,
           fallback_used: false,
           uncertainty_involved: true,

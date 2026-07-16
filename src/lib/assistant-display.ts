@@ -4,6 +4,10 @@ export interface AssistantTimingEvent {
   latencyMs?: unknown;
 }
 
+export interface AssistantTimingTool {
+  completed_at?: unknown;
+}
+
 function timestamp(value: unknown) {
   if (typeof value !== "string") return null;
   const parsed = Date.parse(value);
@@ -11,6 +15,7 @@ function timestamp(value: unknown) {
 }
 
 export function formatAssistantDuration(durationMs: number) {
+  if (durationMs > 0 && durationMs < 1000) return "<1s";
   const elapsedSeconds = Math.max(0, Math.floor(durationMs / 1000));
   if (elapsedSeconds < 60) return `${elapsedSeconds}s`;
 
@@ -26,15 +31,20 @@ export function assistantTurnStartedAt(events: readonly AssistantTimingEvent[]) 
   return timestamp(started?.occurredAt) === null ? null : String(started?.occurredAt);
 }
 
-export function assistantTurnDuration(events: readonly AssistantTimingEvent[]) {
+export function assistantTurnDuration(events: readonly AssistantTimingEvent[], tools: readonly AssistantTimingTool[] = []) {
   const completed = [...events].reverse().find((event) => event.type === "turn.completed");
+  const startedAt = timestamp(events.find((event) => event.type === "turn.started")?.occurredAt);
+  const hasTerminalEvent = events.some((event) => event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.cancelled");
+  const completedToolTimes = tools.map((tool) => timestamp(tool.completed_at)).filter((value): value is number => value !== null);
+  if (startedAt !== null && (hasTerminalEvent || completedToolTimes.length > 0)) {
+    const eventTimes = events.map((event) => timestamp(event.occurredAt)).filter((value): value is number => value !== null);
+    const endedAt = Math.max(startedAt, ...eventTimes, ...completedToolTimes);
+    return formatAssistantDuration(endedAt - startedAt);
+  }
+
   const suppliedLatency = completed?.latencyMs;
   if (typeof suppliedLatency === "number" && Number.isFinite(suppliedLatency) && suppliedLatency >= 0) {
     return formatAssistantDuration(suppliedLatency);
   }
-
-  const startedAt = timestamp(events.find((event) => event.type === "turn.started")?.occurredAt);
-  const endedAt = timestamp([...events].reverse().find((event) => event.type === "turn.completed" || event.type === "turn.failed" || event.type === "turn.cancelled")?.occurredAt);
-  if (startedAt === null || endedAt === null) return null;
-  return formatAssistantDuration(Math.max(0, endedAt - startedAt));
+  return null;
 }
