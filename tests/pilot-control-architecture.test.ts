@@ -75,7 +75,8 @@ describe("Pilot complete academic control", () => {
     expect(prompt).toContain("only through a verified selected-school crosswalk/equivalency");
     expect(prompt).toContain("Never transfer one college's local GE pattern to another college");
     expect(prompt).toContain("Never substitute d.tech's sequence");
-    expect(prompt).toContain("Propose only a complete validated result");
+    expect(prompt).toContain("Propose only a complete validated schedule");
+    expect(prompt).toContain("apply the valid maximum-progress plan");
     expect(prompt).toContain("retrieved school policy and deterministic validator—not a global sequence—control");
     expect(prompt).not.toContain("English and Design Lab remain at d.tech every year");
     expect(prompt).not.toContain("Grades 9 through 11 must carry at least six classes");

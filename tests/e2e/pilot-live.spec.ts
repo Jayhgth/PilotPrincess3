@@ -7,6 +7,7 @@ const qaEmail = process.env.QA_EMAIL;
 const qaPassword = process.env.QA_PASSWORD;
 const supabaseUrl = process.env.PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.PUBLIC_SUPABASE_ANON_KEY;
+const appOrigin = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4388";
 const liveConfigured = process.env.RUN_LIVE_PILOT === "1"
   && Boolean(supabaseUrl && supabaseAnonKey);
 
@@ -19,7 +20,7 @@ async function authorizedPost(
   data: Record<string, unknown>
 ) {
   return request.post(path, {
-    headers: { authorization: `Bearer ${accessToken}`, origin: "http://127.0.0.1:4388" },
+    headers: { authorization: `Bearer ${accessToken}`, origin: appOrigin },
     data
   });
 }
@@ -31,7 +32,7 @@ async function sendTurn(
   message: string
 ) {
   const response = await request.post("/api/ai/chat", {
-    headers: { authorization: `Bearer ${accessToken}`, origin: "http://127.0.0.1:4388" },
+    headers: { authorization: `Bearer ${accessToken}`, origin: appOrigin },
     multipart: {
       conversationId,
       turnId: crypto.randomUUID(),
@@ -294,6 +295,8 @@ test.describe("live Pilot behavior", () => {
     const scheduleConversation = await createConversation("Complete diploma and Communication Studies AA");
     const scheduleTurn = await sendTurn(request, accessToken, scheduleConversation,
       "Use my saved progress to build and apply the rest of my schedule from grade 11 summer through grade 12. My intended major is Communication Studies. Keep every completed or in-progress class, finish my d.tech diploma and my bookmarked CSM Communication Studies AA—including every remaining major, local GE, separate graduation, and 60-unit requirement—under my already-saved concurrent-enrollment preference and its recommended per-term unit limit. Do not change that preference. Balance the remaining work across the available terms and do not just describe the plan; add it.");
+    expect(scheduleTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
+    expect(scheduleTurn.message).not.toContain("College-unit check:");
     const scheduleTools = await supabase.from("ai_tool_calls").select("tool_name,status,result,arguments")
       .eq("conversation_id", scheduleConversation).order("created_at");
     if (scheduleTools.error) throw scheduleTools.error;
@@ -347,6 +350,8 @@ test.describe("live Pilot behavior", () => {
     if (freshmanSettings.error) throw freshmanSettings.error;
     const fullPlanConversation = await createConversation("Terse integrated full plan");
     const fullPlanTurn = await sendTurn(request, accessToken, fullPlanConversation, "Create a full plan for me. I am starting Precalculus in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful overlap, and no more than 11 college units in any term.");
+    expect(fullPlanTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
+    expect(fullPlanTurn.message).not.toContain("College-unit check:");
     expect(fullPlanTurn.runtime.latencyMs).toBeLessThan(120_000);
     const fullPlanTools = await supabase.from("ai_tool_calls").select("tool_name,status,result").eq("conversation_id", fullPlanConversation).order("created_at");
     if (fullPlanTools.error) throw fullPlanTools.error;
@@ -404,8 +409,59 @@ test.describe("live Pilot behavior", () => {
     for (const grade of [9, 10, 11, 12]) {
       expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && designLabCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
     }
+    const labScienceRequirementIds = new Set((requirements.data ?? []).filter((requirement) => requirement.area === "lab_science").map((requirement) => requirement.id));
+    const labScienceCourseIds = new Set((mappings.data ?? []).filter((mapping) => labScienceRequirementIds.has(mapping.requirement_id)).map((mapping) => mapping.course_id));
+    for (const grade of [9, 10, 11, 12]) {
+      expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
+    }
     const fullPlanUndo = await sendTurn(request, accessToken, fullPlanConversation, "Undo that generated plan.");
     expect(fullPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(fullPlanUndo);
+
+    // Standard placement must still produce an applied best-effort degree
+    // plan without skipping math, duplicating science, or violating d.tech's
+    // high-school course minimums.
+    const standardPlanConversation = await createConversation("Standard math integrated plan");
+    const standardPlanTurn = await sendTurn(request, accessToken, standardPlanConversation,
+      "Create and apply a reasonable four-year plan from grade 9 using d.tech's standard math starting point. Finish my diploma and make the maximum verified progress on both bookmarked CS degrees while following prerequisites, school course-count rules, and the 11-unit concurrent limit.");
+    expect(standardPlanTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
+    expect(standardPlanTurn.proposals.map((proposal) => proposal.name), standardPlanTurn.message).toEqual(["add_course_schedule"]);
+    await apply(standardPlanTurn);
+    const standardRowsResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+    if (standardRowsResult.error) throw standardRowsResult.error;
+    const standardRows = standardRowsResult.data ?? [];
+    const standardMath = standardRows
+      .flatMap((row) => {
+        const course = row.course_id ? courseById.get(row.course_id) : null;
+        const rank = mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`);
+        return rank === null ? [] : [{ row, rank }];
+      })
+      .sort((left, right) => {
+        const index = (row: typeof left.row) => (Number(row.grade_level) - 9) * 3 + (row.term === "spring" ? 1 : row.term === "summer" ? 2 : 0);
+        return index(left.row) - index(right.row) || left.rank - right.rank;
+      });
+    for (let index = 1; index < standardMath.length; index += 1) {
+      expect(standardMath[index]!.rank).toBeGreaterThanOrEqual(standardMath[index - 1]!.rank);
+      expect(standardMath[index]!.rank - standardMath[index - 1]!.rank).toBeLessThanOrEqual(1);
+    }
+    const minimumHighSchoolByGrade = new Map([[9, 6], [10, 5], [11, 4], [12, 3]]);
+    for (const [grade, minimum] of minimumHighSchoolByGrade) {
+      for (const term of ["fall", "spring"] as const) {
+        const count = standardRows.filter((row) => row.grade_level === grade
+          && !row.smccd_course_id
+          && (row.term === term || row.term === "full_year")).length;
+        expect(count, `grade ${grade} ${term}`).toBeGreaterThanOrEqual(minimum);
+      }
+      expect(standardRows.filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
+    }
+    const standardCollegeTerms = new Map<string, number>();
+    for (const row of standardRows.filter((course) => course.status !== "completed" && course.smccd_course_id)) {
+      const key = `${row.school_year}:${row.term}`;
+      standardCollegeTerms.set(key, (standardCollegeTerms.get(key) ?? 0) + Number(row.college_units ?? 0));
+    }
+    expect([...standardCollegeTerms.values()].every((units) => units <= 11)).toBe(true);
+    const standardUndo = await sendTurn(request, accessToken, standardPlanConversation, "Undo that plan.");
+    expect(standardUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(standardUndo);
   });
 });

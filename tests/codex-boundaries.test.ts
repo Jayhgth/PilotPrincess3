@@ -294,7 +294,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("ask up to three short structured questions");
     expect(prompt).toContain("Build and explain one grade at a time");
     expect(prompt).toContain("current four-year plan");
-    expect(prompt).toContain("call a partial plan complete");
+    expect(prompt).toContain("claim unfinished degree requirements are complete");
     expect(prompt).toContain("Schedule generation evidence contract");
     expect(prompt).toContain("authoritative product context, not student-record evidence");
     expect(prompt).toContain("pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint");
@@ -373,13 +373,17 @@ describe("Codex feature boundaries", () => {
       constraint_validation: { satisfied: true, failures: [] }
     };
     const preview = schedulePreview(result);
-    expect(preview).toContain("current four-year plan already has 50 courses");
-    expect(preview).toContain("keep all of them and add 1");
-    expect(preview).toContain("10 verified English credits");
+    expect(preview).toContain("kept the 50 courses already in your plan");
+    expect(preview).toContain("prepared 1 addition");
+    expect(preview).toContain("change card contains the complete course list");
     expect(preview).toContain("all 8 tracked graduation areas");
-    expect(preview).toContain("Only one new course is proposed because the other 50 courses are already in your current plan.");
+    expect(preview).not.toContain("English 4 / English 4 Honors");
     expect(preview).not.toContain("saved plan");
     expect(scheduleResultIsComplete(result)).toBe(true);
+    expect(scheduleResultIsComplete({
+      ...result,
+      degree_planning: { bookmarked_goal_count: 2, all_bookmarked_goals_covered: false }
+    })).toBe(true);
     expect(scheduleResultIsComplete({
       ...result,
       graduation_coverage: { ...result.graduation_coverage, all_requirements_covered_after: false, remaining_gaps: [{ requirement: "Social Science" }] }
