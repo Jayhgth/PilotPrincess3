@@ -166,7 +166,7 @@ export const POST: APIRoute = async ({ request }) => {
     const { data: studentSettings, error: studentSettingsError } = await auth.supabase
       .from("student_settings")
       .select("graduation_year")
-      .eq("user_id", auth.user.id)
+      .eq("id", auth.user.id)
       .maybeSingle();
     if (studentSettingsError) throw studentSettingsError;
     if (studentSettings?.graduation_year) {

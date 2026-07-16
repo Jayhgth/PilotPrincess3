@@ -103,9 +103,9 @@ test.describe("authenticated student workspace", () => {
 
     await expect(page.getByRole("heading", { name: "Add completed classes" })).toBeVisible();
     await page.locator('input[type="file"]').setInputFiles(transcriptPath);
-    await page.getByRole("button", { name: "Read transcript" }).click();
 
-    await expect(page.getByText("2 GPA courses found", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Courses found", { exact: true })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("3 of 3 selected", { exact: true })).toBeVisible();
     await expect(page.getByText("Intersession pass/fail courses", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Import selected and finish" }).click();
 
