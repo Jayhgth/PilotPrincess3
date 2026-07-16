@@ -911,7 +911,6 @@ input:focus, select:focus, textarea:focus {
 .app-toolbar button:hover,
 .app-toolbar button.active { border-color: color-mix(in srgb, var(--accent) 56%, var(--line-strong)); background: var(--accent-soft); }
 .app-toolbar button svg { color: var(--accent); }
-.app-toolbar button .pilot-panel-icon { color: var(--ink-soft); transform: scaleX(-1); }
 .app-toolbar button kbd {
   display: inline-flex;
   align-items: center;
@@ -924,9 +923,14 @@ input:focus, select:focus, textarea:focus {
   font-size: 10px;
   font-weight: 500;
   line-height: 1;
+  opacity: 0;
+  visibility: hidden;
   white-space: nowrap;
+  transition: opacity 120ms ease, visibility 120ms ease;
 }
 .app-toolbar button kbd svg { color: currentColor; }
+.app-toolbar button:hover kbd,
+.app-toolbar button:focus-visible kbd { opacity: 1; visibility: visible; }
 .app-content { width: min(100%, 1200px); margin: 0 auto; padding: 4px clamp(24px, 3vw, 40px) 64px; }
 
 @media (min-width: 1440px) {

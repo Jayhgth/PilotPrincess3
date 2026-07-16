@@ -142,7 +142,13 @@ test.describe("authenticated student workspace", () => {
     if (enabled.error) throw enabled.error;
 
     await page.reload();
-    await page.getByRole("button", { name: "Open Pilot", exact: true }).click();
+    const openPilot = page.getByRole("button", { name: "Open Pilot", exact: true });
+    const pilotShortcut = openPilot.locator(".pilot-shortcut");
+    await expect(openPilot.locator(".pilot-panel-icon")).toHaveCount(0);
+    await expect(pilotShortcut).toHaveCSS("opacity", "0");
+    await openPilot.hover();
+    await expect(pilotShortcut).toHaveCSS("opacity", "1");
+    await openPilot.click();
     const pilot = page.getByRole("dialog", { name: "Pilot Assistant" });
     await expect(pilot).toBeVisible();
     await expect(pilot.getByRole("banner").getByRole("button")).toHaveCount(1);
