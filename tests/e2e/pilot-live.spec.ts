@@ -414,6 +414,42 @@ test.describe("live Pilot behavior", () => {
     for (const grade of [9, 10, 11, 12]) {
       expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
     }
+
+    // A terse placement edit must rebuild the dependent sequence, pass the
+    // autonomous reviewer, apply, and remain reversible. This is the exact
+    // phrasing that previously produced a preview without a completed change.
+    const generatedFullPlanIds = new Set((generatedFullPlan.data ?? []).map((row) => row.id));
+    const placementEditTurn = await sendTurn(request, accessToken, fullPlanConversation, "Edit my schedule, I start math at alg 2 in 9th");
+    expect(placementEditTurn.message).not.toContain("if final validation passes");
+    expect(placementEditTurn.message).toContain("being applied now");
+    expect(placementEditTurn.proposals.map((proposal) => proposal.name), placementEditTurn.message).toEqual(["add_course_schedule"]);
+    await apply(placementEditTurn);
+    const placementRowsResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+    if (placementRowsResult.error) throw placementRowsResult.error;
+    const placementRows = placementRowsResult.data ?? [];
+    const gradeNineMathRanks = placementRows.flatMap((row) => {
+      if (row.grade_level !== 9 || !row.course_id) return [];
+      const course = courseById.get(row.course_id);
+      const rank = mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? ""}`);
+      return rank === null ? [] : [rank];
+    });
+    expect(gradeNineMathRanks).toContain(3);
+    expect(gradeNineMathRanks.every((rank) => rank >= 3)).toBe(true);
+    const placementTools = await supabase.from("ai_tool_calls").select("tool_name,status,result").eq("conversation_id", fullPlanConversation).order("created_at");
+    if (placementTools.error) throw placementTools.error;
+    const placementReads = (placementTools.data ?? []).filter((tool) => tool.tool_name === "get_course_schedule_options");
+    const placementRead = placementReads.at(-1)?.result as { data?: { degree_planning?: { all_bookmarked_goals_covered?: boolean } } } | undefined;
+    if (placementRead?.data?.degree_planning?.all_bookmarked_goals_covered === false) {
+      expect(placementEditTurn.message).toContain("remains incomplete");
+      expect(placementEditTurn.message).toMatch(/remaining|too few prerequisite-ordered years/i);
+    }
+    const placementUndo = await sendTurn(request, accessToken, fullPlanConversation, "Undo that schedule edit.");
+    expect(placementUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(placementUndo);
+    const restoredFullPlan = await supabase.from("plan_courses").select("id").eq("user_id", userId);
+    if (restoredFullPlan.error) throw restoredFullPlan.error;
+    expect(new Set((restoredFullPlan.data ?? []).map((row) => row.id))).toEqual(generatedFullPlanIds);
+
     const fullPlanUndo = await sendTurn(request, accessToken, fullPlanConversation, "Undo that generated plan.");
     expect(fullPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(fullPlanUndo);

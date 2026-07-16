@@ -11,6 +11,7 @@ import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall,
 import type { AssistantKnowledgeChunk } from "@/server/ai-knowledge";
 import type { AssistantMemory } from "@/server/ai-memory";
 import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiReasoningEffort } from "@/lib/ai-preferences";
+import { mathSequenceRankFromText } from "@/lib/planning";
 
 const DEFAULT_TIMEOUT_MS = 9000;
 const DEFAULT_MODEL = DEFAULT_AI_MODEL;
@@ -661,7 +662,7 @@ function requestsScheduleConstruction(userMessage: string) {
     && !/\b(?:meeting|appointment|calendar|study|homework|workout|sleep)\s+schedule\b/.test(normalized);
   if (!schedule) return false;
   if (structuredPlanAnswer) return true;
-  return /\b(?:generate|build|create|make|draft|suggest|recommend|find|design|redesign|replace|rebuild|regenerate|redo|rework|come up with)\b/.test(normalized)
+  return /\b(?:generate|build|create|make|draft|suggest|recommend|find|design|edit|revise|adjust|update|redesign|replace|rebuild|regenerate|redo|rework|come up with)\b/.test(normalized)
     || /\b(?:new|replacement|better|highest[ -]?gpa|gpa[ -]?focused)\s+(?:course\s+)?(?:schedule|plan)\b/.test(normalized);
 }
 
@@ -946,13 +947,18 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     ?? normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/)
     ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/);
   const startGrade = startGradeMatch ? Number(startGradeMatch[1]) as 9 | 10 | 11 | 12 : undefined;
-  const mathName = "(pre[ -]?calc(?:ulus)?|integrated math\\s*[123]|algebra\\s*(?:1|i|2|ii)|geometry|calculus(?:\\s+(?:ab|bc|i{1,3}|1|2|3))?)";
-  const startingMathCourse = [
+  const mathName = "(pre[ -]?calc(?:ulus)?|integrated math\\s*[123]|alg(?:ebra)?\\s*(?:1|i|2|ii)|geometry|calculus(?:\\s+(?:ab|bc|i{1,3}|1|2|3))?)";
+  const rawStartingMathCourse = [
     new RegExp(`\\bmath\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${mathName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+math\\s+(?:at|with|in)\\s+${mathName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${mathName}\\b`),
     new RegExp(`\\b${mathName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
   ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
+  const startingMathCourse = rawStartingMathCourse
+    ?.replace(/^alg\s+/i, "algebra ")
+    .replace(/^algebra\s+i$/i, "algebra 1")
+    .replace(/^algebra\s+ii$/i, "algebra 2")
+    ?? null;
   const languageName = "((?:spanish|french|chinese|mandarin|japanese|latin|german|italian)(?:\\s+(?:1|2|3|4|i|ii|iii|iv|ap))?|american sign language(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?|asl(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?)";
   const startingLanguageCourse = [
     new RegExp(`\\b(?:language|world language)\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${languageName}\\b`),
@@ -965,10 +971,16 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     && /\b(schedule|plan|courses|classes)\b/.test(normalized)
     && (/\b(all|every|whole|entire)\b/.test(normalized) || requestsScheduleConstruction(userMessage))
     && !/\b(without|do not|don't|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
+  // Changing the starting placement changes every downstream prerequisite.
+  // Treat an explicit schedule edit with a new placement as a reversible
+  // rebuild instead of attempting to append a second, conflicting sequence.
+  const placementRebuild = Boolean(startingMathCourse || startingLanguageCourse)
+    && /\b(edit|revise|adjust|update|redo|rebuild|regenerate|rework|change)\b/.test(normalized)
+    && /\b(schedule|course plan|academic plan|four[ -]?year plan)\b/.test(normalized);
   // A placement such as "pre-calc in grade 9" must never narrow an explicit
   // whole-plan rebuild. Only infer a grade scope when the user did not ask for
   // all/whole/every/entire schedule rows to be replaced.
-  const replacesWholePlan = clearing && /\b(all|every|whole|entire)\b/.test(normalized);
+  const replacesWholePlan = placementRebuild || (clearing && /\b(all|every|whole|entire)\b/.test(normalized));
   const scopedReplacementGrade = clearing && !replacesWholePlan
     ? normalized.match(/\bgrade\s*(9|10|11|12)\b/) ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/)
     : null;
@@ -987,7 +999,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   const adjectiveMajor = normalized.match(/\b(?:an?\s+)?(?:intended|planned|target)\s+([a-z][a-z &-]{2,60}?)\s+major\b/)?.[1]?.trim();
   const intendedField = normalized.match(/\b(?:want|plan|hope)\s+to\s+(?:major|study)\s+in\s+([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
   const interests = [...new Set([intendedMajor, adjectiveMajor, intendedField].filter((value): value is string => Boolean(value)))].slice(0, 6);
-  return { replaceExisting: clearing, replaceGradeLevels, startGrade, startingMathCourse, startingLanguageCourse, includeCollegeCourses, maxCoursesPerTerm, interests };
+  return { replaceExisting: clearing || placementRebuild, replaceGradeLevels, startGrade, startingMathCourse, startingLanguageCourse, includeCollegeCourses, maxCoursesPerTerm, interests };
 }
 
 export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null {
@@ -1016,6 +1028,78 @@ export function scheduleProposalAction(userMessage: string): ScheduleProposalAct
 
 export function assistantMessagePromisesFutureWork(message: string) {
   return /\b(?:i(?:['’]ll| will)|i(?:['’]m| am) going to|let me)\s+(?:first\s+)?(?:check|review|read|look up|inspect|analyze|search|find|build|generate|prepare)\b/i.test(message);
+}
+
+function scheduleDegreeLine(
+  degreePlanning: Record<string, unknown> | null,
+  courses: Record<string, unknown>[],
+  degreeCourses: Record<string, unknown>[],
+  requestedPreferences: Record<string, unknown>
+) {
+  const goalCount = Number(degreePlanning?.bookmarked_goal_count ?? 0);
+  if (!goalCount) return null;
+  if (degreePlanning?.all_bookmarked_goals_covered === true) {
+    return `The integrated college portion covers all ${goalCount} bookmarked degree ${goalCount === 1 ? "goal" : "goals"}.`;
+  }
+
+  const goals = Array.isArray(degreePlanning?.goals)
+    ? degreePlanning.goals.filter((goal): goal is Record<string, unknown> => Boolean(goal) && typeof goal === "object" && !Array.isArray(goal))
+    : [];
+  const incompleteGoals = goals.filter((goal) => goal.major_complete !== true
+    || goal.local_ge_complete !== true
+    || goal.separate_requirements_complete !== true
+    || Number(goal.projected_degree_units ?? 0) < Number(goal.required_degree_units ?? 0));
+  const titles = incompleteGoals.map((goal) => String(goal.title ?? "bookmarked degree")).slice(0, 2);
+  const titleText = titles.length === 1
+    ? titles[0]
+    : titles.length === 2
+      ? `${titles[0]} and ${titles[1]}`
+      : `${goalCount} bookmarked degree goals`;
+
+  const exactMissingCodes = [...new Set(incompleteGoals.flatMap((goal) => {
+    const details = Array.isArray(goal.unresolved_major_details)
+      ? goal.unresolved_major_details.filter((detail): detail is Record<string, unknown> => Boolean(detail) && typeof detail === "object" && !Array.isArray(detail))
+      : [];
+    return details.flatMap((detail) => detail.kind === "all" && Array.isArray(detail.remaining_course_options)
+      ? detail.remaining_course_options.map(String)
+      : []);
+  }))];
+  const unresolvedSummaries = [...new Set(incompleteGoals.flatMap((goal) => Array.isArray(goal.unresolved_major_requirements)
+    ? goal.unresolved_major_requirements.map(String)
+    : []))];
+
+  const placementRows = [
+    ...courses.map((course) => ({
+      grade: Number(course.grade_level),
+      term: String(course.term ?? "full_year"),
+      label: String(course.name ?? "")
+    })),
+    ...degreeCourses.map((course) => ({
+      grade: Number(course.grade_level),
+      term: String(course.term ?? "fall"),
+      label: `${String(course.course_code ?? "")} ${String(course.title ?? "")}`.trim()
+    }))
+  ].filter((row) => mathSequenceRankFromText(row.label) !== null)
+    .sort((left, right) => left.grade - right.grade
+      || ["fall", "full_year", "spring", "summer"].indexOf(left.term) - ["fall", "full_year", "spring", "summer"].indexOf(right.term)
+      || Number(mathSequenceRankFromText(left.label)) - Number(mathSequenceRankFromText(right.label)));
+  const requestedMath = typeof requestedPreferences.starting_math_course === "string" ? requestedPreferences.starting_math_course : null;
+  const startingMath = requestedMath ?? placementRows[0]?.label ?? null;
+  const startingMathRank = startingMath ? mathSequenceRankFromText(startingMath) : null;
+  const startingGrade = Number(requestedPreferences.start_grade ?? placementRows[0]?.grade ?? 9);
+  const unreachableMath = startingMathRank === null ? [] : exactMissingCodes.filter((code) => {
+    const targetRank = mathSequenceRankFromText(code);
+    return targetRank !== null && startingGrade + (targetRank - startingMathRank) > 12;
+  });
+
+  if (startingMath && unreachableMath.length) {
+    const codes = unreachableMath.slice(0, 3).join(" and ");
+    return `The diploma schedule is valid, but ${titleText} remains incomplete: starting at ${startingMath} in grade ${startingGrade} leaves too few prerequisite-ordered years to reach ${codes} by graduation. The exact remaining items stay visible in the degree audit.`;
+  }
+  const remaining = exactMissingCodes.length
+    ? exactMissingCodes.slice(0, 3).join(", ")
+    : unresolvedSummaries.slice(0, 2).join("; ");
+  return `The diploma schedule is valid, but ${titleText} remains incomplete${remaining ? `; remaining verified requirements include ${remaining}` : ""}. The exact remaining items stay visible in the degree audit.`;
 }
 
 export function schedulePreview(data: Record<string, unknown>) {
@@ -1048,6 +1132,9 @@ export function schedulePreview(data: Record<string, unknown>) {
   const degreeCourses = Array.isArray(degreePlanning?.courses)
     ? degreePlanning.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
+  const requestedPreferences = data.requested_preferences && typeof data.requested_preferences === "object" && !Array.isArray(data.requested_preferences)
+    ? data.requested_preferences as Record<string, unknown>
+    : {};
   const addedCourseCount = courses.length + degreeCourses.length;
   const highSchoolCount = courses.length;
   const collegeCount = degreeCourses.length;
@@ -1077,11 +1164,7 @@ export function schedulePreview(data: Record<string, unknown>) {
   const compositionLine = addedCourseCount
     ? `${highSchoolCount ? `${highSchoolCount} high-school ${highSchoolCount === 1 ? "course" : "courses"}` : "No high-school courses"} and ${collegeCount ? `${collegeCount} college ${collegeCount === 1 ? "course" : "courses"}` : "no college courses"} are included${gradeCounts.length ? ` across ${gradeCounts.map(({ grade, count }) => `grade ${grade} (${count})`).join(", ")}` : ""}. The change card contains the complete course list.`
     : null;
-  const degreeLine = Number(degreePlanning?.bookmarked_goal_count ?? 0) > 0
-    ? degreePlanning?.all_bookmarked_goals_covered === true
-      ? `The integrated college portion covers all ${Number(degreePlanning?.bookmarked_goal_count)} bookmarked degree ${Number(degreePlanning?.bookmarked_goal_count) === 1 ? "goal" : "goals"}.`
-      : "The integrated college portion makes the maximum verified progress toward the bookmarked degree goals within the available grades, prerequisites, and enrollment limit; the remaining requirements stay visible in the degree audit."
-    : null;
+  const degreeLine = scheduleDegreeLine(degreePlanning, courses, degreeCourses, requestedPreferences);
   return [opening, compositionLine, coverageLine, degreeLine].filter(Boolean).join("\n\n");
 }
 
@@ -1143,7 +1226,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "Apply the app's deterministic academic rules exactly for the currently selected school. Never substitute d.tech's sequence, catalog, graduation rules, weighting, or terminology for another school; d.tech-specific evidence is valid only when d.tech is selected. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved catalog/evidence says so. College units and high-school transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified selected-school crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college. Check cross-college prerequisite equivalence only through normalized identity and verified evidence.",
     "For every schedule-construction request, call get_course_schedule_options. When degree bookmarks exist, set include_college_courses=true and include maximize_degree_overlap unless the student explicitly forbids college coursework; mentioning a bookmarked degree is itself a request to integrate it. That deterministic optimizer automatically evaluates every bookmarked program's remaining major, awarding-college local GE, separate graduation, and total-unit requirements together with diploma overlap, prerequisites, GPA weighting, school-specific course-count rules, and the saved concurrent-enrollment boundary. Apply its exact result with add_course_schedule; the server atomically includes the college portion so it cannot be omitted. Do not fall back to a diploma-only plan, independently improvise a shorter degree list, stack duplicate core-area fillers in one grade, or merely describe a schedule the student asked Pilot to create.",
-    "Before presenting or applying a completed task, double-check the owning tool's final data against every part of the request. For schedules, verify the exact saved-course count, every bookmarked degree's major/GE/separate/total-unit coverage, every diploma substitution, prerequisites, school load rules, per-term aggregate college units across campuses, and any stated placement. Prefer one verified college course or sequence that satisfies multiple diploma and degree/GE needs over redundant high-school electives. Repair fixable validation failures before responding. A schedule must pass diploma, sequence, workload, and enrollment checks; when placement or time makes full degree completion impossible, apply the valid maximum-progress plan and state the remaining degree requirements concisely instead of doing nothing.",
+    "The schedule tool performs its validation and repair before returning a result; do not describe a separate future validation pass or stop after merely checking a draft. Before presenting or applying a completed task, compare the owning tool's final data against every part of the request. For schedules, verify the exact saved-course count, every bookmarked degree's major/GE/separate/total-unit coverage, every diploma substitution, prerequisites, school load rules, per-term aggregate college units across campuses, and any stated placement. Prefer one verified college course or sequence that satisfies multiple diploma and degree/GE needs over redundant high-school electives. If the returned schedule is valid, immediately call add_course_schedule. When placement or time makes full degree completion impossible, apply the valid maximum-progress plan and state the exact limiting sequence or remaining requirement concisely instead of calling the whole plan successful.",
     "When a student explicitly selects multiple degrees, search for every exact program and call set_college_goals once with the complete program-ID set. Do not split one multi-degree request into independent bookmarks or decline a non-destructive bookmark merely because the student described the degree plan instead of using the word bookmark.",
     "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Treat explicit requested outcomes as binding unless they conflict with a locked record or hard product rule; preferences and planning heuristics must not silently override them. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated schedule; never substitute another school's courses, infer support/pathway needs, or claim unfinished degree requirements are complete.",
     "For a request that adds multiple named courses, fills remaining graduation gaps, or mixes selected-school and college courses, call resolve_academic_course_batch exactly once instead of repeating search_course_catalog. Put every named course in requests, set fill_remaining_graduation_requirements when the student asks for needed or remaining diploma classes, and preserve an explicit grade or term only where the student actually stated it. A comma-separated placement phrase applies through the end of that phrase. Leave term null when it was not stated so the resolver can place prerequisite sequences safely. The resolver uses the saved district, existing plan, nearby-provider order, cross-college identity, and prerequisites to choose exact campuses and placements; do not ask the student to choose a campus unless they explicitly requested one. Its complete result is converted directly into one reversible add_academic_courses proposal; do not ask for course titles already derivable from graduation evidence.",
@@ -1635,7 +1718,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: `${preview}\n\nThis exact batch will apply automatically if the validation passes.`,
+            message: `${preview}\n\nThe validated schedule is being applied now.`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -1915,7 +1998,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: `${preview}\n\nThis exact integrated schedule will apply automatically if final validation passes.`,
+            message: `${preview}\n\nThe validated schedule is being applied now.`,
             questions: [],
             threadId: thread.id,
             usage,

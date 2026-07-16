@@ -742,6 +742,14 @@ function integratedDegreePlan(
         projected_degree_units: progress.projectedDegreeApplicableUnits,
         required_degree_units: progress.totalDegreeUnits,
         unresolved_major_requirements: progress.requirements.filter((requirement) => requirement.status !== "satisfied" && !requirement.requirement.constraint_only).map((requirement) => requirement.missingSummary),
+        unresolved_major_details: progress.requirements
+          .filter((requirement) => requirement.status !== "satisfied" && !requirement.requirement.constraint_only)
+          .map((requirement) => ({
+            label: requirement.requirement.label,
+            kind: requirement.requirement.kind,
+            missing_summary: requirement.missingSummary,
+            remaining_course_options: requirement.remainingOptions.map((option) => option.courseCode)
+          })),
         unresolved_ge_areas: local.geAreas.filter((area) => !["completed", "planned"].includes(area.status)).map((area) => area.description),
         unresolved_separate_requirements: local.graduationRequirements.filter((requirement) => !["completed", "planned"].includes(requirement.status)).map((requirement) => requirement.label)
       };

@@ -174,8 +174,8 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("separate safety reviewer");
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
-    expect(prompt).toContain("an explicit request to generate, suggest, or build a schedule may approve");
-    expect(prompt).toContain("unless the student explicitly requested a clear-and-rebuild and replace_existing is true");
+    expect(prompt).toContain("an explicit request to generate, edit, revise, or build a schedule may approve");
+    expect(prompt).toContain("changed a foundational starting placement and replace_existing is true");
     expect(prompt).toContain('"program_type":"concurrent"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
@@ -187,6 +187,26 @@ describe("Codex feature boundaries", () => {
       explanation: "The server resolved the exact batch.",
       model: "gpt-5.6-luna",
       verifiedBatchResolution: true
+    })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
+    await expect(reviewAssistantProposal({
+      userMessage: "Edit my schedule, I start math at alg 2 in 9th",
+      toolName: "add_course_schedule",
+      arguments: {
+        course_ids: [crypto.randomUUID()],
+        respect_recommended_limit: true,
+        interests: [],
+        rigor: "balanced",
+        max_courses_per_term: null,
+        start_grade: 9,
+        starting_math_course: "algebra 2",
+        starting_language_course: null,
+        include_college_courses: true,
+        replace_existing: true,
+        replace_grade_levels: [],
+        objectives: ["complete_diploma"]
+      },
+      explanation: "Apply the revised validated schedule.",
+      model: "gpt-5.6-luna"
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
     const degreePlanArguments = {
       entries: [
@@ -399,6 +419,33 @@ describe("Codex feature boundaries", () => {
       constraint_validation: { satisfied: true, failures: [] },
       graduation_coverage: { requirement_count: 0, all_requirements_covered_after: false, remaining_gaps: [] }
     })).toContain("No other school's sequence will be substituted");
+    const incompleteDegreePreview = schedulePreview({
+      existing_course_count: 0,
+      requested_preferences: { start_grade: 9, starting_math_course: "Algebra 1" },
+      courses: [{ course_id: crypto.randomUUID(), name: "Algebra 1", grade_level: 9, term: "full_year" }],
+      source_readiness: { evidence_ready: true },
+      constraint_validation: { satisfied: true, failures: [] },
+      graduation_coverage: { requirement_count: 8, all_requirements_covered_after: true, remaining_gaps: [] },
+      degree_planning: {
+        bookmarked_goal_count: 1,
+        all_bookmarked_goals_covered: false,
+        courses: [],
+        goals: [{
+          title: "Computer and Information Science AS",
+          major_complete: false,
+          local_ge_complete: true,
+          separate_requirements_complete: true,
+          projected_degree_units: 55,
+          required_degree_units: 60,
+          unresolved_major_requirements: ["Complete MATH 252"],
+          unresolved_major_details: [{ label: "Core", kind: "all", missing_summary: "Complete MATH 252", remaining_course_options: ["MATH 252"] }]
+        }]
+      }
+    });
+    expect(incompleteDegreePreview).toContain("remains incomplete");
+    expect(incompleteDegreePreview).toContain("starting at Algebra 1 in grade 9");
+    expect(incompleteDegreePreview).toContain("MATH 252");
+    expect(incompleteDegreePreview).not.toContain("covers all 1 bookmarked degree goal");
     }
 
     {
@@ -423,7 +470,7 @@ describe("Codex feature boundaries", () => {
     }
   });
 
-  it("requires evidence and exact compound operations", () => {
+  it("requires evidence and exact compound operations", async () => {
     {
     expect(requiredAssistantEvidenceRead("Suggest a schedule for me.")).toEqual({
       name: "get_course_schedule_options",
@@ -480,6 +527,58 @@ describe("Codex feature boundaries", () => {
         objectives: ["complete_diploma", "maximize_weighted_gpa"]
       }
     });
+    expect(parseAssistantScheduleIntent("Edit my schedule, I start math at alg 2 in 9th")).toMatchObject({
+      replaceExisting: true,
+      replaceGradeLevels: [],
+      startGrade: 9,
+      startingMathCourse: "algebra 2"
+    });
+    expect(requiredAssistantEvidenceRead("Edit my schedule, I start math at alg 2 in 9th")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: "balanced",
+        include_college_courses: true,
+        replace_existing: true,
+        starting_math_course: "algebra 2",
+        objectives: ["complete_diploma"],
+        start_grade: 9
+      }
+    });
+    const editedCourseId = crypto.randomUUID();
+    const editActivities: Array<{ name: string; arguments: Record<string, unknown> }> = [];
+    const editResult = await runAssistantChat({
+      history: [],
+      userMessage: "Edit my schedule, I start math at alg 2 in 9th",
+      model: "gpt-5.6-luna",
+      executeReadTool: async (name, argumentsValue) => {
+        expect(name).toBe("get_course_schedule_options");
+        expect(argumentsValue).toMatchObject({ replace_existing: true, start_grade: 9, starting_math_course: "algebra 2" });
+        return {
+          summary: "Prepared a validated rebuild.",
+          data: {
+            existing_course_count: 18,
+            existing_courses_replaced: 18,
+            existing_courses_retained: 0,
+            replace_existing: true,
+            requested_preferences: { start_grade: 9, starting_math_course: "algebra 2" },
+            courses: [{ course_id: editedCourseId, name: "Algebra 2", grade_level: 9, term: "full_year" }],
+            adjustments: [],
+            source_readiness: { evidence_ready: true },
+            constraint_validation: { satisfied: true, failures: [] },
+            graduation_coverage: { requirement_count: 8, all_requirements_covered_after: true, remaining_gaps: [] },
+            degree_planning: { bookmarked_goal_count: 0, college_course_count: 0, courses: [] }
+          }
+        };
+      },
+      onSdkEvent: () => undefined,
+      onToolActivity: (activity) => { editActivities.push({ name: activity.name, arguments: activity.arguments }); }
+    });
+    expect(editResult.message).toContain("The validated schedule is being applied now.");
+    expect(editResult.message).not.toContain("if final validation passes");
+    expect(editResult.proposals.map((proposal) => proposal.name)).toEqual(["add_course_schedule"]);
+    expect(editResult.proposals[0]?.arguments).toMatchObject({ replace_existing: true, start_grade: 9, starting_math_course: "algebra 2" });
+    expect(editActivities.map((activity) => activity.name)).toEqual(["get_course_schedule_options", "get_course_schedule_options", "add_course_schedule"]);
     expect(requiredAssistantEvidenceRead("Clear my whole schedule. Generate a new one, math starting at pre-calc, intended major in computer science, and maximize GPA with reasonable limitations and course rigor.")).toEqual({
       name: "get_course_schedule_options",
       arguments: {
