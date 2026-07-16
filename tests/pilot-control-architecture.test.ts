@@ -8,11 +8,13 @@ describe("Pilot complete academic control", () => {
     for (const grade of [9, 10, 11, 12] as const) {
       const read = requiredAssistantEvidenceRead(`Create a full schedule starting from ${grade}th grade with concurrent and high school courses for the highest GPA, most degrees, and my major`);
       expect(read).toEqual({
-        name: "get_academic_context",
+        name: "get_course_schedule_options",
         arguments: {
-          include_transcript_review: false,
-          planning_start_grade: grade,
-          planning_objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"]
+          respect_recommended_limit: true,
+          rigor: "advanced",
+          include_college_courses: true,
+          objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"],
+          start_grade: grade
         }
       });
     }
@@ -79,9 +81,9 @@ describe("Pilot complete academic control", () => {
     expect(prompt).not.toContain("Grades 9 through 11 must carry at least six classes");
     expect(prompt).toContain("there is no arbitrary time window");
     expect(prompt).toContain("get_academic_context is the bounded cross-feature view");
-    expect(prompt).toContain("get_degree_progress for the exact remaining major");
-    expect(prompt).toContain("get_enrollment_constraints for the saved concurrent-enrollment policy");
-    expect(prompt).toContain("propose the complete remaining mixed plan through one add_academic_courses call");
+    expect(prompt).toContain("automatically evaluates every bookmarked program's remaining major");
+    expect(prompt).toContain("school-specific course-count rules");
+    expect(prompt).toContain("server atomically includes the college portion");
     expect(prompt).toContain("call resolve_academic_course_batch exactly once");
     expect(prompt).toContain("converted directly into one reversible add_academic_courses proposal");
     expect(prompt).toContain("independent safety review");

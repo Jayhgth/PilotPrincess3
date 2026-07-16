@@ -174,23 +174,20 @@ test.describe("live Pilot behavior", () => {
     }, { onConflict: "user_id,provider_code" });
     if (enrollment.error) throw enrollment.error;
     const programId = "CSM:communication-studies-aa";
-    const secondaryProgramId = "CSM:computer-science-applications-and-development-as";
-    const bookmarkConversation = await createConversation("Bookmark two degree goals");
-    const bookmarkTurn = await sendTurn(request, accessToken, bookmarkConversation,
-      "Bookmark both the CSM Communication Studies AA and CSM Computer Science Applications and Development AS degrees. Keep both as degree goals for future planning.");
-    expect(bookmarkTurn.proposals.map((proposal) => proposal.name), bookmarkTurn.message).toEqual(["set_college_goals"]);
-    await apply(bookmarkTurn);
+    const bookmarkInsert = await supabase.from("student_smccd_goals").insert({ user_id: userId, program_id: programId, is_primary: true, notes: "Live integrated-planning fixture" });
+    if (bookmarkInsert.error) throw bookmarkInsert.error;
     const savedGoals = await supabase.from("student_smccd_goals").select("program_id").eq("user_id", userId);
     if (savedGoals.error) throw savedGoals.error;
-    expect(new Set((savedGoals.data ?? []).map((goal) => goal.program_id))).toEqual(new Set([programId, secondaryProgramId]));
-    const isolateScheduleGoal = await supabase.from("student_smccd_goals").delete().eq("user_id", userId).eq("program_id", secondaryProgramId);
-    if (isolateScheduleGoal.error) throw isolateScheduleGoal.error;
+    expect((savedGoals.data ?? []).map((goal) => goal.program_id)).toEqual([programId]);
 
     const activePlan = await supabase.from("four_year_plans").select("id").eq("user_id", userId).eq("is_active", true).single();
     const activeVersion = await supabase.from("plan_versions").select("id").eq("plan_id", activePlan.data!.id).eq("kind", "active").single();
     const requirements = await supabase.from("graduation_requirements").select("*").eq("school_id", dtech.data!.id);
     const dtechCatalog = await supabase.from("courses").select("*").eq("school_id", dtech.data!.id).eq("confidence", "verified").eq("review_status", "approved");
     const mappings = await supabase.from("course_requirement_mappings").select("*").in("requirement_id", (requirements.data ?? []).map((row) => row.id));
+    const personalDevelopment = (requirements.data ?? []).find((requirement) => requirement.area === "personal_development");
+    expect(personalDevelopment?.notes).toContain("through d.tech intersession courses");
+    expect(personalDevelopment?.notes).toContain("does not count toward this requirement");
     const courseById = new Map((dtechCatalog.data ?? []).map((course) => [course.id, course]));
     const usedCourseIds = new Set<string>();
     const graduationSeedRows: Array<Record<string, unknown>> = [];
@@ -294,15 +291,16 @@ test.describe("live Pilot behavior", () => {
     const scheduleConversation = await createConversation("Complete diploma and Communication Studies AA");
     const scheduleTurn = await sendTurn(request, accessToken, scheduleConversation,
       "Use my saved progress to build and apply the rest of my schedule from grade 11 summer through grade 12. My intended major is Communication Studies. Keep every completed or in-progress class, finish my d.tech diploma and my bookmarked CSM Communication Studies AA—including every remaining major, local GE, separate graduation, and 60-unit requirement—under my already-saved concurrent-enrollment preference and its recommended per-term unit limit. Do not change that preference. Balance the remaining work across the available terms and do not just describe the plan; add it.");
-    expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_academic_courses"]);
+    expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_course_schedule"]);
     const scheduleTools = await supabase.from("ai_tool_calls").select("tool_name,status,result,arguments")
       .eq("conversation_id", scheduleConversation).order("created_at");
     if (scheduleTools.error) throw scheduleTools.error;
-    for (const requiredTool of ["get_academic_context", "get_degree_progress", "get_enrollment_constraints"]) {
-      expect(scheduleTools.data?.some((tool) => tool.tool_name === requiredTool && tool.status === "completed"), JSON.stringify(scheduleTools.data)).toBe(true);
-    }
-    const proposalRecord = scheduleTools.data?.find((tool) => tool.tool_name === "add_academic_courses");
-    expect(proposalRecord?.arguments).toMatchObject({ respect_recommended_limit: true });
+    expect(scheduleTools.data?.some((tool) => tool.tool_name === "get_course_schedule_options" && tool.status === "completed"), JSON.stringify(scheduleTools.data)).toBe(true);
+    const scheduleRead = scheduleTools.data?.find((tool) => tool.tool_name === "get_course_schedule_options")?.result as { data?: { degree_planning?: { bookmarked_goal_count?: number; college_course_count?: number; all_bookmarked_goals_covered?: boolean } } } | undefined;
+    expect(scheduleRead?.data?.degree_planning).toMatchObject({ bookmarked_goal_count: 1, all_bookmarked_goals_covered: true });
+    expect(Number(scheduleRead?.data?.degree_planning?.college_course_count ?? 0)).toBeGreaterThan(0);
+    const proposalRecord = scheduleTools.data?.find((tool) => tool.tool_name === "add_course_schedule");
+    expect(proposalRecord?.arguments).toMatchObject({ respect_recommended_limit: true, include_college_courses: true });
     await apply(scheduleTurn);
 
     const finalRowsResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
@@ -313,6 +311,9 @@ test.describe("live Pilot behavior", () => {
     expect(additions.some((row) => Boolean(row.course_id))).toBe(true);
     expect(additions.some((row) => Boolean(row.smccd_course_id))).toBe(true);
     expect(additions.filter((row) => row.smccd_course_id).every((row) => row.is_weighted)).toBe(true);
+    const designLabRequirementIds = new Set((requirements.data ?? []).filter((requirement) => requirement.area === "design_lab").map((requirement) => requirement.id));
+    const designLabCourseIds = new Set((mappings.data ?? []).filter((mapping) => designLabRequirementIds.has(mapping.requirement_id)).map((mapping) => mapping.course_id));
+    expect(additions.filter((row) => row.grade_level === 12 && row.course_id && designLabCourseIds.has(row.course_id))).toHaveLength(1);
 
     const openCollegeTerms = new Map<string, number>();
     for (const row of finalRows.filter((course) => course.status !== "completed" && course.smccd_course_id)) {

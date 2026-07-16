@@ -100,7 +100,7 @@ values
   ('d7ec0000-0000-4000-8000-000000000001', 'd7ec2000-0000-4000-8000-000000000001', 'd7ec1000-0000-4000-8000-000000000001', 'world_language', 'World Language', 20, 2, 'Spanish sequence or an approved equivalent.', 'verified', 'approved'),
   ('d7ec0000-0000-4000-8000-000000000001', 'd7ec2000-0000-4000-8000-000000000001', 'd7ec1000-0000-4000-8000-000000000001', 'design_lab', 'Design Lab', 40, 4, 'Foundations, Co-designers, and upper-division Design Lab pathways.', 'verified', 'approved'),
   ('d7ec0000-0000-4000-8000-000000000001', 'd7ec2000-0000-4000-8000-000000000001', 'd7ec1000-0000-4000-8000-000000000001', 'visual_performing_arts', 'Visual and Performing Arts', 10, 1, 'One year of an approved visual or performing arts course.', 'verified', 'approved'),
-  ('d7ec0000-0000-4000-8000-000000000001', 'd7ec2000-0000-4000-8000-000000000001', 'd7ec1000-0000-4000-8000-000000000001', 'personal_development', 'Personal Development', 25, 2.5, 'Intersession electives and Introduction to Prototyping and Fabrication contribute to this requirement.', 'verified', 'approved')
+  ('d7ec0000-0000-4000-8000-000000000001', 'd7ec2000-0000-4000-8000-000000000001', 'd7ec1000-0000-4000-8000-000000000001', 'personal_development', 'Personal Development', 25, 2.5, 'Earned through d.tech intersession courses. Introduction to Prototyping and Fabrication does not count toward this requirement.', 'verified', 'approved')
 on conflict (catalog_version_id, area) do update set
   name = excluded.name,
   credits_required = excluded.credits_required,

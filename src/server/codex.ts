@@ -776,18 +776,6 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
       ...(/\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
     ];
     const requestsAdvancedRigor = /\brigorous\b|\b(?:high|strong|good|advanced)\s+(?:course\s+)?rigor\b|\brigor\b.{0,20}\b(?:high|strong|good|advanced)\b/.test(normalized);
-    const crossFeaturePlan = /\b(degree|degrees|major)\b/.test(normalized)
-      || (!excludesCollegeCourses && /\b(college|concurrent|dual enrollment)\b/.test(normalized));
-    if (crossFeaturePlan && !intent.replaceExisting) {
-      return {
-        name: "get_academic_context",
-        arguments: {
-          include_transcript_review: false,
-          planning_objectives: objectives,
-          ...(startGrade ? { planning_start_grade: startGrade } : {})
-        }
-      };
-    }
     return {
       name: "get_course_schedule_options",
       arguments: {
@@ -1034,6 +1022,12 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? data.constraint_validation as Record<string, unknown>
     : {};
   const constraintFailures = Array.isArray(constraints.failures) ? constraints.failures.map(String) : [];
+  const degreePlanning = data.degree_planning && typeof data.degree_planning === "object" && !Array.isArray(data.degree_planning)
+    ? data.degree_planning as Record<string, unknown>
+    : null;
+  const degreeCourses = Array.isArray(degreePlanning?.courses)
+    ? degreePlanning.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
   const visible = courses.map((course) => {
     const grade = Number(course.grade_level);
     const term = String(course.term ?? "").replaceAll("_", " ");
@@ -1048,6 +1042,7 @@ export function schedulePreview(data: Record<string, unknown>) {
     const rationale = String(adjustment.rationale ?? "Matches an explicit schedule constraint.").slice(0, 140);
     return `- Adjust ${course} from grade ${fromGrade} to grade ${grade} — ${rationale}`;
   });
+  const visibleDegreeCourses = degreeCourses.slice(0, 10).map((course) => `- Grade ${String(course.grade_level ?? "?")}, ${String(course.term ?? "term").replaceAll("_", " ")}: ${String(course.course_code ?? "College")} ${String(course.title ?? "course")} — ${Number(course.units ?? 0)} college units${course.high_school_requirement_area ? `; also covers verified ${String(course.high_school_requirement_area).replaceAll("_", " ")} credit` : ""}`);
   const opening = replacesExisting
     ? courses.length
       ? `I would replace ${replacedCount} editable courses with this ${courses.length}-course schedule and retain ${retainedCount} unaffected or transcript-backed ${retainedCount === 1 ? "course" : "courses"}:`
@@ -1067,7 +1062,12 @@ export function schedulePreview(data: Record<string, unknown>) {
   const whyOne = !replacesExisting && courses.length === 1 && existingCount > 0
     ? `Only one new course is proposed because the other ${existingCount} courses are already in your current plan.`
     : null;
-  return [opening, ...visibleAdjustments, ...visible, coverageLine, whyOne].filter(Boolean).join("\n\n");
+  const degreeLine = Number(degreePlanning?.bookmarked_goal_count ?? 0) > 0
+    ? degreePlanning?.all_bookmarked_goals_covered === true
+      ? `The integrated college portion covers all ${Number(degreePlanning?.bookmarked_goal_count)} bookmarked degree ${Number(degreePlanning?.bookmarked_goal_count) === 1 ? "goal" : "goals"}.`
+      : "The optimizer could not cover every bookmarked degree requirement within the verified prerequisite, grade, and enrollment constraints."
+    : null;
+  return [opening, ...visibleAdjustments, ...visible, ...(visibleDegreeCourses.length ? ["College and degree overlap:", ...visibleDegreeCourses] : []), coverageLine, degreeLine, whyOne].filter(Boolean).join("\n\n");
 }
 
 export function scheduleResultIsComplete(data: Record<string, unknown>) {
@@ -1079,10 +1079,15 @@ export function scheduleResultIsComplete(data: Record<string, unknown>) {
   const constraints = data.constraint_validation && typeof data.constraint_validation === "object" && !Array.isArray(data.constraint_validation)
     ? data.constraint_validation as Record<string, unknown>
     : null;
+  const degreePlanning = data.degree_planning && typeof data.degree_planning === "object" && !Array.isArray(data.degree_planning)
+    ? data.degree_planning as Record<string, unknown>
+    : null;
+  const degreeComplete = Number(degreePlanning?.bookmarked_goal_count ?? 0) === 0 || degreePlanning?.all_bookmarked_goals_covered === true;
   return Number(coverage.requirement_count ?? 0) > 0
     && readiness?.evidence_ready === true
     && constraints?.satisfied === true
     && coverage.all_requirements_covered_after === true
+    && degreeComplete
     && Array.isArray(coverage.remaining_gaps)
     && coverage.remaining_gaps.length === 0;
 }
@@ -1127,7 +1132,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
       : "No image was attached to this turn.",
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "Apply the app's deterministic academic rules exactly for the currently selected school. Never substitute d.tech's sequence, catalog, graduation rules, weighting, or terminology for another school; d.tech-specific evidence is valid only when d.tech is selected. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved catalog/evidence says so. College units and high-school transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified selected-school crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college. Check cross-college prerequisite equivalence only through normalized identity and verified evidence.",
-    "For a schedule intended to finish or advance a bookmarked associate degree, use get_academic_context for the student's current progress, then get_degree_progress for the exact remaining major, awarding-college local-GE, separate graduation, and total-unit evidence, and get_enrollment_constraints for the saved concurrent-enrollment policy. Select exact eligible course IDs from those results, preserve completed and current evidence, order prerequisites before dependents, and propose the complete remaining mixed plan through one add_academic_courses call. The requested major, degree, starting progress, and recommended unit boundary are binding. Do not call a diploma-only schedule a complete response to a degree-planning request, and do not merely describe courses when the student explicitly asked Pilot to build or apply the plan.",
+    "For every schedule-construction request, call get_course_schedule_options. When degree bookmarks exist and college courses are allowed, that deterministic optimizer automatically evaluates every bookmarked program's remaining major, awarding-college local GE, separate graduation, and total-unit requirements together with diploma overlap, prerequisites, GPA weighting, school-specific course-count rules, and the saved concurrent-enrollment boundary. Apply its exact result with add_course_schedule; the server atomically includes the college portion so it cannot be omitted. Do not fall back to a diploma-only plan, independently improvise a shorter degree list, stack duplicate core-area fillers in one grade, or merely describe a schedule the student asked Pilot to create.",
     "When a student explicitly selects multiple degrees, search for every exact program and call set_college_goals once with the complete program-ID set. Do not split one multi-degree request into independent bookmarks or decline a non-destructive bookmark merely because the student described the degree plan instead of using the word bookmark.",
     "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Treat explicit requested outcomes as binding unless they conflict with a locked record or hard product rule; preferences and planning heuristics must not silently override them. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated result; never substitute another school's courses, infer support/pathway needs, or call a partial plan complete.",
     "For a request that adds multiple named courses, fills remaining graduation gaps, or mixes selected-school and college courses, call resolve_academic_course_batch exactly once instead of repeating search_course_catalog. Put every named course in requests, set fill_remaining_graduation_requirements when the student asks for needed or remaining diploma classes, and preserve an explicit grade or term only where the student actually stated it. A comma-separated placement phrase applies through the end of that phrase. Leave term null when it was not stated so the resolver can place prerequisite sequences safely. The resolver uses the saved district, existing plan, nearby-provider order, cross-college identity, and prerequisites to choose exact campuses and placements; do not ask the student to choose a campus unless they explicitly requested one. Its complete result is converted directly into one reversible add_academic_courses proposal; do not ask for course titles already derivable from graduation evidence.",

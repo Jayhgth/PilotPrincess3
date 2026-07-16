@@ -484,11 +484,13 @@ describe("Codex feature boundaries", () => {
       }
     });
     expect(requiredAssistantEvidenceRead("Create a full schedule starting from 10th grade for the highest GPA and most degrees in my major")).toEqual({
-      name: "get_academic_context",
+      name: "get_course_schedule_options",
       arguments: {
-        include_transcript_review: false,
-        planning_start_grade: 10,
-        planning_objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"]
+        respect_recommended_limit: true,
+        rigor: "advanced",
+        include_college_courses: true,
+        objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"],
+        start_grade: 10
       }
     });
     const compoundRequest = "Add the three classes needed for high school graduation in 12th. From college, add linear algebra, calc 3, physics with calculus 1, 2, and 3. Put in 11th grade summer calc 2, intercultural communication, eng c1000, nosql databases.";
@@ -551,10 +553,12 @@ describe("Codex feature boundaries", () => {
     })).toMatchObject({ mutatesData: true });
     expect(requiredAssistantEvidenceRead("Remove my computer science degree bookmark")).toBeNull();
     expect(requiredAssistantEvidenceRead("Create a schedule without deleting my degree bookmarks")).toEqual({
-      name: "get_academic_context",
+      name: "get_course_schedule_options",
       arguments: {
-        include_transcript_review: false,
-        planning_objectives: ["complete_diploma"]
+        respect_recommended_limit: true,
+        rigor: "balanced",
+        include_college_courses: true,
+        objectives: ["complete_diploma"]
       }
     });
     }
