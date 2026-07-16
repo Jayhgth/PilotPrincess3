@@ -913,6 +913,9 @@ input:focus, select:focus, textarea:focus {
 .app-toolbar button svg { color: var(--accent); }
 .app-toolbar button .pilot-panel-icon { color: var(--ink-soft); transform: scaleX(-1); }
 .app-toolbar button kbd {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   border: 0;
   background: transparent;
   color: var(--ink-faint);
@@ -923,6 +926,7 @@ input:focus, select:focus, textarea:focus {
   line-height: 1;
   white-space: nowrap;
 }
+.app-toolbar button kbd svg { color: currentColor; }
 .app-content { width: min(100%, 1200px); margin: 0 auto; padding: 4px clamp(24px, 3vw, 40px) 64px; }
 
 @media (min-width: 1440px) {

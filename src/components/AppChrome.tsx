@@ -1,5 +1,6 @@
 import { Button as BaseButton } from "@base-ui/react/button";
 import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
+import { CommandIcon as Command } from "@phosphor-icons/react/dist/csr/Command";
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
 import { SignOutIcon as SignOut } from "@phosphor-icons/react/dist/csr/SignOut";
@@ -223,11 +224,11 @@ export default function AppChrome<ViewId extends string>({
           type="button"
           onClick={onAssistantToggle}
           aria-pressed={assistantOpen}
-          title={`${assistantOpen ? "Collapse" : "Open"} Pilot (Command or Control + B)`}
+          title={`${assistantOpen ? "Collapse" : "Open"} Pilot (⌘B)`}
         >
           <SidebarSimple className="pilot-panel-icon" size={16} weight={assistantOpen ? "fill" : "regular"} aria-hidden />
           <span>{assistantOpen ? "Collapse Pilot" : aiEnabled ? "Open Pilot" : "Set up Pilot"}</span>
-          <kbd aria-hidden>⌘/Ctrl B</kbd>
+          <kbd aria-hidden><Command size={10} /><span>B</span></kbd>
         </button>
       </div>
       <div className="app-content">{children}</div>
