@@ -89,6 +89,7 @@ import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 import AppChrome from "@/components/AppChrome";
 import PilotErrorBoundary from "@/components/PilotErrorBoundary";
+import SettingsDialog from "@/components/SettingsDialog";
 
 const loadOnboardingFlow = () => import("@/components/OnboardingFlow");
 const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace");
@@ -118,7 +119,9 @@ type ViewId =
   | "gpa"
   | "settings";
 
-const PRIMARY_NAV_ITEMS: Array<{ id: ViewId; label: string; icon: Icon }> = [
+type WorkspaceViewId = Exclude<ViewId, "settings">;
+
+const PRIMARY_NAV_ITEMS: Array<{ id: WorkspaceViewId; label: string; icon: Icon }> = [
   { id: "dashboard", label: "Overview", icon: House },
   { id: "courses", label: "Courses", icon: BookOpen },
   { id: "graduation", label: "Graduation", icon: GraduationCap },
@@ -137,6 +140,13 @@ const SETTINGS_NAV_ITEMS: Array<{ id: SettingsArea; label: string; icon: Icon }>
   { id: "pilot", label: "Pilot", icon: ChatCircleDots },
   { id: "admin", label: "Admin", icon: ShieldCheck }
 ];
+
+const SETTINGS_DESCRIPTIONS: Record<SettingsArea, string> = {
+  general: "Account and student details.",
+  planning: "Choose the high-school years included in the plan.",
+  pilot: "Model, reasoning, change access, and conversation settings.",
+  admin: "Account-specific testing and workspace reset controls."
+};
 
 const VIEW_IDS = new Set<ViewId>(["dashboard", "courses", "sources", "graduation", "gpa", "settings"]);
 const COURSE_AREAS = new Set<CourseArea>(["mine", "dtech", "smccd"]);
@@ -226,6 +236,10 @@ export default function PlanningWorkspace() {
   const [toastKind, setToastKind] = useState<"info" | "success" | "error">("info");
   const [toastAction, setToastAction] = useState<{ label: string; run: () => Promise<void> } | null>(null);
   const [view, setView] = useState<ViewId>(() => locationState().view);
+  const [lastWorkspaceView, setLastWorkspaceView] = useState<WorkspaceViewId>(() => {
+    const initialView = locationState().view;
+    return initialView === "settings" ? "dashboard" : initialView;
+  });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -501,6 +515,7 @@ export default function PlanningWorkspace() {
     const handlePopState = () => {
       const next = locationState();
       setView(next.view);
+      if (next.view !== "settings") setLastWorkspaceView(next.view);
       setCourseArea(next.courseArea);
       setSettingsArea(next.settingsArea);
     };
@@ -592,7 +607,7 @@ export default function PlanningWorkspace() {
     setPlanCourses((planCourseResult.data ?? []) as unknown as PlanCourse[]);
   }
 
-  function syncLocation(nextView: ViewId, nextCourseArea = courseArea, nextSettingsArea = settingsArea) {
+  function syncLocation(nextView: ViewId, nextCourseArea = courseArea, nextSettingsArea = settingsArea, mode: "push" | "replace" = "push") {
     const url = new URL(window.location.href);
     if (nextView === "dashboard") url.searchParams.delete("view");
     else url.searchParams.set("view", nextView);
@@ -607,27 +622,36 @@ export default function PlanningWorkspace() {
     if (nextView === "settings" && nextSettingsArea !== "general") url.searchParams.set("settings", nextSettingsArea);
     else url.searchParams.delete("settings");
     if (nextView !== "graduation") url.searchParams.delete("graduation");
-    window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history[mode === "replace" ? "replaceState" : "pushState"]({}, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
   function navigate(nextView: ViewId) {
     setView(nextView);
+    if (nextView !== "settings") setLastWorkspaceView(nextView);
     setMobileNavOpen(false);
     syncLocation(nextView);
     void logEvent("view_opened", { view: nextView });
   }
 
   function openSettings(area: SettingsArea = "general") {
+    const settingsWereOpen = view === "settings";
     setSettingsArea(area);
     setView("settings");
     setMobileNavOpen(false);
-    syncLocation("settings", courseArea, area);
+    syncLocation("settings", courseArea, area, settingsWereOpen ? "replace" : "push");
     void logEvent("view_opened", { view: "settings", settings_area: area });
+  }
+
+  function closeSettings() {
+    setView(lastWorkspaceView);
+    setMobileNavOpen(false);
+    syncLocation(lastWorkspaceView, courseArea, settingsArea, "replace");
   }
 
   function openCourses(area: CourseArea = "mine") {
     setCourseArea(area);
     setView("courses");
+    setLastWorkspaceView("courses");
     setMobileNavOpen(false);
     syncLocation("courses", area);
     void logEvent("view_opened", { view: "courses", course_area: area });
@@ -635,6 +659,7 @@ export default function PlanningWorkspace() {
 
   function openGraduationView(area: "diploma" | "degree" = "diploma") {
     setView("graduation");
+    setLastWorkspaceView("graduation");
     setMobileNavOpen(false);
     const url = new URL(window.location.href);
     url.searchParams.set("view", "graduation");
@@ -1223,6 +1248,7 @@ export default function PlanningWorkspace() {
             if (replayingOnboarding) {
               setReplayingOnboarding(false);
               setView("dashboard");
+              setLastWorkspaceView("dashboard");
               syncLocation("dashboard");
               notify("Onboarding changes saved.", "success");
             }
@@ -1230,6 +1256,7 @@ export default function PlanningWorkspace() {
           onExit={replayingOnboarding ? () => {
             setReplayingOnboarding(false);
             setView("dashboard");
+            setLastWorkspaceView("dashboard");
             syncLocation("dashboard");
             notify("Onboarding exited without saving changes.");
           } : undefined}
@@ -1531,14 +1558,7 @@ export default function PlanningWorkspace() {
   function renderSettings() {
     if (!settings || !session || !school) return null;
     const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
-    const descriptions: Record<SettingsArea, string> = {
-      general: "Account and student details.",
-      planning: "Choose the high-school years included in the plan.",
-      pilot: "Model, reasoning, change access, and conversation settings.",
-      admin: "Account-specific testing and workspace reset controls."
-    };
-    return <div className="settings-page page-frame">
-      <PageHeader title="Settings" description={descriptions[activeSettingsArea]} />
+    return <>
       {activeSettingsArea === "admin" ? <AdminSettingsPanel
         accessToken={session.access_token}
         email={session.user.email ?? "Administrator account"}
@@ -1560,7 +1580,7 @@ export default function PlanningWorkspace() {
           window.location.assign("/");
         }}
       />}
-    </div>;
+    </>;
   }
 
   function renderMineCourses() {
@@ -1631,24 +1651,24 @@ export default function PlanningWorkspace() {
     </div>;
   }
 
-  function renderView() {
-    switch (view) {
+  function renderView(activeViewId: WorkspaceViewId) {
+    switch (activeViewId) {
       case "dashboard": return renderDashboard();
       case "courses": return renderCourses();
       case "sources": return renderSources();
       case "graduation": return renderGraduation();
       case "gpa": return renderGpa();
-      case "settings": return renderSettings();
     }
   }
 
-  const activeView = NAV_ITEMS.find((item) => item.id === view);
+  const contentView = view === "settings" ? lastWorkspaceView : view;
+  const activeView = NAV_ITEMS.find((item) => item.id === contentView);
   const activeSettingsArea = settingsArea === "admin" && !isAdmin ? "general" : settingsArea;
   const visibleSettingsNavItems = isAdmin ? SETTINGS_NAV_ITEMS : SETTINGS_NAV_ITEMS.filter((item) => item.id !== "admin");
   return (
       <div className={`app-shell t3code-app ${assistantOpen ? "assistant-docked" : ""}`}>
       <AppChrome
-        view={view}
+        view={contentView}
         activeLabel={activeView?.label ?? "Workspace"}
         navItems={PRIMARY_NAV_ITEMS}
         school={school}
@@ -1656,12 +1676,6 @@ export default function PlanningWorkspace() {
         aiEnabled={settings.ai_enabled}
         assistantOpen={assistantOpen}
         mobileNavOpen={mobileNavOpen}
-        settingsNavigation={view === "settings" ? {
-          activeId: activeSettingsArea,
-          items: visibleSettingsNavItems,
-          onNavigate: (id) => openSettings(id as SettingsArea),
-          onBack: () => navigate("dashboard")
-        } : undefined}
         onNavigate={navigate}
         onSettings={() => openSettings("general")}
         onMobileNavChange={setMobileNavOpen}
@@ -1669,8 +1683,18 @@ export default function PlanningWorkspace() {
         onThemeToggle={toggleTheme}
         onSignOut={() => void signOut()}
       >
-        <Suspense fallback={<LoadingView />}>{renderView()}</Suspense>
+        <Suspense fallback={<LoadingView />}>{renderView(contentView)}</Suspense>
       </AppChrome>
+      {view === "settings" && <SettingsDialog
+        open={view === "settings"}
+        activeId={activeSettingsArea}
+        description={SETTINGS_DESCRIPTIONS[activeSettingsArea]}
+        items={visibleSettingsNavItems}
+        onNavigate={(id) => openSettings(id as SettingsArea)}
+        onClose={closeSettings}
+      >
+        <Suspense fallback={<LoadingView />}>{renderSettings()}</Suspense>
+      </SettingsDialog>}
       {assistantOpen && <Suspense fallback={null}><PilotErrorBoundary onFailure={() => {
         setAssistantOpen(false);
         notify("Pilot could not open. Your workspace is still available; try opening Pilot again.", "error");

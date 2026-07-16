@@ -1,5 +1,4 @@
 import { Button as BaseButton } from "@base-ui/react/button";
-import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react/dist/csr/ArrowLeft";
 import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
@@ -46,12 +45,6 @@ interface Props<ViewId extends string> {
   aiEnabled: boolean;
   assistantOpen: boolean;
   mobileNavOpen: boolean;
-  settingsNavigation?: {
-    activeId: string;
-    items: WorkspaceNavItem<string>[];
-    onNavigate: (id: string) => void;
-    onBack: () => void;
-  };
   onNavigate: (view: ViewId) => void;
   onSettings: () => void;
   onMobileNavChange: (open: boolean) => void;
@@ -70,7 +63,6 @@ export default function AppChrome<ViewId extends string>({
   aiEnabled,
   assistantOpen,
   mobileNavOpen,
-  settingsNavigation,
   onNavigate,
   onSettings,
   onMobileNavChange,
@@ -144,16 +136,15 @@ export default function AppChrome<ViewId extends string>({
         <button className="wordmark" type="button" onClick={() => onNavigate(navItems[0].id)}><BrandMark /><span>Pilot Princess</span></button>
         <button className="mobile-close icon-button" type="button" onClick={() => onMobileNavChange(false)} aria-label="Close navigation"><X size={18} /></button>
       </div>
-      <nav className="sidebar-nav" aria-label={settingsNavigation ? "Settings" : "Planning workspace"}>
-        {(settingsNavigation?.items ?? navItems).map((item) => {
+      <nav className="sidebar-nav" aria-label="Planning workspace">
+        {navItems.map((item) => {
           const NavIcon = item.icon;
-          const active = settingsNavigation ? settingsNavigation.activeId === item.id : view === item.id;
+          const active = view === item.id;
           return <BaseButton
             key={item.id}
             className={active ? "active" : ""}
             onClick={() => {
-              if (settingsNavigation) settingsNavigation.onNavigate(item.id);
-              else onNavigate(item.id as ViewId);
+              onNavigate(item.id as ViewId);
               onMobileNavChange(false);
             }}
             type="button"
@@ -171,9 +162,7 @@ export default function AppChrome<ViewId extends string>({
           <span><strong>{school.short_name}</strong><small>{school.source_year ?? "Current"} sources</small></span>
         </div>
         <div className="sidebar-account-actions">
-          {settingsNavigation
-            ? <button className="sidebar-utility" onClick={settingsNavigation.onBack} type="button" title="Back to workspace"><ArrowLeft size={17} /><span>Back</span></button>
-            : <button className="sidebar-utility" onClick={onSettings} type="button" title="Settings"><GearSix size={17} /><span>Settings</span></button>}
+          <button className="sidebar-utility" onClick={onSettings} type="button" title="Settings"><GearSix size={17} /><span>Settings</span></button>
           <button className="sidebar-utility" onClick={onThemeToggle} type="button" title={`Use ${theme === "light" ? "dark" : "light"} theme`} aria-label={`Use ${theme === "light" ? "dark" : "light"} theme`}>
             {theme === "light" ? <Moon size={17} /> : <Sun size={17} />}
             <span>{theme === "light" ? "Dark" : "Light"}</span>
