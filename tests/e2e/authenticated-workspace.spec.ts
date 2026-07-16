@@ -143,12 +143,11 @@ test.describe("authenticated student workspace", () => {
 
     await page.reload();
     const openPilot = page.getByRole("button", { name: "Open Pilot", exact: true });
-    const pilotShortcut = openPilot.locator(".pilot-shortcut");
     await expect(openPilot.locator(".pilot-panel-icon")).toHaveCount(0);
-    await expect(pilotShortcut).toHaveCSS("opacity", "0");
-    await openPilot.hover();
-    await expect(pilotShortcut).toHaveCSS("opacity", "1");
+    await expect(openPilot.locator(".pilot-shortcut")).toHaveCount(0);
+    await expect(openPilot).toHaveAttribute("title", "Open Pilot (⌘ B)");
     await openPilot.click();
+    await expect(page.getByRole("button", { name: "Collapse Pilot", exact: true })).toHaveAttribute("title", "Collapse Pilot (⌘ B)");
     const pilot = page.getByRole("dialog", { name: "Pilot Assistant" });
     await expect(pilot).toBeVisible();
     await expect(pilot.getByRole("banner").getByRole("button")).toHaveCount(1);
