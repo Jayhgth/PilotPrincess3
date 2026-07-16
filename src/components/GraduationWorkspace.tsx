@@ -117,7 +117,6 @@ function DiplomaView({
   const open = Math.max(0, required - projected);
   const openConstraints = progress.filter((item) => item.requirement.constraint_only && item.verifiedProjectedCredits < item.requirement.credits_required).length;
   const selected = progress.find((item) => item.requirement.id === selectedId) ?? progress[0];
-  const missing = progress.filter((item) => item.status === "missing");
 
   return progress.length ? <>
     <EligibilitySummary
@@ -132,7 +131,6 @@ function DiplomaView({
         ["Plan coverage", `${required ? Math.round((projected / required) * 100) : 0}%`],
         ["Needs verification", `${formatValue(unverified)} cr`]
       ]}
-      action={missing[0] ? <button className="secondary-button small" type="button" onClick={() => onSelect(missing[0].requirement.id)}>Review first gap</button> : null}
     />
     <p className="graduation-source-note">Official {school.short_name} rules. <a href={requirementSourceUrl ?? (school.slug === "design-tech-high-school" ? DTECH_REQUIREMENTS_URL : school.directory_source_url ?? school.website_url ?? "#")} target="_blank" rel="noreferrer">Open source <ArrowSquareOut size={13} /></a></p>
     <div className="graduation-evidence-layout">
@@ -182,7 +180,7 @@ function EligibilitySummary({
   body: string;
   tone: "dtech" | "degree";
   metrics: Array<[string, string]>;
-  action: ReactNode;
+  action?: ReactNode;
 }) {
   return <section className={`eligibility-summary ${tone}`}>
     <div className="eligibility-answer"><div className="eligibility-identity">{identity}<span>{label}</span></div><h2>{answer}</h2><p>{body}</p>{action}</div>
