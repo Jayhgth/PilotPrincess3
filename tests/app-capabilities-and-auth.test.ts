@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mutationReviewMode, pilotToolNamesForMessage } from "@/lib/app-capabilities";
+import { affectedWorkspaceDomains, mutationReviewMode, pilotToolNamesForMessage } from "@/lib/app-capabilities";
 import { safeAuthRedirect } from "@/lib/auth";
 
 describe("application capability and authentication boundaries", () => {
@@ -16,6 +16,8 @@ describe("application capability and authentication boundaries", () => {
     expect(mutationReviewMode("add_course_schedule", { replace_existing: false })).toBe("deterministic");
     expect(mutationReviewMode("add_course_schedule", { replace_existing: true })).toBe("model");
     expect(mutationReviewMode("remove_plan_courses")).toBe("model");
+    expect(pilotToolNamesForMessage("Change the app to dark mode")).toContain("update_student_settings");
+    expect(affectedWorkspaceDomains("update_student_settings")).toEqual(["identity", "settings", "plan", "graduation", "pilot"]);
     }
 
     {

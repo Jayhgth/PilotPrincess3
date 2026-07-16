@@ -21,6 +21,7 @@ import {
   useEffect,
   lazy,
   useMemo,
+  useRef,
   Suspense,
   useState,
   type SyntheticEvent
@@ -39,6 +40,7 @@ import {
   selectedPlanGrades,
   schoolYearForGrade
 } from "@/lib/planning";
+
 import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import type { GpaScenarioChoice } from "@/lib/gpa-planner";
 import { requirementsForSettings } from "@/lib/planning";
@@ -95,6 +97,9 @@ import SettingsDialog from "@/components/SettingsDialog";
 import SchoolSupportNotice from "@/components/SchoolSupportNotice";
 import { LoadingView, LoadingWorkspace, PageHeader } from "@/components/workspace/WorkspaceScaffold";
 import type { SchoolSupportReadiness } from "@/lib/workspace-bootstrap";
+
+const THEME_STORAGE_KEY = "pilot-princess-theme";
+const PENDING_THEME_STORAGE_KEY = "pilot-princess-theme-pending";
 
 const loadOnboardingFlow = () => import("@/components/OnboardingFlow");
 const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace");
@@ -221,6 +226,8 @@ export default function PlanningWorkspace() {
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
+  const themeWriteQueue = useRef<Promise<void>>(Promise.resolve());
+  const themeIntentVersion = useRef(0);
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
   const [settingsArea, setSettingsArea] = useState<SettingsArea>(() => locationState().settingsArea);
   const [gpaScenarioChoices, setGpaScenarioChoices] = useState<GpaScenarioChoice[]>([]);
@@ -393,10 +400,21 @@ export default function PlanningWorkspace() {
         ai_connection_approved_at: rawSettings.ai_connection_approved_at ?? null,
         ai_setup_tested_at: rawSettings.ai_setup_tested_at ?? null
       };
-      const loadedTheme = loadedSettings.ui_theme ?? "light";
+      const pendingTheme = localStorage.getItem(PENDING_THEME_STORAGE_KEY);
+      const hasPendingTheme = pendingTheme === "light" || pendingTheme === "dark";
+      const loadedTheme = hasPendingTheme ? pendingTheme : loadedSettings.ui_theme ?? "light";
+      if (hasPendingTheme && loadedSettings.ui_theme !== loadedTheme) {
+        const pendingUpdate = await supabase.from("student_settings").update({ ui_theme: loadedTheme }).eq("id", userId).select("ui_theme").single();
+        if (!pendingUpdate.error) {
+          loadedSettings.ui_theme = loadedTheme;
+          localStorage.removeItem(PENDING_THEME_STORAGE_KEY);
+        }
+      } else if (hasPendingTheme) {
+        localStorage.removeItem(PENDING_THEME_STORAGE_KEY);
+      }
       setTheme(loadedTheme);
       document.documentElement.dataset.theme = loadedTheme;
-      localStorage.setItem("pilot-princess-theme", loadedTheme);
+      localStorage.setItem(THEME_STORAGE_KEY, loadedTheme);
       setSchool(bootstrap.school);
       setSchoolSupport(bootstrap.school_support);
       setSettings(loadedSettings);
@@ -483,7 +501,10 @@ export default function PlanningWorkspace() {
       if (["identity", "settings", "pilot"].some((domain) => requested.has(domain as WorkspaceDomain))) {
         tasks.push(loadSettingsWorkspaceSlice(supabase, session.user.id).then((nextSettings) => {
           setSettings(nextSettings);
-          if (nextSettings.ui_theme && nextSettings.ui_theme !== theme) applyTheme(nextSettings.ui_theme);
+          if (nextSettings.ui_theme && nextSettings.ui_theme !== theme) {
+            localStorage.removeItem(PENDING_THEME_STORAGE_KEY);
+            applyTheme(nextSettings.ui_theme);
+          }
         }));
       }
       if (requested.has("degree")) {
@@ -694,16 +715,33 @@ export default function PlanningWorkspace() {
   function applyTheme(nextTheme: "light" | "dark") {
     setTheme(nextTheme);
     document.documentElement.dataset.theme = nextTheme;
-    localStorage.setItem("pilot-princess-theme", nextTheme);
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
   }
 
   function toggleTheme() {
     const nextTheme = theme === "light" ? "dark" : "light";
+    const intentVersion = ++themeIntentVersion.current;
+    localStorage.setItem(PENDING_THEME_STORAGE_KEY, nextTheme);
     applyTheme(nextTheme);
-    if (supabase && session) {
-      void supabase.from("student_settings").update({ ui_theme: nextTheme }).eq("id", session.user.id);
+    setSettings((current) => current ? { ...current, ui_theme: nextTheme } : current);
+    if (!supabase || !session) return;
+    const userId = session.user.id;
+    const write = themeWriteQueue.current.then(async () => {
+      const result = await supabase.from("student_settings").update({ ui_theme: nextTheme }).eq("id", userId).select("ui_theme").single();
+      if (result.error) throw result.error;
+      if (themeIntentVersion.current === intentVersion) {
+        localStorage.removeItem(PENDING_THEME_STORAGE_KEY);
+        setSettings((current) => current ? { ...current, ui_theme: result.data.ui_theme as "light" | "dark" } : current);
+      }
+    });
+    themeWriteQueue.current = write.catch((caught) => {
+      if (themeIntentVersion.current !== intentVersion) return;
+      // Keep the newest local choice when a reload aborts the request. The
+      // pending value is retried during the next workspace bootstrap.
+      applyTheme(nextTheme);
       setSettings((current) => current ? { ...current, ui_theme: nextTheme } : current);
-    }
+      notify(caught instanceof Error ? `${caught.message} The theme will retry when the app reopens.` : "The theme will retry when the app reopens.", "info");
+    });
   }
 
   async function signOut() {
@@ -1143,7 +1181,10 @@ export default function PlanningWorkspace() {
     if (error) throw error;
     const nextSettings = data as unknown as StudentSettings;
     setSettings(nextSettings);
-    if (nextSettings.ui_theme && nextSettings.ui_theme !== theme) applyTheme(nextSettings.ui_theme);
+    if (nextSettings.ui_theme && nextSettings.ui_theme !== theme) {
+      localStorage.removeItem(PENDING_THEME_STORAGE_KEY);
+      applyTheme(nextSettings.ui_theme);
+    }
     await logEvent("student_settings_updated", { fields: Object.keys(normalizedPatch) });
   }
 

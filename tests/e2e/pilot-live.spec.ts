@@ -156,6 +156,15 @@ test.describe("live Pilot behavior", () => {
       plan_end_grade: 12
     }).eq("id", userId);
     if (studentContext.error) throw studentContext.error;
+    const themeConversation = await createConversation("Theme persistence");
+    const darkThemeTurn = await sendTurn(request, accessToken, themeConversation, "Change the app to dark mode.");
+    expect(darkThemeTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
+    await apply(darkThemeTurn);
+    expect((await supabase.from("student_settings").select("ui_theme").eq("id", userId).single()).data?.ui_theme).toBe("dark");
+    const lightThemeTurn = await sendTurn(request, accessToken, themeConversation, "Change the app back to light mode.");
+    expect(lightThemeTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
+    await apply(lightThemeTurn);
+    expect((await supabase.from("student_settings").select("ui_theme").eq("id", userId).single()).data?.ui_theme).toBe("light");
     const enrollment = await supabase.from("student_enrollment_preferences").upsert({
       user_id: userId,
       provider_code: "SMCCD",
@@ -174,6 +183,8 @@ test.describe("live Pilot behavior", () => {
     const savedGoals = await supabase.from("student_smccd_goals").select("program_id").eq("user_id", userId);
     if (savedGoals.error) throw savedGoals.error;
     expect(new Set((savedGoals.data ?? []).map((goal) => goal.program_id))).toEqual(new Set([programId, secondaryProgramId]));
+    const isolateScheduleGoal = await supabase.from("student_smccd_goals").delete().eq("user_id", userId).eq("program_id", secondaryProgramId);
+    if (isolateScheduleGoal.error) throw isolateScheduleGoal.error;
 
     const activePlan = await supabase.from("four_year_plans").select("id").eq("user_id", userId).eq("is_active", true).single();
     const activeVersion = await supabase.from("plan_versions").select("id").eq("plan_id", activePlan.data!.id).eq("kind", "active").single();

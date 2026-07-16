@@ -130,6 +130,15 @@ test.describe("authenticated student workspace", () => {
     await expect(page.getByText("CIS 127 HTML5 and CSS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Internship/TA", { exact: true }).first()).toBeVisible();
 
+    await page.getByRole("button", { name: "Use dark theme" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.getByRole("button", { name: "Use light theme" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
     const pilotSupabase = ephemeralSupabase ?? createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { autoRefreshToken: false, persistSession: false }
     });
