@@ -1128,6 +1128,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "Apply the app's deterministic academic rules exactly for the currently selected school. Never substitute d.tech's sequence, catalog, graduation rules, weighting, or terminology for another school; d.tech-specific evidence is valid only when d.tech is selected. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved catalog/evidence says so. College units and high-school transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified selected-school crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college. Check cross-college prerequisite equivalence only through normalized identity and verified evidence.",
     "For a schedule intended to finish or advance a bookmarked associate degree, use get_academic_context for the student's current progress, then get_degree_progress for the exact remaining major, awarding-college local-GE, separate graduation, and total-unit evidence, and get_enrollment_constraints for the saved concurrent-enrollment policy. Select exact eligible course IDs from those results, preserve completed and current evidence, order prerequisites before dependents, and propose the complete remaining mixed plan through one add_academic_courses call. The requested major, degree, starting progress, and recommended unit boundary are binding. Do not call a diploma-only schedule a complete response to a degree-planning request, and do not merely describe courses when the student explicitly asked Pilot to build or apply the plan.",
+    "When a student explicitly selects multiple degrees, search for every exact program and call set_college_goals once with the complete program-ID set. Do not split one multi-degree request into independent bookmarks or decline a non-destructive bookmark merely because the student described the degree plan instead of using the word bookmark.",
     "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Treat explicit requested outcomes as binding unless they conflict with a locked record or hard product rule; preferences and planning heuristics must not silently override them. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated result; never substitute another school's courses, infer support/pathway needs, or call a partial plan complete.",
     "For a request that adds multiple named courses, fills remaining graduation gaps, or mixes selected-school and college courses, call resolve_academic_course_batch exactly once instead of repeating search_course_catalog. Put every named course in requests, set fill_remaining_graduation_requirements when the student asks for needed or remaining diploma classes, and preserve an explicit grade or term only where the student actually stated it. A comma-separated placement phrase applies through the end of that phrase. Leave term null when it was not stated so the resolver can place prerequisite sequences safely. The resolver uses the saved district, existing plan, nearby-provider order, cross-college identity, and prerequisites to choose exact campuses and placements; do not ask the student to choose a campus unless they explicitly requested one. Its complete result is converted directly into one reversible add_academic_courses proposal; do not ask for course titles already derivable from graduation evidence.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
@@ -1786,7 +1787,26 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       }
 
       const readCalls = calls.filter((call) => !call.mutatesData);
-      const mutationCalls = calls.filter((call) => call.mutatesData);
+      let mutationCalls = calls.filter((call) => call.mutatesData);
+      const degreeBookmarks = mutationCalls.filter((call) => call.name === "set_college_goal");
+      if (degreeBookmarks.length > 1) {
+        const programIds = [...new Set(degreeBookmarks.map((call) => String(call.arguments.program_id ?? "")).filter(Boolean))];
+        mutationCalls = [
+          ...mutationCalls.filter((call) => call.name !== "set_college_goal"),
+          {
+            id: crypto.randomUUID(),
+            name: "set_college_goals",
+            label: assistantToolLabel("set_college_goals"),
+            arguments: {
+              program_ids: programIds,
+              notes: String(degreeBookmarks[0]?.arguments.notes ?? "")
+            },
+            explanation: `Bookmark all ${programIds.length} explicitly requested degree programs as one reversible change.`,
+            mutatesData: true,
+            status: "pending_confirmation"
+          }
+        ];
+      }
       if (readCalls.length > 0) {
         const results: Array<Record<string, unknown>> = [];
         for (const call of readCalls) {

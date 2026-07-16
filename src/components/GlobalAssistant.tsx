@@ -225,6 +225,7 @@ const TOOL_LABELS: Record<string, string> = {
   create_plan_snapshot: "Save plan snapshot",
   set_smccd_ge_completion: "Update college degree completion",
   set_college_goal: "Bookmark degree",
+  set_college_goals: "Bookmark degrees",
   clear_college_goal: "Remove degree bookmark",
   clear_academic_plan: "Clear academic plan"
 };

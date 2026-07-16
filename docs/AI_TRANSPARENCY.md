@@ -66,7 +66,7 @@ Write tools may prepare these changes:
 - update whether the student's SMCCD planning context is concurrent enrollment or a dual-enrollment partnership; district thresholds remain source-backed policy;
 - change the student's selected California community-college district using an exact district identifier returned by the nearby-provider read; this preference is reversible and does not assert enrollment eligibility;
 - save a named snapshot, update a student-confirmed SMCCD Area 7A completion, and record Skyline's manually completed information-literacy tutorial or equivalent;
-- select or clear an associate-degree goal;
+- bookmark one or several selected associate-degree goals as one reversible action, or clear a selected bookmark;
 - clear editable schedule rows, degree bookmarks, and GPA assumptions as one compound action while retaining transcript-backed evidence; and
 - undo an applied change from the current conversation by its exact action identifier and durable stored inverse.
 

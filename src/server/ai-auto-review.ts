@@ -154,8 +154,11 @@ function deterministicProposalReview(input: {
   if (input.toolName === "create_plan_snapshot" && requested(/\b(create|save|make|take)\b/, /\b(snapshot|copy|version|backup)\b/)) {
     return approve("The request creates a non-destructive plan snapshot.");
   }
-  if (input.toolName === "set_college_goal" && requested(/\b(add|set|bookmark|track|save)\b/, /\b(degree|associate|college goal|program)\b/)) {
-    return approve("The exact degree bookmark matches the student's request.");
+  if ((input.toolName === "set_college_goal" || input.toolName === "set_college_goals")
+    && requested(/\b(add|set|bookmark|track|save|plan|build|create|complete|finish|pursue|work)\b/, /\b(degrees?|associates?|college goals?|programs?)\b/)) {
+    return approve(input.toolName === "set_college_goals"
+      ? "The complete reversible degree-bookmark batch matches the student's request."
+      : "The exact degree bookmark matches the student's request.");
   }
   return null;
 }

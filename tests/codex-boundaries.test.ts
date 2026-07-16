@@ -129,6 +129,11 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("add_course_schedule", { course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_high_school_course", { course_id: "00000000-0000-4000-8000-000000000001", status: "planned", grade_level: 12, term: "fall" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("set_college_goals", {
+      program_ids: ["CSM:computer-and-information-science-as", "CSM:computer-science-applications-and-development-as"],
+      notes: "Combined computer science plan"
+    })).toMatchObject({ mutatesData: true });
+    expect(() => parseAssistantToolCall("set_college_goals", { program_ids: ["same", "same"] })).toThrow();
     expect(() => parseAssistantToolCall("move_plan_course", { plan_course_id: "not-a-uuid", status: "planned" })).toThrow();
     expect(() => parseAssistantToolCall("unknown_removed_tool", {})).toThrow();
     }
@@ -205,6 +210,13 @@ describe("Codex feature boundaries", () => {
       model: "gpt-5.6-luna",
       verifiedAcademicPlanResolution: true
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
+    await expect(reviewAssistantProposal({
+      userMessage: "Create one plan that completes both listed computer science degrees.",
+      toolName: "set_college_goals",
+      arguments: { program_ids: ["CSM:computer-and-information-science-as", "CSM:computer-science-applications-and-development-as"] },
+      explanation: "Bookmark the complete explicitly selected degree set.",
+      model: "gpt-5.6-luna"
+    })).resolves.toMatchObject({ decision: "approve", risk: "low", method: "deterministic" });
     await expect(reviewAssistantProposal({
       userMessage: "Clear my schedule for 12th. Find a new schedule that maximizes GPA within the unit limit.",
       toolName: "add_course_schedule",

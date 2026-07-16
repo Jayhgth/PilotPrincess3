@@ -266,6 +266,11 @@ const toolArgumentSchemas = {
   create_plan_snapshot: z.object({ label: z.string().trim().min(1).max(100) }),
   set_smccd_ge_completion: z.object({ college_code: z.enum(["CSM", "SKY", "CAN"]), requirement: z.enum(["7A", "information_literacy"]).default("7A"), completed: z.boolean() }),
   set_college_goal: z.object({ program_id: z.string().trim().min(1).max(180), notes: z.string().trim().max(1200).default("") }),
+  set_college_goals: z.object({
+    program_ids: z.array(z.string().trim().min(1).max(180)).min(1).max(12)
+      .refine((ids) => new Set(ids).size === ids.length, "Degree bookmarks must be unique."),
+    notes: z.string().trim().max(1200).default("")
+  }),
   clear_college_goal: z.object({ program_id: z.string().trim().min(1).max(180) }),
   clear_academic_plan: z.object({
     courses: z.boolean().default(true),
@@ -325,6 +330,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "create_plan_snapshot", mutatesData: true, description: "Create a named snapshot copy of the current four-year plan for comparison or rollback reference.", arguments: '{"label":"string"}' },
   { name: "set_smccd_ge_completion", mutatesData: true, description: "Mark or unmark a supported manual local-degree completion: Area 7A for any college pattern, or Skyline's information-literacy tutorial/equivalent.", arguments: '{"college_code":"CSM|SKY|CAN","requirement":"7A|information_literacy","completed":boolean}' },
   { name: "set_college_goal", mutatesData: true, description: "Propose bookmarking one SMCCD AA or AS degree. Existing bookmarks remain marked.", arguments: '{"program_id":"string","notes":"string"}' },
+  { name: "set_college_goals", mutatesData: true, description: "Atomically bookmark every explicitly requested SMCCD AA or AS degree in one action. Use this instead of separate set_college_goal calls when the student names multiple degrees. Existing bookmarks remain marked.", arguments: '{"program_ids":["string"],"notes":"string"}' },
   { name: "clear_college_goal", mutatesData: true, description: "Propose removing one SMCCD degree bookmark.", arguments: '{"program_id":"string"}' },
   { name: "clear_academic_plan", mutatesData: true, description: "Clear any requested combination of editable schedule rows, degree bookmarks, and saved GPA assumptions as one coherent action. Transcript-backed evidence is always retained. The complete deleted state is stored as one durable inverse so a single later request can restore the entire operation.", arguments: '{"courses":boolean,"degree_bookmarks":boolean,"gpa_scenario":boolean}' }
 ];
@@ -383,6 +389,7 @@ export function assistantToolLabel(name: string) {
     create_plan_snapshot: "Save plan snapshot",
     set_smccd_ge_completion: "Update college degree completion",
     set_college_goal: "Set college goal",
+    set_college_goals: "Set college goals",
     clear_college_goal: "Clear college goal",
     clear_academic_plan: "Clear academic plan"
   } as Record<string, string>)[name] ?? name.replaceAll("_", " ");
@@ -3160,6 +3167,41 @@ export async function executeAssistantMutationTool(
       undo: previous
         ? { kind: "restore_rows", table: "student_smccd_goals", rows: [previous as unknown as Record<string, unknown>], summary: "The previous degree bookmark was restored." }
         : { kind: "delete_rows", table: "student_smccd_goals", ids: [data.id], summary: "The degree bookmark was removed." }
+    };
+  }
+
+  if (name === "set_college_goals") {
+    const args = toolArgumentSchemas.set_college_goals.parse(argumentsValue);
+    const programResult = await supabase.from("smccd_programs")
+      .select("id, title, award_type, college_code")
+      .in("id", args.program_ids);
+    if (programResult.error) throw new Error(programResult.error.message);
+    const programs = programResult.data ?? [];
+    if (programs.length !== args.program_ids.length) {
+      throw new Error("One or more requested SMCCD degree programs are no longer available.");
+    }
+    const existingProgramIds = new Set(workspace.collegeGoals.map((goal) => goal.program_id));
+    const missingPrograms = programs.filter((program) => !existingProgramIds.has(program.id));
+    if (!missingPrograms.length) throw new Error("All requested degrees are already bookmarked.");
+    const insertResult = await supabase.from("student_smccd_goals").insert(missingPrograms.map((program) => ({
+      user_id: userId,
+      program_id: program.id,
+      is_primary: false,
+      notes: args.notes
+    }))).select("id, program_id");
+    if (insertResult.error) throw new Error(insertResult.error.message);
+    const inserted = insertResult.data ?? [];
+    if (inserted.length !== missingPrograms.length) throw new Error("The complete degree-bookmark batch was not saved.");
+    return {
+      summary: `${missingPrograms.length} ${missingPrograms.length === 1 ? "degree was" : "degrees were"} bookmarked.`,
+      data: missingPrograms.map((program) => ({ ...program, notes: args.notes })),
+      changed: { entity: "student_smccd_goal", id: inserted.map((row) => row.id).join(",") },
+      undo: {
+        kind: "delete_rows",
+        table: "student_smccd_goals",
+        ids: inserted.map((row) => row.id),
+        summary: `${missingPrograms.length === 1 ? "The degree bookmark was" : "The degree bookmarks were"} removed.`
+      }
     };
   }
 

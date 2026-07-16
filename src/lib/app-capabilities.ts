@@ -85,6 +85,7 @@ export const APP_CAPABILITY_REGISTRY = {
   create_plan_snapshot: { capabilities: ["history", "schedule"], affects: ["history"], review: "deterministic" },
   set_smccd_ge_completion: { capabilities: ["degree", "college"], affects: ["degree"], review: "model" },
   set_college_goal: { capabilities: ["degree", "college"], affects: ["degree"], review: "deterministic" },
+  set_college_goals: { capabilities: ["degree", "college"], affects: ["degree"], review: "deterministic" },
   clear_college_goal: { capabilities: ["degree", "college"], affects: ["degree"], review: "model" },
   clear_academic_plan: { capabilities: ["schedule", "degree", "gpa"], affects: ["plan", "graduation", "gpa", "degree", "enrollment"], review: "model" }
 } as const satisfies Record<string, AppCapabilityDefinition>;

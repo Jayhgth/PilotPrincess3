@@ -44,6 +44,7 @@ describe("Pilot complete academic control", () => {
       choices: [{ plan_course_id: crypto.randomUUID(), included: true, expected_grade: "A" }]
     }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Primary major" }).mutatesData).toBe(true);
+    expect(parseAssistantToolCall("set_college_goals", { program_ids: ["CSM:computer-science-as", "CSM:mathematics-as"], notes: "Dual-degree plan" }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("update_student_settings", { preferred_name: "Jay", plan_start_grade: 9, plan_end_grade: 12, ui_theme: "dark" }).mutatesData).toBe(true);
     expect(() => parseAssistantToolCall("update_student_settings", { ai_review_mode: "manual" })).toThrow();
     expect(parseAssistantToolCall("clear_academic_plan", { courses: true, degree_bookmarks: true, gpa_scenario: true }).mutatesData).toBe(true);

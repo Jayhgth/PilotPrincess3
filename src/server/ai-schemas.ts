@@ -215,6 +215,7 @@ const assistantToolNames = [
   "create_plan_snapshot",
   "set_smccd_ge_completion",
   "set_college_goal",
+  "set_college_goals",
   "clear_college_goal",
   "clear_academic_plan"
 ] as const;

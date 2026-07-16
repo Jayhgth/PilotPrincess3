@@ -10,6 +10,7 @@ describe("application capability and authentication boundaries", () => {
     expect(tools).toContain("get_degree_progress");
     expect(tools).toContain("get_enrollment_constraints");
     expect(tools).toContain("add_course_schedule");
+    expect(tools).toContain("set_college_goals");
     expect(tools).not.toContain("update_student_settings");
     expect(mutationReviewMode("update_gpa_scenario")).toBe("deterministic");
     expect(mutationReviewMode("add_course_schedule", { replace_existing: false })).toBe("deterministic");

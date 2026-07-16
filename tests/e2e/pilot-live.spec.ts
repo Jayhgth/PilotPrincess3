@@ -165,13 +165,15 @@ test.describe("live Pilot behavior", () => {
     }, { onConflict: "user_id,provider_code" });
     if (enrollment.error) throw enrollment.error;
     const programId = "CSM:communication-studies-aa";
-    const degreeGoal = await supabase.from("student_smccd_goals").insert({
-      user_id: userId,
-      program_id: programId,
-      is_primary: true,
-      notes: "Intended Communication Studies major"
-    });
-    if (degreeGoal.error) throw degreeGoal.error;
+    const secondaryProgramId = "CSM:computer-science-applications-and-development-as";
+    const bookmarkConversation = await createConversation("Bookmark two degree goals");
+    const bookmarkTurn = await sendTurn(request, accessToken, bookmarkConversation,
+      "Bookmark both the CSM Communication Studies AA and CSM Computer Science Applications and Development AS degrees. Keep both as degree goals for future planning.");
+    expect(bookmarkTurn.proposals.map((proposal) => proposal.name), bookmarkTurn.message).toEqual(["set_college_goals"]);
+    await apply(bookmarkTurn);
+    const savedGoals = await supabase.from("student_smccd_goals").select("program_id").eq("user_id", userId);
+    if (savedGoals.error) throw savedGoals.error;
+    expect(new Set((savedGoals.data ?? []).map((goal) => goal.program_id))).toEqual(new Set([programId, secondaryProgramId]));
 
     const activePlan = await supabase.from("four_year_plans").select("id").eq("user_id", userId).eq("is_active", true).single();
     const activeVersion = await supabase.from("plan_versions").select("id").eq("plan_id", activePlan.data!.id).eq("kind", "active").single();
