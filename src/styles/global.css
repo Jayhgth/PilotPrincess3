@@ -36,6 +36,7 @@
   --warning-soft: #f3ead8;
   --danger: #a33b3b;
   --danger-soft: #f5e2e2;
+  --danger-ink: #ffffff;
   --shadow: 0 2px 8px rgb(35 38 43 / 0.08);
   --radius: 8px;
   --sidebar: 236px;
@@ -68,31 +69,32 @@
   --line: rgb(255 255 255 / 0.06);
   --line-strong: rgb(255 255 255 / 0.08);
   --control-line: rgb(255 255 255 / 0.10);
-  --accent: oklch(0.588 0.217 264);
-  --accent-hover: color-mix(in oklab, oklch(0.588 0.217 264) 90%, transparent);
+  --accent: #5f788d;
+  --accent-hover: #536c80;
   --accent-soft: rgb(255 255 255 / 0.04);
   --accent-ink: #ffffff;
-  --pilot-brand: oklch(0.588 0.217 264);
+  --pilot-brand: #6f879b;
   --pilot-soft: rgb(255 255 255 / 0.04);
   --school-ui: #a3a3a3;
   --school-soft: rgb(255 255 255 / 0.04);
   --school-ink: #0a0a0a;
-  --dtech-brand: #ef5024;
-  --dtech-ui: #ff8060;
+  --dtech-brand: #b86f59;
+  --dtech-ui: #d88973;
   --dtech-soft: color-mix(in srgb, var(--dtech-brand) 12%, transparent);
   --dtech-ink: #20242c;
-  --dual-brand: #8fb7df;
-  --dual-ui: #78b7e7;
+  --dual-brand: #90a9bd;
+  --dual-ui: #829eb4;
   --dual-soft: color-mix(in srgb, var(--dual-brand) 12%, transparent);
-  --csm-brand: #82b4e3;
-  --skyline-brand: #ff8583;
-  --canada-brand: #7fc49f;
-  --success: #00d492;
-  --success-soft: color-mix(in srgb, #00bc7d 12%, transparent);
-  --warning: #ffb900;
-  --warning-soft: color-mix(in srgb, #fe9a00 12%, transparent);
-  --danger: #ff6467;
-  --danger-soft: color-mix(in srgb, #fb2c36 12%, transparent);
+  --csm-brand: #8ca5bb;
+  --skyline-brand: #c98a8a;
+  --canada-brand: #83a893;
+  --success: #76ad91;
+  --success-soft: color-mix(in srgb, var(--success) 11%, transparent);
+  --warning: #c4a15f;
+  --warning-soft: color-mix(in srgb, var(--warning) 11%, transparent);
+  --danger: #c77c7e;
+  --danger-soft: color-mix(in srgb, var(--danger) 11%, transparent);
+  --danger-ink: #0a0a0a;
   --shadow: 0 2px 8px rgb(0 0 0 / 0.35);
 }
 
@@ -519,11 +521,11 @@ input:focus, select:focus, textarea:focus {
 .enrollment-policy-dismiss:hover { background: #ffedd5; }
 .enrollment-policy-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 :root[data-theme="dark"] .enrollment-policy-callout {
-  --policy-warning-bg: color-mix(in srgb, #fe9a00 12%, transparent);
-  --policy-warning-border: color-mix(in srgb, #fe9a00 28%, transparent);
-  --policy-warning-ink: #ffb900;
+  --policy-warning-bg: color-mix(in srgb, var(--warning) 11%, transparent);
+  --policy-warning-border: color-mix(in srgb, var(--warning) 30%, transparent);
+  --policy-warning-ink: var(--warning);
 }
-:root[data-theme="dark"] .enrollment-policy-dismiss { color: #ffb900; }
+:root[data-theme="dark"] .enrollment-policy-dismiss { color: var(--warning); }
 :root[data-theme="dark"] .enrollment-policy-dismiss:hover { background: rgb(255 255 255 / 0.04); }
 
 @media (max-width: 900px) {

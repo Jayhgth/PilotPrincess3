@@ -415,7 +415,7 @@
 .attachButton:hover:not(:disabled) { background: var(--surface-strong); color: var(--ink); }
 .sendButton { background: var(--ink); color: var(--surface); transition: transform 140ms ease, opacity 140ms ease; }
 .sendButton:hover:not(:disabled) { transform: scale(1.05); }
-.stopButton { background: var(--danger); color: #fff; }
+.stopButton { background: var(--danger); color: var(--danger-ink); }
 .stopButton:hover { background: var(--surface-strong); color: var(--ink); }
 .attachButton:disabled, .sendButton:disabled { opacity: 0.35; }
 .composer textarea {
