@@ -731,22 +731,25 @@ input:focus, select:focus, textarea:focus {
 .transcript-drop strong { font-size: 12px; }
 .transcript-drop small { color: var(--ink-faint); font-size: 12px; line-height: 1.45; }
 .transcript-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.transcript-review { display: grid; gap: 16px; }
+.transcript-review { display: grid; gap: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 18px; }
 .onboarding-replay-summary { display: flex; align-items: flex-start; gap: 11px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: 16px; }
 .onboarding-replay-summary > svg { flex: 0 0 auto; color: var(--accent); }
 .onboarding-replay-summary > div { display: grid; gap: 5px; }
 .onboarding-replay-summary strong { font-size: 12px; }
 .onboarding-replay-summary p { margin: 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
-.transcript-summary { margin: 0; border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 12px 14px; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.transcript-summary { display: flex; align-items: center; gap: 8px; margin: 0; border-radius: 7px; background: var(--surface-muted); padding: 10px 12px; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
+.transcript-summary svg { flex: 0 0 auto; color: var(--success); }
 .transcript-review-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; }
 .transcript-review-heading > span { display: grid; gap: 2px; }
 .transcript-review-heading strong { color: var(--ink); font-size: 14px; }
 .transcript-review-heading small,
 .transcript-review-heading em { color: var(--ink-faint); font-size: 12px; font-style: normal; }
-.onboarding-transcript-table { max-height: min(44vh, 430px); overflow-y: auto; }
+.onboarding-transcript-table { max-height: min(48vh, 470px); overflow-y: auto; border-bottom: 1px solid var(--line); }
+.onboarding-transcript-table .transcript-course-head,
+.onboarding-transcript-table .transcript-course-row { grid-template-columns: minmax(0, 1fr) 54px 64px 100px 100px; }
 .onboarding-transcript-table .transcript-course-head { position: sticky; z-index: 1; top: 0; background: var(--surface-raised); }
 .onboarding-transcript-table label { display: block; cursor: pointer; }
-.onboarding-transcript-table label:has(input:checked) { background: var(--accent-soft); }
+.onboarding-transcript-table label:hover { background: var(--surface-muted); }
 .onboarding-transcript-skip { margin: 20px 0 0; border-top: 1px solid var(--line); padding-top: 14px; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .onboarding-transcript-skip strong { color: var(--ink); }
 .transcript-course-list { display: grid; max-height: 390px; overflow-y: auto; border-top: 1px solid var(--line-strong); }
@@ -759,7 +762,7 @@ input:focus, select:focus, textarea:focus {
   padding: 11px 8px;
   cursor: pointer;
 }
-.transcript-course-list label.selected { background: var(--accent-soft); }
+.transcript-course-list label:hover { background: var(--surface-muted); }
 .transcript-course-list input { width: 16px; min-height: 16px; margin: 0; accent-color: var(--accent); }
 .transcript-course-list label > span { display: grid; gap: 3px; }
 .transcript-course-list strong { font-size: 12px; }

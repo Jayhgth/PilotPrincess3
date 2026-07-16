@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { inferTranscriptGradeLevel } from "@/lib/transcript";
+import { findTranscriptCatalogMatch, inferTranscriptGradeLevel } from "@/lib/transcript";
+import type { Course } from "@/lib/models";
 import { parseDtechTranscriptText, parseSmccdTranscriptText, TRANSCRIPT_PARSER_VERSION } from "@/server/transcript-parser";
 import { transcriptMimeType } from "@/lib/transcript-file";
 
@@ -61,6 +62,16 @@ describe("deterministic d.tech transcript parser", () => {
     expect(transcriptMimeType("application/octet-stream", "DTech June 2026.pdf")).toBe("application/pdf");
     expect(transcriptMimeType("application/x-download", "DTech June 2026.pdf")).toBe("application/pdf");
     expect(transcriptMimeType("", "completed-courses.CSV")).toBe("text/csv");
+    const catalog = [
+      { id: "english", name: "English 3 / English 3 Honors" },
+      { id: "statistics", name: "Advanced Statistics / Advanced Statistics Honors" },
+      { id: "innovation", name: "Innovation Diploma" },
+      { id: "english-2", name: "English 2 / English 2 Honors" }
+    ] as Course[];
+    expect(findTranscriptCatalogMatch("English 3 Honors", catalog)?.id).toBe("english");
+    expect(findTranscriptCatalogMatch("Advanced Statisics Honors", catalog)?.id).toBe("statistics");
+    expect(findTranscriptCatalogMatch("D.Lab: Innovation Diplma Honors", catalog)?.id).toBe("innovation");
+    expect(findTranscriptCatalogMatch("English 4 Honors", catalog)).toBeNull();
     const result = parseDtechTranscriptText(TRANSCRIPT_TEXT, TRANSCRIPT_LAYOUT);
 
     expect(TRANSCRIPT_PARSER_VERSION).toBe("transcript-layout-text-1.7.0");

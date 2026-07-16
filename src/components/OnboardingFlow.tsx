@@ -283,7 +283,7 @@ export default function OnboardingFlow({
     }
     const [schoolResult, courseResult, mappingResult] = await Promise.all([
       supabase.from("schools").select("*").eq("id", selectedSchool.id).single(),
-      supabase.from("courses").select("*").eq("school_id", selectedSchool.id).eq("review_status", "approved").order("subject").order("name"),
+      supabase.from("courses").select("*, catalog_versions!inner(is_current)").eq("school_id", selectedSchool.id).eq("review_status", "approved").eq("catalog_versions.is_current", true).order("subject").order("name"),
       supabase.from("course_requirement_mappings").select("id, course_id, requirement_id, confidence, is_user_override, courses!inner(school_id)").eq("courses.school_id", selectedSchool.id)
     ]);
     const firstError = schoolResult.error ?? courseResult.error ?? mappingResult.error;
@@ -407,10 +407,7 @@ export default function OnboardingFlow({
       );
       setTranscriptItems(items);
       setSelectedTranscriptIds(new Set(items.map((item) => item.id)));
-      const parserNote = result.aiUsed === true
-        ? "This source had no usable text layer, so Codex vision was used for extraction."
-        : "Parsed deterministically from the document text. Codex was not used.";
-      setTranscriptSummary(`${String(result.summary ?? "Transcript review ready.")} ${parserNote}`);
+      setTranscriptSummary(`${items.length} ${items.length === 1 ? "course" : "courses"} parsed.`);
       setTranscriptAiTransparency(result.aiUsed === true ? result.aiTransparency as typeof transcriptAiTransparency : null);
       if (items.length === 0) {
         setError(String(result.parseError ?? "No completed courses were extracted. Choose another file or finish setup and review it later in Catalog."));
@@ -592,7 +589,7 @@ export default function OnboardingFlow({
             </div> : transcriptItems.length === 0 ? <div className="transcript-entry" aria-busy={busyLabel === "Reading transcript"}>
               <label className="transcript-drop"><UploadSimple size={25} weight="duotone" /><span><strong>{transcriptFile?.name ?? "Choose a transcript"}</strong><small>{busyLabel === "Reading transcript" ? "Uploading and reading completed courses…" : "PDF, DOCX, text, CSV, PNG, JPEG, or WebP. Maximum 15 MB."}</small></span><input type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.webp" disabled={Boolean(busyLabel)} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ""; chooseTranscript(file); }} /></label>
             </div> : <div className="transcript-review">
-              {transcriptSummary && <p className="transcript-summary">{transcriptSummary}</p>}
+              {transcriptSummary && <div className="transcript-summary"><CheckCircle size={16} weight="fill" /><span>{transcriptSummary}</span></div>}
               {transcriptAiTransparency && <TranscriptAiRunDetails run={transcriptAiTransparency} summary="Inspect Codex vision run" />}
               <div className="transcript-review-heading"><span><strong>Courses found</strong><small>{selectedTranscriptIds.size} of {transcriptItems.length} selected</small></span><em>Check the rows to import as completed.</em></div>
               <div className="transcript-course-table onboarding-transcript-table" role="table" aria-label="Extracted GPA courses">
@@ -610,7 +607,7 @@ export default function OnboardingFlow({
                       : "Custom course";
                 return <label className="transcript-course-item" key={item.id}><span className="transcript-course-row" role="row"><span className="transcript-course-name" role="cell"><input type="checkbox" aria-label={`Select ${courseTitle(item)}`} checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{payload.institution_name ?? activeSchool.short_name}</small></span></span><span role="cell" data-label="Grade">{payload.letter_grade ?? "Review"}</span><span role="cell" data-label="Credits">{payload.credits ?? payload.college_units ?? "Review"}</span><span role="cell" data-label="Year">{payload.school_year ?? (payload.grade_level ? `Grade ${payload.grade_level}` : "Review")}</span><span role="cell" data-label="Status" className={resolution.identityResolved ? "transcript-imported" : "transcript-review-needed"}>{identityLabel}</span></span></label>;
               })}</div></div>
-              {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review" open><summary><span><strong>Intersession pass/fail courses</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA. Passed classes count toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); const passed = payload.letter_grade?.toUpperCase() === "P"; return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{passed ? `Pass, grade ${payload.grade_level}, ${payload.credits ?? 0} Personal Development credits` : `F, grade ${payload.grade_level}, no Personal Development credit`}</small></span><em>Pass/fail · Not in GPA</em></label>; })}</div></details>}
+              {intersessionTranscriptItems.length > 0 && <details className="transcript-pass-review"><summary><span><strong>Intersession pass/fail courses</strong><small>{intersessionTranscriptItems.length} classes, excluded from GPA. Passed classes count toward Personal Development.</small></span></summary><div className="transcript-course-list">{intersessionTranscriptItems.map((item) => { const payload = payloadFor(item); const selected = selectedTranscriptIds.has(item.id); const passed = payload.letter_grade?.toUpperCase() === "P"; return <label key={item.id} className={selected ? "selected" : ""}><input type="checkbox" checked={selected} onChange={() => setSelectedTranscriptIds((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} /><span><strong>{courseTitle(item)}</strong><small>{passed ? `Pass, grade ${payload.grade_level}, ${payload.credits ?? 0} Personal Development credits` : `F, grade ${payload.grade_level}, no Personal Development credit`}</small></span><em>Pass/fail · Not in GPA</em></label>; })}</div></details>}
               <button className="quiet-button" type="button" onClick={() => chooseTranscript(null)}>Use a different transcript</button>
             </div>}
             {!isReplay && <p className="onboarding-transcript-skip"><strong>Incoming freshmen or don’t have a transcript yet?</strong> Press Finish setup to continue.</p>}

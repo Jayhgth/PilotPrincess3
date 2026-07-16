@@ -105,13 +105,17 @@ test.describe("authenticated student workspace", () => {
     await page.locator('input[type="file"]').setInputFiles(transcriptPath);
 
     await expect(page.getByText("Courses found", { exact: true })).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("3 of 3 selected", { exact: true })).toBeVisible();
+    await expect(page.getByText("5 of 5 selected", { exact: true })).toBeVisible();
     await expect(page.getByText("Intersession pass/fail courses", { exact: true })).toBeVisible();
+    await expect(page.getByText("Custom course", { exact: true })).toHaveCount(0);
+    await expect(page.locator(".transcript-pass-review")).not.toHaveAttribute("open", "");
     await page.getByRole("button", { name: "Import selected and finish" }).click();
 
     await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Courses", exact: true }).click();
-    await expect(page.getByText("English 3 / English 3 Honors", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("English 3 Honors", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Advanced Statistics Honors", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("D.Lab: Innovation Diploma Honors", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("CIS 127 HTML5 and CSS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Internship/TA", { exact: true }).first()).toBeVisible();
     expect(consoleErrors).toEqual([]);

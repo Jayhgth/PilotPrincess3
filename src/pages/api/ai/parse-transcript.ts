@@ -181,10 +181,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     const catalogQuery = auth.supabase
       .from("courses")
-      .select("*")
+      .select("*, catalog_versions!inner(is_current)")
       .eq("review_status", "approved");
     const { data: catalogData, error: catalogError } = source.school_id
-      ? await catalogQuery.eq("school_id", source.school_id)
+      ? await catalogQuery.eq("school_id", source.school_id).eq("catalog_versions.is_current", true)
       : { data: [], error: null };
     if (catalogError) throw catalogError;
     const catalogCourses = (catalogData ?? []) as unknown as Course[];

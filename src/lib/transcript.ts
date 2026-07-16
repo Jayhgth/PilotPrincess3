@@ -28,6 +28,33 @@ export type TranscriptCourseClassification =
   | "smccd_unmatched"
   | "custom";
 
+function courseTitleEditDistance(left: string, right: string) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length];
+}
+
+function fuzzyCourseTitleScore(left: string, right: string) {
+  const leftNumbers = left.match(/\d+/g) ?? [];
+  const rightNumbers = right.match(/\d+/g) ?? [];
+  if (leftNumbers.join("|") !== rightNumbers.join("|")) return 0;
+  const longest = Math.max(left.length, right.length);
+  if (longest < 8) return 0;
+  const distance = courseTitleEditDistance(left, right);
+  const allowedDistance = longest >= 24 ? 2 : 1;
+  return distance <= allowedDistance ? 1 - distance / longest : 0;
+}
+
 export function findTranscriptCatalogMatch(name: string, courses: Course[]) {
   const normalized = normalizeCourseName(name);
   if (!normalized) return null;
@@ -42,7 +69,22 @@ export function findTranscriptCatalogMatch(name: string, courses: Course[]) {
     }
     return false;
   });
-  return equivalent.length === 1 ? equivalent[0] : null;
+  if (equivalent.length === 1) return equivalent[0];
+  if (equivalent.length > 1) return null;
+
+  const transcriptAliases = [...courseEquivalenceKeys(name)];
+  const fuzzy = courses
+    .map((course) => ({
+      course,
+      score: Math.max(...transcriptAliases.flatMap((transcriptAlias) =>
+        [...courseEquivalenceKeys(course.name)].map((catalogAlias) => fuzzyCourseTitleScore(transcriptAlias, catalogAlias))
+      ))
+    }))
+    .filter(({ score }) => score >= 0.9)
+    .sort((left, right) => right.score - left.score || left.course.name.localeCompare(right.course.name));
+  if (!fuzzy[0]) return null;
+  if (fuzzy[1] && fuzzy[0].score - fuzzy[1].score < 0.04) return null;
+  return fuzzy[0].course;
 }
 
 export function stripTranscriptQuarterPrefix(name: string) {
