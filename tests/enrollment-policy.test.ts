@@ -70,7 +70,7 @@ describe("enrollment policy evaluation", () => {
       row("MATH 200", 5, "fall", { smccd_course_id: "SKY:MATH 200" }),
       row("ENGL 100", 3, "fall", { smccd_course_id: "CAN:ENGL 100" })
     ], policy);
-    expect(term).toMatchObject({ units: 12, selectedLimit: 11, state: "review" });
+    expect(term).toMatchObject({ units: 12, selectedLimit: 11, state: "over_policy" });
     expect(term?.courseIds).toHaveLength(3);
     }
   });
@@ -83,7 +83,8 @@ describe("enrollment policy evaluation", () => {
 
     {
     expect(evaluateEnrollmentSchedule([row("A", 11.5, "fall")], policy)[0]?.state).toBe("over_policy");
-    expect(evaluateEnrollmentSchedule([row("A", 12, "fall")], policy)[0]?.state).toBe("review");
+    expect(evaluateEnrollmentSchedule([row("A", 12, "fall")], policy)[0]?.state).toBe("over_policy");
+    expect(evaluateEnrollmentSchedule([row("A", 19, "fall")], policy)[0]?.state).toBe("over_policy");
     expect(evaluateEnrollmentSchedule([row("A", 20, "fall")], policy)[0]?.state).toBe("blocked");
     }
 

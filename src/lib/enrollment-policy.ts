@@ -76,12 +76,14 @@ export function evaluateEnrollmentSchedule(
     if (units > absolute) {
       state = "blocked";
       message = `${units} units exceed the source-backed ${absolute}-unit K-12 maximum.`;
+    } else if (units > recommended) {
+      state = "over_policy";
+      message = units > feeFree
+        ? `${units} units exceed both the ${recommended}-unit ${policy.program_type}-enrollment planning threshold and the district's ${feeFree}-unit fee-free figure. Fees and additional approval may apply.`
+        : `${units} units exceed the ${recommended}-unit ${policy.program_type}-enrollment planning threshold. Verify fees and approval.`;
     } else if (units > feeFree) {
       state = "review";
       message = `${units} units exceed the district's ${feeFree}-unit fee-free figure. Fees and additional approval may apply.`;
-    } else if (units > recommended) {
-      state = "over_policy";
-      message = `${units} units exceed the ${recommended}-unit ${policy.program_type}-enrollment planning threshold. Verify fees and approval.`;
     }
     return {
       key,

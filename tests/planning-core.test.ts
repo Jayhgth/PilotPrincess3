@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareCourseBoardRowsForTerm, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
-import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, StudentSettings } from "@/lib/models";
+import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
@@ -161,6 +161,41 @@ describe("core academic planning contracts", () => {
     });
     expect(generated[0]).toMatchObject({ course_id: "precalc", grade_level: 9, is_weighted: true });
     expect(generated.every((row) => row.course_id === "precalc")).toBe(true);
+    }
+
+    {
+    const languageRequirement: GraduationRequirement = { ...requirement, id: "language", area: "world_language", name: "World Language", credits_required: 20, years_required: 2 };
+    const spanishOne = course("spanish-1", "Spanish 1", "World Language", [9]);
+    const spanishTwo = course("spanish-2", "Spanish 2", "World Language", [10]);
+    const languageMappings: CourseRequirementMapping[] = [spanishOne, spanishTwo].map((row, index) => ({
+      id: `language-map-${index}`, course_id: row.id, requirement_id: languageRequirement.id, confidence: "verified", is_user_override: false
+    }));
+    const profile: SchoolPlanningProfile = {
+      id: "integrated-profile", school_id: "school", academic_year: "2026-27", title: "Integrated planning guide", source_urls: ["https://school.example/guide"], status: "verified",
+      college_course_posture: "integrated", college_eligible_grades: [9, 10, 11, 12], always_high_school_areas: [], guidance_notes: [], created_at: "2026-07-15", updated_at: "2026-07-15",
+      grade_rules: {
+        "9": { minimum_high_school_courses: 0, target_total_courses: 0, required_areas: ["world_language"], preferred_course_names: ["Spanish 1"] },
+        "10": { minimum_high_school_courses: 0, target_total_courses: 0, required_areas: ["world_language"], preferred_course_names: ["Spanish 2"] }
+      }
+    };
+    const equivalencies: SmccdHighSchoolEquivalency[] = ["ASL 100", "ASL 110"].map((code) => ({
+      normalized_course_code: code, college_course_code: code, description: "American Sign Language", college_units: 5,
+      high_school_credits: 10, high_school_equivalent: code, requirement_area: "world_language", pairing_note: null,
+      source_id: "source", confidence: "verified"
+    }));
+    const collegeLanguage = equivalencies.map((equivalency, index) => plan({
+      id: `college-language-${index}`, course_id: null, custom_course_name: equivalency.college_course_code,
+      smccd_course_id: `CSM:${equivalency.normalized_course_code}`, grade_level: index === 0 ? 9 : 10,
+      school_year: index === 0 ? "2026-2027" : "2027-2028", term: "fall", status: "planned",
+      credits: 10, college_units: 5, letter_grade: null, college_provider_code: "SMCCD",
+      requirement_area_override: "world_language", mapping_verified: true
+    }));
+    const generated = generateSuggestedPlan(settings, [spanishOne, spanishTwo], collegeLanguage, null, true, {
+      schoolSlug: "integrated-school", planningProfile: profile, requirements: [languageRequirement], mappings: languageMappings,
+      equivalencies, startGrade: 9, includeCollegeCourses: true
+    });
+    expect(generated.map((row) => row.course_id)).not.toContain("spanish-1");
+    expect(generated.map((row) => row.course_id)).not.toContain("spanish-2");
     }
   });
 

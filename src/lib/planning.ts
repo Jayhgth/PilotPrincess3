@@ -588,6 +588,7 @@ export interface SuggestedPlanContext {
   planningProfile?: SchoolPlanningProfile | null;
   requirements?: readonly GraduationRequirement[];
   mappings?: readonly CourseRequirementMapping[];
+  equivalencies?: readonly SmccdHighSchoolEquivalency[];
   startGrade?: GradeLevel;
   rigor?: "balanced" | "advanced" | "lighter";
   maxCoursesPerTerm?: number | null;
@@ -851,6 +852,24 @@ export function generateSuggestedPlan(
     preferredAreasByCourse.set(mapping.course_id, areas);
   }
   const alwaysHighSchoolAreas = new Set(context.planningProfile?.always_high_school_areas ?? []);
+  const collegeOnlyRows = existing.filter((row) => Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0));
+  const collegeOnlyProgress = calculateRequirementProgress(
+    (context.requirements ?? []).filter((requirement) => requirement.confidence === "verified" && requirement.review_status === "approved"),
+    collegeOnlyRows,
+    (context.mappings ?? []).filter((mapping) => mapping.confidence === "verified"),
+    courses,
+    [...(context.equivalencies ?? [])]
+  );
+  const collegeCoveredAreas = new Set(collegeOnlyProgress
+    .filter((item) => item.status !== "missing" && !item.requirement.constraint_only)
+    .map((item) => item.requirement.area));
+  const structurallyAllocatedAreas = new Set<RequirementArea>(["social_science", "lab_science"]);
+  for (const requirement of (context.requirements ?? []).filter((item) => !item.constraint_only && !structurallyAllocatedAreas.has(item.area))) {
+    const verifiedCredits = collegeOnlyRows
+      .filter((row) => row.mapping_verified && row.requirement_area_override === requirement.area)
+      .reduce((total, row) => total + Number(row.credits ?? 0), 0);
+    if (verifiedCredits >= Number(requirement.credits_required)) collegeCoveredAreas.add(requirement.area);
+  }
   const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => term === "summer"
     ? existing.filter((row) => row.grade_level === grade && row.term === "summer").length
       + generated.filter((row) => row.grade_level === grade && row.term === "summer").length
@@ -934,9 +953,11 @@ export function generateSuggestedPlan(
       const course = candidates[0];
       if (!course) continue;
       const replaceableAreas = [...(preferredAreasByCourse.get(course.id) ?? [])].filter((area) => area !== "electives" && !alwaysHighSchoolAreas.has(area));
-      if (replaceableAreas.some((area) => existing.some((row) => row.grade_level === grade
-        && Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0)
-        && row.requirement_area_override === area))) continue;
+      if (replaceableAreas.some((area) => (area === "world_language" && collegeCoveredAreas.has(area))
+        || existing.some((row) => row.grade_level === grade
+          && Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0)
+          && row.mapping_verified
+          && row.requirement_area_override === area))) continue;
       if (context.startingMathCourse && plannerMathRank(course) !== null && generated.some((row) => row.grade_level === grade && plannerMathRank(courseMap.get(row.course_id)!) !== null)) continue;
       if (context.startingLanguageCourse && plannerLanguageIdentity(course).family && generated.some((row) => row.grade_level === grade && row.course_id && plannerLanguageIdentity(courseMap.get(row.course_id)!).family)) continue;
       const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;
@@ -983,13 +1004,19 @@ export function generateSuggestedPlan(
       const candidate = row.course_id ? courseById.get(row.course_id) : null;
       return candidate ? [{ row, course: candidate }] : [];
     });
+    const verifiedCollegeAreaRows = (area: RequirementArea) => existing.filter((row) => row.mapping_verified
+      && Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0)
+      && row.requirement_area_override === area);
     const areaCreditsInGrade = (area: RequirementArea, grade: GradeLevel) => allPlannedCourses()
       .filter(({ row, course: candidate }) => row.grade_level === grade && courseMatchesArea(candidate, area))
-      .reduce((total, { row }) => total + Number(row.credits ?? 0), 0);
-    const areaCourseCount = (area: RequirementArea) => allPlannedCourses().filter(({ course: candidate }) => courseMatchesArea(candidate, area)).length;
+      .reduce((total, { row }) => total + Number(row.credits ?? 0), 0)
+      + verifiedCollegeAreaRows(area).filter((row) => row.grade_level === grade).reduce((total, row) => total + Number(row.credits ?? 0), 0);
+    const areaCourseCount = (area: RequirementArea) => allPlannedCourses().filter(({ course: candidate }) => courseMatchesArea(candidate, area)).length
+      + verifiedCollegeAreaRows(area).length;
     const areaCreditsTotal = (area: RequirementArea) => allPlannedCourses()
       .filter(({ course: candidate }) => courseMatchesArea(candidate, area))
-      .reduce((total, { row }) => total + Number(row.credits ?? 0), 0);
+      .reduce((total, { row }) => total + Number(row.credits ?? 0), 0)
+      + verifiedCollegeAreaRows(area).reduce((total, row) => total + Number(row.credits ?? 0), 0);
     const targetLoadForGrade = (grade: GradeLevel) => Math.max(1, Math.min(
       maximumPerTerm ?? context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.target_total_courses ?? 6,
       12
