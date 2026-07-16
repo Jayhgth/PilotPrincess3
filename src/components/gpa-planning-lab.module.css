@@ -2,12 +2,12 @@
 .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
 .header h1 { margin: 0 0 5px; font-size: var(--type-page); line-height: var(--leading-page); letter-spacing: -0.04em; }
 .header p { max-width: 66ch; margin: 0; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
-.resultPanel { display: grid; width: min(100%, 960px); grid-template-columns: minmax(180px, .8fr) 2fr; gap: 22px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.resultPanel { display: grid; width: min(100%, 780px); grid-template-columns: minmax(150px, .7fr) minmax(0, 2fr); align-items: center; gap: 28px; border-bottom: 1px solid var(--line); padding: 0 0 16px; }
 .primaryResult { display: flex; min-width: 0; flex-direction: column; justify-content: center; }
 .primaryResult span, .primaryResult small, .comparison dt { color: var(--ink-soft); font-size: var(--type-supporting); }
-.primaryResult strong { margin: 2px 0; font-size: var(--type-display-number); font-weight: 650; line-height: 1; letter-spacing: -.045em; }
+.primaryResult strong { margin: 2px 0; font-size: clamp(2.5rem, 5vw, 3.5rem); font-weight: 650; line-height: 1; letter-spacing: -.045em; }
 .primaryResult[data-incomplete="true"] strong { font-size: 1.8rem; letter-spacing: -.035em; }
-.comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 28px; margin: 0; }
+.comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0; }
 .comparison div { min-width: 0; }
 .comparison dt { margin-bottom: 4px; }
 .comparison dd { margin: 0; font-size: var(--type-number); font-weight: 650; letter-spacing: -.025em; }
@@ -50,7 +50,7 @@
   .lab { padding-top: 20px; }
   .header, .sectionHeading { align-items: stretch; flex-direction: column; }
   .header button { align-self: flex-start; }
-  .resultPanel { grid-template-columns: 1fr; padding: 18px; }
+  .resultPanel { grid-template-columns: 1fr; gap: 16px; padding-bottom: 16px; }
   .comparison { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .primaryResult strong { font-size: 2.5rem; }
   .courseGroups { gap: 18px; }
