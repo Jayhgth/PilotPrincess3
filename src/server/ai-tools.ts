@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { createSmccdPlanCourseIndex, dtechCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
+import { pilotToolNamesForMessage } from "@/lib/app-capabilities";
+import { createSmccdPlanCourseIndex, selectedSchoolCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import type {
   CatalogReviewItem,
@@ -45,7 +46,7 @@ import {
   schoolYearForGrade
 } from "@/lib/planning";
 import { calculateSmccdLocalDegreeProgress, calculateSmccdProgramProgressWithContext, createSmccdProgramProgressContext } from "@/lib/smccd";
-import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
+import { evaluateSelectedSchoolPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode, transcriptPlanCourseDraft } from "@/lib/transcript";
 import type { TranscriptCoursePayload } from "@/lib/transcript";
 import { buildTranscriptAudit } from "@/server/assistant-audits";
@@ -305,9 +306,9 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "set_college_district_preference", mutatesData: true, description: "Propose changing the student's California community-college district. Use an exact district_code returned by get_nearby_education_providers. This changes district-aware suggestions and sourced policy context; it never claims enrollment eligibility.", arguments: '{"district_code":"string"}' },
   { name: "undo_change", mutatesData: true, description: "Undo one exact applied change from this conversation using its private stored inverse. Use only a tool_call_id supplied by the recent conversation change ledger; never reconstruct deleted data from the current plan.", arguments: '{"tool_call_id":"uuid"}' },
   { name: "add_course_schedule", mutatesData: true, description: "Apply the exact complete, evidence-ready selected-school schedule returned by get_course_schedule_options. With replace_existing true, atomically replace editable rows in replace_grade_levels, or every editable schedule row when that scope is empty, while retaining transcript-backed evidence. Pass every schedule constraint unchanged so execution rejects stale, partial, cross-school, or constraint-violating plans.", arguments: '{"course_ids":["uuid"],"respect_recommended_limit":boolean,"interests":["string"],"rigor":"balanced|advanced|lighter","max_courses_per_term":number|null,"start_grade":9|10|11|12,"starting_math_course":"string|null","starting_language_course":"string|null","include_college_courses":boolean,"replace_existing":boolean,"replace_grade_levels":[9|10|11|12],"objectives":["complete_diploma|maximize_weighted_gpa|maximize_degree_overlap|align_major"]}' },
-  { name: "add_dtech_course", mutatesData: true, description: "Legacy-compatible alias for proposing one verified selected-school catalog course in In progress or Planned. The mandatory safety review must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
-  { name: "add_high_school_course", mutatesData: true, description: "Propose adding one approved course from the student's selected high-school catalog to In progress or Planned. The mandatory safety review must approve it.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
-  { name: "add_smccd_course", mutatesData: true, description: "Propose adding one SMCCD catalog course to In progress or Planned. The mandatory safety review must approve it.", arguments: '{"course_id":"string","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
+  { name: "add_dtech_course", mutatesData: true, description: "Legacy-compatible alias for proposing one verified selected-school catalog course in In progress or Planned. Normal validation and reversible execution still apply.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
+  { name: "add_high_school_course", mutatesData: true, description: "Propose adding one approved course from the student's selected high-school catalog to In progress or Planned. Normal validation and reversible execution still apply.", arguments: '{"course_id":"uuid","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
+  { name: "add_smccd_course", mutatesData: true, description: "Propose adding one college catalog course to In progress or Planned. Normal validation and reversible execution still apply.", arguments: '{"course_id":"string","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}' },
   { name: "add_academic_courses", mutatesData: true, description: "Add one validated mixed batch of selected-school and SMCCD courses across grades 9–12. Use this for complete multi-year plans after catalog, graduation, degree, prerequisite, GPA, and enrollment evidence has selected exact IDs. The whole batch is reversible; every SMCCD row is weighted in the app GPA and high-school credits resolve separately from college units.", arguments: '{"entries":[{"source":"selected_school|smccd","course_id":"string","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year"}],"respect_recommended_limit":boolean}' },
   { name: "move_plan_course", mutatesData: true, description: "Propose moving an editable plan course between Done, In progress, and Planned. Transcript-backed courses cannot move.", arguments: '{"plan_course_id":"uuid","status":"completed|current|planned"}' },
   { name: "move_plan_courses", mutatesData: true, description: "Propose moving an exact set of editable plan courses to Done, In progress, or Planned in one request. Use this for all/every bulk state changes after listing the matching courses.", arguments: '{"plan_course_ids":["uuid"],"status":"completed|current|planned"}' },
@@ -328,9 +329,10 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "clear_academic_plan", mutatesData: true, description: "Clear any requested combination of editable schedule rows, degree bookmarks, and saved GPA assumptions as one coherent action. Transcript-backed evidence is always retained. The complete deleted state is stored as one durable inverse so a single later request can restore the entire operation.", arguments: '{"courses":boolean,"degree_bookmarks":boolean,"gpa_scenario":boolean}' }
 ];
 
-export function assistantToolCatalogPrompt() {
-  return ASSISTANT_TOOL_CATALOG.map((tool) => [
-    `- ${tool.name}${tool.mutatesData ? " (exact proposal; mandatory safety review)" : " (read-only)"}`,
+export function assistantToolCatalogPrompt(userMessage?: string) {
+  const selectedTools = userMessage ? pilotToolNamesForMessage(userMessage) : null;
+  return ASSISTANT_TOOL_CATALOG.filter((tool) => !selectedTools || selectedTools.has(tool.name)).map((tool) => [
+    `- ${tool.name}${tool.mutatesData ? " (exact validated change; independent review when risk requires it)" : " (read-only)"}`,
     `  ${tool.description}`,
     `  Arguments: ${tool.arguments}`
   ].join("\n")).join("\n");
@@ -937,7 +939,7 @@ function generateValidatedSchedule(
       if (terms.some((term) => (term === "fall" || term === "spring")
         && scheduleTermLoad(planWithAccepted, workspace.courses, candidate.grade_level, term) >= effectiveMaxCoursesPerTerm)) continue;
     }
-    const eligibility = dtechCatalogEligibility(course, candidate.grade_level, planWithAccepted, workspace.courses);
+    const eligibility = selectedSchoolCatalogEligibility(course, candidate.grade_level, planWithAccepted, workspace.courses, { schoolSlug: workspace.school.slug });
     const isAcceleratedMathContinuation = effectiveRigor === "advanced"
       && Boolean(preferences.startingMathCourse)
       && eligibility.reason === "outside_grade"
@@ -948,7 +950,7 @@ function generateValidatedSchedule(
       && !(isExplicitStartingMath && eligibility.reason === "outside_grade")
       && !(isExplicitStartingLanguage && eligibility.reason === "outside_grade")
       && !isAcceleratedMathContinuation) continue;
-    const prerequisite = evaluateDtechPlannerPrerequisites(
+    const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(
       course,
       { gradeLevel: candidate.grade_level, term: candidate.term },
       workspace.courses,
@@ -1009,8 +1011,8 @@ function generateValidatedSchedule(
         const terms = term === "full_year" ? ["fall", "spring"] : [term];
         if (terms.some((candidateTerm) => load(candidateTerm as "fall" | "spring") >= effectiveMaxCoursesPerTerm)) continue;
       }
-      if (!dtechCatalogEligibility(course, grade, planWithAccepted, workspace.courses).eligible) continue;
-      const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
+      if (!selectedSchoolCatalogEligibility(course, grade, planWithAccepted, workspace.courses, { schoolSlug: workspace.school.slug }).eligible) continue;
+      const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
       if (prerequisite.result.status === "blocked") continue;
       const addition = {
         course_id: course.id,
@@ -1088,8 +1090,8 @@ function generateValidatedSchedule(
       const term: PlanCourse["term"] = course.term_type === "year" ? "full_year" : fallLoad <= springLoad ? "fall" : "spring";
       const affectedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
       if (effectiveMaxCoursesPerTerm && affectedTerms.some((termName) => (termName === "fall" ? fallLoad : springLoad) >= effectiveMaxCoursesPerTerm)) continue;
-      if (!dtechCatalogEligibility(course, grade, planWithAccepted, workspace.courses).eligible) continue;
-      const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
+      if (!selectedSchoolCatalogEligibility(course, grade, planWithAccepted, workspace.courses, { schoolSlug: workspace.school.slug }).eligible) continue;
+      const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
       if (prerequisite.result.status === "blocked") continue;
       const addition = {
         course_id: course.id,
@@ -1164,8 +1166,8 @@ function generateValidatedSchedule(
         const term: PlanCourse["term"] = course.term_type === "year" ? "full_year" : fallLoad <= springLoad ? "fall" : "spring";
         const affectedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
         if (affectedTerms.some((termName) => (termName === "fall" ? fallLoad : springLoad) >= targetLoad)) continue;
-        if (!dtechCatalogEligibility(course, grade, planWithAccepted, workspace.courses).eligible) continue;
-        const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
+        if (!selectedSchoolCatalogEligibility(course, grade, planWithAccepted, workspace.courses, { schoolSlug: workspace.school.slug }).eligible) continue;
+        const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
         if (prerequisite.result.status === "blocked") continue;
         accepted.push({
           course_id: course.id,
@@ -1227,8 +1229,8 @@ function generateValidatedSchedule(
       const term: PlanCourse["term"] = course.term_type === "year" ? "full_year" : open.fall <= open.spring ? "fall" : "spring";
       const affectedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
       if (affectedTerms.some((termName) => (termName === "fall" ? open.fall : open.spring) >= targetLoad)) continue;
-      if (!dtechCatalogEligibility(course, open.grade, planWithAccepted, workspace.courses).eligible) continue;
-      const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: open.grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
+      if (!selectedSchoolCatalogEligibility(course, open.grade, planWithAccepted, workspace.courses, { schoolSlug: workspace.school.slug }).eligible) continue;
+      const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: open.grade, term }, workspace.courses, planWithAccepted, workspace.plannedSmccdCourses, workspace.equivalencies);
       if (prerequisite.result.status === "blocked") continue;
       accepted.push({
         course_id: course.id,
@@ -1630,8 +1632,8 @@ export async function executeAssistantReadTool(
         return candidate.includes(query) || queryTokens.every((token) => candidate.includes(token));
       });
       for (const course of candidates) {
-        if (!dtechCatalogEligibility(course, targetGrade, workspace.planCourses, workspace.courses).eligible) continue;
-        const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: targetGrade, term: course.term_type === "semester" ? "fall" : "full_year" }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
+        if (!selectedSchoolCatalogEligibility(course, targetGrade, workspace.planCourses, workspace.courses, { schoolSlug: workspace.school.slug }).eligible) continue;
+        const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: targetGrade, term: course.term_type === "semester" ? "fall" : "full_year" }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
         if (prerequisite.result.status === "blocked") continue;
         matches.push({
           source: workspace.school.short_name,
@@ -1737,9 +1739,9 @@ export async function executeAssistantReadTool(
           const improvesOpenRequirement = after.some((item) => openRequirementIds.has(item.requirement.id)
             && item.verifiedProjectedCredits > Number(beforeById.get(item.requirement.id) ?? 0));
           if (!improvesOpenRequirement) continue;
-          const eligibility = dtechCatalogEligibility(course, entry.grade_level, validationRows, workspace.courses);
+          const eligibility = selectedSchoolCatalogEligibility(course, entry.grade_level, validationRows, workspace.courses, { schoolSlug: workspace.school.slug });
           if (!eligibility.eligible) continue;
-          const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: entry.grade_level, term: entry.term }, workspace.courses, validationRows, workspace.plannedSmccdCourses, workspace.equivalencies);
+          const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: entry.grade_level, term: entry.term }, workspace.courses, validationRows, workspace.plannedSmccdCourses, workspace.equivalencies);
           if (prerequisite.result.status === "blocked") continue;
           entries.push(entry);
           validationRows.push(candidateRow);
@@ -1784,7 +1786,7 @@ export async function executeAssistantReadTool(
           .map((course) => ({ course, score: batchCatalogMatchScore(request.query, `${course.course_code ?? ""} ${course.name}`) }))
           .filter((candidate) => candidate.score >= 0)
           .filter(({ course }) => !validationRows.some((row) => row.course_id === course.id))
-          .filter(({ course }) => dtechCatalogEligibility(course, grade, validationRows, workspace.courses).eligible)
+          .filter(({ course }) => selectedSchoolCatalogEligibility(course, grade, validationRows, workspace.courses, { schoolSlug: workspace.school.slug }).eligible)
           .sort((left, right) => right.score - left.score || left.course.name.localeCompare(right.course.name));
         return { request, requestIndex, course: candidates[0]?.course ?? null, smccd: null };
       }
@@ -1850,7 +1852,7 @@ export async function executeAssistantReadTool(
           term: placement.term
         };
         const prerequisite = selectedCourse
-          ? evaluateDtechPlannerPrerequisites(selectedCourse, { gradeLevel: placement.grade_level, term: placement.term }, workspace.courses, validationRows, [...workspace.plannedSmccdCourses, ...smccdCatalog], workspace.equivalencies)
+          ? evaluateSelectedSchoolPlannerPrerequisites(selectedCourse, { gradeLevel: placement.grade_level, term: placement.term }, workspace.courses, validationRows, [...workspace.plannedSmccdCourses, ...smccdCatalog], workspace.equivalencies)
           : evaluateSmccdPlannerPrerequisites(smccdCourse!, { gradeLevel: placement.grade_level, term: placement.term }, smccdCatalog, validationRows, workspace.courses);
         if (prerequisite.result.status === "blocked") {
           blockedReason = `${selectedCourse?.name ?? `${smccdCourse!.course_code} ${smccdCourse!.title}`} has an unmet prerequisite for the requested planning window.`;
@@ -2144,7 +2146,7 @@ export async function executeAssistantReadTool(
     const highSchoolCourse = workspace.courses.find((course) => course.id === args.course_id);
     if (highSchoolCourse) {
       const term = highSchoolCourse.term_type === "year" ? "full_year" : "fall";
-      const evaluation = evaluateDtechPlannerPrerequisites(highSchoolCourse, { gradeLevel, term }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies, `${workspace.school.name} official course catalog`);
+      const evaluation = evaluateSelectedSchoolPlannerPrerequisites(highSchoolCourse, { gradeLevel, term }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies, `${workspace.school.name} official course catalog`);
       return {
         summary: `Read prerequisite evidence for ${highSchoolCourse.name}.`,
         data: { source: workspace.school.name, course: highSchoolCourse.name, official_prerequisites: highSchoolCourse.prerequisites, evaluated_for: { grade_level: gradeLevel, term }, evaluation: evaluation.result }
@@ -2533,9 +2535,9 @@ export async function executeAssistantMutationTool(
     assertPlanningTermExists(args.grade_level, args.term);
     const course = workspace.courses.find((candidate) => candidate.id === args.course_id);
     if (!course) throw new Error(`That ${workspace.school.short_name} catalog course is no longer available.`);
-    const eligibility = dtechCatalogEligibility(course, args.grade_level, workspace.planCourses, workspace.courses);
+    const eligibility = selectedSchoolCatalogEligibility(course, args.grade_level, workspace.planCourses, workspace.courses, { schoolSlug: workspace.school.slug });
     if (!eligibility.eligible) throw new Error(eligibility.reason === "already_in_plan" ? "That course is already in the plan." : eligibility.reason === "outside_grade" ? `That course is not offered in grade ${args.grade_level}.` : "That course is below the math level already demonstrated in the plan.");
-    const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: args.grade_level, term: args.term }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
+    const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: args.grade_level, term: args.term }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
     if (prerequisite.result.status === "blocked") throw new Error("The listed prerequisite is not satisfied for that placement.");
     const mappingVerified = workspace.mappings.some((mapping) => mapping.course_id === course.id && mapping.confidence === "verified");
     const { data, error } = await supabase.from("plan_courses").insert({
@@ -2653,9 +2655,9 @@ export async function executeAssistantMutationTool(
       if (entry.source === "selected_school") {
         const course = workspace.courses.find((candidate) => candidate.id === entry.course_id);
         if (!course) throw new Error("One or more selected-school courses are no longer in the approved catalog.");
-        const eligibility = dtechCatalogEligibility(course, entry.grade_level, validationRows, workspace.courses);
+        const eligibility = selectedSchoolCatalogEligibility(course, entry.grade_level, validationRows, workspace.courses, { schoolSlug: workspace.school.slug });
         if (!eligibility.eligible) throw new Error(`${course.name} cannot be added: ${(eligibility.reason ?? "not eligible").replaceAll("_", " ")}.`);
-        const prerequisite = evaluateDtechPlannerPrerequisites(course, { gradeLevel: entry.grade_level, term: entry.term }, workspace.courses, validationRows, [...workspace.plannedSmccdCourses, ...smccdCatalog], workspace.equivalencies);
+        const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: entry.grade_level, term: entry.term }, workspace.courses, validationRows, [...workspace.plannedSmccdCourses, ...smccdCatalog], workspace.equivalencies);
         if (prerequisite.result.status === "blocked") throw new Error(`${course.name} has an unmet prerequisite for that placement.`);
         row = {
           ...base,
@@ -2841,7 +2843,7 @@ export async function executeAssistantMutationTool(
     if (highSchoolCourse) {
       if (highSchoolCourse.grade_levels.length && !highSchoolCourse.grade_levels.includes(gradeLevel)) throw new Error(`That course is not offered in grade ${gradeLevel}.`);
       if (highSchoolCourse.term_type === "year" && term !== "full_year") throw new Error(`That ${workspace.school.short_name} course is a full-year course.`);
-      const prerequisite = evaluateDtechPlannerPrerequisites(highSchoolCourse, { gradeLevel, term, instanceId: row.id }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies, `${workspace.school.name} official course catalog`);
+      const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(highSchoolCourse, { gradeLevel, term, instanceId: row.id }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies, `${workspace.school.name} official course catalog`);
       if (prerequisite.result.status === "blocked") throw new Error("The listed prerequisite is not satisfied for that placement.");
     }
     if (row.smccd_course_id && (args.grade_level !== undefined || args.term !== undefined)) {

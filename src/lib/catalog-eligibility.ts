@@ -66,13 +66,14 @@ export function highestDemonstratedDtechMathRank(
     .reduce((highest, rank) => Math.max(highest, rank), 0);
 }
 
-export function dtechCatalogEligibility(
+export function selectedSchoolCatalogEligibility(
   course: Course,
   targetGrade: GradeLevel,
   planCourses: readonly PlanCourse[],
-  dtechCourses: readonly Course[]
+  selectedSchoolCourses: readonly Course[],
+  options: { schoolSlug?: string | null } = {}
 ): CatalogEligibility {
-  const courseById = new Map(dtechCourses.map((candidate) => [candidate.id, candidate]));
+  const courseById = new Map(selectedSchoolCourses.map((candidate) => [candidate.id, candidate]));
   const candidateKeys = dtechCourseKeys(course);
   const alreadyInPlan = planCourses.some((row) =>
     row.course_id === course.id || intersects(candidateKeys, planDtechKeys(row, courseById))
@@ -80,13 +81,18 @@ export function dtechCatalogEligibility(
   if (alreadyInPlan) return { eligible: false, reason: "already_in_plan" };
   if (course.grade_levels.length > 0 && !course.grade_levels.includes(targetGrade)) return { eligible: false, reason: "outside_grade" };
 
-  const candidateMathRank = course.subject === "Mathematics" ? dtechMathRank(course.name) : null;
-  const demonstratedMathRank = highestDemonstratedDtechMathRank(planCourses, dtechCourses);
-  if (candidateMathRank !== null && candidateMathRank <= demonstratedMathRank) {
-    return { eligible: false, reason: "below_math_level" };
+  if (options.schoolSlug === "design-tech-high-school") {
+    const candidateMathRank = course.subject === "Mathematics" ? dtechMathRank(course.name) : null;
+    const demonstratedMathRank = highestDemonstratedDtechMathRank(planCourses, selectedSchoolCourses);
+    if (candidateMathRank !== null && candidateMathRank <= demonstratedMathRank) {
+      return { eligible: false, reason: "below_math_level" };
+    }
   }
   return { eligible: true };
 }
+
+/** @deprecated Use selectedSchoolCatalogEligibility with an explicit school slug. */
+export const dtechCatalogEligibility = selectedSchoolCatalogEligibility;
 
 export interface SmccdPlanCourseIndex {
   courseIds: ReadonlySet<string>;

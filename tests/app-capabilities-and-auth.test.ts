@@ -1,0 +1,24 @@
+import { describe, expect, it } from "vitest";
+import { mutationReviewMode, pilotToolNamesForMessage } from "@/lib/app-capabilities";
+import { safeAuthRedirect } from "@/lib/auth";
+
+describe("application capability and authentication boundaries", () => {
+  it("routes complete academic work while preserving mutation review boundaries", () => {
+    const tools = pilotToolNamesForMessage("Build a four-year schedule that completes graduation and my associate degree");
+    expect(tools).toContain("get_course_schedule_options");
+    expect(tools).toContain("get_degree_progress");
+    expect(tools).toContain("get_enrollment_constraints");
+    expect(tools).toContain("add_course_schedule");
+    expect(tools).not.toContain("update_student_settings");
+    expect(mutationReviewMode("update_gpa_scenario")).toBe("deterministic");
+    expect(mutationReviewMode("add_course_schedule", { replace_existing: false })).toBe("deterministic");
+    expect(mutationReviewMode("add_course_schedule", { replace_existing: true })).toBe("model");
+    expect(mutationReviewMode("remove_plan_courses")).toBe("model");
+  });
+
+  it("accepts only same-origin relative post-auth destinations", () => {
+    expect(safeAuthRedirect("/app?view=courses")).toBe("/app?view=courses");
+    expect(safeAuthRedirect("https://example.com/steal")).toBe("/app");
+    expect(safeAuthRedirect("//example.com/steal")).toBe("/app");
+  });
+});

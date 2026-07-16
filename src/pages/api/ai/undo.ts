@@ -2,6 +2,7 @@ import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { undoAssistantToolCall } from "@/server/assistant-undo";
+import { affectedWorkspaceDomains } from "@/lib/app-capabilities";
 
 export const prerender = false;
 
@@ -19,7 +20,7 @@ export const POST: APIRoute = async ({ request }) => {
       userId: auth.user.id,
       toolCallId: parsed.data.toolCallId
     });
-    return new Response(JSON.stringify({ undone: true, summary: result.summary }), { headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ undone: true, summary: result.summary, affected_domains: affectedWorkspaceDomains(result.toolName) }), { headers: { "content-type": "application/json" } });
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "The change could not be undone.", 400);
   }

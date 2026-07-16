@@ -14,7 +14,6 @@ import { WarningIcon as Warning } from "@phosphor-icons/react/dist/csr/Warning";
 import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import type { Icon } from "@phosphor-icons/react";
 import type { Session } from "@supabase/supabase-js";
-import BrandMark from "@/components/BrandMark";
 import InstitutionMark from "@/components/InstitutionMark";
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import {
@@ -24,7 +23,6 @@ import {
   useMemo,
   Suspense,
   useState,
-  type ReactNode,
   type SyntheticEvent
 } from "react";
 import {
@@ -83,14 +81,20 @@ import type {
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
-import { evaluateDtechPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
-import { dtechCatalogEligibility } from "@/lib/catalog-eligibility";
+import { evaluateSelectedSchoolPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
+import { selectedSchoolCatalogEligibility } from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
+import type { WorkspaceDomain } from "@/lib/app-capabilities";
+import { loadDegreeWorkspaceSlice, loadEnrollmentWorkspaceSlice, loadPlanWorkspaceSlice, loadSettingsWorkspaceSlice } from "@/lib/workspace-refresh";
+import { applyPlanCourseUpdates, commitTranscriptImport } from "@/lib/workspace-commands";
 import { transcriptMimeType } from "@/lib/transcript-file";
 import AppChrome from "@/components/AppChrome";
 import PilotErrorBoundary from "@/components/PilotErrorBoundary";
 import SettingsDialog from "@/components/SettingsDialog";
+import SchoolSupportNotice from "@/components/SchoolSupportNotice";
+import { LoadingView, LoadingWorkspace, PageHeader } from "@/components/workspace/WorkspaceScaffold";
+import type { SchoolSupportReadiness } from "@/lib/workspace-bootstrap";
 
 const loadOnboardingFlow = () => import("@/components/OnboardingFlow");
 const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace");
@@ -111,6 +115,12 @@ const TranscriptAiRunDetails = lazy(() => import("@/components/TranscriptAiRunDe
 const TranscriptCourseEditor = lazy(() => import("@/components/TranscriptCourseEditor"));
 const StudentSettingsPanel = lazy(() => import("@/components/StudentSettingsPanel"));
 const PrerequisiteReadout = lazy(() => import("@/components/PrerequisiteReadout"));
+
+function preloadWorkspaceView(view: WorkspaceViewId) {
+  if (view === "courses") void Promise.all([import("@/components/CourseKanban"), import("@/components/CourseCatalogBrowser"), import("@/components/SmccdPlanner")]);
+  if (view === "graduation") void Promise.all([loadGraduationWorkspace(), loadSmccdPlanner()]);
+  if (view === "gpa") void loadGpaPlanningLab();
+}
 
 type ViewId =
   | "dashboard"
@@ -179,44 +189,6 @@ function formatGpa(value: number | null) {
   return value === null ? "Not available" : value.toFixed(2);
 }
 
-function PageHeader({
-  title,
-  description,
-  actions
-}: {
-  title: string;
-  description?: string;
-  actions?: ReactNode;
-}) {
-  return (
-    <header className="page-header">
-      <div>
-        <h1>{title}</h1>
-        {description && <p>{description}</p>}
-      </div>
-      {actions && <div className="page-actions">{actions}</div>}
-    </header>
-  );
-}
-
-function LoadingWorkspace() {
-  return (
-    <main className="workspace-loading" aria-live="polite">
-      <div className="loading-brand"><BrandMark /> Pilot Princess</div>
-      <div className="skeleton-line wide" />
-      <div className="skeleton-line" />
-      <div className="skeleton-grid">
-        <div /><div /><div />
-      </div>
-      <span>Preparing your planning workspace</span>
-    </main>
-  );
-}
-
-function LoadingView() {
-  return <div className="workspace-view-loading" role="status" aria-label="Loading section"><span /><span /><span /></div>;
-}
-
 function mergeRowsById<T extends { id: string }>(current: T[], incoming: T[]) {
   const incomingById = new Map(incoming.map((row) => [row.id, row]));
   const currentIds = new Set(current.map((row) => row.id));
@@ -228,7 +200,7 @@ function mergeRowsById<T extends { id: string }>(current: T[], incoming: T[]) {
 
 export default function PlanningWorkspace() {
   const configured = hasPublicEnv();
-  const supabase = useMemo(() => (configured ? getBrowserSupabase() : null), [configured]);
+  const supabase = useMemo(() => (configured && typeof window !== "undefined" ? getBrowserSupabase() : null), [configured]);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [fatalError, setFatalError] = useState<string | null>(null);
@@ -257,6 +229,7 @@ export default function PlanningWorkspace() {
   const [dtechDraft, setDtechDraft] = useState<{ gradeLevel: GradeLevel; term: PlanCourse["term"] }>({ gradeLevel: 9, term: "full_year" });
 
   const [school, setSchool] = useState<School | null>(null);
+  const [schoolSupport, setSchoolSupport] = useState<SchoolSupportReadiness>({ level: "discovery", catalog_supported: false, diploma_supported: false, planning_supported: false, last_source_update: null });
   const [settings, setSettings] = useState<StudentSettings | null>(null);
   const [sources, setSources] = useState<OfficialSource[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -318,7 +291,7 @@ export default function PlanningWorkspace() {
   const catalogAvailability = useMemo(() => {
     const eligibilityById = new Map(courses.map((course) => [
       course.id,
-      dtechCatalogEligibility(course, activeCatalogGrade, planCourses, courses)
+      selectedSchoolCatalogEligibility(course, activeCatalogGrade, planCourses, courses, { schoolSlug: school?.slug })
     ]));
     const structurallyEligible = courses.filter((course) => eligibilityById.get(course.id)?.eligible);
     const hiddenCounts = [...eligibilityById.values()].reduce((counts, eligibility) => {
@@ -330,7 +303,7 @@ export default function PlanningWorkspace() {
       hiddenTotal: hiddenCounts.already_in_plan + hiddenCounts.outside_grade + hiddenCounts.below_math_level,
       subjects: [...new Set(courses.map((course) => course.subject))]
     };
-  }, [activeCatalogGrade, courses, planCourses]);
+  }, [activeCatalogGrade, courses, planCourses, school?.slug]);
   const filteredCourses = useMemo(() => {
     const query = catalogSearch.trim().toLowerCase();
     return catalogAvailability.eligibleCourses.filter((course) => (
@@ -346,7 +319,7 @@ export default function PlanningWorkspace() {
   }, [catalogGrade, settings?.grade_level]);
   const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
   const selectedDtechEvaluation = useMemo(() => selectedDtechCourse
-    ? evaluateDtechPlannerPrerequisites(
+    ? evaluateSelectedSchoolPlannerPrerequisites(
         selectedDtechCourse,
         dtechDraft,
         courses,
@@ -356,7 +329,7 @@ export default function PlanningWorkspace() {
       )
     : null, [courses, dtechDraft, equivalencies, planCourses, plannedSmccdCourses, selectedDtechCourse]);
   const dtechCatalogResults = useMemo(() => filteredCourses.map((course) => {
-    const evaluation = evaluateDtechPlannerPrerequisites(
+    const evaluation = evaluateSelectedSchoolPlannerPrerequisites(
       course,
       defaultDtechPlacement(course, activeCatalogGrade),
       courses,
@@ -394,9 +367,16 @@ export default function PlanningWorkspace() {
         return;
       }
       setSession(sessionData.session);
-      const { data: bootstrapData, error: bootstrapError } = await supabase.rpc("get_workspace_bootstrap");
-      if (bootstrapError) throw bootstrapError;
-      const bootstrap = normalizeWorkspaceBootstrap(bootstrapData);
+      let snapshotResult = await supabase.rpc("get_workspace_snapshot_v1");
+      if (snapshotResult.error) throw snapshotResult.error;
+      let bootstrap = normalizeWorkspaceBootstrap(snapshotResult.data);
+      if (!bootstrap.settings || !bootstrap.plan || !bootstrap.school || !bootstrap.active_version) {
+        const provision = await supabase.rpc("ensure_current_user_workspace_v1");
+        if (provision.error) throw provision.error;
+        snapshotResult = await supabase.rpc("get_workspace_snapshot_v1");
+        if (snapshotResult.error) throw snapshotResult.error;
+        bootstrap = normalizeWorkspaceBootstrap(snapshotResult.data);
+      }
       const userId = sessionData.session.user.id;
       const loadedPlan = bootstrap.plan;
       const rawSettings = bootstrap.settings;
@@ -418,6 +398,7 @@ export default function PlanningWorkspace() {
       document.documentElement.dataset.theme = loadedTheme;
       localStorage.setItem("pilot-princess-theme", loadedTheme);
       setSchool(bootstrap.school);
+      setSchoolSupport(bootstrap.school_support);
       setSettings(loadedSettings);
       const loadedSources = bootstrap.sources;
       setSources(loadedSources);
@@ -483,8 +464,48 @@ export default function PlanningWorkspace() {
 
   const refreshWorkspaceSilently = useCallback(() => loadWorkspace({ silent: true }), [loadWorkspace]);
 
-  async function refreshAfterAssistantChange() {
-    await refreshWorkspaceSilently();
+  async function refreshAfterAssistantChange(domains: WorkspaceDomain[] = []) {
+    if (!supabase || !session || !activeVersion) return;
+    const requested = new Set(domains);
+    if (requested.size === 0 || requested.has("institution") || requested.has("transcript")) {
+      await refreshWorkspaceSilently();
+      return;
+    }
+    try {
+      const tasks: Promise<void>[] = [];
+      if (["plan", "graduation", "gpa", "college"].some((domain) => requested.has(domain as WorkspaceDomain))) {
+        tasks.push(loadPlanWorkspaceSlice(supabase, session.user.id, activeVersion.id).then((slice) => {
+          setPlanCourses(slice.planCourses);
+          setPlannedSmccdCourses(slice.plannedCollegeCourses);
+          setGpaScenarioChoices(slice.gpaChoices as GpaScenarioChoice[]);
+        }));
+      }
+      if (["identity", "settings", "pilot"].some((domain) => requested.has(domain as WorkspaceDomain))) {
+        tasks.push(loadSettingsWorkspaceSlice(supabase, session.user.id).then((nextSettings) => {
+          setSettings(nextSettings);
+          if (nextSettings.ui_theme && nextSettings.ui_theme !== theme) applyTheme(nextSettings.ui_theme);
+        }));
+      }
+      if (requested.has("degree")) {
+        tasks.push(loadDegreeWorkspaceSlice(supabase, session.user.id).then((slice) => {
+          setDegreeGoals(slice.goals);
+          setDegreePrograms(slice.programs);
+          setDegreeRequirements(slice.requirements);
+          setDegreeRequirementCourses(slice.requirementCourses);
+        }));
+      }
+      if (requested.has("enrollment")) {
+        const providerCode = enrollmentPreference?.provider_code ?? "SMCCD";
+        tasks.push(loadEnrollmentWorkspaceSlice(supabase, session.user.id, providerCode).then((preference) => {
+          if (preference) setEnrollmentPreference({ ...preference, limit_mode: "recommended", custom_unit_limit: null });
+        }));
+      }
+      await Promise.all(tasks);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "The changed workspace area could not refresh.";
+      setToastKind("error");
+      setToast(`The change was applied, but the workspace could not refresh: ${message}`);
+    }
   }
 
   useEffect(() => {
@@ -707,7 +728,7 @@ export default function PlanningWorkspace() {
       return;
     }
     const grade = placement.gradeLevel;
-    const eligibility = dtechCatalogEligibility(course, grade, planCourses, courses);
+    const eligibility = selectedSchoolCatalogEligibility(course, grade, planCourses, courses, { schoolSlug: school?.slug });
     if (!eligibility.eligible) {
       notify(eligibility.reason === "outside_grade"
         ? `${course.name} is not offered for grade ${grade}.`
@@ -716,7 +737,7 @@ export default function PlanningWorkspace() {
           : "That course is already represented in the current plan.");
       return;
     }
-    const evaluation = evaluateDtechPlannerPrerequisites(course, placement, courses, planCourses, plannedSmccdCourses, equivalencies);
+    const evaluation = evaluateSelectedSchoolPlannerPrerequisites(course, placement, courses, planCourses, plannedSmccdCourses, equivalencies);
     if (evaluation.result.status === "blocked") {
       notify("Complete the listed prerequisite before adding this course in that year.");
       return;
@@ -772,7 +793,7 @@ export default function PlanningWorkspace() {
       return false;
     }
     if (dtechCourse) {
-      const evaluation = evaluateDtechPlannerPrerequisites(
+      const evaluation = evaluateSelectedSchoolPlannerPrerequisites(
         dtechCourse,
         { gradeLevel: placement.gradeLevel, term: placement.term, instanceId: row.id },
         courses,
@@ -831,31 +852,7 @@ export default function PlanningWorkspace() {
 
     setPlanCourses(nextRows);
     void runAction(`Moving ${courseDisplayName(row, courseMap)}`, async () => {
-      const results = await Promise.all(changedRows.map((candidate) => supabase.from("plan_courses").update({
-        grade_level: candidate.grade_level,
-        school_year: candidate.school_year,
-        term: candidate.term,
-        status: candidate.status,
-        sort_order: candidate.sort_order,
-        letter_grade: candidate.letter_grade,
-        user_edited: candidate.user_edited
-      }).eq("id", candidate.id)));
-      const error = results.find((result) => result.error)?.error;
-      if (error) {
-        await Promise.all(changedRows.flatMap((candidate) => {
-          const previous = previousById.get(candidate.id);
-          return previous ? [supabase.from("plan_courses").update({
-            grade_level: previous.grade_level,
-            school_year: previous.school_year,
-            term: previous.term,
-            status: previous.status,
-            sort_order: previous.sort_order,
-            letter_grade: previous.letter_grade,
-            user_edited: previous.user_edited
-          }).eq("id", previous.id)] : [];
-        }));
-        throw error;
-      }
+      await applyPlanCourseUpdates(supabase, changedRows);
       void logEvent("plan_edited", {
         action: "move_course",
         plan_course_id: row.id,
@@ -876,17 +873,7 @@ export default function PlanningWorkspace() {
           const previous = previousById.get(candidate.id);
           return previous ? [previous] : [];
         });
-        const results = await Promise.all(restoreRows.map((candidate) => supabase.from("plan_courses").update({
-          grade_level: candidate.grade_level,
-          school_year: candidate.school_year,
-          term: candidate.term,
-          status: candidate.status,
-          sort_order: candidate.sort_order,
-          letter_grade: candidate.letter_grade,
-          user_edited: candidate.user_edited
-        }).eq("id", candidate.id)));
-        const error = results.find((result) => result.error)?.error;
-        if (error) throw error;
+        await applyPlanCourseUpdates(supabase, restoreRows);
         const restoreById = new Map(restoreRows.map((candidate) => [candidate.id, candidate]));
         setPlanCourses((current) => current.map((candidate) => restoreById.get(candidate.id) ?? candidate));
       });
@@ -911,15 +898,7 @@ export default function PlanningWorkspace() {
 
     setPlanCourses(nextRows);
     void runAction("Sorting courses", async () => {
-      const results = await Promise.all(changedRows.map((row) => supabase.from("plan_courses").update({ sort_order: row.sort_order }).eq("id", row.id)));
-      const error = results.find((result) => result.error)?.error;
-      if (error) {
-        await Promise.all(changedRows.flatMap((row) => {
-          const previous = previousById.get(row.id);
-          return previous ? [supabase.from("plan_courses").update({ sort_order: previous.sort_order }).eq("id", previous.id)] : [];
-        }));
-        throw error;
-      }
+      await applyPlanCourseUpdates(supabase, changedRows);
       void logEvent("plan_edited", { action: "sort_courses", order: "college_first_pass_fail_last" });
       return true;
     }).then((succeeded) => {
@@ -929,12 +908,11 @@ export default function PlanningWorkspace() {
       }
       notifyUndo("Courses sorted with college courses first and pass/fail courses last.", async () => {
         const changedIds = new Set(changedRows.map((row) => row.id));
-        const results = await Promise.all(changedRows.flatMap((row) => {
+        const restoreRows = changedRows.flatMap((row) => {
           const previous = previousById.get(row.id);
-          return previous ? [supabase.from("plan_courses").update({ sort_order: previous.sort_order }).eq("id", previous.id)] : [];
-        }));
-        const error = results.find((result) => result.error)?.error;
-        if (error) throw error;
+          return previous ? [previous] : [];
+        });
+        await applyPlanCourseUpdates(supabase, restoreRows);
         setPlanCourses((current) => current.map((row) => changedIds.has(row.id) ? previousById.get(row.id) ?? row : row));
       });
     });
@@ -1118,21 +1096,6 @@ export default function PlanningWorkspace() {
       "Importing transcript courses",
       async () => {
         const ids = prepared.map(({ item }) => item.id);
-        const { error: approveError } = await supabase
-          .from("catalog_review_items")
-          .update({ status: "approved" })
-          .in("id", ids);
-        if (approveError) throw approveError;
-
-        for (const { item, payload } of prepared) {
-          if (!reviewDrafts[item.id]) continue;
-          const { error: correctionError } = await supabase
-            .from("catalog_review_items")
-            .update({ corrected_payload: payload })
-            .eq("id", item.id);
-          if (correctionError) throw correctionError;
-        }
-
         const claimedPlanCourseIds = new Set<string>();
         let nextSortOrder = planCourses.reduce((maximum, row) => Math.max(maximum, row.sort_order), -1) + 1;
         const planUpserts: Array<Record<string, unknown>> = [];
@@ -1148,17 +1111,18 @@ export default function PlanningWorkspace() {
             sort_order: existing?.sort_order ?? nextSortOrder++
           });
         }
-        let savedPlanRows: PlanCourse[] = [];
-        if (planUpserts.length > 0) {
-          const { data: upsertedRows, error: upsertError } = await supabase.from("plan_courses").upsert(planUpserts).select("*");
-          if (upsertError) throw upsertError;
-          savedPlanRows = (upsertedRows ?? []) as unknown as PlanCourse[];
-        }
+        const committed = await commitTranscriptImport(supabase, {
+          planVersionId: activeVersion.id,
+          approvedIds: ids,
+          corrections: prepared.filter(({ item }) => Boolean(reviewDrafts[item.id])).map(({ item, payload }) => ({ id: item.id, payload })),
+          planRows: planUpserts
+        });
+        const savedPlanRows = committed.rows;
         await logEvent("transcript_courses_imported", { review_item_ids: ids, course_count: prepared.length });
         setPlanCourses((current) => mergeRowsById(current, savedPlanRows));
         setReviewItems((current) => current.map((item) => {
           const preparedItem = prepared.find((candidate) => candidate.item.id === item.id);
-          return preparedItem ? { ...item, corrected_payload: preparedItem.payload, status: "approved" } : item;
+          return preparedItem ? { ...item, corrected_payload: reviewDrafts[item.id] ? preparedItem.payload : item.corrected_payload, status: "approved" } : item;
         }));
         const smccdIds = [...new Set(savedPlanRows.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
         if (smccdIds.length > 0) {
@@ -1259,7 +1223,7 @@ export default function PlanningWorkspace() {
   }
 
   function renderDashboard() {
-    if (!settings || !supabase || !session) return null;
+    if (!settings || !supabase || !session || !school) return null;
     const requirementSnapshot = overviewProgress.map((item) => {
       const applied = appliedCreditBreakdown({ required: Number(item.requirement.credits_required), completed: item.completedCredits, current: item.currentCredits, planned: item.plannedCredits });
       return { item, applied };
@@ -1311,6 +1275,7 @@ export default function PlanningWorkspace() {
     return (
       <div className="dashboard-page page-frame">
         <PageHeader title={settings.preferred_name ? `Good to see you, ${settings.preferred_name}` : "Planning overview"} />
+        <SchoolSupportNotice support={schoolSupport} schoolName={school.name} onOpenSettings={() => openSettings("general")} />
         <OverviewPath
           data={overviewData}
           degreeProgress={<DashboardDegreeProgress
@@ -1667,6 +1632,7 @@ export default function PlanningWorkspace() {
         assistantOpen={assistantOpen}
         mobileNavOpen={mobileNavOpen}
         onNavigate={navigate}
+        onPreload={preloadWorkspaceView}
         onSettings={() => openSettings("general")}
         onMobileNavChange={setMobileNavOpen}
         onAssistantToggle={() => settings.ai_enabled ? setAssistantOpen((current) => !current) : openSettings("pilot")}

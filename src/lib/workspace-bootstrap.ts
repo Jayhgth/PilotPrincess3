@@ -33,10 +33,19 @@ interface StoredGpaScenarioChoice {
   expected_grade: string | null;
 }
 
+export interface SchoolSupportReadiness {
+  level: "complete" | "partial" | "discovery";
+  catalog_supported: boolean;
+  diploma_supported: boolean;
+  planning_supported: boolean;
+  last_source_update: string | null;
+}
+
 export interface WorkspaceBootstrap {
   settings: StudentSettings | null;
   plan: FourYearPlan | null;
   school: School | null;
+  school_support: SchoolSupportReadiness;
   active_version: PlanVersion | null;
   sources: OfficialSource[];
   courses: Course[];
@@ -106,6 +115,9 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     settings: snapshot.settings ?? null,
     plan: snapshot.plan ?? null,
     school: snapshot.school ?? null,
+    school_support: snapshot.school_support && typeof snapshot.school_support === "object"
+      ? snapshot.school_support
+      : { level: "discovery", catalog_supported: false, diploma_supported: false, planning_supported: false, last_source_update: null },
     active_version: snapshot.active_version ?? null,
     enrollment_preference: snapshot.enrollment_preference ?? null,
     college_district_preference: snapshot.college_district_preference ?? null,

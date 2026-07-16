@@ -38,6 +38,8 @@ import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexCo
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
 import { transcriptMimeType } from "@/lib/transcript-file";
+import { commitTranscriptImport } from "@/lib/workspace-commands";
+import { collegeProviderAdapter } from "@/lib/college-provider-adapters";
 
 type OnboardingStage = "student" | "assistant" | "transcript";
 
@@ -83,7 +85,19 @@ function courseTitle(item: CatalogReviewItem) {
   return payload.matched_course_name || payload.course_name || "Transcript course";
 }
 
-type SchoolSearchResult = Pick<School, "id" | "cds_code" | "name" | "district_name" | "county_name" | "governance_type" | "city" | "postal_code" | "low_grade" | "high_grade" | "website_url">;
+type SchoolSearchResult = Pick<School, "id" | "cds_code" | "name" | "district_name" | "county_name" | "governance_type" | "city" | "postal_code" | "low_grade" | "high_grade" | "website_url"> & {
+  support_level?: "complete" | "partial" | "discovery";
+  catalog_supported?: boolean;
+  diploma_supported?: boolean;
+  planning_supported?: boolean;
+};
+
+function schoolSupportLabel(school: SchoolSearchResult) {
+  if (!school.support_level) return null;
+  if (school.support_level === "complete") return "Full planning support";
+  if (school.support_level === "partial") return "Partial planning support";
+  return "School discovery only";
+}
 
 interface NearbyDistrictResult {
   district_code: string;
@@ -176,6 +190,7 @@ export default function OnboardingFlow({
   });
   const academicTranscriptItems = transcriptItems.filter((item) => !intersessionTranscriptItems.includes(item));
   const selectedDistrict = nearbyDistricts.find((district) => district.district_code === selectedDistrictCode) ?? null;
+  const selectedCollegeSupport = collegeProviderAdapter(selectedDistrictCode).capabilities;
 
   useEffect(() => {
     if (stage !== "student") return;
@@ -436,20 +451,6 @@ export default function OnboardingFlow({
     try {
       const selectedIds = [...selectedTranscriptIds];
       const rejectedIds = transcriptItems.filter((item) => !selectedTranscriptIds.has(item.id)).map((item) => item.id);
-      if (selectedIds.length > 0) {
-        const { error: approveError } = await supabase
-          .from("catalog_review_items")
-          .update({ status: "approved" })
-          .in("id", selectedIds);
-        if (approveError) throw approveError;
-      }
-      if (rejectedIds.length > 0) {
-        const { error: rejectError } = await supabase
-          .from("catalog_review_items")
-          .update({ status: "rejected" })
-          .in("id", rejectedIds);
-        if (rejectError) throw rejectError;
-      }
 
       const { data: persistedPlanData, error: persistedPlanError } = await supabase
         .from("plan_courses")
@@ -477,10 +478,12 @@ export default function OnboardingFlow({
           sort_order: existing?.sort_order ?? nextSortOrder++
         };
       });
-      if (candidates.length > 0) {
-        const { error: importError } = await supabase.from("plan_courses").upsert(candidates);
-        if (importError) throw importError;
-      }
+      await commitTranscriptImport(supabase, {
+        planVersionId: activeVersion.id,
+        approvedIds: selectedIds,
+        rejectedIds,
+        planRows: candidates
+      });
 
       const completedSettings: StudentSettings = {
         ...applyOnboardingPlanningDefaults(settings, currentGrade),
@@ -565,10 +568,10 @@ export default function OnboardingFlow({
               <div className="form-field onboarding-school-field full">
                 <label htmlFor={selectedSchool ? undefined : "onboarding-school-search"}>California high school</label>
                 {!selectedSchool && <input id="onboarding-school-search" aria-label="Search California high schools" autoComplete="off" value={schoolQuery} onChange={(event) => { setSchoolQuery(event.target.value); setSelectedSchool(null); setNearbyDistricts([]); setSelectedDistrictCode(null); setDistrictSelectionTouched(false); setDistrictSelectionMethod("suggested"); }} placeholder="Search by school, district, city, ZIP, or CDS code" />}
-                {schoolQuery.trim().length >= 2 && schoolResults.length > 0 && !selectedSchool && <div className="onboarding-school-results" role="listbox" aria-label="California high school results">{schoolResults.map((result) => <button type="button" role="option" aria-selected={false} key={result.id} onClick={() => { setSelectedSchool(result); setSchoolQuery(result.name); setNearbyDistricts([]); setSelectedDistrictCode(null); setDistrictSelectionTouched(false); setDistrictSelectionMethod("suggested"); setError(null); }}><InstitutionIdentityMark name={result.name} websiteUrl={result.website_url} decorative /><span><strong>{result.name}</strong><small>{[result.district_name, result.city, result.governance_type === "charter" ? "Charter" : null].filter(Boolean).join(" · ")}</small></span></button>)}</div>}
-                {selectedSchool && <div className="onboarding-selected-school"><InstitutionIdentityMark name={selectedSchool.name} websiteUrl={selectedSchool.website_url} decorative /><span><strong>{selectedSchool.name}</strong><small>{[selectedSchool.district_name, selectedSchool.city].filter(Boolean).join(" · ")}</small></span><button className="quiet-button small" type="button" onClick={() => { setSelectedSchool(null); setSchoolQuery(""); setSchoolResults([]); setNearbyDistricts([]); setSelectedDistrictCode(null); }}>Change</button></div>}
+                {schoolQuery.trim().length >= 2 && schoolResults.length > 0 && !selectedSchool && <div className="onboarding-school-results" role="listbox" aria-label="California high school results">{schoolResults.map((result) => <button type="button" role="option" aria-selected={false} key={result.id} onClick={() => { setSelectedSchool(result); setSchoolQuery(result.name); setNearbyDistricts([]); setSelectedDistrictCode(null); setDistrictSelectionTouched(false); setDistrictSelectionMethod("suggested"); setError(null); }}><InstitutionIdentityMark name={result.name} websiteUrl={result.website_url} decorative /><span><strong>{result.name}</strong><small>{[result.district_name, result.city, result.governance_type === "charter" ? "Charter" : null].filter(Boolean).join(" · ")}</small>{schoolSupportLabel(result) && <small>{schoolSupportLabel(result)}</small>}</span></button>)}</div>}
+                {selectedSchool && <div className="onboarding-selected-school"><InstitutionIdentityMark name={selectedSchool.name} websiteUrl={selectedSchool.website_url} decorative /><span><strong>{selectedSchool.name}</strong><small>{[selectedSchool.district_name, selectedSchool.city].filter(Boolean).join(" · ")}</small>{schoolSupportLabel(selectedSchool) && <small>{schoolSupportLabel(selectedSchool)}</small>}</span><button className="quiet-button small" type="button" onClick={() => { setSelectedSchool(null); setSchoolQuery(""); setSchoolResults([]); setNearbyDistricts([]); setSelectedDistrictCode(null); }}>Change</button></div>}
               </div>
-              {selectedSchool && nearbyDistricts.length > 0 && <div className="onboarding-district-field full"><label htmlFor="onboarding-college-district">Community-college district</label><div><select id="onboarding-college-district" value={selectedDistrictCode ?? ""} onChange={(event) => { setSelectedDistrictCode(event.target.value); setDistrictSelectionTouched(true); setDistrictSelectionMethod("student"); }}>{nearbyDistricts.map((district) => <option key={district.district_code} value={district.district_code}>{district.district_name}{district.is_recommended ? " — recommended" : district.nearest_distance_miles != null ? ` — ${Number(district.nearest_distance_miles).toFixed(1)} mi` : ""}</option>)}</select><p>{selectedDistrict ? `${selectedDistrict.providers.map((provider) => provider.name).join(" · ")}. ` : ""}Recommended from the school’s public address; change it later in Settings.</p></div></div>}
+              {selectedSchool && nearbyDistricts.length > 0 && <div className="onboarding-district-field full"><label htmlFor="onboarding-college-district">Community-college district</label><div><select id="onboarding-college-district" value={selectedDistrictCode ?? ""} onChange={(event) => { setSelectedDistrictCode(event.target.value); setDistrictSelectionTouched(true); setDistrictSelectionMethod("student"); }}>{nearbyDistricts.map((district) => <option key={district.district_code} value={district.district_code}>{district.district_name}{district.is_recommended ? " — recommended" : district.nearest_distance_miles != null ? ` — ${Number(district.nearest_distance_miles).toFixed(1)} mi` : ""}</option>)}</select><p>{selectedDistrict ? `${selectedDistrict.providers.map((provider) => provider.name).join(" · ")}. ` : ""}{selectedCollegeSupport.catalog ? "Course, degree, GE, and enrollment planning are supported." : "College identity is available; academic catalogs and degree rules are not verified yet."} Recommended from the school’s public address; change it later in Settings.</p></div></div>}
               <label className="form-field"><span>Preferred name</span><input value={settings.preferred_name} onChange={(event) => setSettings({ ...settings, preferred_name: event.target.value })} /></label>
               <label className="form-field"><span>Age</span><input type="number" min={12} max={22} value={settings.age ?? ""} onChange={(event) => setSettings({ ...settings, age: asNumber(event.target.value) })} /></label>
               <label className="form-field"><span>Current grade</span><select value={settings.grade_level ?? ""} onChange={(event) => changeGrade(Number(event.target.value) as GradeLevel)}><option value="">Select grade</option>{GRADE_LEVELS.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>

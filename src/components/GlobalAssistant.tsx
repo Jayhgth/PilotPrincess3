@@ -33,6 +33,7 @@ import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration 
 import { asAssistantRecord, assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
+import type { WorkspaceDomain } from "@/lib/app-capabilities";
 import styles from "./GlobalAssistant.module.css";
 
 interface GlobalAssistantProps {
@@ -45,7 +46,7 @@ interface GlobalAssistantProps {
   };
   onPreferencesChanged: () => void | Promise<void>;
   onClose: () => void;
-  onDataChanged: () => void | Promise<void>;
+  onDataChanged: (domains?: WorkspaceDomain[]) => void | Promise<void>;
 }
 
 interface ConversationPayload {
@@ -454,6 +455,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
 
   const reviewToolCalls = useCallback(async (toolCallIds: string[]) => {
     let changed = false;
+    const affectedDomains = new Set<WorkspaceDomain>();
     try {
       for (const toolCallId of toolCallIds) {
         const reviewResponse = await authorizedFetch("/api/ai/tool", {
@@ -461,7 +463,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ toolCallId })
         });
-        const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean; toolCall?: AiToolCall };
+        const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean; toolCall?: AiToolCall; result?: { affected_domains?: WorkspaceDomain[] } };
         if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "The safety review could not complete.");
         if (reviewPayload.toolCall) {
           setData((current) => ({
@@ -470,9 +472,10 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
           }));
         }
         changed ||= reviewPayload.applied === true;
+        if (reviewPayload.applied) reviewPayload.result?.affected_domains?.forEach((domain) => affectedDomains.add(domain));
       }
     } finally {
-      if (changed) await onDataChanged();
+      if (changed) await onDataChanged([...affectedDomains]);
     }
     return changed;
   }, [authorizedFetch, onDataChanged]);
@@ -931,10 +934,10 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
     setError(null);
     try {
       const response = await authorizedFetch("/api/ai/undo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ toolCallId }) });
-      const payload = await response.json() as { error?: string };
+      const payload = await response.json() as { error?: string; affected_domains?: WorkspaceDomain[] };
       if (!response.ok) throw new Error(payload.error ?? "The change could not be undone.");
       await loadConversation(message.conversation_id);
-      await onDataChanged();
+      await onDataChanged(payload.affected_domains);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The change could not be undone.");
       await loadConversation(message.conversation_id);
@@ -1058,7 +1061,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
               </div>
             </div>
           </div>
-          {(running || reviewingChange || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : reviewingChange ? "Reviewing change" : "Pilot is working"}</span>}
+          {(running || reviewingChange || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : reviewingChange ? "Validating change" : "Pilot is working"}</span>}
         </form>
         </> : <div className={styles.disconnected}>
           <Cpu size={22} />

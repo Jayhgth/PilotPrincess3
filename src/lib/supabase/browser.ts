@@ -10,7 +10,8 @@ export function getBrowserSupabase() {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: true,
+      flowType: "pkce"
     }
   });
   return browserClient;

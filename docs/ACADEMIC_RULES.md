@@ -1,6 +1,6 @@
 # Academic data and rule reference
 
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-16
 
 This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, statewide school data, and college evidence.
 
@@ -17,6 +17,8 @@ Statewide discovery keeps institutional authorities separate:
 UCOP approval does not prove a current section, seat, local grade restriction, or diploma requirement. UCOP rows remain searchable when a local catalog is unavailable, but the interface marks missing grade availability for verification. A discovered official local catalog can add non-A–G courses and supply grade, term, description, and prerequisite evidence. AP, IB, UC honors, school honors, CTE, and dual enrollment are separate designations; one label does not imply another.
 
 `verified` requires explicit reviewed evidence. `likely` is a supported interpretation. `uncertain` and `needs_review` remain visible and never become success through broad matching.
+
+Statewide school search is broader than academic support. **Discovery** means school identity only, **partial** means at least one reviewed catalog, diploma, or planning source, and **complete** requires all three. These states are calculated from canonical source records and shown during onboarding and in the workspace. Missing evidence never borrows another school's data.
 
 ## Transcript and GPA
 
@@ -64,6 +66,8 @@ Hide from selectable results:
 
 Keep `needs_review` visible when placement, permission, external evidence, or a human exception could make the course possible. Report hidden counts in plain language. Re-run eligibility in the add handler so a stale selection cannot bypass the rule.
 
+The checked-in d.tech mathematics rank is a d.tech-only catalog policy. Other schools use their own verified course availability, sequence, prerequisites, and planning profile; they never inherit d.tech's rank filter.
+
 ## Prerequisite engine
 
 The deterministic engine lives in `src/lib/prerequisites/`. It supports course references, minimum grades, concurrent enrollment, equivalent course groups, advisory preparation, and boolean AND/OR combinations. Adapters map d.tech and SMCCD plan evidence into the same evaluator.
@@ -107,6 +111,8 @@ For the reviewed 2026 SMCCD sources:
 Aggregate CSM, Skyline, and Cañada units across the same school year and term. A full-year row counts in fall and spring. Completed rows do not consume a future-term limit. Crossing a selected or fee-free limit produces review, while crossing the sourced absolute maximum blocks the scenario. Unit count never proves course eligibility: prerequisites, placement, school and college approval, impacted-course restrictions, materials, fees, and seat availability stay separate. Other districts require their own reviewed policy rows; do not infer them from SMCCD.
 
 Nearby-provider discovery uses the selected school's public CDE address and official provider coordinates. Colleges are normalized into their official community-college district before suggestions are ranked. `student_college_district_preferences` stores one suggested, student-selected, or Pilot-selected district; this is separate from the source-backed concurrent/dual-enrollment policy and never implies eligibility. A manual student or Pilot choice persists across high-school changes, while an untouched suggestion follows the newly selected school's public address. Institution marks use checked-in official assets where available, then the official institution website favicon, then a neutral accessible fallback. Discovery is not a claim of articulation or a current course offering and never requests precise student location.
+
+California community-college identity and district selection are statewide. Equivalent course, degree, GE, prerequisite, and enrollment planning becomes available provider by provider only after that district's adapter has reviewed source data. SMCCD is the first complete academic provider; its rules are never used as defaults for another district.
 
 ## Shared-data corrections
 

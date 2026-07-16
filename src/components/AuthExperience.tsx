@@ -2,11 +2,13 @@ import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react/dist/csr/Arrow
 import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { CheckCircleIcon as CheckCircle } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/dist/csr/ShieldCheck";
+import { GoogleLogoIcon as GoogleLogo } from "@phosphor-icons/react/dist/csr/GoogleLogo";
 import { lazy, Suspense, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import BrandMark from "@/components/BrandMark";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
+import { authCallbackUrl, ensureAuthenticatedWorkspace, googleOAuthIsAvailable } from "@/lib/auth";
 
 const ColorBends = lazy(() => import("@/components/reactbits/ColorBends"));
 const AUTH_COLOR_BENDS = ["#38bdf8"];
@@ -45,6 +47,7 @@ export default function AuthExperience() {
   const [password, setPassword] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -55,10 +58,18 @@ export default function AuthExperience() {
 
   useEffect(() => {
     if (!supabase || demoLoginPreview) return;
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) window.location.assign("/app");
+    void supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session) {
+        await ensureAuthenticatedWorkspace(supabase).catch(() => undefined);
+        window.location.assign("/app");
+      }
     });
   }, [demoLoginPreview, supabase]);
+
+  useEffect(() => {
+    if (!configured) return;
+    void googleOAuthIsAvailable().then(setGoogleAvailable, () => setGoogleAvailable(false));
+  }, [configured]);
 
   function changeMode(nextMode: AuthMode) {
     setMode(nextMode);
@@ -84,7 +95,7 @@ export default function AuthExperience() {
     try {
       if (mode === "forgot-password") {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
-          redirectTo: `${window.location.origin}/reset-password`
+          redirectTo: authCallbackUrl("/reset-password")
         });
         if (resetError) throw resetError;
         setNotice("If an account exists for that email, a reset link is on its way.");
@@ -94,11 +105,12 @@ export default function AuthExperience() {
           password,
           options: {
             data: { preferred_name: preferredName.trim() },
-            emailRedirectTo: `${window.location.origin}/app`
+            emailRedirectTo: authCallbackUrl("/app")
           }
         });
         if (signUpError) throw signUpError;
         if (data.session) {
+          await ensureAuthenticatedWorkspace(supabase);
           await supabase.rpc("log_app_event", { event_name: "user_signed_up", properties: { registration: "open_email" } });
           window.location.assign("/app");
         } else {
@@ -110,11 +122,29 @@ export default function AuthExperience() {
           password
         });
         if (signInError) throw signInError;
+        await ensureAuthenticatedWorkspace(supabase);
         window.location.assign("/app");
       }
     } catch (caught) {
       setError(authenticationMessage(caught));
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function continueWithGoogle() {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!supabase) throw new Error("Supabase environment variables are not configured.");
+      const result = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: authCallbackUrl("/app") }
+      });
+      if (result.error) throw result.error;
+    } catch (caught) {
+      setError(authenticationMessage(caught));
       setBusy(false);
     }
   }
@@ -208,6 +238,14 @@ export default function AuthExperience() {
           )}
           {error && <div className="inline-alert error" role="alert">{error}</div>}
           {notice && <div className="inline-alert success" role="status">{notice}</div>}
+
+          {mode !== "forgot-password" && googleAvailable && <>
+            <button className="auth-oauth-button" type="button" onClick={() => void continueWithGoogle()} disabled={busy || !configured}>
+              <GoogleLogo size={18} weight="bold" aria-hidden />
+              Continue with Google
+            </button>
+            <div className="auth-divider"><span>or use email</span></div>
+          </>}
 
           <form className="auth-form" onSubmit={submit}>
             {mode === "sign-up" && (

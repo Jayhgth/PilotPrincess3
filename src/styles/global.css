@@ -444,6 +444,29 @@ input:focus, select:focus, textarea:focus {
 }
 .auth-inline-action:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .auth-submit { min-height: 46px; margin-top: 4px; justify-content: space-between; padding-inline: 16px; }
+.auth-oauth-button {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid var(--control-line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+.auth-oauth-button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-muted); }
+.auth-divider { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 18px 0; color: var(--ink-faint); font-size: 11px; }
+.auth-divider::before, .auth-divider::after { height: 1px; background: var(--line); content: ""; }
+.auth-callback-page { display: grid; min-height: 100dvh; place-items: center; background: var(--bg); padding: 24px; }
+.auth-callback-card { display: grid; width: min(100%, 420px); justify-items: start; gap: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 24px; }
+.auth-callback-card > .wordmark-mark { margin-bottom: 8px; }
+.auth-callback-card > svg { color: var(--accent); }
+.auth-callback-card h1 { margin: 0; font-size: 20px; letter-spacing: -.03em; }
+.auth-callback-card p { margin: 0 0 8px; color: var(--ink-soft); font-size: 14px; line-height: 1.5; }
 .auth-back-action,
 .auth-back-link {
   display: inline-flex;
@@ -520,6 +543,27 @@ input:focus, select:focus, textarea:focus {
 .enrollment-policy-dismiss { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; margin: -3px -5px 0 0; border: 0; border-radius: 5px; background: transparent; color: #9a3412; cursor: pointer; }
 .enrollment-policy-dismiss:hover { background: #ffedd5; }
 .enrollment-policy-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.school-support-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  margin: 0 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-soft);
+  padding: 11px 12px;
+}
+.school-support-notice > svg { margin-top: 2px; color: var(--accent); }
+.school-support-notice strong { display: block; color: var(--ink); font-size: var(--type-body); }
+.school-support-notice p,
+.school-support-notice small { margin: 3px 0 0; font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.school-support-notice small { color: var(--ink-faint); }
+@media (max-width: 620px) {
+  .school-support-notice { grid-template-columns: auto minmax(0, 1fr); }
+  .school-support-notice > button { grid-column: 2; justify-self: start; }
+}
 :root[data-theme="dark"] .enrollment-policy-callout {
   --policy-warning-bg: color-mix(in srgb, var(--warning) 11%, transparent);
   --policy-warning-border: color-mix(in srgb, var(--warning) 30%, transparent);

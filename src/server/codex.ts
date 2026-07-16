@@ -165,7 +165,7 @@ export const CODEX_RUNTIME_CAPABILITIES = [
   { id: "skills", label: "Skills", state: "disabled", detail: "No Codex skill is loaded into student review threads." },
   { id: "plugins", label: "Plugins", state: "disabled", detail: "Plugin and remote-plugin features are disabled for student review threads." },
   { id: "subagents", label: "Subagents", state: "disabled", detail: "Multi-agent execution is disabled for student review threads." },
-  { id: "mutations", label: "Student-data changes", state: "review_required", detail: "Codex may propose supported changes. Exact arguments receive a separate safety review before validated execution." }
+  { id: "mutations", label: "Student-data changes", state: "review_required", detail: "Codex may propose supported changes. Exact low-risk arguments are validated deterministically; ambiguous or destructive changes receive an independent review." }
 ] as const;
 
 function localAuthFallbackEnabled() {
@@ -248,7 +248,7 @@ export function codexRuntimeStatus() {
     maxWaitingTurns: MAX_WAITING_TURNS,
     runtime: "Official Codex SDK",
     transport: "Codex exec JSONL through the TypeScript SDK",
-    accessPolicy: "Conversation history is sent to OpenAI Codex; student-data reads use scoped server tools and every write receives a separate safety review",
+    accessPolicy: "Conversation history is sent to OpenAI Codex; student-data reads use scoped server tools and ambiguous or destructive writes receive a separate safety review",
     retentionPolicy: "No local Codex CLI session history is retained; provider handling follows the configured OpenAI account",
     features: CODEX_FEATURES,
     capabilities: CODEX_RUNTIME_CAPABILITIES
@@ -566,7 +566,7 @@ function academicBatchProposal(batch: NonNullable<ReturnType<typeof resolvedAcad
 function academicBatchMessage(batch: NonNullable<ReturnType<typeof resolvedAcademicBatch>>) {
   const placements = batch.resolved.slice(0, 4).map((row) => `${String(row.name ?? "Course")} (${String(row.term ?? "term")}, grade ${String(row.grade_level ?? "")})`);
   const detail = placements.length ? `: ${placements.join("; ")}${batch.resolved.length > placements.length ? `; +${batch.resolved.length - placements.length} more` : ""}` : "";
-  return `I resolved all ${batch.entries.length} requested placements${detail}. The exact reversible batch will apply automatically if its safety review passes.`;
+  return `I resolved all ${batch.entries.length} requested placements${detail}. The exact reversible batch will apply automatically if its validation passes.`;
 }
 
 export interface AssistantChatResult {
@@ -959,7 +959,11 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     && /\b(schedule|plan|courses|classes)\b/.test(normalized)
     && (/\b(all|every|whole|entire)\b/.test(normalized) || requestsScheduleConstruction(userMessage))
     && !/\b(without|do not|don't|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
-  const scopedReplacementGrade = clearing
+  // A placement such as "pre-calc in grade 9" must never narrow an explicit
+  // whole-plan rebuild. Only infer a grade scope when the user did not ask for
+  // all/whole/every/entire schedule rows to be replaced.
+  const replacesWholePlan = clearing && /\b(all|every|whole|entire)\b/.test(normalized);
+  const scopedReplacementGrade = clearing && !replacesWholePlan
     ? normalized.match(/\bgrade\s*(9|10|11|12)\b/) ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/)
     : null;
   const replaceGradeLevels = scopedReplacementGrade ? [Number(scopedReplacementGrade[1]) as 9 | 10 | 11 | 12] : [];
@@ -1129,7 +1133,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change app data, use the mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, ask for an internal record ID, or silently truncate a large request. Prefer a batch or cross-feature tool so the full request is one coherent action. Pilot covers normal student settings, selected public/charter high school, selected California community-college district, all editable course variables and schedule placement, canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, source-backed enrollment preference, plan snapshots, and cross-feature academic-plan clearing/restoration. Read nearby districts before changing the college-district preference, and keep that preference distinct from concurrent/dual-enrollment policy or eligibility. Search first when an exact school, district, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
     "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and the safety review will deny it.",
-    "A mutating tool is a proposal only. Never claim a plan change happened. The product sends every exact proposed tool call through an independent safety review and automatically applies it only when approved. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
+    "A mutating tool is a proposal only. Never claim a plan change happened. The product deterministically validates exact low-risk changes and routes ambiguous or destructive changes through an independent safety reviewer before execution. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
     "Treat structured ACTION CONTEXT and the recent conversation change ledger as canonical thread history. Applied actions keep a durable private inverse; there is no arbitrary time window. When the student asks to undo, restore, revert, or bring back an applied change, call undo_change with that exact tool_call_id. Never query the current plan to reconstruct deleted rows, and never claim there is nothing to restore merely because current records no longer contain the deleted data. If a later conflicting edit makes restoration unsafe, report that exact conflict instead of overwriting newer data.",
     "Use recent conversation tool evidence to understand follow-up references to app data already read in this thread. It is bounded historical evidence, not guaranteed current state: reuse it for conversational continuity, but refresh through the owning read tool before a new answer or write when the underlying record may have changed.",
     "Every proposed change is reviewed by a separate reviewer and then applied or declined automatically; never ask the student to choose a review mode or confirm a valid proposal.",
@@ -1139,7 +1143,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Never end with a promise such as 'I'll check' or 'let me look' without actually calling the relevant read tool in the same turn. If no tool can perform the promised work, state that limitation directly.",
     "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Maintain lightweight memory only when the student explicitly frames information as durable (for example: remember this, from now on, always, usually, I prefer, or my long-term goal). A one-turn schedule instruction is not durable memory. Use stable lowercase keys for durable preferences and return zero to two updates. Never store inferred traits, secrets, transcript contents, grades, GPA, course rows, or facts already owned by app tables. Use forget only when the student explicitly retracts remembered context.",
-    "Available tools:\n" + assistantToolCatalogPrompt(),
+    "Available tools for this request (Pilot retains the full application capability registry; this bounded subset is selected from the student's message, never the active app tab):\n" + assistantToolCatalogPrompt(options.userMessage),
     knowledge.length
       ? `Retrieved application guidance (authoritative product context, not student-record evidence):\n${JSON.stringify(knowledge)}`
       : "No additional application-guidance chunks were retrieved. Follow the built-in safety and tool rules above.",
@@ -1227,7 +1231,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: `I found the recent ${target.label.toLowerCase()}. Its exact stored undo will apply automatically if the safety review passes.`,
+      message: `I found the recent ${target.label.toLowerCase()}. Its exact stored undo will apply automatically if the validation passes.`,
       questions: [],
       threadId: null,
       usage: null,
@@ -1249,7 +1253,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: `I prepared the exact preferred-name change to ${preferredName}. It will apply automatically if the safety review passes.`,
+      message: `I prepared the exact preferred-name change to ${preferredName}. It will apply automatically if the validation passes.`,
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1266,7 +1270,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: `I prepared the ${uiTheme}-mode change. It will apply automatically if the safety review passes.`,
+      message: `I prepared the ${uiTheme}-mode change. It will apply automatically if the validation passes.`,
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1283,7 +1287,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the exact student and planning setting changes. They will apply automatically if the safety review passes.",
+      message: "I prepared the exact student and planning setting changes. They will apply automatically if the validation passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1296,7 +1300,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the exact academic-plan clearing request. It will apply automatically if the safety review passes.",
+      message: "I prepared the exact academic-plan clearing request. It will apply automatically if the validation passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1309,7 +1313,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the enrollment-preference change. It will apply automatically if the safety review passes.",
+      message: "I prepared the enrollment-preference change. It will apply automatically if the validation passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1321,7 +1325,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the standard course-board sort. It will apply automatically if the safety review passes.",
+      message: "I prepared the standard course-board sort. It will apply automatically if the validation passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1403,7 +1407,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: "I found the requested academic areas and prepared one exact clear operation. It will apply automatically if the safety review passes; transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
+            message: "I found the requested academic areas and prepared one exact clear operation. It will apply automatically if the validation passes; transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
             questions: [],
             threadId: thread.id,
             usage,
@@ -1483,7 +1487,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact move to ${targetLabel}. It will apply automatically if the safety review passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
+              message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact move to ${targetLabel}. It will apply automatically if the validation passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
               questions: [],
               threadId: thread.id,
               usage,
@@ -1503,7 +1507,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact batch removal. It will apply automatically if the safety review passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
+            message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact batch removal. It will apply automatically if the validation passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -1613,7 +1617,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: `${preview}\n\nThis exact batch will apply automatically if the safety review passes.`,
+            message: `${preview}\n\nThis exact batch will apply automatically if the validation passes.`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -1644,7 +1648,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: `I found the exact eligible ${String(exact.name ?? intent.query)} course. The requested placement will apply automatically if the safety review passes.`,
+              message: `I found the exact eligible ${String(exact.name ?? intent.query)} course. The requested placement will apply automatically if the validation passes.`,
               questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
             };
           }
@@ -1666,7 +1670,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program. The bookmark will apply automatically if the safety review passes.`,
+              message: `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program. The bookmark will apply automatically if the validation passes.`,
               questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
             };
           }
@@ -1686,7 +1690,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: `I found ${String(exact.name ?? requestedSchool)}. The school change will apply automatically if the safety review passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found ${String(exact.name ?? requestedSchool)}. The school change will apply automatically if the validation passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         if (requiredRead.name === "get_nearby_education_providers" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
@@ -1710,7 +1714,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: `I found ${String(exact?.name ?? requestedDistrict)}. The district change will apply automatically if the safety review passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found ${String(exact?.name ?? requestedDistrict)}. The district change will apply automatically if the validation passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         if (requiredRead.name === "get_gpa_scenario" && Array.isArray(result.data)) {
@@ -1724,7 +1728,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: `I found all ${rows.length} current and planned courses. The exact GPA batch will apply automatically if the safety review passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found all ${rows.length} current and planned courses. The exact GPA batch will apply automatically if the validation passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         prompt += "\n\n" + [
@@ -1829,7 +1833,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       if (mutationCalls.length > 0) {
         for (const call of mutationCalls) await options.onToolActivity(call);
         return {
-          message: latestMessage || "I prepared the requested change. It will apply automatically if the safety review passes.",
+          message: latestMessage || "I prepared the requested change. It will apply automatically if the validation passes.",
           questions: [],
           threadId: thread.id,
           usage,

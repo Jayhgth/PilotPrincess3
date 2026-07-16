@@ -3,6 +3,7 @@ export { evaluateParsedPrerequisites } from "./evaluator";
 export { parsePrerequisites } from "./parser";
 export {
   createSmccdPlannerPrerequisiteEvaluator,
+  evaluateSelectedSchoolPlannerPrerequisites,
   evaluateDtechPlannerPrerequisites,
   evaluateSmccdPlannerPrerequisites,
   plannerCourseInputs,

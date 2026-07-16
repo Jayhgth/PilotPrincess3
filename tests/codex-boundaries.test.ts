@@ -444,6 +444,12 @@ describe("Codex feature boundaries", () => {
     const gradeTwelveRebuild = "Clear my schedule for 12th. Find a new schedule that will net me the highest GPA while still graduating and within concurrent enrollment unit limits.";
     expect(parseAcademicClearIntent(gradeTwelveRebuild)).toBeNull();
     expect(parseAssistantScheduleIntent(gradeTwelveRebuild)).toMatchObject({ replaceExisting: true, replaceGradeLevels: [12], startGrade: 12 });
+    expect(parseAssistantScheduleIntent("Clear my whole schedule. Generate a new one with pre-calc in grade 9.")).toMatchObject({
+      replaceExisting: true,
+      replaceGradeLevels: [],
+      startGrade: 9,
+      startingMathCourse: "pre-calc"
+    });
     expect(requiredAssistantEvidenceRead(gradeTwelveRebuild)).toEqual({
       name: "get_course_schedule_options",
       arguments: {

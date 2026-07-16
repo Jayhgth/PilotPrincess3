@@ -1,12 +1,14 @@
 import { z } from "zod";
 import type { AiModel } from "@/lib/ai-preferences";
+import { mutationReviewMode } from "@/lib/app-capabilities";
 import { assistantToolLabel, type AssistantToolName } from "@/server/ai-tools";
 import { parseAssistantScheduleIntent, runCodexStructured } from "@/server/codex";
 
 export const autoReviewResultSchema = z.object({
   decision: z.enum(["approve", "deny"]),
   risk: z.enum(["low", "medium", "high"]),
-  summary: z.string().trim().min(1).max(240)
+  summary: z.string().trim().min(1).max(240),
+  method: z.enum(["deterministic", "model"]).optional()
 });
 
 export type AutoReviewResult = z.infer<typeof autoReviewResultSchema>;
@@ -102,6 +104,62 @@ const autoReviewJsonSchema = {
   }
 } as const;
 
+function deterministicProposalReview(input: {
+  userMessage: string;
+  toolName: AssistantToolName;
+  arguments: Record<string, unknown>;
+}): AutoReviewResult | null {
+  if (mutationReviewMode(input.toolName, input.arguments) !== "deterministic") return null;
+  const text = input.userMessage.toLowerCase();
+  const requested = (verbs: RegExp, subject: RegExp) => verbs.test(text) && subject.test(text);
+  const approve = (summary: string, risk: AutoReviewResult["risk"] = "low"): AutoReviewResult => ({
+    decision: "approve",
+    risk,
+    summary,
+    method: "deterministic"
+  });
+
+  if (input.toolName === "sort_plan_courses" && /\b(sort|arrange|organize|reorder)\b/.test(text)) {
+    return approve("The request exactly matches the standard reversible course-board sort.");
+  }
+  if (input.toolName === "update_student_settings" && requested(/\b(set|switch|change|update|turn|use|enable)\b/, /\b(name|age|grade|graduation|planning|tracker|theme|mode|model|reasoning|setting)\b/)) {
+    return approve("Only the explicitly requested student settings will change.");
+  }
+  if (input.toolName === "update_gpa_scenario" && requested(/\b(set|save|change|include|exclude|assume|use)\b/, /\b(gpa|grade|scenario|calculation)\b/)) {
+    return approve("The request changes only the reversible GPA-planner assumptions.");
+  }
+  if (input.toolName === "update_enrollment_preference" && requested(/\b(set|switch|change|use|respect)\b/, /\b(concurrent|dual enrollment|unit limit|enrollment type)\b/)) {
+    return approve("The request exactly matches the saved enrollment-planning preference.");
+  }
+  if (input.toolName === "set_current_school" && requested(/\b(set|switch|change|choose|select)\b/, /\b(high school|school)\b/)) {
+    return approve("The selected school change is exact, reversible, and keeps existing student records.", "medium");
+  }
+  if (input.toolName === "set_college_district_preference" && requested(/\b(set|switch|change|choose|select)\b/, /\b(college district|community.college district|district)\b/)) {
+    return approve("The selected community-college district change is exact and reversible.");
+  }
+  if (["add_dtech_course", "add_high_school_course", "add_smccd_course", "add_academic_courses"].includes(input.toolName)
+    && requested(/\b(add|put|take|include|schedule|plan)\b/, /\b(course|class|schedule|plan)\b/)) {
+    return approve("The exact catalog-backed course addition matches the student's request.", input.toolName === "add_academic_courses" ? "medium" : "low");
+  }
+  if (["move_plan_course", "move_plan_courses"].includes(input.toolName)
+    && requested(/\b(move|mark|change|put|shift)\b/, /\b(course|class|plan|done|progress|planned|grade|year|term)\b/)) {
+    return approve("The exact reversible course placement change matches the student's request.");
+  }
+  if (input.toolName === "save_prerequisite_evidence" && requested(/\b(add|save|submit|record|provide)\b/, /\b(prerequisite|placement|approval|evidence|clearance)\b/)) {
+    return approve("The request submits evidence for review without approving it.");
+  }
+  if (input.toolName === "submit_shared_data_correction" && requested(/\b(submit|report|correct|fix)\b/, /\b(data|catalog|course|school|source|policy|error|correction)\b/)) {
+    return approve("The request creates a pending shared-data correction without publishing it.");
+  }
+  if (input.toolName === "create_plan_snapshot" && requested(/\b(create|save|make|take)\b/, /\b(snapshot|copy|version|backup)\b/)) {
+    return approve("The request creates a non-destructive plan snapshot.");
+  }
+  if (input.toolName === "set_college_goal" && requested(/\b(add|set|bookmark|track|save)\b/, /\b(degree|associate|college goal|program)\b/)) {
+    return approve("The exact degree bookmark matches the student's request.");
+  }
+  return null;
+}
+
 export function buildAutoReviewPrompt(input: {
   userMessage: string;
   toolName: AssistantToolName;
@@ -177,6 +235,8 @@ export async function reviewAssistantProposal(input: {
         : "The exact mixed course batch matches the server-validated catalog, graduation, placement, prerequisite, and enrollment resolution for this request."
     };
   }
+  const deterministicReview = deterministicProposalReview(input);
+  if (deterministicReview) return deterministicReview;
   const result = await runCodexStructured({
     feature: "assistant_safety_review",
     prompt: buildAutoReviewPrompt(input),
@@ -188,5 +248,5 @@ export async function reviewAssistantProposal(input: {
     signal: input.signal
   });
 
-  return result.value;
+  return { ...result.value, method: "model" };
 }

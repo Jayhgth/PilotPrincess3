@@ -93,6 +93,17 @@ test.describe("authenticated student workspace", () => {
       if (message.type() === "error") consoleErrors.push(message.text());
     });
 
+    if (ephemeralSupabase) {
+      const [snapshot, admin] = await Promise.all([
+        ephemeralSupabase.rpc("get_workspace_snapshot_v1"),
+        ephemeralSupabase.rpc("is_app_admin")
+      ]);
+      expect(snapshot.error).toBeNull();
+      expect((snapshot.data as { settings?: unknown; plan?: unknown; active_version?: unknown }).settings).toBeTruthy();
+      expect((snapshot.data as { plan?: unknown }).plan).toBeTruthy();
+      expect((snapshot.data as { active_version?: unknown }).active_version).toBeTruthy();
+      expect(admin.data).toBe(false);
+    }
     await signInToOnboarding(page);
 
     await page.getByRole("button", { name: "Use dark theme" }).click();

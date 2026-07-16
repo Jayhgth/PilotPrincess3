@@ -136,7 +136,7 @@ function dtechEquivalenciesForPrerequisites(
   );
 }
 
-export function evaluateDtechPlannerPrerequisites(
+export function evaluateSelectedSchoolPlannerPrerequisites(
   course: Course,
   target: PlannerPrerequisiteTarget,
   dtechCourses: readonly Course[],
@@ -168,6 +168,9 @@ export function evaluateDtechPlannerPrerequisites(
     originalTexts: parsed.originalTexts
   };
 }
+
+/** @deprecated Use evaluateSelectedSchoolPlannerPrerequisites. */
+export const evaluateDtechPlannerPrerequisites = evaluateSelectedSchoolPlannerPrerequisites;
 
 export function evaluateSmccdPlannerPrerequisites(
   course: SmccdCourse,

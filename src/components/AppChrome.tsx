@@ -46,6 +46,7 @@ interface Props<ViewId extends string> {
   assistantOpen: boolean;
   mobileNavOpen: boolean;
   onNavigate: (view: ViewId) => void;
+  onPreload?: (view: ViewId) => void;
   onSettings: () => void;
   onMobileNavChange: (open: boolean) => void;
   onAssistantToggle: () => void;
@@ -64,6 +65,7 @@ export default function AppChrome<ViewId extends string>({
   assistantOpen,
   mobileNavOpen,
   onNavigate,
+  onPreload,
   onSettings,
   onMobileNavChange,
   onAssistantToggle,
@@ -161,6 +163,8 @@ export default function AppChrome<ViewId extends string>({
           return <BaseButton
             key={item.id}
             className={active ? "active" : ""}
+            onPointerEnter={() => onPreload?.(item.id)}
+            onFocus={() => onPreload?.(item.id)}
             onClick={() => {
               onNavigate(item.id as ViewId);
               onMobileNavChange(false);

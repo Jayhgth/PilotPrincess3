@@ -5,6 +5,7 @@ import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, reviewAssis
 import { executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
+import { affectedWorkspaceDomains } from "@/lib/app-capabilities";
 
 export const prerender = false;
 
@@ -48,7 +49,7 @@ export const POST: APIRoute = async ({ request }) => {
   await recordEvent("safety_review.started", startedSequence, {
     toolCallId: toolCall.id,
     toolName: validated.name,
-    summary: "A separate reviewer is checking this proposed change."
+    summary: "The application is validating this proposed change."
   });
   try {
     let verifiedBatchResolution = false;
@@ -146,7 +147,8 @@ export const POST: APIRoute = async ({ request }) => {
     if (!result.undo && !isUndoAction) throw new Error("Pilot refused to apply a change that did not include a safe undo action.");
     const completedAt = new Date().toISOString();
     const storedResult = { ...result, ...(review ? { safety_review: review } : {}) };
-    const publicResult = { summary: result.summary, data: result.data, changed: result.changed ?? null, ...(review ? { safety_review: review } : {}) };
+    const affectedDomains = affectedWorkspaceDomains(validated.name);
+    const publicResult = { summary: result.summary, data: result.data, changed: result.changed ?? null, affected_domains: affectedDomains, ...(review ? { safety_review: review } : {}) };
     const { data, error } = await auth.supabase.from("ai_tool_calls").update({
       status: "completed",
       result: sanitizeCodexValue(storedResult),
@@ -161,7 +163,7 @@ export const POST: APIRoute = async ({ request }) => {
         turn_id: toolCall.turn_id,
         role: "tool",
         content: sanitizeCodexText(result.summary, 2000),
-        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, safety_review: review, undo_available: true }
+        page_context: { tool_call_id: toolCall.id, tool_name: validated.name, changed: result.changed ?? null, data: result.data ?? null, affected_domains: affectedDomains, safety_review: review, undo_available: true }
       }).then(({ error }) => { if (error) throw new Error(error.message); });
     await Promise.all([
       receiptWrite,
