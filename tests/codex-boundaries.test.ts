@@ -3,7 +3,7 @@ import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assist
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
-import { autoReviewResultSchema, buildAutoReviewPrompt, reviewAssistantProposal } from "@/server/ai-auto-review";
+import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, buildAutoReviewPrompt, reviewAssistantProposal } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema } from "@/lib/ai-preferences";
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
@@ -170,6 +170,35 @@ describe("Codex feature boundaries", () => {
       explanation: "The server resolved the exact batch.",
       model: "gpt-5.6-luna",
       verifiedBatchResolution: true
+    })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
+    const degreePlanArguments = {
+      entries: [
+        { source: "selected_school", course_id: "hs-english", status: "planned", grade_level: 12, term: "full_year" },
+        { source: "smccd", course_id: "CSM:COMM 150", status: "planned", grade_level: 11, term: "summer" },
+        { source: "smccd", course_id: "CSM:COMM 170", status: "planned", grade_level: 12, term: "fall" }
+      ],
+      respect_recommended_limit: true
+    };
+    expect(academicPlanEvidenceCoversProposal({
+      arguments: degreePlanArguments,
+      academicContext: { data: { graduation: [{ status: "missing", required_credits: 40, projected_credits: 30, eligible_course_options: [{ course_id: "hs-english", credits: 10 }] }] } },
+      degreeProgress: { data: {
+        totals: { remaining_degree_applicable_units: 6 },
+        requirements: [
+          { status: "partial", remaining_units: 3, eligible_course_options: [{ course_id: "CSM:COMM 150", units: 3 }] },
+          { status: "partial", remaining_units: 3, eligible_course_options: [{ course_id: "CSM:COMM 170", units: 3 }] }
+        ],
+        local_degree_pattern: { ge_areas: [{ status: "completed" }], separate_graduation_requirements: [{ status: "planned" }] }
+      } },
+      enrollmentConstraints: { data: { respect_recommended_limit: true } }
+    })).toBe(true);
+    await expect(reviewAssistantProposal({
+      userMessage: "Build and apply the rest of my diploma and associate-degree schedule.",
+      toolName: "add_academic_courses",
+      arguments: degreePlanArguments,
+      explanation: "Apply the evidence-complete diploma and degree plan.",
+      model: "gpt-5.6-luna",
+      verifiedAcademicPlanResolution: true
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
     await expect(reviewAssistantProposal({
       userMessage: "Clear my schedule for 12th. Find a new schedule that maximizes GPA within the unit limit.",

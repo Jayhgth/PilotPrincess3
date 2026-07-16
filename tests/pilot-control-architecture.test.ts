@@ -75,6 +75,9 @@ describe("Pilot complete academic control", () => {
     expect(prompt).not.toContain("Grades 9 through 11 must carry at least six classes");
     expect(prompt).toContain("there is no arbitrary time window");
     expect(prompt).toContain("get_academic_context is the bounded cross-feature view");
+    expect(prompt).toContain("get_degree_progress for the exact remaining major");
+    expect(prompt).toContain("get_enrollment_constraints for the saved concurrent-enrollment policy");
+    expect(prompt).toContain("propose the complete remaining mixed plan through one add_academic_courses call");
     expect(prompt).toContain("call resolve_academic_course_batch exactly once");
     expect(prompt).toContain("converted directly into one reversible add_academic_courses proposal");
     expect(prompt).toContain("independent safety review");

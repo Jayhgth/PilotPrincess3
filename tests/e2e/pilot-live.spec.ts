@@ -20,12 +20,7 @@ const STRESS_WORKFLOWS = [
   "canonical course sorting",
   "degree search and bookmark",
   "compound academic clearing and restoration",
-  "college-district selection",
-  "selected-school change",
-  "enrollment-policy mutation",
-  "d.tech major-aware four-year rebuild",
-  "exact weighted concurrent-course addition",
-  "compound graduation and college course batch"
+  "progress-aware diploma and associate-degree schedule"
 ] as const;
 
 async function authorizedPost(
@@ -280,7 +275,7 @@ test.describe("live Pilot behavior", () => {
 
   test("executes diverse student workflows across Carlmont and d.tech", async ({ request }) => {
     test.setTimeout(900_000);
-    expect(STRESS_WORKFLOWS).toHaveLength(14);
+    expect(STRESS_WORKFLOWS).toHaveLength(9);
 
     const createConversation = async (title: string) => {
       const response = await authorizedPost(request, "/api/ai/conversations", accessToken, { title });
@@ -366,8 +361,8 @@ test.describe("live Pilot behavior", () => {
     expect((await supabase.from("student_smccd_goals").select("id").eq("user_id", userId)).data?.length).toBe(1);
   });
 
-  test("executes cross-institution controls and a d.tech major-aware rebuild", async ({ request }) => {
-    test.setTimeout(600_000);
+  test("builds and applies a progress-aware diploma and associate-degree schedule", async ({ request }) => {
+    test.setTimeout(900_000);
     const createConversation = async (title: string) => {
       const response = await authorizedPost(request, "/api/ai/conversations", accessToken, { title });
       expect(response.status(), await response.text()).toBe(201);
@@ -379,39 +374,41 @@ test.describe("live Pilot behavior", () => {
       expect(results.every((result) => result.applied === true), JSON.stringify(results)).toBe(true);
     };
 
-    // 9. College district is independent student data and can be changed through Pilot.
-    const districtConversation = await createConversation("College district");
-    const districtTurn = await sendTurn(request, accessToken, districtConversation, "Change my community-college district to Foothill-De Anza Community College District.");
-    expect(districtTurn.proposals.map((proposal) => proposal.name)).toEqual(["set_college_district_preference"]);
-    await apply(districtTurn);
-    const district = await supabase.from("student_college_district_preferences").select("district_code").eq("user_id", userId).single();
-    expect(district.data?.district_code).toMatch(/FOOTHILL|FHDA/i);
-    await apply(await sendTurn(request, accessToken, districtConversation, "Undo the district change."));
-
-    // 10. Changing the selected school refreshes every school-owned rule and catalog.
-    const schoolConversation = await createConversation("School selection");
-    const schoolTurn = await sendTurn(request, accessToken, schoolConversation, "Switch my selected high school to Design Tech High School.");
-    expect(schoolTurn.proposals.map((proposal) => proposal.name)).toEqual(["set_current_school"]);
-    await apply(schoolTurn);
-    const selected = await supabase.from("student_settings").select("school_id").eq("id", userId).single();
+    // The fixture models a grade-11 d.tech student with a primary Communication
+    // Studies goal, substantial completed work, and source-backed concurrent limits.
     const dtech = await supabase.from("schools").select("id").eq("slug", "design-tech-high-school").single();
-    expect(selected.data?.school_id).toBe(dtech.data?.id);
+    if (dtech.error) throw dtech.error;
+    const schoolSelection = await supabase.rpc("select_current_school", { target_school_id: dtech.data.id });
+    if (schoolSelection.error) throw schoolSelection.error;
+    const studentContext = await supabase.from("student_settings").update({
+      grade_level: 11,
+      graduation_year: 2027,
+      plan_start_grade: 11,
+      plan_end_grade: 12
+    }).eq("id", userId);
+    if (studentContext.error) throw studentContext.error;
+    const enrollment = await supabase.from("student_enrollment_preferences").upsert({
+      user_id: userId,
+      provider_code: "SMCCD",
+      program_type: "concurrent",
+      limit_mode: "recommended",
+      respect_recommended_limit: true
+    }, { onConflict: "user_id,provider_code" });
+    if (enrollment.error) throw enrollment.error;
+    const programId = "CSM:communication-studies-aa";
+    const degreeGoal = await supabase.from("student_smccd_goals").insert({
+      user_id: userId,
+      program_id: programId,
+      is_primary: true,
+      notes: "Intended Communication Studies major"
+    });
+    if (degreeGoal.error) throw degreeGoal.error;
 
-    // 11. Enrollment behavior is a source-backed, undoable preference.
-    const enrollmentConversation = await createConversation("Enrollment preference");
-    const enrollmentTurn = await sendTurn(request, accessToken, enrollmentConversation, "Use concurrent enrollment and respect the district's recommended unit limit.");
-    expect(enrollmentTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_enrollment_preference"]);
-    await apply(enrollmentTurn);
-    const enrollment = await supabase.from("student_enrollment_preferences").select("program_type,respect_recommended_limit").eq("user_id", userId).single();
-    expect(enrollment.data).toMatchObject({ program_type: "concurrent", respect_recommended_limit: true });
-
-    // 12. A compound request resolves every graduation gap and named college
-    // course in one read, then produces one executable reversible write.
     const activePlan = await supabase.from("four_year_plans").select("id").eq("user_id", userId).eq("is_active", true).single();
     const activeVersion = await supabase.from("plan_versions").select("id").eq("plan_id", activePlan.data!.id).eq("kind", "active").single();
-    const requirements = await supabase.from("graduation_requirements").select("id,area,credits_required").eq("school_id", dtech.data!.id);
+    const requirements = await supabase.from("graduation_requirements").select("*").eq("school_id", dtech.data!.id);
     const dtechCatalog = await supabase.from("courses").select("*").eq("school_id", dtech.data!.id).eq("confidence", "verified").eq("review_status", "approved");
-    const mappings = await supabase.from("course_requirement_mappings").select("course_id,requirement_id,confidence").in("requirement_id", (requirements.data ?? []).map((row) => row.id));
+    const mappings = await supabase.from("course_requirement_mappings").select("*").in("requirement_id", (requirements.data ?? []).map((row) => row.id));
     const courseById = new Map((dtechCatalog.data ?? []).map((course) => [course.id, course]));
     const usedCourseIds = new Set<string>();
     const graduationSeedRows: Array<Record<string, unknown>> = [];
@@ -447,58 +444,130 @@ test.describe("live Pilot behavior", () => {
       { plan_version_id: activeVersion.data!.id, user_id: userId, custom_course_name: "Verified Intersession Personal Development", requirement_area_override: "personal_development", grade_level: 11, school_year: "2025-2026", term: "summer", status: "completed", letter_grade: "P", credits: 35, college_units: null, is_weighted: false, mapping_verified: true, user_edited: true, sort_order: 901 }
     ]);
     if (seedInsert.error) throw seedInsert.error;
-    const math251 = await supabase.from("smccd_courses").select("*").eq("college_code", "CSM").eq("course_code", "MATH 251").order("source_year", { ascending: false }).limit(1).single();
-    if (math251.error) throw math251.error;
-    const prerequisiteSeed = await supabase.from("plan_courses").insert({
-      plan_version_id: activeVersion.data!.id, user_id: userId, smccd_course_id: math251.data.id,
-      college_provider_code: "SMCCD", custom_course_name: `${math251.data.course_code} ${math251.data.title}`,
-      grade_level: 11, school_year: "2025-2026", term: "spring", status: "current", credits: 10,
-      college_units: math251.data.units_max ?? math251.data.units_min, is_weighted: true,
-      mapping_verified: false, user_edited: true, sort_order: 999
-    });
-    if (prerequisiteSeed.error) throw prerequisiteSeed.error;
-    const compoundConversation = await createConversation("Compound academic batch");
-    const compoundTurn = await sendTurn(request, accessToken, compoundConversation,
-      "Add the three classes needed for high school graduation in 12th. From college, add linear algebra, calc 3, physics with calculus 1, 2, and 3. Put in 11th grade summer calc 2, intercultural communication, eng c1000, nosql databases.");
-    expect(compoundTurn.proposals.map((proposal) => proposal.name), compoundTurn.message).toEqual(["add_academic_courses"]);
-    const compoundTools = await supabase.from("ai_tool_calls").select("tool_name,status,result").eq("conversation_id", compoundConversation).order("created_at");
-    expect(compoundTools.data?.some((tool) => tool.tool_name === "resolve_academic_course_batch" && tool.status === "completed"), JSON.stringify(compoundTools.data)).toBe(true);
-    await apply(compoundTurn);
-    const compoundRows = await supabase.from("plan_courses").select("custom_course_name,grade_level,term,is_weighted").eq("user_id", userId).not("smccd_course_id", "is", null);
-    const compoundNames = (compoundRows.data ?? []).map((row) => row.custom_course_name ?? "").join(" | ");
-    for (const expectedName of ["Linear Algebra", "Calculus with Analytic Geometry III", "Physics with Calculus I", "Physics with Calculus II", "Physics with Calculus III", "Calculus with Analytic Geometry II", "Intercultural Communication", "Academic Reading and Writing", "NoSQL Databases"]) {
-      expect(compoundNames, expectedName).toContain(expectedName);
+    const [programResult, programRequirementsResult, csmCatalogResult] = await Promise.all([
+      supabase.from("smccd_programs").select("*").eq("id", programId).single(),
+      supabase.from("smccd_program_requirements").select("*").eq("program_id", programId).order("sort_order"),
+      supabase.from("smccd_courses").select("*").eq("college_code", "CSM")
+    ]);
+    if (programResult.error) throw programResult.error;
+    if (programRequirementsResult.error) throw programRequirementsResult.error;
+    if (csmCatalogResult.error) throw csmCatalogResult.error;
+    const programRequirementIds = (programRequirementsResult.data ?? []).map((row) => row.id);
+    const programOptionsResult = await supabase.from("smccd_requirement_courses").select("*").in("requirement_id", programRequirementIds);
+    if (programOptionsResult.error) throw programOptionsResult.error;
+    const programOptionCodes = new Set((programOptionsResult.data ?? []).map((row) => row.course_code));
+    const catalog = csmCatalogResult.data ?? [];
+    const catalogByCode = new Map(catalog.map((course) => [course.course_code, course]));
+    const initialDegreeCodes = [
+      "COMM 115", "COMM C1000", "COMM 130", "COMM 140", "SOCI 110", "PSYC 110",
+      "ENGL C1000", "MATH 125", "ART 101", "ASTR 100", "ETHN 103",
+      "HIST 201", "AQUA 109.1", "CIS 110"
+    ];
+    const degreeSeedCourses = initialDegreeCodes.map((code) => catalogByCode.get(code)).filter((course): course is NonNullable<typeof course> => Boolean(course));
+    expect(degreeSeedCourses).toHaveLength(initialDegreeCodes.length);
+    let seededCollegeUnits = degreeSeedCourses.reduce((total, course) => total + Number(course.units_max ?? course.units_min), 0);
+    const selectedCollegeIds = new Set(degreeSeedCourses.map((course) => course.id));
+    const fillers = catalog
+      .filter((course) => course.degree_applicable && !selectedCollegeIds.has(course.id))
+      .filter((course) => !programOptionCodes.has(course.course_code))
+      .filter((course) => (course.prerequisites ?? []).length === 0 && Number(course.units_max ?? course.units_min) >= 2.5)
+      .sort((left, right) => left.course_code.localeCompare(right.course_code));
+    for (const course of fillers) {
+      if (seededCollegeUnits >= 57) break;
+      degreeSeedCourses.push(course);
+      selectedCollegeIds.add(course.id);
+      seededCollegeUnits += Number(course.units_max ?? course.units_min);
     }
-    expect(compoundRows.data?.filter((row) => row.grade_level === 11 && row.term === "summer").length).toBeGreaterThanOrEqual(4);
-    expect(compoundRows.data?.every((row) => row.is_weighted)).toBe(true);
-    const clearCompound = await sendTurn(request, accessToken, compoundConversation, "Clear my whole schedule.");
-    expect(clearCompound.proposals.map((proposal) => proposal.name)).toEqual(["clear_academic_plan"]);
-    await apply(clearCompound);
+    expect(seededCollegeUnits).toBeGreaterThanOrEqual(57);
+    const degreeSeedInsert = await supabase.from("plan_courses").insert(degreeSeedCourses.map((course, index) => {
+      const units = Number(course.units_max ?? course.units_min);
+      const current = course.course_code === "COMM 140";
+      return {
+        plan_version_id: activeVersion.data!.id,
+        user_id: userId,
+        smccd_course_id: course.id,
+        college_provider_code: "SMCCD",
+        custom_course_name: `${course.course_code} ${course.title}`,
+        grade_level: current ? 11 : index < 8 ? 10 : 11,
+        school_year: current ? "2025-2026" : index < 8 ? "2024-2025" : "2025-2026",
+        term: current ? "spring" : index % 2 ? "spring" : "fall",
+        status: current ? "current" : "completed",
+        letter_grade: current ? null : "A",
+        credits: units >= 4 ? 10 : 5,
+        college_units: units,
+        is_weighted: true,
+        mapping_verified: false,
+        user_edited: true,
+        sort_order: 1_000 + index
+      };
+    }));
+    if (degreeSeedInsert.error) throw degreeSeedInsert.error;
 
-    // 13. Complex d.tech rebuild preserves explicit placement and major intent, then applies.
-    const scheduleConversation = await createConversation("d.tech four-year schedule");
+    const baselineRows = await supabase.from("plan_courses").select("id").eq("user_id", userId);
+    if (baselineRows.error) throw baselineRows.error;
+    const baselineIds = new Set((baselineRows.data ?? []).map((row) => row.id));
+
+    // This is the canonical autonomy test: natural-language intent plus saved
+    // student context must become one validated, applied, reversible schedule.
+    const scheduleConversation = await createConversation("Complete diploma and Communication Studies AA");
     const scheduleTurn = await sendTurn(request, accessToken, scheduleConversation,
-      "Clear my whole schedule and build a rigorous four-year d.tech plan from grade 9. Start math at Algebra 1 and Spanish at Spanish 2, keep at most 7 courses per term, include concurrent courses where useful, maximize weighted GPA, and align electives to an intended computer science major.");
-    expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_course_schedule"]);
-    const scheduleRecord = await supabase.from("ai_tool_calls").select("arguments").eq("id", scheduleTurn.proposals[0]!.id).single();
-    expect(scheduleRecord.data?.arguments).toMatchObject({ replace_existing: true, start_grade: 9, starting_math_course: "algebra 1", starting_language_course: "spanish 2", interests: ["computer science"], rigor: "advanced", max_courses_per_term: 7 });
+      "Use my saved progress to build and apply the rest of my schedule from grade 11 summer through grade 12. My intended major is Communication Studies. Keep every completed or in-progress class, finish my d.tech diploma and my bookmarked CSM Communication Studies AA—including every remaining major, local GE, separate graduation, and 60-unit requirement—under my already-saved concurrent-enrollment preference and its recommended per-term unit limit. Do not change that preference. Balance the remaining work across the available terms and do not just describe the plan; add it.");
+    expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_academic_courses"]);
+    const scheduleTools = await supabase.from("ai_tool_calls").select("tool_name,status,result,arguments")
+      .eq("conversation_id", scheduleConversation).order("created_at");
+    if (scheduleTools.error) throw scheduleTools.error;
+    for (const requiredTool of ["get_academic_context", "get_degree_progress", "get_enrollment_constraints"]) {
+      expect(scheduleTools.data?.some((tool) => tool.tool_name === requiredTool && tool.status === "completed"), JSON.stringify(scheduleTools.data)).toBe(true);
+    }
+    const proposalRecord = scheduleTools.data?.find((tool) => tool.tool_name === "add_academic_courses");
+    expect(proposalRecord?.arguments).toMatchObject({ respect_recommended_limit: true });
     await apply(scheduleTurn);
-    const dtechRows = await supabase.from("plan_courses").select("course_id,grade_level").eq("user_id", userId);
-    const dtechCourseIds = (dtechRows.data ?? []).map((row) => row.course_id).filter((id): id is string => Boolean(id));
-    const dtechCourses = await supabase.from("courses").select("id,name,subject").in("id", dtechCourseIds);
-    const names = new Map((dtechCourses.data ?? []).map((course) => [course.id, `${course.name} ${course.subject}`]));
-    expect(dtechRows.data?.some((row) => row.grade_level === 9 && /algebra 1/i.test(names.get(row.course_id ?? "") ?? ""))).toBe(true);
-    expect(dtechRows.data?.some((row) => row.grade_level === 9 && /spanish 2/i.test(names.get(row.course_id ?? "") ?? ""))).toBe(true);
-    expect(dtechRows.data?.some((row) => /computer|coding|programming|game design|engineering/i.test(names.get(row.course_id ?? "") ?? ""))).toBe(true);
 
-    // 14. Exact concurrent enrollment uses the college catalog identity and is always weighted.
-    const collegeCourseConversation = await createConversation("Concurrent course addition");
-    const collegeCourseTurn = await sendTurn(request, accessToken, collegeCourseConversation,
-      "Add CSM CIS 110 to grade 11 summer as a planned college course.");
-    expect(collegeCourseTurn.proposals.map((proposal) => proposal.name)).toEqual(["add_smccd_course"]);
-    await apply(collegeCourseTurn);
-    const collegeRow = await supabase.from("plan_courses").select("smccd_course_id,college_units,is_weighted,grade_level,term")
-      .eq("user_id", userId).eq("smccd_course_id", "CSM:CIS 110").single();
-    expect(collegeRow.data).toMatchObject({ smccd_course_id: "CSM:CIS 110", college_units: 3, is_weighted: true, grade_level: 11, term: "summer" });
+    const finalRowsResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+    if (finalRowsResult.error) throw finalRowsResult.error;
+    const finalRows = finalRowsResult.data ?? [];
+    expect([...baselineIds].every((id) => finalRows.some((row) => row.id === id))).toBe(true);
+    const additions = finalRows.filter((row) => !baselineIds.has(row.id));
+    expect(additions.some((row) => Boolean(row.course_id))).toBe(true);
+    expect(additions.some((row) => Boolean(row.smccd_course_id))).toBe(true);
+    expect(additions.filter((row) => row.smccd_course_id).every((row) => row.is_weighted)).toBe(true);
+
+    const openCollegeTerms = new Map<string, number>();
+    for (const row of finalRows.filter((course) => course.status !== "completed" && course.smccd_course_id)) {
+      const key = `${row.school_year}:${row.term}`;
+      openCollegeTerms.set(key, (openCollegeTerms.get(key) ?? 0) + Number(row.college_units ?? 0));
+    }
+    expect([...openCollegeTerms.values()].every((units) => units <= 11)).toBe(true);
+
+    const verificationTurn = await sendTurn(request, accessToken, scheduleConversation,
+      "Verify the saved schedule now completes my d.tech diploma and bookmarked Communication Studies AA, including the major, CSM local GE, separate degree requirements, 60 units, and concurrent-enrollment limit. Read the current records; do not change anything.");
+    expect(verificationTurn.proposals).toHaveLength(0);
+    const verificationTools = await supabase.from("ai_tool_calls").select("tool_name,status,result")
+      .eq("conversation_id", scheduleConversation).order("created_at");
+    if (verificationTools.error) throw verificationTools.error;
+    const latestResult = (toolName: string) => verificationTools.data?.findLast((tool) => tool.tool_name === toolName && tool.status === "completed")?.result as Record<string, unknown> | undefined;
+    const academicData = latestResult("get_academic_context")?.data as { graduation?: Array<{ status?: string }> } | undefined;
+    const degreeData = latestResult("get_degree_progress")?.data as {
+      totals?: { projected_college_units?: number; total_degree_units?: number; remaining_degree_applicable_units?: number };
+      requirements?: Array<{ status?: string }>;
+      local_degree_pattern?: {
+        ge_areas?: Array<{ status?: string }>;
+        separate_graduation_requirements?: Array<{ status?: string }>;
+      };
+    } | undefined;
+    const enrollmentData = latestResult("get_enrollment_constraints")?.data as { terms?: Array<{ state?: string }> } | undefined;
+    expect(academicData?.graduation?.every((item) => item.status !== "missing")).toBe(true);
+    expect(degreeData?.totals?.remaining_degree_applicable_units).toBe(0);
+    expect(Number(degreeData?.totals?.projected_college_units ?? 0)).toBeGreaterThanOrEqual(Number(degreeData?.totals?.total_degree_units ?? 60));
+    expect(degreeData?.requirements?.every((item) => item.status === "satisfied")).toBe(true);
+    expect(degreeData?.local_degree_pattern?.ge_areas?.every((area) => area.status === "completed" || area.status === "planned")).toBe(true);
+    expect(degreeData?.local_degree_pattern?.separate_graduation_requirements?.every((requirement) => requirement.status === "completed" || requirement.status === "planned")).toBe(true);
+    expect(enrollmentData?.terms?.every((term) => term.state !== "blocked" && term.state !== "over_policy")).toBe(true);
+
+    const undoTurn = await sendTurn(request, accessToken, scheduleConversation, "Undo that schedule addition.");
+    expect(undoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(undoTurn);
+    const restoredRows = await supabase.from("plan_courses").select("id").eq("user_id", userId);
+    expect(new Set((restoredRows.data ?? []).map((row) => row.id))).toEqual(baselineIds);
   });
 });

@@ -1523,7 +1523,26 @@ export async function executeAssistantReadTool(
           completed_credits: item.completedCredits,
           projected_credits: item.verifiedProjectedCredits,
           status: item.status,
-          warnings: item.ruleWarnings
+          warnings: item.ruleWarnings,
+          eligible_course_options: workspace.mappings
+            .filter((mapping) => mapping.requirement_id === item.requirement.id && mapping.confidence === "verified")
+            .flatMap((mapping) => {
+              const course = workspace.courses.find((candidate) => candidate.id === mapping.course_id);
+              return course && course.confidence === "verified" && course.review_status === "approved"
+                ? [{
+                    course_id: course.id,
+                    name: course.name,
+                    subject: course.subject,
+                    credits: course.credits,
+                    weighted: course.is_weighted,
+                    term_type: course.term_type,
+                    grade_levels: course.grade_levels,
+                    prerequisites: course.prerequisites
+                  }]
+                : [];
+            })
+            .sort((left, right) => Number(right.weighted) - Number(left.weighted) || left.name.localeCompare(right.name))
+            .slice(0, 8)
         })),
         gpa: calculated.gpa,
         gpa_scenario: workspace.gpaScenarioChoices,
@@ -2179,13 +2198,17 @@ export async function executeAssistantReadTool(
     if (optionResult.error) throw new Error(optionResult.error.message);
     const options = (optionResult.data ?? []) as unknown as SmccdRequirementCourse[];
     const optionCodes = [...new Set(options.map((option) => option.course_code))];
-    const catalogResults = await Promise.all(
-      Array.from({ length: Math.ceil(optionCodes.length / 100) }, (_, index) => optionCodes.slice(index * 100, index * 100 + 100))
-        .map((codes) => supabase.from("smccd_courses").select("*").in("course_code", codes))
-    );
+    const catalogResults = await Promise.all([
+      ...Array.from({ length: Math.ceil(optionCodes.length / 100) }, (_, index) => optionCodes.slice(index * 100, index * 100 + 100))
+        .map((codes) => supabase.from("smccd_courses").select("*").in("course_code", codes)),
+      supabase.from("smccd_courses").select("*").eq("college_code", programResult.data.college_code)
+    ]);
     const catalogError = catalogResults.find((result) => result.error)?.error;
     if (catalogError) throw new Error(catalogError.message);
-    const catalogCourses = catalogResults.flatMap((result) => result.data ?? []) as unknown as SmccdCourse[];
+    const catalogCourses = [...new Map(
+      (catalogResults.flatMap((result) => result.data ?? []) as unknown as SmccdCourse[])
+        .map((course) => [course.id, course])
+    ).values()];
     const courseMapById = new Map<string, SmccdCourse>();
     for (const course of [...workspace.plannedSmccdCourses, ...catalogCourses]) courseMapById.set(course.id, course);
     const progressContext = createSmccdProgramProgressContext(requirements, options, workspace.planCourses, [...courseMapById.values()]);
@@ -2201,6 +2224,8 @@ export async function executeAssistantReadTool(
         totals: {
           completed_college_units: progress.completedCollegeUnits,
           projected_college_units: progress.projectedCollegeUnits,
+          total_degree_units: progress.totalDegreeUnits,
+          remaining_degree_applicable_units: Math.max(0, progress.totalDegreeUnits - progress.projectedDegreeApplicableUnits),
           completed_major_units: progress.completedMajorUnits,
           projected_major_units: progress.projectedMajorUnits,
           required_major_units: progress.requiredMajorUnits,
@@ -2248,7 +2273,22 @@ export async function executeAssistantReadTool(
             projected_units: area.projectedUnits,
             required_units: area.requiredUnits,
             reciprocity_applied: area.reciprocityApplied,
-            missing_summary: area.missingSummary
+            missing_summary: area.missingSummary,
+            eligible_course_options: area.eligibleCourseCodes
+              .flatMap((courseCode) => catalogCourses
+                .filter((course) => course.college_code === program.college_code
+                  && normalizeCollegeCourseCode(course.course_code) === normalizeCollegeCourseCode(courseCode))
+                .map((course) => ({
+                  course_id: course.id,
+                  college_code: course.college_code,
+                  course_code: course.course_code,
+                  title: course.title,
+                  units: Number(course.units_max ?? course.units_min),
+                  prerequisite_summary: course.prerequisites
+                })))
+              .sort((left, right) => left.prerequisite_summary.length - right.prerequisite_summary.length
+                || left.course_code.localeCompare(right.course_code))
+              .slice(0, 12)
           })),
           separate_graduation_requirements: localDegreeProgress.graduationRequirements.map((requirement) => ({
             requirement: requirement.id,
@@ -2257,7 +2297,23 @@ export async function executeAssistantReadTool(
             completed_course_codes: requirement.completedCourseCodes,
             projected_course_codes: requirement.projectedCourseCodes,
             manually_completed: requirement.manuallyCompleted,
-            missing_summary: requirement.missingSummary
+            missing_summary: requirement.missingSummary,
+            eligible_course_options: requirement.eligibleCourseCodes
+              .flatMap((courseCode) => catalogCourses
+                .filter((course) => normalizeCollegeCourseCode(course.course_code) === normalizeCollegeCourseCode(courseCode))
+                .map((course) => ({
+                  course_id: course.id,
+                  college_code: course.college_code,
+                  course_code: course.course_code,
+                  title: course.title,
+                  units: Number(course.units_max ?? course.units_min),
+                  prerequisite_summary: course.prerequisites,
+                  awarding_college_option: course.college_code === program.college_code
+                })))
+              .sort((left, right) => Number(right.awarding_college_option) - Number(left.awarding_college_option)
+                || left.prerequisite_summary.length - right.prerequisite_summary.length
+                || left.course_code.localeCompare(right.course_code))
+              .slice(0, 12)
           }))
         },
         boundary: "This is deterministic major, local-GE, and separate graduation-requirement evidence for the awarding college. Residency, catalog-right exceptions, substitutions, and final counselor approval remain separate."

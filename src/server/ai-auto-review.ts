@@ -11,6 +11,86 @@ export const autoReviewResultSchema = z.object({
 
 export type AutoReviewResult = z.infer<typeof autoReviewResultSchema>;
 
+type EvidenceEnvelope = { data?: unknown } | null | undefined;
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function records(value: unknown) {
+  return Array.isArray(value) ? value.map(record).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
+}
+
+function eligibleOptions(item: Record<string, unknown>) {
+  return records(item.eligible_course_options);
+}
+
+function optionUnitMap(items: Record<string, unknown>[]) {
+  const units = new Map<string, number>();
+  for (const item of items) {
+    for (const option of eligibleOptions(item)) {
+      const id = String(option.course_id ?? "");
+      if (id) units.set(id, Math.max(units.get(id) ?? 0, Number(option.units ?? 0)));
+    }
+  }
+  return units;
+}
+
+export function academicPlanEvidenceCoversProposal(input: {
+  arguments: Record<string, unknown>;
+  academicContext: EvidenceEnvelope;
+  degreeProgress: EvidenceEnvelope;
+  enrollmentConstraints: EvidenceEnvelope;
+}) {
+  const entries = records(input.arguments.entries);
+  const highSchoolIds = new Set(entries.filter((entry) => entry.source === "selected_school").map((entry) => String(entry.course_id ?? "")));
+  const collegeIds = new Set(entries.filter((entry) => entry.source === "smccd").map((entry) => String(entry.course_id ?? "")));
+  if (!entries.length || input.arguments.respect_recommended_limit !== true) return false;
+
+  const academicData = record(input.academicContext?.data);
+  const degreeData = record(input.degreeProgress?.data);
+  const enrollmentData = record(input.enrollmentConstraints?.data);
+  if (!academicData || !degreeData || !enrollmentData || enrollmentData.respect_recommended_limit === false) return false;
+
+  for (const requirement of records(academicData.graduation).filter((item) => item.status === "missing")) {
+    const remaining = Math.max(0, Number(requirement.required_credits ?? 0) - Number(requirement.projected_credits ?? 0));
+    const covered = eligibleOptions(requirement)
+      .filter((option) => highSchoolIds.has(String(option.course_id ?? "")))
+      .reduce((sum, option) => sum + Number(option.credits ?? 0), 0);
+    if (covered < remaining) return false;
+  }
+
+  const proposedCollegeUnits = optionUnitMap([
+    ...records(degreeData.requirements),
+    ...records(record(degreeData.local_degree_pattern)?.ge_areas),
+    ...records(record(degreeData.local_degree_pattern)?.separate_graduation_requirements)
+  ]);
+  const remainingDegreeUnits = Number(record(degreeData.totals)?.remaining_degree_applicable_units ?? 0);
+  const scheduledDegreeUnits = [...collegeIds].reduce((sum, id) => sum + Number(proposedCollegeUnits.get(id) ?? 0), 0);
+  if (scheduledDegreeUnits < remainingDegreeUnits) return false;
+
+  const usedMajorIds = new Set<string>();
+  for (const requirement of records(degreeData.requirements).filter((item) => item.status !== "satisfied")) {
+    const matching = eligibleOptions(requirement).filter((option) => collegeIds.has(String(option.course_id ?? "")) && !usedMajorIds.has(String(option.course_id ?? "")));
+    const remainingCount = requirement.remaining_count == null ? null : Number(requirement.remaining_count);
+    const remainingUnits = requirement.remaining_units == null ? null : Number(requirement.remaining_units);
+    if (remainingCount !== null && matching.length < remainingCount) return false;
+    if (remainingUnits !== null && matching.reduce((sum, option) => sum + Number(option.units ?? 0), 0) < remainingUnits) return false;
+    for (const option of matching) usedMajorIds.add(String(option.course_id));
+  }
+
+  const localPattern = record(degreeData.local_degree_pattern);
+  for (const area of records(localPattern?.ge_areas).filter((item) => !["completed", "planned"].includes(String(item.status)))) {
+    const remaining = Math.max(0, Number(area.required_units ?? 0) - Number(area.projected_units ?? 0));
+    const covered = eligibleOptions(area).filter((option) => collegeIds.has(String(option.course_id ?? ""))).reduce((sum, option) => sum + Number(option.units ?? 0), 0);
+    if (covered < remaining) return false;
+  }
+  for (const requirement of records(localPattern?.separate_graduation_requirements).filter((item) => !["completed", "planned"].includes(String(item.status)))) {
+    if (!eligibleOptions(requirement).some((option) => collegeIds.has(String(option.course_id ?? "")))) return false;
+  }
+  return true;
+}
+
 const autoReviewJsonSchema = {
   type: "object",
   additionalProperties: false,
@@ -53,6 +133,7 @@ export async function reviewAssistantProposal(input: {
   explanation: string;
   model: AiModel;
   verifiedBatchResolution?: boolean;
+  verifiedAcademicPlanResolution?: boolean;
   signal?: AbortSignal;
 }): Promise<AutoReviewResult> {
   if (input.toolName === "undo_change" && /\b(?:undo|revert|restore|reverse|rollback|roll back|bring\b.+\bback)\b/i.test(input.userMessage)) {
@@ -87,11 +168,13 @@ export async function reviewAssistantProposal(input: {
       };
     }
   }
-  if (input.toolName === "add_academic_courses" && input.verifiedBatchResolution) {
+  if (input.toolName === "add_academic_courses" && (input.verifiedBatchResolution || input.verifiedAcademicPlanResolution)) {
     return {
       decision: "approve",
       risk: "medium",
-      summary: "The exact mixed course batch matches the server-validated catalog, graduation, placement, prerequisite, and enrollment resolution for this request."
+      summary: input.verifiedAcademicPlanResolution
+        ? "The exact mixed plan covers the verified diploma, associate-degree, and enrollment evidence and remains fully reversible."
+        : "The exact mixed course batch matches the server-validated catalog, graduation, placement, prerequisite, and enrollment resolution for this request."
     };
   }
   const result = await runCodexStructured({

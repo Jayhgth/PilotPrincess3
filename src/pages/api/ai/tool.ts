@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { autoReviewResultSchema, reviewAssistantProposal } from "@/server/ai-auto-review";
+import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, reviewAssistantProposal } from "@/server/ai-auto-review";
 import { executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
@@ -52,6 +52,7 @@ export const POST: APIRoute = async ({ request }) => {
   });
   try {
     let verifiedBatchResolution = false;
+    let verifiedAcademicPlanResolution = false;
     if (validated.name === "add_academic_courses") {
       const resolution = await auth.supabase.from("ai_tool_calls")
         .select("result")
@@ -80,6 +81,26 @@ export const POST: APIRoute = async ({ request }) => {
       verifiedBatchResolution = resolutionData?.complete === true
         && JSON.stringify(normalizedEntries(resolutionData.entries)) === JSON.stringify(normalizedEntries(validated.arguments.entries))
         && (resolutionData.respect_recommended_limit !== false) === (validated.arguments.respect_recommended_limit !== false);
+      if (!verifiedBatchResolution) {
+        const evidence = await auth.supabase.from("ai_tool_calls")
+          .select("tool_name,result,status")
+          .eq("turn_id", toolCall.turn_id)
+          .eq("user_id", auth.user.id)
+          .in("tool_name", ["get_academic_context", "get_degree_progress", "get_enrollment_constraints"])
+          .eq("status", "completed");
+        const evidenceResult = (name: string) => {
+          const envelope = evidence.data?.find((item) => item.tool_name === name)?.result;
+          return envelope && typeof envelope === "object" && !Array.isArray(envelope)
+            ? envelope as { data?: unknown }
+            : null;
+        };
+        verifiedAcademicPlanResolution = !evidence.error && academicPlanEvidenceCoversProposal({
+          arguments: validated.arguments,
+          academicContext: evidenceResult("get_academic_context"),
+          degreeProgress: evidenceResult("get_degree_progress"),
+          enrollmentConstraints: evidenceResult("get_enrollment_constraints")
+        });
+      }
     }
     review = await reviewAssistantProposal({
       userMessage: String((await auth.supabase.from("ai_messages").select("content").eq("turn_id", toolCall.turn_id).eq("role", "user").maybeSingle()).data?.content ?? ""),
@@ -88,6 +109,7 @@ export const POST: APIRoute = async ({ request }) => {
       explanation: toolCall.explanation,
       model: preferences.model,
       verifiedBatchResolution,
+      verifiedAcademicPlanResolution,
       signal: request.signal
     });
   } catch {
