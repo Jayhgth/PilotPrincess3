@@ -841,6 +841,16 @@ export function generateSuggestedPlan(
   const verifiedMathCourseIds = new Set((context.mappings ?? [])
     .filter((mapping) => mapping.confidence === "verified" && mathRequirementIds.has(mapping.requirement_id))
     .map((mapping) => mapping.course_id));
+  const requirementAreaById = new Map((context.requirements ?? []).map((requirement) => [requirement.id, requirement.area]));
+  const preferredAreasByCourse = new Map<string, Set<RequirementArea>>();
+  for (const mapping of (context.mappings ?? []).filter((candidate) => candidate.confidence === "verified")) {
+    const area = requirementAreaById.get(mapping.requirement_id);
+    if (!area) continue;
+    const areas = preferredAreasByCourse.get(mapping.course_id) ?? new Set<RequirementArea>();
+    areas.add(area);
+    preferredAreasByCourse.set(mapping.course_id, areas);
+  }
+  const alwaysHighSchoolAreas = new Set(context.planningProfile?.always_high_school_areas ?? []);
   const termLoad = (grade: GradeLevel, term: "fall" | "spring" | "summer") => term === "summer"
     ? existing.filter((row) => row.grade_level === grade && row.term === "summer").length
       + generated.filter((row) => row.grade_level === grade && row.term === "summer").length
@@ -923,6 +933,10 @@ export function generateSuggestedPlan(
           || left.name.localeCompare(right.name));
       const course = candidates[0];
       if (!course) continue;
+      const replaceableAreas = [...(preferredAreasByCourse.get(course.id) ?? [])].filter((area) => area !== "electives" && !alwaysHighSchoolAreas.has(area));
+      if (replaceableAreas.some((area) => existing.some((row) => row.grade_level === grade
+        && Boolean(row.smccd_course_id || Number(row.college_units ?? 0) > 0)
+        && row.requirement_area_override === area))) continue;
       if (context.startingMathCourse && plannerMathRank(course) !== null && generated.some((row) => row.grade_level === grade && plannerMathRank(courseMap.get(row.course_id)!) !== null)) continue;
       if (context.startingLanguageCourse && plannerLanguageIdentity(course).family && generated.some((row) => row.grade_level === grade && row.course_id && plannerLanguageIdentity(courseMap.get(row.course_id)!).family)) continue;
       const semesterIndex = semesterCourseCountByGrade.get(grade) ?? 0;

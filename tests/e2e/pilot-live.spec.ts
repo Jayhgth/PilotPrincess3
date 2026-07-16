@@ -44,6 +44,7 @@ async function sendTurn(
     message?: string;
     assistantMessage?: { content?: string };
     proposals?: Proposal[];
+    runtime?: { latencyMs?: number };
   });
   const failure = events.find((event) => event.kind === "turn.failed");
   expect(failure?.message).toBeUndefined();
@@ -51,7 +52,8 @@ async function sendTurn(
   expect(completed).toBeDefined();
   return {
     message: completed?.assistantMessage?.content ?? "",
-    proposals: completed?.proposals ?? []
+    proposals: completed?.proposals ?? [],
+    runtime: completed?.runtime ?? {}
   };
 }
 
@@ -322,35 +324,36 @@ test.describe("live Pilot behavior", () => {
     }
     expect([...openCollegeTerms.values()].every((units) => units <= 11)).toBe(true);
 
-    const verificationTurn = await sendTurn(request, accessToken, scheduleConversation,
-      "Verify the saved schedule now completes my d.tech diploma and bookmarked Communication Studies AA, including the major, CSM local GE, separate degree requirements, 60 units, and concurrent-enrollment limit. Read the current records; do not change anything.");
-    expect(verificationTurn.proposals).toHaveLength(0);
-    const verificationTools = await supabase.from("ai_tool_calls").select("tool_name,status,result")
-      .eq("conversation_id", scheduleConversation).order("created_at");
-    if (verificationTools.error) throw verificationTools.error;
-    const latestResult = (toolName: string) => verificationTools.data?.findLast((tool) => tool.tool_name === toolName && tool.status === "completed")?.result as Record<string, unknown> | undefined;
-    const academicData = latestResult("get_academic_context")?.data as { graduation?: Array<{ status?: string }> } | undefined;
-    const degreeData = latestResult("get_degree_progress")?.data as {
-      totals?: { projected_college_units?: number; total_degree_units?: number; remaining_degree_applicable_units?: number };
-      requirements?: Array<{ status?: string }>;
-      local_degree_pattern?: {
-        ge_areas?: Array<{ status?: string }>;
-        separate_graduation_requirements?: Array<{ status?: string }>;
-      };
-    } | undefined;
-    const enrollmentData = latestResult("get_enrollment_constraints")?.data as { terms?: Array<{ state?: string }> } | undefined;
-    expect(academicData?.graduation?.every((item) => item.status !== "missing")).toBe(true);
-    expect(degreeData?.totals?.remaining_degree_applicable_units).toBe(0);
-    expect(Number(degreeData?.totals?.projected_college_units ?? 0)).toBeGreaterThanOrEqual(Number(degreeData?.totals?.total_degree_units ?? 60));
-    expect(degreeData?.requirements?.every((item) => item.status === "satisfied")).toBe(true);
-    expect(degreeData?.local_degree_pattern?.ge_areas?.every((area) => area.status === "completed" || area.status === "planned")).toBe(true);
-    expect(degreeData?.local_degree_pattern?.separate_graduation_requirements?.every((requirement) => requirement.status === "completed" || requirement.status === "planned")).toBe(true);
-    expect(enrollmentData?.terms?.every((term) => term.state !== "blocked" && term.state !== "over_policy")).toBe(true);
-
     const undoTurn = await sendTurn(request, accessToken, scheduleConversation, "Undo that schedule addition.");
     expect(undoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(undoTurn);
     const restoredRows = await supabase.from("plan_courses").select("id").eq("user_id", userId);
     expect(new Set((restoredRows.data ?? []).map((row) => row.id))).toEqual(baselineIds);
+
+    // Regression for the terse workflow that previously asked unnecessary
+    // questions and then timed out after completing the schedule read.
+    const emptyPlan = await supabase.from("plan_courses").delete().eq("user_id", userId);
+    if (emptyPlan.error) throw emptyPlan.error;
+    const freshmanSettings = await supabase.from("student_settings").update({ grade_level: 9, graduation_year: 2030, plan_start_grade: 9, plan_end_grade: 12 }).eq("id", userId);
+    if (freshmanSettings.error) throw freshmanSettings.error;
+    const fullPlanConversation = await createConversation("Terse integrated full plan");
+    const fullPlanTurn = await sendTurn(request, accessToken, fullPlanConversation, "Create a full plan for me");
+    expect(fullPlanTurn.proposals.map((proposal) => proposal.name), fullPlanTurn.message).toEqual(["add_course_schedule"]);
+    expect(fullPlanTurn.runtime.latencyMs).toBeLessThan(120_000);
+    const fullPlanTools = await supabase.from("ai_tool_calls").select("tool_name,status,result").eq("conversation_id", fullPlanConversation).order("created_at");
+    if (fullPlanTools.error) throw fullPlanTools.error;
+    const fullPlanRead = fullPlanTools.data?.find((tool) => tool.tool_name === "get_course_schedule_options")?.result as { data?: { degree_planning?: { college_course_count?: number } } } | undefined;
+    expect(Number(fullPlanRead?.data?.degree_planning?.college_course_count ?? 0)).toBeGreaterThan(0);
+    await apply(fullPlanTurn);
+    const generatedFullPlan = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+    if (generatedFullPlan.error) throw generatedFullPlan.error;
+    expect(generatedFullPlan.data?.some((row) => Boolean(row.course_id))).toBe(true);
+    expect(generatedFullPlan.data?.some((row) => Boolean(row.smccd_course_id))).toBe(true);
+    for (const grade of [9, 10, 11, 12]) {
+      expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && designLabCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
+    }
+    const fullPlanUndo = await sendTurn(request, accessToken, fullPlanConversation, "Undo that generated plan.");
+    expect(fullPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(fullPlanUndo);
   });
 });

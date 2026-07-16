@@ -654,11 +654,27 @@ function schedulePeriodFilters(normalized: string) {
 
 function requestsScheduleConstruction(userMessage: string) {
   const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
-  const schedule = /\b(?:schedule|course plan|academic plan|four[ -]?year plan)\b/.test(normalized)
+  const structuredPlanAnswer = /\bhere are my answers\b/.test(normalized) && /\bplan prioritize\b|\bprioritize\?\b/.test(normalized);
+  const schedule = (/\b(?:schedule|course plan|academic plan|four[ -]?year plan)\b/.test(normalized)
+    || /\b(?:full|complete|new|replacement)\s+(?:academic\s+|course\s+)?plan\b/.test(normalized)
+    || structuredPlanAnswer)
     && !/\b(?:meeting|appointment|calendar|study|homework|workout|sleep)\s+schedule\b/.test(normalized);
   if (!schedule) return false;
+  if (structuredPlanAnswer) return true;
   return /\b(?:generate|build|create|make|draft|suggest|recommend|find|design|redesign|replace|rebuild|regenerate|redo|rework|come up with)\b/.test(normalized)
     || /\b(?:new|replacement|better|highest[ -]?gpa|gpa[ -]?focused)\s+(?:course\s+)?(?:schedule|plan)\b/.test(normalized);
+}
+
+export function assistantQuestionsWithCombinedOption(questions: AssistantQuestion[]) {
+  return questions.map((question) => {
+    const combinable = /\b(?:prioritize|priorities|goals?|focus|include|optimi[sz]e)\b/i.test(question.prompt)
+      && !/\b(?:starting|grade|school|theme|which one|choose one)\b/i.test(question.prompt);
+    if (!combinable || question.options.length >= 4 || question.options.some((option) => /\ball of (?:the )?above\b/i.test(option.label))) return question;
+    return {
+      ...question,
+      options: [...question.options, { id: "all_of_the_above", label: "All of the above" }]
+    };
+  });
 }
 
 function requestedCourseBatch(normalized: string): CourseBatchRequest | null {
@@ -769,11 +785,12 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     const startingLanguageCourse = intent.startingLanguageCourse;
     const planningInterests = intent.interests;
     const excludesCollegeCourses = intent.includeCollegeCourses === false;
+    const allPlanningPriorities = /\ball of (?:the )?above\b/.test(normalized);
     const objectives = [
       "complete_diploma",
-      ...(/\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b|\b(?:as\s+)?high\s+(?:a\s+)?gpa\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
-      ...(/\b(most|multiple|maximize)\b.*\b(degree|degrees)\b|\bdegree overlap\b/.test(normalized) ? ["maximize_degree_overlap"] : []),
-      ...(/\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
+      ...(allPlanningPriorities || /\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b|\b(?:as\s+)?high\s+(?:a\s+)?gpa\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
+      ...(allPlanningPriorities || /\b(most|multiple|maximize)\b.*\b(degree|degrees)\b|\bdegree overlap\b/.test(normalized) ? ["maximize_degree_overlap"] : []),
+      ...(allPlanningPriorities || /\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
     ];
     const requestsAdvancedRigor = /\brigorous\b|\b(?:high|strong|good|advanced)\s+(?:course\s+)?rigor\b|\brigor\b.{0,20}\b(?:high|strong|good|advanced)\b/.test(normalized);
     return {
@@ -1065,7 +1082,7 @@ export function schedulePreview(data: Record<string, unknown>) {
   const degreeLine = Number(degreePlanning?.bookmarked_goal_count ?? 0) > 0
     ? degreePlanning?.all_bookmarked_goals_covered === true
       ? `The integrated college portion covers all ${Number(degreePlanning?.bookmarked_goal_count)} bookmarked degree ${Number(degreePlanning?.bookmarked_goal_count) === 1 ? "goal" : "goals"}.`
-      : "The optimizer could not cover every bookmarked degree requirement within the verified prerequisite, grade, and enrollment constraints."
+      : "The integrated college portion makes the maximum verified progress toward the bookmarked degree goals within the available grades, prerequisites, and enrollment limit; the remaining requirements stay visible in the degree audit."
     : null;
   return [opening, ...visibleAdjustments, ...visible, ...(visibleDegreeCourses.length ? ["College and degree overlap:", ...visibleDegreeCourses] : []), coverageLine, degreeLine, whyOne].filter(Boolean).join("\n\n");
 }
@@ -1082,12 +1099,14 @@ export function scheduleResultIsComplete(data: Record<string, unknown>) {
   const degreePlanning = data.degree_planning && typeof data.degree_planning === "object" && !Array.isArray(data.degree_planning)
     ? data.degree_planning as Record<string, unknown>
     : null;
-  const degreeComplete = Number(degreePlanning?.bookmarked_goal_count ?? 0) === 0 || degreePlanning?.all_bookmarked_goals_covered === true;
+  const degreeIntegrated = Number(degreePlanning?.bookmarked_goal_count ?? 0) === 0
+    || degreePlanning?.all_bookmarked_goals_covered === true
+    || Number(degreePlanning?.college_course_count ?? 0) > 0;
   return Number(coverage.requirement_count ?? 0) > 0
     && readiness?.evidence_ready === true
     && constraints?.satisfied === true
     && coverage.all_requirements_covered_after === true
-    && degreeComplete
+    && degreeIntegrated
     && Array.isArray(coverage.remaining_gaps)
     && coverage.remaining_gaps.length === 0;
 }
@@ -1145,7 +1164,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "Every proposed change is reviewed by a separate reviewer and then applied or declined automatically; never ask the student to choose a review mode or confirm a valid proposal.",
     "A write may follow a completed read in the same turn when the read supplies the exact IDs and evidence needed for the student's explicit request. Never combine an unverified guess with a mutation.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
-    "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
+    "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. When two or more listed priorities can validly be combined, include an All of the above option; never add it to mutually exclusive choices such as grade, school, or theme. Ask no question when current records or deterministic defaults are sufficient. Do not combine questions with tool calls.",
     "Never end with a promise such as 'I'll check' or 'let me look' without actually calling the relevant read tool in the same turn. If no tool can perform the promised work, state that limitation directly.",
     "Do not mention the response schema. Put your student-facing response in assistant_message, structured choices in questions, and use tool_calls only for the tools below. arguments_json must be a valid JSON object encoded as a string.",
     "Maintain lightweight memory only when the student explicitly frames information as durable (for example: remember this, from now on, always, usually, I prefer, or my long-term goal). A one-turn schedule instruction is not durable memory. Use stable lowercase keys for durable preferences and return zero to two updates. Never store inferred traits, secrets, transcript contents, grades, GPA, course rows, or facts already owned by app tables. Use forget only when the student explicitly retracts remembered context.",
@@ -1531,8 +1550,12 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           const adjustments = Array.isArray(data.adjustments)
             ? data.adjustments.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
             : [];
+          const degreePlanning = data.degree_planning && typeof data.degree_planning === "object" && !Array.isArray(data.degree_planning)
+            ? data.degree_planning as Record<string, unknown>
+            : null;
+          const degreeCourseCount = Number(degreePlanning?.college_course_count ?? 0);
           const ids = courses.map((row) => row.course_id).filter((id): id is string => typeof id === "string");
-          if (!courses.length && !adjustments.length) {
+          if (!courses.length && !adjustments.length && degreeCourseCount === 0) {
             return {
               message: schedulePreview(data),
               questions: [],
@@ -1768,7 +1791,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         continue;
       }
       if (parsed.data.assistant_message) latestMessage = parsed.data.assistant_message.trim();
-      latestQuestions = parsed.data.questions;
+      latestQuestions = assistantQuestionsWithCombinedOption(parsed.data.questions);
       if (parsed.data.memory_updates.length) latestMemoryUpdates = parsed.data.memory_updates;
 
       const calls: AssistantChatToolActivity[] = [];
@@ -1836,6 +1859,73 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           await options.onToolActivity(proposal);
           return {
             message: academicBatchMessage(batch),
+            questions: [],
+            threadId: thread.id,
+            usage,
+            latencyMs: Date.now() - startedAt,
+            model,
+            proposals: [proposal],
+            memoryUpdates: latestMemoryUpdates
+          };
+        }
+        const scheduleResolution = results.find((result) => result.tool === "get_course_schedule_options" && result.status === "completed");
+        const scheduleResult = scheduleResolution?.result && typeof scheduleResolution.result === "object" && !Array.isArray(scheduleResolution.result)
+          ? scheduleResolution.result as AssistantToolResult
+          : null;
+        if (scheduleResult?.data && typeof scheduleResult.data === "object" && !Array.isArray(scheduleResult.data)) {
+          const data = scheduleResult.data as Record<string, unknown>;
+          const preview = schedulePreview(data);
+          if (!scheduleResultIsComplete(data)) {
+            return {
+              message: `${preview}\n\nI left your current four-year plan unchanged because the integrated result did not pass every diploma, degree, sequence, and workload check.`,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: [],
+              memoryUpdates: latestMemoryUpdates
+            };
+          }
+          const scheduleCall = readCalls.find((call) => call.name === "get_course_schedule_options");
+          const courses = Array.isArray(data.courses)
+            ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+            : [];
+          const adjustments = Array.isArray(data.adjustments) ? data.adjustments : [];
+          const degreePlanning = data.degree_planning && typeof data.degree_planning === "object" && !Array.isArray(data.degree_planning)
+            ? data.degree_planning as Record<string, unknown>
+            : null;
+          const degreeCourseCount = Number(degreePlanning?.college_course_count ?? 0);
+          const ids = courses.map((row) => row.course_id).filter((id): id is string => typeof id === "string");
+          if (!ids.length && !adjustments.length && degreeCourseCount === 0) {
+            return { message: preview, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [], memoryUpdates: latestMemoryUpdates };
+          }
+          const argumentsValue = scheduleCall?.arguments ?? {};
+          const proposal: AssistantChatToolActivity = {
+            id: crypto.randomUUID(),
+            name: "add_course_schedule",
+            label: assistantToolLabel("add_course_schedule"),
+            arguments: {
+              course_ids: ids,
+              respect_recommended_limit: argumentsValue.respect_recommended_limit ?? true,
+              interests: argumentsValue.interests ?? [],
+              rigor: argumentsValue.rigor ?? "balanced",
+              max_courses_per_term: argumentsValue.max_courses_per_term ?? null,
+              ...(argumentsValue.start_grade ? { start_grade: argumentsValue.start_grade } : {}),
+              objectives: argumentsValue.objectives ?? ["complete_diploma"],
+              ...(argumentsValue.starting_math_course ? { starting_math_course: argumentsValue.starting_math_course } : {}),
+              ...(argumentsValue.starting_language_course ? { starting_language_course: argumentsValue.starting_language_course } : {}),
+              include_college_courses: argumentsValue.include_college_courses ?? true,
+              replace_existing: argumentsValue.replace_existing ?? false,
+              replace_grade_levels: argumentsValue.replace_grade_levels ?? []
+            },
+            explanation: `Apply the complete deterministic schedule with ${ids.length} selected-school and ${degreeCourseCount} bookmarked-degree course additions.`,
+            mutatesData: true,
+            status: "pending_confirmation"
+          };
+          await options.onToolActivity(proposal);
+          return {
+            message: `${preview}\n\nThis exact integrated schedule will apply automatically if final validation passes.`,
             questions: [],
             threadId: thread.id,
             usage,

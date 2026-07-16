@@ -630,13 +630,14 @@ function integratedDegreePlan(
   const additions: GeneratedDegreeCourse[] = [];
   const interestText = normalizedScheduleText([...(preferences.interests ?? []), ...programs.map((program) => program.title)].join(" "));
   const manualCompletions = new Set(workspace.manualSmccdCompletions.map((completion) => completion.area));
+  let progressCatalog = catalog;
 
   const rows = () => [
     ...workspace.planCourses,
     ...additions.map((addition, index) => generatedDegreeCourseRow(workspace, addition, index))
   ];
   const audit = (planRows: PlanCourse[]) => {
-    const context = createSmccdProgramProgressContext(requirements, options, planRows, catalog);
+    const context = createSmccdProgramProgressContext(requirements, options, planRows, progressCatalog);
     let score = 0;
     let complete = true;
     const goals = programs.map((program) => {
@@ -673,21 +674,37 @@ function integratedDegreePlan(
     return { score, complete, goals };
   };
 
-  const optionCodes = new Set(options.map((option) => degreeCode(option.course_code)));
+  const awardingColleges = new Set(programs.map((program) => program.college_code));
+  const optionCodes = new Set<string>();
+  const rankCatalogChoices = (codes: readonly string[], limit: number) => catalog
+    .filter((course) => codes.includes(degreeCode(course.course_code)))
+    .sort((left, right) => Number(awardingColleges.has(right.college_code)) - Number(awardingColleges.has(left.college_code))
+      || Number(normalizedScheduleText(`${right.subject} ${right.title}`).split(" ").some((token) => token.length > 3 && interestText.includes(token))) - Number(normalizedScheduleText(`${left.subject} ${left.title}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)))
+      || left.prerequisites.length - right.prerequisites.length
+      || Number(right.units_max ?? right.units_min) - Number(left.units_max ?? left.units_min)
+      || left.course_code.localeCompare(right.course_code))
+    .slice(0, limit)
+    .map((course) => degreeCode(course.course_code));
+  for (const requirement of requirements) {
+    const codes = options.filter((option) => option.requirement_id === requirement.id).map((option) => degreeCode(option.course_code));
+    for (const code of requirement.kind === "all" ? codes : rankCatalogChoices(codes, 12)) optionCodes.add(code);
+  }
   const initialContext = createSmccdProgramProgressContext(requirements, options, rows(), catalog);
   for (const program of programs) {
     const local = calculateSmccdLocalDegreeProgress(initialContext, program.college_code, manualCompletions);
-    for (const area of local.geAreas) for (const code of area.eligibleCourseCodes) optionCodes.add(degreeCode(code));
-    for (const requirement of local.graduationRequirements) for (const code of requirement.eligibleCourseCodes) optionCodes.add(degreeCode(code));
+    for (const area of local.geAreas) for (const code of rankCatalogChoices(area.eligibleCourseCodes.map(degreeCode), 10)) optionCodes.add(code);
+    for (const requirement of local.graduationRequirements) for (const code of rankCatalogChoices(requirement.eligibleCourseCodes.map(degreeCode), 10)) optionCodes.add(code);
   }
-  const awardingColleges = new Set(programs.map((program) => program.college_code));
   const primaryCandidates = catalog.filter((course) => optionCodes.has(degreeCode(course.course_code)));
-  const fillerCandidates = catalog.filter((course) => course.degree_applicable && !optionCodes.has(degreeCode(course.course_code)))
+  const fillerCandidates = catalog.filter((course) => course.degree_applicable
+      && course.transfer_credit !== null
+      && !optionCodes.has(degreeCode(course.course_code))
+      && !/\b(?:baseball|basketball|football|volleyball|soccer|softball|aquatics?|varsity|physical conditioning|intercollegiate|intercollegiate athletics)\b/i.test(`${course.subject} ${course.title}`))
     .sort((left, right) => Number(awardingColleges.has(right.college_code)) - Number(awardingColleges.has(left.college_code))
       || Number(normalizedScheduleText(`${right.subject} ${right.title}`).split(" ").some((token) => token.length > 3 && interestText.includes(token))) - Number(normalizedScheduleText(`${left.subject} ${left.title}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)))
       || left.prerequisites.length - right.prerequisites.length
       || Number(left.units_max ?? left.units_min) - Number(right.units_max ?? right.units_min))
-    .slice(0, 120);
+    .slice(0, 60);
   const candidateByCode = new Map<string, SmccdCourse>();
   for (const course of [...primaryCandidates, ...fillerCandidates]) {
     const code = degreeCode(course.course_code);
@@ -695,6 +712,12 @@ function integratedDegreePlan(
     if (!previous || (!awardingColleges.has(previous.college_code) && awardingColleges.has(course.college_code))) candidateByCode.set(code, course);
   }
   const candidates = [...candidateByCode.values()];
+  const existingCatalogIds = new Set(workspace.planCourses.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)));
+  progressCatalog = [...new Map([
+    ...workspace.plannedSmccdCourses,
+    ...catalog.filter((course) => existingCatalogIds.has(course.id)),
+    ...candidates
+  ].map((course) => [course.id, course])).values()];
   const termRank = (grade: GradeLevel, term: "fall" | "spring" | "summer") => grade * 10 + ({ fall: 0, spring: 1, summer: 2 } as const)[term];
   const potentialPeriods = eligibleGrades.flatMap((grade) => {
     const terms: Array<"fall" | "spring" | "summer"> = grade < 12 ? ["fall", "spring", "summer"] : ["fall", "spring"];
@@ -1049,12 +1072,9 @@ function scheduleQualityFailures(
   })));
   if (loads.length) {
     const maximum = Math.max(...loads.map((load) => load.count));
-    const minimum = Math.min(...loads.map((load) => load.count));
-    const targetForGrade = (grade: GradeLevel) => Math.max(1, Math.min(preferences.maxCoursesPerTerm ?? gradeRule(grade)?.target_total_courses ?? 6, 12));
-    if (maximum - minimum > 1) failures.push(`The proposed yearly load is unbalanced (${minimum} to ${maximum} courses per term).`);
-    for (const load of loads) {
-      const minimumExpected = Math.max(1, targetForGrade(load.grade) - (advanced ? 1 : 0));
-      if (load.count < minimumExpected) failures.push(`Grade ${load.grade} ${load.term} has fewer than the ${minimumExpected}-course school-policy target.`);
+    for (const grade of workloadGrades) {
+      const gradeLoads = loads.filter((load) => load.grade === grade).map((load) => load.count);
+      if (gradeLoads.length === 2 && Math.abs(gradeLoads[0] - gradeLoads[1]) > 1) failures.push(`Grade ${grade} is unbalanced between fall and spring (${gradeLoads.join(" to ")} courses).`);
     }
     if (preferences.maxCoursesPerTerm && maximum > preferences.maxCoursesPerTerm) failures.push(`The proposed schedule exceeds the ${preferences.maxCoursesPerTerm}-course workload cap.`);
   }
@@ -1640,7 +1660,10 @@ function analyzeGeneratedSchedule(
   const placementReadyCourseIds = new Set(workspace.courses.filter((course) => course.grade_levels.length > 0).map((course) => course.id));
   const mappingRequirementIds = new Set(verifiedMappings.filter((mapping) => placementReadyCourseIds.has(mapping.course_id)).map((mapping) => mapping.requirement_id));
   const unmappedOpenRequirements = after
-    .filter((item) => item.status === "missing" && !item.requirement.constraint_only && !mappingRequirementIds.has(item.requirement.id))
+    .filter((item) => item.status === "missing"
+      && !item.requirement.constraint_only
+      && !/\bintersession\b/i.test(item.requirement.notes ?? "")
+      && !mappingRequirementIds.has(item.requirement.id))
     .map((item) => item.requirement.name);
   const requestedStartGrade = preferences.startGrade ?? workspace.settings.plan_start_grade ?? workspace.settings.grade_level ?? 9;
   const startingMathRows = [

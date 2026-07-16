@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantQuestionsWithCombinedOption, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -93,6 +93,13 @@ describe("Codex feature boundaries", () => {
       tool_calls: []
     });
     expect(parsed.questions[0]?.options).toHaveLength(2);
+    expect(assistantQuestionsWithCombinedOption([{
+      id: "priority",
+      prompt: "What should the plan prioritize?",
+      options: [{ id: "diploma", label: "Finish diploma" }, { id: "gpa", label: "Maximize GPA" }, { id: "degree", label: "Degree overlap" }],
+      allow_custom: true
+    }])[0]?.options.at(-1)).toEqual({ id: "all_of_the_above", label: "All of the above" });
+    expect(assistantQuestionsWithCombinedOption(parsed.questions)[0]?.options).toHaveLength(2);
     }
 
     {
@@ -421,6 +428,20 @@ describe("Codex feature boundaries", () => {
     expect(requiredAssistantEvidenceRead("Generate a four-year course plan for me")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
+    });
+    expect(requiredAssistantEvidenceRead("Create a full plan for me")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
+    });
+    expect(requiredAssistantEvidenceRead("Here are my answers:\n- **What grade are you starting in?** 9th grade\n- **What should the plan prioritize?** All of the above")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: "advanced",
+        include_college_courses: true,
+        objectives: ["complete_diploma", "maximize_weighted_gpa", "maximize_degree_overlap", "align_major"],
+        start_grade: 9
+      }
     });
     expect(requiredAssistantEvidenceRead("Create a rigorous schedule focused on computer science with no more than six classes per term")).toEqual({
       name: "get_course_schedule_options",
