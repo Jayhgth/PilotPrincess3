@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compareCourseBoardRowsForTerm, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
-import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
+import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 
@@ -39,6 +39,10 @@ const requirement: GraduationRequirement = {
 };
 
 describe("core academic planning contracts", () => {
+  it("recognizes one cohesive high-school and college math ladder", () => {
+    expect(["Algebra 1", "Geometry", "Algebra 2", "MATH 225 Path to Calculus", "MATH 251 Calculus with Analytic Geometry I", "MATH 252 Calculus with Analytic Geometry II", "MATH 253 Calculus with Analytic Geometry III"].map(mathSequenceRankFromText)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(mathSequenceRankFromText("MATH 270 Linear Algebra")).toBeNull();
+  });
   it("enforces ordering, credit, mapping, and GPA invariants", () => {
     {
     const rows = [

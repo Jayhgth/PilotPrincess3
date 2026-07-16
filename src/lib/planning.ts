@@ -637,16 +637,25 @@ export function courseNeedsExplicitPlanningIntent(course: Course, interests: rea
   return (catalogChoicePlaceholder || AUTOMATIC_PLANNING_REQUIRES_INTENT.test(courseText)) && !planningInterestMatches(course, interestText);
 }
 
-function plannerMathRank(course: Course) {
-  const text = normalizedPlannerText(`${course.course_code ?? ""} ${course.name}`);
-  if (/\bmultivariable\b|\blinear algebra\b/.test(text)) return 7;
-  if (/\bcalculus bc\b|\bcalculus 2\b|\bcalculus ii\b/.test(text)) return 6;
-  if (/\bcalculus ab\b|\bcalculus 1\b|\bcalculus i\b/.test(text)) return 5;
+export function mathSequenceRankFromText(value: string) {
+  const text = normalizedPlannerText(value);
+  if (/\bmath\s*253\b|\bcalculus\b.*\b(?:3|iii)\b|\bmultivariable\b/.test(text)) return 7;
+  if (/\bmath\s*252\b|\bcalculus bc\b|\bcalculus\b.*\b(?:2|ii)\b/.test(text)) return 6;
+  if (/\bmath\s*251\b|\bcalculus ab\b|\bcalculus\b.*\b(?:1|i)\b/.test(text)) return 5;
   if (/\bprecalculus\b/.test(text)) return 4;
-  if (/\bstatistics\b/.test(text)) return 3.5;
+  if (/\bmath\s*(?:222|225)\b|\bpath to calculus\b/.test(text)) return 4;
   if (/\balgebra 2\b|\balgebra ii\b|\bintegrated math 3\b/.test(text)) return 3;
   if (/\bgeometry\b|\bintegrated math 2\b/.test(text)) return 2;
   if (/\balgebra 1\b|\balgebra i\b|\bintegrated math 1\b/.test(text)) return 1;
+  return null;
+}
+
+function plannerMathRank(course: Course) {
+  const text = normalizedPlannerText(`${course.course_code ?? ""} ${course.name}`);
+  const sequenceRank = mathSequenceRankFromText(text);
+  if (sequenceRank !== null) return sequenceRank;
+  if (/\blinear algebra\b/.test(text)) return 7;
+  if (/\bstatistics\b/.test(text)) return 3.5;
   return null;
 }
 
@@ -731,7 +740,7 @@ function acceleratedLanguagePlacementAllowed(
     && firstListedGrade === grade + 1;
 }
 
-function plannerStageScore(course: Course, area: RequirementArea, grade: GradeLevel, priorCourses: Course[]): number {
+function plannerStageScore(course: Course, area: RequirementArea, grade: GradeLevel, priorCourses: Course[], priorMathSequenceRank = 0): number {
   const text = normalizedPlannerText(`${course.course_code ?? ""} ${course.name} ${course.subject}`);
   if (area === "english") {
     const expected = grade === 9
@@ -748,7 +757,7 @@ function plannerStageScore(course: Course, area: RequirementArea, grade: GradeLe
   if (area === "math") {
     const rank = plannerMathRank(course);
     if (!rank) return -120;
-    const priorRank = Math.max(0, ...priorCourses.map((candidate) => plannerMathRank(candidate) ?? 0));
+    const priorRank = Math.max(priorMathSequenceRank, ...priorCourses.map((candidate) => mathSequenceRankFromText(`${candidate.course_code ?? ""} ${candidate.name}`) ?? 0));
     const priorText = normalizedPlannerText(priorCourses.map((candidate) => candidate.name).join(" "));
     if (/\bprecalculus honors\b/.test(text) && !/\balgebra (?:ii|2)\b.*\btrig/.test(priorText)) return 120;
     if (!priorRank) return 100 - rank;
@@ -1022,6 +1031,13 @@ export function generateSuggestedPlan(
       12
     ));
     const priorCourses = (grade: GradeLevel) => allPlannedCourses().filter(({ row }) => row.grade_level < grade).map(({ course: candidate }) => candidate);
+    const planRowMathSequenceRank = (row: { course_id: string | null; custom_course_name?: string | null }) => {
+      const candidate = row.course_id ? courseById.get(row.course_id) : null;
+      return mathSequenceRankFromText(`${candidate?.course_code ?? ""} ${candidate?.name ?? row.custom_course_name ?? ""}`);
+    };
+    const priorMathSequenceRank = (grade: GradeLevel) => Math.max(0, ...[...existing, ...generated]
+      .filter((row) => row.grade_level < grade)
+      .map((row) => planRowMathSequenceRank(row) ?? 0));
     const requiresEthnicStudies = requirementCredits("ethnic_studies") > 0 || verifiedRequirements.some((requirement) => requirement.area === "social_science"
       && /\bethnic studies\b/i.test(`${requirement.name} ${requirement.notes ?? ""}`));
 
@@ -1043,7 +1059,7 @@ export function generateSuggestedPlan(
           .filter((candidate) => !courseNeedsExplicitPlanningIntent(candidate, context.interests ?? []))
           .map((candidate) => ({
             candidate,
-            stage: plannerStageScore(candidate, area, grade, previousCourses),
+            stage: plannerStageScore(candidate, area, grade, previousCourses, area === "math" ? priorMathSequenceRank(grade) : 0),
             coverage: Number(Number(candidate.credits ?? 0) >= Math.max(0, targetCredits - areaCreditsInGrade(area, grade))),
             interest: planningInterestMatches(candidate, interestText) ? 1 : 0
           }))

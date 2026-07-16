@@ -447,12 +447,17 @@ describe("Codex feature boundaries", () => {
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true, rigor: "advanced", include_college_courses: true, max_courses_per_term: 6, objectives: ["complete_diploma"] }
     });
+    expect(requiredAssistantEvidenceRead("Create a full plan to finish both bookmarked degrees with no more than 11 college units in any term")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma", "maximize_degree_overlap"] }
+    });
     expect(requiredAssistantEvidenceRead("Generate a full 4 year schedule for me. I'm starting math at precalc grade 9, want as high GPA as possible, and really good course rigor. No concurrent classes.")).toEqual({
       name: "get_course_schedule_options",
       arguments: {
         respect_recommended_limit: true,
         rigor: "advanced",
         include_college_courses: false,
+        exclude_college_courses_explicitly: true,
         starting_math_course: "precalc",
         start_grade: 9,
         objectives: ["complete_diploma", "maximize_weighted_gpa"]
@@ -464,6 +469,7 @@ describe("Codex feature boundaries", () => {
         respect_recommended_limit: true,
         rigor: "advanced",
         include_college_courses: false,
+        exclude_college_courses_explicitly: true,
         starting_math_course: "precalc",
         starting_language_course: "spanish 2",
         start_grade: 9,

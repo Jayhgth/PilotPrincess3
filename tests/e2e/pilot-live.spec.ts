@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import { mathSequenceRankFromText } from "@/lib/planning";
 
 const qaEmail = process.env.QA_EMAIL;
 const qaPassword = process.env.QA_PASSWORD;
@@ -301,7 +302,8 @@ test.describe("live Pilot behavior", () => {
     expect(scheduleRead?.data?.degree_planning, JSON.stringify(scheduleRead?.data?.degree_planning)).toMatchObject({ bookmarked_goal_count: 1, all_bookmarked_goals_covered: true });
     expect(Number(scheduleRead?.data?.degree_planning?.college_course_count ?? 0)).toBeGreaterThan(0);
     const proposalRecord = scheduleTools.data?.find((tool) => tool.tool_name === "add_course_schedule");
-    expect(proposalRecord?.arguments).toMatchObject({ respect_recommended_limit: true, include_college_courses: true });
+    expect(proposalRecord, `${scheduleTurn.message}\n${JSON.stringify(scheduleTools.data)}`).toBeDefined();
+    expect(proposalRecord?.arguments, `${scheduleTurn.message}\n${JSON.stringify(scheduleTools.data)}`).toMatchObject({ respect_recommended_limit: true, include_college_courses: true });
     expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_course_schedule"]);
     await apply(scheduleTurn);
 
@@ -344,13 +346,13 @@ test.describe("live Pilot behavior", () => {
     const freshmanSettings = await supabase.from("student_settings").update({ grade_level: 9, graduation_year: 2030, plan_start_grade: 9, plan_end_grade: 12 }).eq("id", userId);
     if (freshmanSettings.error) throw freshmanSettings.error;
     const fullPlanConversation = await createConversation("Terse integrated full plan");
-    const fullPlanTurn = await sendTurn(request, accessToken, fullPlanConversation, "Create a full plan for me");
+    const fullPlanTurn = await sendTurn(request, accessToken, fullPlanConversation, "Create a full plan for me. I am starting Precalculus in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful overlap, and no more than 11 college units in any term.");
     expect(fullPlanTurn.runtime.latencyMs).toBeLessThan(120_000);
     const fullPlanTools = await supabase.from("ai_tool_calls").select("tool_name,status,result").eq("conversation_id", fullPlanConversation).order("created_at");
     if (fullPlanTools.error) throw fullPlanTools.error;
     const fullPlanRead = fullPlanTools.data?.find((tool) => tool.tool_name === "get_course_schedule_options")?.result as { data?: { degree_planning?: { bookmarked_goal_count?: number; college_course_count?: number; all_bookmarked_goals_covered?: boolean; goals?: Array<{ major_complete?: boolean; local_ge_complete?: boolean; separate_requirements_complete?: boolean; projected_degree_units?: number; required_degree_units?: number }> }; enrollment_validation?: { satisfied?: boolean; terms?: Array<{ units?: number; limit?: number }> } } } | undefined;
-    expect(fullPlanRead?.data?.degree_planning, JSON.stringify(fullPlanRead?.data?.degree_planning?.goals)).toMatchObject({ bookmarked_goal_count: 2, all_bookmarked_goals_covered: true });
-    expect(Number(fullPlanRead?.data?.degree_planning?.college_course_count ?? 0)).toBeGreaterThan(0);
+    expect(fullPlanRead?.data?.degree_planning, JSON.stringify(fullPlanRead?.data?.degree_planning)).toMatchObject({ bookmarked_goal_count: 2, all_bookmarked_goals_covered: true });
+    expect(Number(fullPlanRead?.data?.degree_planning?.college_course_count ?? 0), `${fullPlanTurn.message}\n${JSON.stringify(fullPlanTools.data)}`).toBeGreaterThan(0);
     expect(fullPlanRead?.data?.degree_planning?.goals).toHaveLength(2);
     expect(fullPlanRead?.data?.degree_planning?.goals?.every((goal) => goal.major_complete && goal.local_ge_complete && goal.separate_requirements_complete && Number(goal.projected_degree_units) >= Number(goal.required_degree_units))).toBe(true);
     expect(fullPlanRead?.data?.enrollment_validation?.satisfied).toBe(true);
@@ -374,6 +376,30 @@ test.describe("live Pilot behavior", () => {
       const languageRequirementIds = new Set((requirements.data ?? []).filter((requirement) => requirement.area === "world_language").map((requirement) => requirement.id));
       const highSchoolLanguageIds = new Set((mappings.data ?? []).filter((mapping) => languageRequirementIds.has(mapping.requirement_id)).map((mapping) => mapping.course_id));
       expect((generatedFullPlan.data ?? []).filter((row) => row.course_id && highSchoolLanguageIds.has(row.course_id))).toHaveLength(0);
+    }
+    const hist201 = (generatedFullPlan.data ?? []).find((row) => row.smccd_course_id === "CSM:HIST 201");
+    const hist202 = (generatedFullPlan.data ?? []).find((row) => row.smccd_course_id === "CSM:HIST 202");
+    if (hist201 && hist202) {
+      expect(hist201).toMatchObject({ grade_level: 11, term: "fall", requirement_area_override: "social_science" });
+      expect(hist202).toMatchObject({ grade_level: 11, term: "spring", requirement_area_override: "social_science" });
+      const highSchoolUsHistoryIds = new Set((dtechCatalog.data ?? [])
+        .filter((course) => /\b(?:u\.?s\.?|united states) history\b/i.test(course.name))
+        .map((course) => course.id));
+      expect((generatedFullPlan.data ?? []).filter((row) => row.course_id && highSchoolUsHistoryIds.has(row.course_id))).toHaveLength(0);
+    }
+    const mathSequence = (generatedFullPlan.data ?? [])
+      .flatMap((row) => {
+        const highSchoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+        const rank = mathSequenceRankFromText(`${highSchoolCourse?.course_code ?? ""} ${highSchoolCourse?.name ?? row.custom_course_name ?? ""}`);
+        return rank === null ? [] : [{ row, rank }];
+      })
+      .sort((left, right) => {
+        const termIndex = (row: typeof left.row) => (Number(row.grade_level) - 9) * 3 + (row.term === "spring" ? 1 : row.term === "summer" ? 2 : 0);
+        return termIndex(left.row) - termIndex(right.row) || left.rank - right.rank;
+      });
+    for (let index = 1; index < mathSequence.length; index += 1) {
+      expect(mathSequence[index]!.rank).toBeGreaterThanOrEqual(mathSequence[index - 1]!.rank);
+      expect(mathSequence[index]!.rank - mathSequence[index - 1]!.rank).toBeLessThanOrEqual(1);
     }
     for (const grade of [9, 10, 11, 12]) {
       expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && designLabCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);

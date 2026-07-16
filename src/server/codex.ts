@@ -789,7 +789,7 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     const objectives = [
       "complete_diploma",
       ...(allPlanningPriorities || /\b(highest|maximum|maximize|best)\b.*\bgpa\b|\bgpa\b.*\b(highest|maximum|maximize|best)\b|\b(?:as\s+)?high\s+(?:a\s+)?gpa\b/.test(normalized) ? ["maximize_weighted_gpa"] : []),
-      ...(allPlanningPriorities || /\b(most|multiple|maximize)\b.*\b(degree|degrees)\b|\bdegree overlap\b/.test(normalized) ? ["maximize_degree_overlap"] : []),
+      ...(allPlanningPriorities || /\b(most|multiple|maximize|both|two)\b.*\b(degree|degrees)\b|\bdegree overlap\b/.test(normalized) ? ["maximize_degree_overlap"] : []),
       ...(allPlanningPriorities || /\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
     ];
     const requestsAdvancedRigor = /\brigorous\b|\b(?:high|strong|good|advanced)\s+(?:course\s+)?rigor\b|\brigor\b.{0,20}\b(?:high|strong|good|advanced)\b/.test(normalized);
@@ -799,6 +799,7 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
         respect_recommended_limit: true,
         rigor: objectives.includes("maximize_weighted_gpa") || requestsAdvancedRigor ? "advanced" : "balanced",
         include_college_courses: !excludesCollegeCourses,
+        ...(excludesCollegeCourses ? { exclude_college_courses_explicitly: true } : {}),
         ...(intent.replaceExisting ? { replace_existing: true } : {}),
         ...(intent.replaceGradeLevels.length ? { replace_grade_levels: intent.replaceGradeLevels } : {}),
         ...(intent.maxCoursesPerTerm !== null ? { max_courses_per_term: intent.maxCoursesPerTerm } : {}),
@@ -972,7 +973,9 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     ? normalized.match(/\bgrade\s*(9|10|11|12)\b/) ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/)
     : null;
   const replaceGradeLevels = scopedReplacementGrade ? [Number(scopedReplacementGrade[1]) as 9 | 10 | 11 | 12] : [];
-  const includeCollegeCourses = !/\b(?:no|without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized);
+  const excludesCollegeCourses = /\b(?:without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized)
+    || /\bno\s+(?:college|concurrent|dual enrollment)\b/.test(normalized);
+  const includeCollegeCourses = !excludesCollegeCourses;
   const explicitMaximum = normalized.match(/\b(?:max(?:imum)?|limit(?:ed)? to|no more than|at most)\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:courses|classes)(?:\s+per\s+term)?\b/)?.[1];
   const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
   const maxCoursesPerTerm = explicitMaximum
@@ -1158,7 +1161,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
       : "No image was attached to this turn.",
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "Apply the app's deterministic academic rules exactly for the currently selected school. Never substitute d.tech's sequence, catalog, graduation rules, weighting, or terminology for another school; d.tech-specific evidence is valid only when d.tech is selected. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved catalog/evidence says so. College units and high-school transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified selected-school crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college. Check cross-college prerequisite equivalence only through normalized identity and verified evidence.",
-    "For every schedule-construction request, call get_course_schedule_options. When degree bookmarks exist and college courses are allowed, that deterministic optimizer automatically evaluates every bookmarked program's remaining major, awarding-college local GE, separate graduation, and total-unit requirements together with diploma overlap, prerequisites, GPA weighting, school-specific course-count rules, and the saved concurrent-enrollment boundary. Apply its exact result with add_course_schedule; the server atomically includes the college portion so it cannot be omitted. Do not fall back to a diploma-only plan, independently improvise a shorter degree list, stack duplicate core-area fillers in one grade, or merely describe a schedule the student asked Pilot to create.",
+    "For every schedule-construction request, call get_course_schedule_options. When degree bookmarks exist, set include_college_courses=true and include maximize_degree_overlap unless the student explicitly forbids college coursework; mentioning a bookmarked degree is itself a request to integrate it. That deterministic optimizer automatically evaluates every bookmarked program's remaining major, awarding-college local GE, separate graduation, and total-unit requirements together with diploma overlap, prerequisites, GPA weighting, school-specific course-count rules, and the saved concurrent-enrollment boundary. Apply its exact result with add_course_schedule; the server atomically includes the college portion so it cannot be omitted. Do not fall back to a diploma-only plan, independently improvise a shorter degree list, stack duplicate core-area fillers in one grade, or merely describe a schedule the student asked Pilot to create.",
     "Before presenting or applying a completed task, double-check the owning tool's final data against every part of the request. For schedules, verify the exact saved-course count, every bookmarked degree's major/GE/separate/total-unit coverage, every diploma substitution, prerequisites, school load rules, per-term aggregate college units across campuses, and any stated placement. Prefer one verified college course or sequence that satisfies multiple diploma and degree/GE needs over redundant high-school electives. If any check fails, do not call the task complete or apply a partial batch; use the deterministic planner to produce a passing result or state the exact verified limitation.",
     "When a student explicitly selects multiple degrees, search for every exact program and call set_college_goals once with the complete program-ID set. Do not split one multi-degree request into independent bookmarks or decline a non-destructive bookmark merely because the student described the degree plan instead of using the word bookmark.",
     "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Treat explicit requested outcomes as binding unless they conflict with a locked record or hard product rule; preferences and planning heuristics must not silently override them. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated result; never substitute another school's courses, infer support/pathway needs, or call a partial plan complete.",
@@ -1643,6 +1646,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               ...(requiredRead.arguments.starting_math_course ? { starting_math_course: requiredRead.arguments.starting_math_course } : {}),
               ...(requiredRead.arguments.starting_language_course ? { starting_language_course: requiredRead.arguments.starting_language_course } : {}),
               include_college_courses: requiredRead.arguments.include_college_courses ?? true,
+              exclude_college_courses_explicitly: requiredRead.arguments.exclude_college_courses_explicitly ?? false,
               replace_existing: requiredRead.arguments.replace_existing ?? false,
               replace_grade_levels: requiredRead.arguments.replace_grade_levels ?? []
             },
@@ -1924,6 +1928,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               ...(argumentsValue.starting_math_course ? { starting_math_course: argumentsValue.starting_math_course } : {}),
               ...(argumentsValue.starting_language_course ? { starting_language_course: argumentsValue.starting_language_course } : {}),
               include_college_courses: argumentsValue.include_college_courses ?? true,
+              exclude_college_courses_explicitly: argumentsValue.exclude_college_courses_explicitly ?? false,
               replace_existing: argumentsValue.replace_existing ?? false,
               replace_grade_levels: argumentsValue.replace_grade_levels ?? []
             },
