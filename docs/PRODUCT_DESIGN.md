@@ -11,7 +11,7 @@ Pilot Princess is a student-first academic planning workspace, not a KPI dashboa
 3. **Graduation** owns selected-school diploma evidence and the complete associate-degree workspace: finding, comparing, tracking, prioritizing, and auditing AA or AS programs. Missing degree courses link into the college catalog without moving degree controls there.
 4. **GPA planner** compares grade assumptions for the saved schedule. College-unit policy warnings belong with Courses, where the schedule changes.
 5. **Transcript import** converts completed records into reviewable Done courses and is entered from Courses.
-6. **Settings** is a compact account-level dialog opened from the sidebar footer. General owns student details and account lifecycle, Planning owns plan scope and enrollment context, Pilot owns assistant configuration, and Admin remains account-gated.
+6. **Settings** is a compact account-level dialog opened from the sidebar footer. General owns student details and account lifecycle, Planning owns plan scope and enrollment context, Pilot owns assistant configuration, Support owns private student-to-admin reports and replies, and Admin remains account-gated with the full support inbox.
 
 Do not duplicate course management, graduation totals, or action lists across destinations. Link to the owning workspace.
 

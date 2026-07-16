@@ -139,6 +139,23 @@ test.describe("authenticated student workspace", () => {
     await page.reload();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const settingsDialog = page.getByRole("dialog");
+    await settingsDialog.getByRole("button", { name: "Support", exact: true }).click();
+    await settingsDialog.getByLabel("Type").selectOption("bug");
+    await settingsDialog.getByLabel("Subject").fill("Course card does not refresh");
+    await settingsDialog.getByRole("textbox", { name: "Message", exact: true }).fill("The course card keeps the previous status after I save a change.");
+    await settingsDialog.getByRole("button", { name: "Send message" }).click();
+    await expect(settingsDialog.getByRole("status")).toContainText("Message sent");
+    await expect(settingsDialog.getByRole("heading", { name: "Course card does not refresh" })).toBeVisible();
+    if (ephemeralSupabase) {
+      const submittedRequest = await ephemeralSupabase.from("support_requests").select("id,status").eq("subject", "Course card does not refresh").single();
+      expect(submittedRequest.data?.status).toBe("open");
+      const forbiddenUpdate = await ephemeralSupabase.from("support_requests").update({ status: "resolved", admin_response: "Not allowed" }).eq("id", submittedRequest.data!.id).select("id");
+      expect(forbiddenUpdate.data).toEqual([]);
+    }
+    await settingsDialog.getByRole("button", { name: "Close settings" }).click();
+
     const pilotSupabase = ephemeralSupabase ?? createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { autoRefreshToken: false, persistSession: false }
     });

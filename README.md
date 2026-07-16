@@ -9,7 +9,8 @@ Students can:
 - build and revise a four-year course plan;
 - import a transcript and track diploma progress;
 - compare weighted GPA scenarios;
-- explore community-college courses and associate-degree progress; and
+- explore community-college courses and associate-degree progress;
+- contact administrators about support, bugs, or course-data issues; and
 - ask Pilot to make validated, reversible changes to their account and plan.
 
 School support is shown in the app as discovery, partial, or complete. A school without verified local data never inherits another school's catalog, graduation rules, or course sequence. SMCCD degree planning currently covers Cañada College, College of San Mateo, and Skyline College.

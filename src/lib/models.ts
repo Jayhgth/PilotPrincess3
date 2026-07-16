@@ -472,6 +472,22 @@ export interface AiToolCall {
   completed_at: string | null;
 }
 
+export interface SupportRequest {
+  id: string;
+  user_id: string;
+  reporter_email: string;
+  school_id: string | null;
+  category: "support" | "bug" | "course_issue";
+  subject: string;
+  message: string;
+  status: "open" | "in_progress" | "resolved" | "closed";
+  admin_response: string | null;
+  assigned_admin_id: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CatalogReviewItem {
   id: string;
   user_id: string;

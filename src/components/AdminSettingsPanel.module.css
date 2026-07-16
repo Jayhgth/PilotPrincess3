@@ -47,9 +47,34 @@
 .proposal > footer > span { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-faint); font-size: var(--type-supporting); }
 .proposal > footer > div { display: flex; gap: 7px; }
 
+.supportToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.supportToolbar > span { color: var(--ink-faint); font-size: var(--type-supporting); }
+.supportToolbar label { display: flex; align-items: center; gap: 7px; color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 650; }
+.supportToolbar select { min-height: 32px; padding-block: 0; font-size: var(--type-supporting); }
+.supportRequests { display: grid; gap: 10px; }
+.supportRequest { display: grid; gap: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-muted); padding: 13px; }
+.supportRequest > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.supportRequest > header > span { display: grid; min-width: 0; gap: 3px; }
+.supportRequest > header strong { display: inline-flex; align-items: center; gap: 5px; font-size: var(--type-body); }
+.supportRequest > header small { color: var(--ink-faint); font-size: var(--type-supporting); }
+.supportRequest > header b { border-radius: 999px; background: var(--surface); color: var(--ink-soft); padding: 3px 7px; font-size: 11px; font-weight: 700; text-transform: capitalize; white-space: nowrap; }
+.supportRequest > header b[data-status="in_progress"] { color: var(--accent); }
+.supportRequest > header b[data-status="resolved"] { color: var(--success); }
+.supportRequest > p { margin: 0; color: var(--ink-soft); font-size: var(--type-supporting); line-height: 1.5; white-space: pre-wrap; }
+.supportMeta { display: flex; align-items: center; gap: 8px; color: var(--ink-faint); font-size: 11px; text-transform: capitalize; }
+.supportMeta span::after { content: "·"; margin-left: 8px; }
+.responseField { display: grid; gap: 6px; }
+.responseField > span { color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 650; }
+.responseField textarea { width: 100%; resize: vertical; }
+.supportRequest > footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.supportRequest > footer > div { display: flex; gap: 7px; }
+
 @media (max-width: 620px) {
   .toolRow { align-items: stretch; flex-direction: column; gap: 10px; }
   .toolRow button { align-self: flex-start; }
   .confirmation > div { display: grid; }
   .confirmation > div button { width: 100%; }
+  .supportToolbar, .supportRequest > header, .supportRequest > footer { align-items: stretch; flex-direction: column; }
+  .supportToolbar label { justify-content: space-between; }
+  .supportRequest > footer > div { display: grid; grid-template-columns: 1fr 1fr; }
 }

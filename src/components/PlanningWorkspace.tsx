@@ -8,6 +8,7 @@ import { FileArrowUpIcon as FileArrowUp } from "@phosphor-icons/react/dist/csr/F
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { GraduationCapIcon as GraduationCap } from "@phosphor-icons/react/dist/csr/GraduationCap";
 import { HouseIcon as House } from "@phosphor-icons/react/dist/csr/House";
+import { LifebuoyIcon as Lifebuoy } from "@phosphor-icons/react/dist/csr/Lifebuoy";
 import { PlusIcon as Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { WarningIcon as Warning } from "@phosphor-icons/react/dist/csr/Warning";
@@ -119,6 +120,7 @@ const CourseKanban = lazy(() => import("@/components/CourseKanban"));
 const TranscriptAiRunDetails = lazy(() => import("@/components/TranscriptAiRunDetails"));
 const TranscriptCourseEditor = lazy(() => import("@/components/TranscriptCourseEditor"));
 const StudentSettingsPanel = lazy(() => import("@/components/StudentSettingsPanel"));
+const SupportSettingsPanel = lazy(() => import("@/components/SupportSettingsPanel"));
 const PrerequisiteReadout = lazy(() => import("@/components/PrerequisiteReadout"));
 
 function preloadWorkspaceView(view: WorkspaceViewId) {
@@ -147,13 +149,14 @@ const PRIMARY_NAV_ITEMS: Array<{ id: WorkspaceViewId; label: string; icon: Icon 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "settings" as const, label: "Settings", icon: GearSix }, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
 
 type CourseArea = "mine" | "dtech" | "smccd";
-type SettingsArea = "general" | "planning" | "pilot" | "admin";
+type SettingsArea = "general" | "planning" | "pilot" | "support" | "admin";
 type SourceAiTransparency = TranscriptAiTransparency;
 
 const SETTINGS_NAV_ITEMS: Array<{ id: SettingsArea; label: string; icon: Icon }> = [
   { id: "general", label: "General", icon: GearSix },
   { id: "planning", label: "Planning", icon: GraduationCap },
   { id: "pilot", label: "Pilot", icon: ChatCircleDots },
+  { id: "support", label: "Support", icon: Lifebuoy },
   { id: "admin", label: "Admin", icon: ShieldCheck }
 ];
 
@@ -161,12 +164,13 @@ const SETTINGS_DESCRIPTIONS: Record<SettingsArea, string> = {
   general: "Account and student details.",
   planning: "Choose the high-school years included in the plan.",
   pilot: "Model, reasoning, change access, and conversation settings.",
+  support: "Contact administrators about support, bugs, or course data.",
   admin: "Account-specific testing and workspace reset controls."
 };
 
 const VIEW_IDS = new Set<ViewId>(["dashboard", "courses", "sources", "graduation", "gpa", "settings"]);
 const COURSE_AREAS = new Set<CourseArea>(["mine", "dtech", "smccd"]);
-const SETTINGS_AREAS = new Set<SettingsArea>(["general", "planning", "pilot", "admin"]);
+const SETTINGS_AREAS = new Set<SettingsArea>(["general", "planning", "pilot", "support", "admin"]);
 
 function locationState() {
   if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea, settingsArea: "general" as SettingsArea };
@@ -1561,7 +1565,7 @@ export default function PlanningWorkspace() {
         onReplayOnboarding={() => { setMobileNavOpen(false); setReplayingOnboarding(true); }}
         onViewLogin={() => { setMobileNavOpen(false); window.location.assign("/?demo=login"); }}
         onResetComplete={() => window.location.assign("/app?reset=1")}
-      /> : <StudentSettingsPanel
+      /> : activeSettingsArea === "support" ? <SupportSettingsPanel session={session} school={school} /> : <StudentSettingsPanel
         key={activeSettingsArea}
         section={activeSettingsArea}
         session={session}

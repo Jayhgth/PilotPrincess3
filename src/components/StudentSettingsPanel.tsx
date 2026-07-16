@@ -69,8 +69,6 @@ export default function StudentSettingsPanel({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [correction, setCorrection] = useState({ field: "website_url", value: "", evidenceUrl: "", summary: "" });
-  const [correctionStatus, setCorrectionStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [collegeDistricts, setCollegeDistricts] = useState<CollegeDistrict[]>([]);
   const [nearbyDistricts, setNearbyDistricts] = useState<NearbyCollegeDistrict[]>([]);
   const [districtPreference, setDistrictPreference] = useState<StudentCollegeDistrictPreference | null>(null);
@@ -158,42 +156,6 @@ export default function StudentSettingsPanel({
     } finally {
       setSaving(false);
     }
-  }
-
-  async function submitSchoolCorrection(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
-    event.preventDefault();
-    setError(null);
-    if (!correction.value.trim() || correction.summary.trim().length < 10) {
-      setError("Add the corrected value and a short explanation of the official evidence.");
-      return;
-    }
-    setCorrectionStatus("saving");
-    const supabase = getBrowserSupabase();
-    if (!supabase) {
-      setError("Shared corrections are unavailable in this environment.");
-      setCorrectionStatus("idle");
-      return;
-    }
-    const { error: correctionError } = await supabase.from("shared_data_proposals").insert({
-      submitted_by: session.user.id,
-      submitted_via: "student",
-      entity_type: "school",
-      action: "correct",
-      school_id: school.id,
-      target_table: "schools",
-      target_id: school.id,
-      proposed_payload: { [correction.field]: correction.value.trim() },
-      evidence_url: correction.evidenceUrl.trim() || null,
-      evidence_summary: correction.summary.trim(),
-      status: "pending"
-    });
-    if (correctionError) {
-      setError(correctionError.message);
-      setCorrectionStatus("idle");
-      return;
-    }
-    setCorrection({ field: "website_url", value: "", evidenceUrl: "", summary: "" });
-    setCorrectionStatus("saved");
   }
 
   async function saveCollegeDistrict(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
@@ -294,19 +256,5 @@ export default function StudentSettingsPanel({
       </form>
     </section>
 
-    <section className={`content-section ${styles.section}`} aria-labelledby="school-correction-heading">
-      <header className={styles.sectionHeading}>
-        <div><h2 id="school-correction-heading">Report school information</h2><p>Suggest an evidence-backed correction for {school.name}. An administrator reviews it before shared data changes.</p></div>
-      </header>
-      <form onSubmit={submitSchoolCorrection}>
-        <div className={`form-grid two ${styles.settingsGrid}`}>
-          <label className="form-field"><span>Field</span><select value={correction.field} onChange={(event) => setCorrection({ ...correction, field: event.target.value })}><option value="website_url">Website</option><option value="name">School name</option><option value="district_name">District</option><option value="city">City</option><option value="postal_code">ZIP code</option></select></label>
-          <label className="form-field"><span>Correct value</span><input value={correction.value} onChange={(event) => setCorrection({ ...correction, value: event.target.value })} /></label>
-          <label className="form-field"><span>Official evidence URL</span><input type="url" value={correction.evidenceUrl} onChange={(event) => setCorrection({ ...correction, evidenceUrl: event.target.value })} placeholder="https://" /></label>
-          <label className="form-field"><span>What the source confirms</span><input value={correction.summary} onChange={(event) => setCorrection({ ...correction, summary: event.target.value })} /></label>
-        </div>
-        <div className={styles.saveRow}>{correctionStatus === "saved" && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Submitted for review</span>}<button className="secondary-button" type="submit" disabled={correctionStatus === "saving"}>{correctionStatus === "saving" ? "Submitting" : "Submit correction"}</button></div>
-      </form>
-    </section>
   </div>;
 }
