@@ -292,8 +292,8 @@ function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boole
     );
   }
   return (
-    <details className={`${styles.workRow} ${call.status === "failed" ? styles.failed : ""}`}>
-      <summary><span className={styles.workIcon}>{call.status === "completed" ? <CheckCircle size={15} /> : call.status === "failed" ? <Warning size={15} /> : <Wrench size={15} />}</span><span><strong>{label}</strong><small>{toolSummary(call)}</small></span><CaretDown size={13} /></summary>
+    <details className={`${styles.workRow} ${call.status === "failed" || call.status === "rejected" ? styles.failed : ""}`} open={call.status === "rejected" || undefined}>
+      <summary><span className={styles.workIcon}>{call.status === "completed" ? <CheckCircle size={15} /> : call.status === "failed" || call.status === "rejected" ? <Warning size={15} /> : <Wrench size={15} />}</span><span><strong>{label}</strong><small>{toolSummary(call)}</small></span><CaretDown size={13} /></summary>
       <div className={styles.workDetails}><p>{call.explanation}</p>{readableArguments(call).length > 0 && <dl>{readableArguments(call).map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>)}</dl>}</div>
     </details>
   );
@@ -359,9 +359,10 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
   const [showAllTools, setShowAllTools] = useState(false);
   const items = events.map(activityItem).filter((item): item is NonNullable<ReturnType<typeof activityItem>> => Boolean(item));
   const hasFailure = items.some((item) => item.kind === "error") || tools.some((tool) => tool.status === "failed");
+  const hasRejectedChange = tools.some((tool) => tool.status === "rejected");
   const wasCancelled = items.some((item) => item.kind === "stopped");
   const hasPendingChange = tools.some((tool) => tool.status === "pending_confirmation");
-  const forceOpen = running || hasFailure || hasPendingChange;
+  const forceOpen = running || hasFailure || hasRejectedChange || hasPendingChange;
   const startedAt = assistantTurnStartedAt(events);
   const duration = assistantTurnDuration(events);
   if (!items.length && !tools.length && !running) return null;
@@ -468,15 +469,14 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }, [authorizedFetch]);
 
-  const autoReviewToolCalls = useCallback(async (toolCallIds: string[], signal?: AbortSignal) => {
+  const autoReviewToolCalls = useCallback(async (toolCallIds: string[]) => {
     let changed = false;
     try {
       for (const toolCallId of toolCallIds) {
         const reviewResponse = await authorizedFetch("/api/ai/tool", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ toolCallId, decision: "auto_review" }),
-          signal
+          body: JSON.stringify({ toolCallId, decision: "auto_review" })
         });
         const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean; toolCall?: AiToolCall };
         if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Auto-review could not complete.");
@@ -895,7 +895,12 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       if (reviewMode === "auto_review" && proposalIds.length) {
         setAutoReviewing(true);
         proposalIds.forEach((id) => reviewedPendingRef.current.add(id));
-        await autoReviewToolCalls(proposalIds, abortController.signal);
+        try {
+          await autoReviewToolCalls(proposalIds);
+        } catch (caught) {
+          proposalIds.forEach((id) => reviewedPendingRef.current.delete(id));
+          throw caught;
+        }
       }
       await loadConversation(activeConversation.id);
       if (clearComposerDraft) window.localStorage.removeItem(assistantDraftKey(session.user.id, activeConversation.id));

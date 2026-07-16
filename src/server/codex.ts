@@ -650,9 +650,19 @@ function schedulePeriodFilters(normalized: string) {
   } else if (explicitYear) {
     filters.school_year = `${explicitYear[1]}-${explicitYear[2]}`;
   }
-  const grade = normalized.match(/\bgrade\s*(9|10|11|12)\b/);
+  const grade = normalized.match(/\bgrade\s*(9|10|11|12)\b/)
+    ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/);
   if (grade) filters.grade_level = Number(grade[1]);
   return filters;
+}
+
+function requestsScheduleConstruction(userMessage: string) {
+  const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
+  const schedule = /\b(?:schedule|course plan|academic plan|four[ -]?year plan)\b/.test(normalized)
+    && !/\b(?:meeting|appointment|calendar|study|homework|workout|sleep)\s+schedule\b/.test(normalized);
+  if (!schedule) return false;
+  return /\b(?:generate|build|create|make|draft|suggest|recommend|find|design|redesign|replace|rebuild|regenerate|redo|rework|come up with)\b/.test(normalized)
+    || /\b(?:new|replacement|better|highest[ -]?gpa|gpa[ -]?focused)\s+(?:course\s+)?(?:schedule|plan)\b/.test(normalized);
 }
 
 function requestedCourseBatch(normalized: string): CourseBatchRequest | null {
@@ -750,12 +760,12 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     return { name: "get_academic_context", arguments: { include_transcript_review: false } };
   }
 
-  const scheduleGenerationIntent = /\b(generate|build|create|make|draft|suggest|plan|recommend)\b/.test(normalized)
+  const scheduleGenerationIntent = requestsScheduleConstruction(userMessage) || (/\bplan\b/.test(normalized)
     && (
       /\b(course|class|academic|high[ -]?school|four[ -]?year)\s+(plan|schedule)\b/.test(normalized)
       || /\b(plan|schedule)\s+(courses|classes)\b/.test(normalized)
       || (/\bschedule\b/.test(normalized) && !/\b(meeting|appointment|calendar|study|homework|workout|sleep)\b/.test(normalized))
-    );
+    ));
   if (scheduleGenerationIntent) {
     const intent = parseAssistantScheduleIntent(userMessage);
     const startGrade = intent.startGrade;
@@ -789,6 +799,7 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
         rigor: objectives.includes("maximize_weighted_gpa") || requestsAdvancedRigor ? "advanced" : "balanced",
         include_college_courses: !excludesCollegeCourses,
         ...(intent.replaceExisting ? { replace_existing: true } : {}),
+        ...(intent.replaceGradeLevels.length ? { replace_grade_levels: intent.replaceGradeLevels } : {}),
         ...(intent.maxCoursesPerTerm !== null ? { max_courses_per_term: intent.maxCoursesPerTerm } : {}),
         ...(startingMathCourse ? { starting_math_course: startingMathCourse } : {}),
         ...(startingLanguageCourse ? { starting_language_course: startingLanguageCourse } : {}),
@@ -862,8 +873,9 @@ export function parseSchoolSelection(userMessage: string) {
 export function parseAcademicClearIntent(userMessage: string) {
   const normalized = userMessage.toLowerCase();
   if (!/\b(?:clear|empty|wipe|remove|delete)\b/.test(normalized)) return null;
-  if (/\b(?:generate|build|create|make|draft)\b/.test(normalized) && /\b(?:schedule|plan)\b/.test(normalized)) return null;
+  if (requestsScheduleConstruction(userMessage)) return null;
   const courses = /\b(?:schedule|plan|courses|classes)\b/.test(normalized);
+  if (courses && Object.keys(schedulePeriodFilters(normalized)).some((key) => key !== "status")) return null;
   const degreeBookmarks = /\b(?:degree|bookmark|goal)s?\b/.test(normalized);
   const gpaScenario = /\b(?:gpa|grade assumption|expected grade)s?\b/.test(normalized);
   return courses || degreeBookmarks || gpaScenario ? { courses, degree_bookmarks: degreeBookmarks, gpa_scenario: gpaScenario } : null;
@@ -912,6 +924,7 @@ export function parseDegreeGoalIntent(userMessage: string) {
 
 export interface AssistantScheduleIntent {
   replaceExisting: boolean;
+  replaceGradeLevels: Array<9 | 10 | 11 | 12>;
   startGrade?: 9 | 10 | 11 | 12;
   startingMathCourse: string | null;
   startingLanguageCourse: string | null;
@@ -928,7 +941,8 @@ export interface AssistantScheduleIntent {
 export function parseAssistantScheduleIntent(userMessage: string): AssistantScheduleIntent {
   const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
   const startGradeMatch = normalized.match(/\bgrade\s*(9|10|11|12)\b/)
-    ?? normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/);
+    ?? normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/)
+    ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/);
   const startGrade = startGradeMatch ? Number(startGradeMatch[1]) as 9 | 10 | 11 | 12 : undefined;
   const mathName = "(pre[ -]?calc(?:ulus)?|integrated math\\s*[123]|algebra\\s*(?:1|i|2|ii)|geometry|calculus(?:\\s+(?:ab|bc|i{1,3}|1|2|3))?)";
   const startingMathCourse = [
@@ -947,8 +961,12 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
   const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
     && /\b(schedule|plan|courses|classes)\b/.test(normalized)
-    && /\b(all|every|whole|entire)\b/.test(normalized)
+    && (/\b(all|every|whole|entire)\b/.test(normalized) || requestsScheduleConstruction(userMessage))
     && !/\b(without|do not|don't|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
+  const scopedReplacementGrade = clearing
+    ? normalized.match(/\bgrade\s*(9|10|11|12)\b/) ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/)
+    : null;
+  const replaceGradeLevels = scopedReplacementGrade ? [Number(scopedReplacementGrade[1]) as 9 | 10 | 11 | 12] : [];
   const includeCollegeCourses = !/\b(?:no|without|exclude|don't|dont|do not)\b.{0,28}\b(?:college|concurrent|dual enrollment)\b/.test(normalized);
   const explicitMaximum = normalized.match(/\b(?:max(?:imum)?|limit(?:ed)? to|no more than|at most)\s*(\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*(?:courses|classes)(?:\s+per\s+term)?\b/)?.[1];
   const numberWords: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
@@ -961,7 +979,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   const adjectiveMajor = normalized.match(/\b(?:an?\s+)?(?:intended|planned|target)\s+([a-z][a-z &-]{2,60}?)\s+major\b/)?.[1]?.trim();
   const intendedField = normalized.match(/\b(?:want|plan|hope)\s+to\s+(?:major|study)\s+in\s+([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
   const interests = [...new Set([intendedMajor, adjectiveMajor, intendedField].filter((value): value is string => Boolean(value)))].slice(0, 6);
-  return { replaceExisting: clearing, startGrade, startingMathCourse, startingLanguageCourse, includeCollegeCourses, maxCoursesPerTerm, interests };
+  return { replaceExisting: clearing, replaceGradeLevels, startGrade, startingMathCourse, startingLanguageCourse, includeCollegeCourses, maxCoursesPerTerm, interests };
 }
 
 export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null {
@@ -1032,7 +1050,7 @@ export function schedulePreview(data: Record<string, unknown>) {
   });
   const opening = replacesExisting
     ? courses.length
-      ? `I would replace ${replacedCount} editable courses with this ${courses.length}-course schedule and retain ${retainedCount} transcript-backed ${retainedCount === 1 ? "course" : "courses"}:`
+      ? `I would replace ${replacedCount} editable courses with this ${courses.length}-course schedule and retain ${retainedCount} unaffected or transcript-backed ${retainedCount === 1 ? "course" : "courses"}:`
       : `I could not build a safe replacement schedule. Your ${replacedCount} editable courses remain unchanged.`
     : adjustments.length
     ? `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I would keep all of them, adjust ${adjustments.length} existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${courses.length}:`
@@ -1109,7 +1127,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
       : "No image was attached to this turn.",
     "Use read-only student-data tools whenever a factual answer depends on current student records. The allowlisted tools cover every student-facing academic and profile domain in the app; get_academic_context is the bounded cross-feature view and get_student_data_inventory can locate a narrower evidence owner. Do not guess current records, ask the student to inspect data a tool can read, or claim that a visible student-facing feature is inaccessible. For GPA schedule questions, use evaluate_gpa_scenario and get_enrollment_constraints, then check graduation, degree, and prerequisite evidence before suggesting a change. Treat all-A as the ceiling of the included current four-year plan, never a grade prediction or admission guarantee.",
     "Apply the app's deterministic academic rules exactly for the currently selected school. Never substitute d.tech's sequence, catalog, graduation rules, weighting, or terminology for another school; d.tech-specific evidence is valid only when d.tech is selected. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved catalog/evidence says so. College units and high-school transcript credits are different measures. A college course may satisfy a high-school graduation area only through a verified selected-school crosswalk/equivalency, and the same college course may separately apply to its own college's GE or degree rules. Never transfer one college's local GE pattern to another college. Check cross-college prerequisite equivalence only through normalized identity and verified evidence.",
-    "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated result; never substitute another school's courses, infer support/pathway needs, or call a partial plan complete.",
+    "For course planning, call get_course_schedule_options first and pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint. Treat explicit requested outcomes as binding unless they conflict with a locked record or hard product rule; preferences and planning heuristics must not silently override them. Its retrieved school policy and deterministic validator—not a global sequence—control grade loads, on-campus subjects, course flow, and the school's college-course posture. Build and explain one grade at a time; use cross-feature college tools when that policy supports college coursework and the student has not excluded it. Propose only a complete validated result; never substitute another school's courses, infer support/pathway needs, or call a partial plan complete.",
     "For a request that adds multiple named courses, fills remaining graduation gaps, or mixes selected-school and college courses, call resolve_academic_course_batch exactly once instead of repeating search_course_catalog. Put every named course in requests, set fill_remaining_graduation_requirements when the student asks for needed or remaining diploma classes, and preserve an explicit grade or term only where the student actually stated it. A comma-separated placement phrase applies through the end of that phrase. Leave term null when it was not stated so the resolver can place prerequisite sequences safely. The resolver uses the saved district, existing plan, nearby-provider order, cross-college identity, and prerequisites to choose exact campuses and placements; do not ask the student to choose a campus unless they explicitly requested one. Its complete result is converted directly into one reversible add_academic_courses proposal; do not ask for course titles already derivable from graduation evidence.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change app data, use the mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, ask for an internal record ID, or silently truncate a large request. Prefer a batch or cross-feature tool so the full request is one coherent action. Pilot covers normal student settings, selected public/charter high school, selected California community-college district, all editable course variables and schedule placement, canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, source-backed enrollment preference, plan snapshots, and cross-feature academic-plan clearing/restoration. Read nearby districts before changing the college-district preference, and keep that preference distinct from concurrent/dual-enrollment policy or eligibility. Search first when an exact school, district, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
@@ -1602,10 +1620,11 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               ...(requiredRead.arguments.starting_math_course ? { starting_math_course: requiredRead.arguments.starting_math_course } : {}),
               ...(requiredRead.arguments.starting_language_course ? { starting_language_course: requiredRead.arguments.starting_language_course } : {}),
               include_college_courses: requiredRead.arguments.include_college_courses ?? true,
-              replace_existing: requiredRead.arguments.replace_existing ?? false
+              replace_existing: requiredRead.arguments.replace_existing ?? false,
+              replace_grade_levels: requiredRead.arguments.replace_grade_levels ?? []
             },
             explanation: requiredRead.arguments.replace_existing === true
-              ? `Replace ${Number(data.existing_courses_replaced ?? 0)} editable courses with ${ids.length} exact verified courses, retain ${Number(data.existing_courses_retained ?? 0)} transcript-backed courses, and preserve every stated schedule constraint; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain.`
+              ? `Replace ${Number(data.existing_courses_replaced ?? 0)} editable courses with ${ids.length} exact verified courses, retain ${Number(data.existing_courses_retained ?? 0)} unaffected or transcript-backed courses, and preserve every stated schedule constraint; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain.`
               : `Keep ${Number(data.existing_courses_retained ?? data.existing_course_count ?? 0)} existing courses, adjust ${adjustments.length} exact existing ${adjustments.length === 1 ? "placement" : "placements"}, and add ${ids.length} exact missing flow ${ids.length === 1 ? "course" : "courses"}; ${Array.isArray((data.graduation_coverage as Record<string, unknown> | undefined)?.remaining_gaps) ? ((data.graduation_coverage as Record<string, unknown>).remaining_gaps as unknown[]).length : 0} graduation gaps remain after the batch and were shown to the student.`,
             mutatesData: true,
             status: "pending_confirmation"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -172,6 +172,13 @@ describe("Codex feature boundaries", () => {
       explanation: "The server resolved the exact batch.",
       model: "gpt-5.6-luna",
       verifiedBatchResolution: true
+    })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
+    await expect(reviewAssistantProposal({
+      userMessage: "Clear my schedule for 12th. Find a new schedule that maximizes GPA within the unit limit.",
+      toolName: "add_course_schedule",
+      arguments: { replace_existing: true, replace_grade_levels: [12], start_grade: 12, include_college_courses: true },
+      explanation: "Apply the complete validated grade-12 rebuild.",
+      model: "gpt-5.6-luna"
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
   });
 
@@ -411,6 +418,21 @@ describe("Codex feature boundaries", () => {
         objectives: ["complete_diploma", "maximize_weighted_gpa", "align_major"]
       }
     });
+    const gradeTwelveRebuild = "Clear my schedule for 12th. Find a new schedule that will net me the highest GPA while still graduating and within concurrent enrollment unit limits.";
+    expect(parseAcademicClearIntent(gradeTwelveRebuild)).toBeNull();
+    expect(parseAssistantScheduleIntent(gradeTwelveRebuild)).toMatchObject({ replaceExisting: true, replaceGradeLevels: [12], startGrade: 12 });
+    expect(requiredAssistantEvidenceRead(gradeTwelveRebuild)).toEqual({
+      name: "get_course_schedule_options",
+      arguments: {
+        respect_recommended_limit: true,
+        rigor: "advanced",
+        include_college_courses: true,
+        replace_existing: true,
+        replace_grade_levels: [12],
+        objectives: ["complete_diploma", "maximize_weighted_gpa"],
+        start_grade: 12
+      }
+    });
     expect(requiredAssistantEvidenceRead("Create a full schedule starting from 10th grade for the highest GPA and most degrees in my major")).toEqual({
       name: "get_academic_context",
       arguments: {
@@ -459,6 +481,7 @@ describe("Codex feature boundaries", () => {
     expect(parseExactCourseAddition("Add Carlmont Biology to grade 9 as an in-progress full-year course.")).toEqual({ query: "Carlmont Biology", gradeLevel: 9, status: "current", term: "full_year", source: "high_school" });
     expect(parseDegreeGoalIntent("Bookmark the Computer Science Applications and Development AS degree at College of San Mateo as my college goal.")).toEqual({ query: "Computer Science Applications and Development", college: "CSM", awardType: "AS" });
     expect(parseAcademicClearIntent("Clear my whole schedule, every degree bookmark, and all saved GPA assumptions.")).toEqual({ courses: true, degree_bookmarks: true, gpa_scenario: true });
+    expect(parseAcademicClearIntent("Clear my schedule for 12th.")).toBeNull();
     expect(parseCollegeDistrictSelection("Change my community-college district to Foothill-De Anza Community College District.")).toBe("Foothill-De Anza Community College District");
     expect(parseSchoolSelection("Switch my selected high school to Design Tech High School.")).toBe("Design Tech High School");
     expect(parseEnrollmentPreference("Use concurrent enrollment and respect the district's recommended unit limit.")).toEqual({ program_type: "concurrent", respect_recommended_limit: true });
@@ -524,6 +547,10 @@ describe("Codex feature boundaries", () => {
     expect(requiredAssistantEvidenceRead("Wipe the grade 11 plan")).toEqual({
       name: "list_plan_courses",
       arguments: { status: "all", grade_level: 11 }
+    });
+    expect(requiredAssistantEvidenceRead("Clear my schedule for 12th")).toEqual({
+      name: "list_plan_courses",
+      arguments: { status: "all", grade_level: 12 }
     });
     expect(requiredAssistantEvidenceRead("Remove all classes except Economics")).toBeNull();
     expect(requiredAssistantEvidenceRead("Move all classes but keep Government current")).toBeNull();

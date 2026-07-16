@@ -65,14 +65,19 @@ export async function reviewAssistantProposal(input: {
     const requestedMath = String(intent.startingMathCourse ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const proposedLanguage = String(input.arguments.starting_language_course ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const requestedLanguage = String(intent.startingLanguageCourse ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const proposedReplacementGrades = Array.isArray(input.arguments.replace_grade_levels)
+      ? input.arguments.replace_grade_levels.map(Number).sort((left, right) => left - right)
+      : [];
+    const requestedReplacementGrades = [...intent.replaceGradeLevels].sort((left, right) => left - right);
     const mismatch = proposedReplacement !== intent.replaceExisting
+      || JSON.stringify(proposedReplacementGrades) !== JSON.stringify(requestedReplacementGrades)
       || (requestedMath && !proposedMath.includes(requestedMath) && !requestedMath.includes(proposedMath))
       || (requestedLanguage && !proposedLanguage.includes(requestedLanguage) && !requestedLanguage.includes(proposedLanguage))
       || (intent.startGrade && Number(input.arguments.start_grade) !== intent.startGrade)
       || (intent.includeCollegeCourses === false && input.arguments.include_college_courses !== false)
       || (intent.maxCoursesPerTerm !== null && Number(input.arguments.max_courses_per_term) !== intent.maxCoursesPerTerm);
     if (mismatch) return { decision: "deny", risk: "high", summary: "The proposed schedule does not match every constraint in your request, so it was not applied." };
-    if (/\b(generate|build|create|make|draft|suggest|plan|recommend)\b/i.test(input.userMessage)) {
+    if (/\b(generate|build|create|make|draft|suggest|plan|recommend|find|design|redesign|replace|rebuild|regenerate|redo|rework)\b/i.test(input.userMessage)) {
       return {
         decision: "approve",
         risk: proposedReplacement ? "medium" : "low",
