@@ -9,8 +9,7 @@ import AiModelPicker from "@/components/AiModelPicker";
 import {
   AI_REASONING_OPTIONS,
   type AiModel,
-  type AiReasoningEffort,
-  type AiReviewMode
+  type AiReasoningEffort
 } from "@/lib/ai-preferences";
 import type { AiConversation, StudentSettings } from "@/lib/models";
 import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
@@ -22,7 +21,6 @@ interface PilotDraft {
   reasoningEffort: AiReasoningEffort;
   approved: boolean;
   testedAt: string | null;
-  reviewMode: AiReviewMode;
 }
 
 function settingsDraft(settings: StudentSettings): PilotDraft {
@@ -31,8 +29,7 @@ function settingsDraft(settings: StudentSettings): PilotDraft {
     model: settings.ai_model,
     reasoningEffort: settings.ai_reasoning_effort,
     approved: Boolean(settings.ai_connection_approved_at),
-    testedAt: settings.ai_setup_tested_at,
-    reviewMode: settings.ai_review_mode
+    testedAt: settings.ai_setup_tested_at
   };
 }
 
@@ -99,15 +96,6 @@ export default function PilotSettingsSection({
       });
       const preferencePayload = await preferenceResponse.json() as { error?: string };
       if (!preferenceResponse.ok) throw new Error(preferencePayload.error ?? "Pilot settings could not be saved.");
-      if (draft.enabled && draft.reviewMode !== settings.ai_review_mode) {
-        const reviewResponse = await authorizedFetch("/api/ai/review-mode", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ mode: draft.reviewMode })
-        });
-        const reviewPayload = await reviewResponse.json() as { error?: string };
-        if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Change access could not be saved.");
-      }
       await onChanged();
       setSaved(true);
     } catch (caught) {
@@ -160,8 +148,7 @@ export default function PilotSettingsSection({
   const dirty = draft.enabled !== settings.ai_enabled
     || draft.model !== settings.ai_model
     || draft.reasoningEffort !== settings.ai_reasoning_effort
-    || draft.approved !== Boolean(settings.ai_connection_approved_at)
-    || draft.reviewMode !== settings.ai_review_mode;
+    || draft.approved !== Boolean(settings.ai_connection_approved_at);
 
   return <div className={styles.pilotSettings}>
     <section className={styles.settingsSection} aria-labelledby="pilot-settings-heading">
@@ -181,11 +168,6 @@ export default function PilotSettingsSection({
           title="Reasoning"
           description="How much analysis Pilot uses before answering."
           control={<select className={styles.select} disabled={!draft.enabled} value={draft.reasoningEffort} onChange={(event) => { update({ reasoningEffort: event.target.value as AiReasoningEffort, testedAt: null }); setTestMessage(null); }}>{AI_REASONING_OPTIONS.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select>}
-        />
-        <SettingRow
-          title="Change access"
-          description="Supervised asks before every write; Auto-review uses an independent reviewer."
-          control={<select className={styles.select} disabled={!draft.enabled} value={draft.reviewMode} onChange={(event) => update({ reviewMode: event.target.value as AiReviewMode })}><option value="manual">Supervised</option><option value="auto_review">Auto-review</option></select>}
         />
       </div>
     </section>

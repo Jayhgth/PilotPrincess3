@@ -19,10 +19,7 @@ export const prerender = false;
 const requestSchema = z.object({
   conversationId: z.uuid(),
   turnId: z.uuid().optional(),
-  message: z.string().trim().max(4000),
-  pageContext: z.record(z.string(), z.unknown()).default({})
-}).superRefine((value, context) => {
-  if (JSON.stringify(value.pageContext).length > 12_000) context.addIssue({ code: "custom", message: "The page context is too large." });
+  message: z.string().trim().max(4000)
 });
 
 function boundedToolEvidence(value: unknown, depth = 0): unknown {
@@ -42,17 +39,10 @@ export const POST: APIRoute = async ({ request }) => {
   const form = await request.formData().catch(() => null);
   if (!form) return jsonError("Invalid assistant request.", 400);
   const files = form.getAll("images").filter((entry): entry is File => entry instanceof File);
-  let pageContext: unknown;
-  try {
-    pageContext = JSON.parse(String(form.get("pageContext") ?? "{}"));
-  } catch {
-    return jsonError("The page context is invalid.", 400);
-  }
   const parsed = requestSchema.safeParse({
     conversationId: String(form.get("conversationId") ?? ""),
     turnId: form.get("turnId") ? String(form.get("turnId")) : undefined,
-    message: String(form.get("message") ?? ""),
-    pageContext
+    message: String(form.get("message") ?? "")
   });
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid assistant request.", 400);
   if (!parsed.data.message && !files.length) return jsonError("Add a message or an image.", 400);
@@ -73,7 +63,7 @@ export const POST: APIRoute = async ({ request }) => {
     turn_id: turnId,
     role: "user",
     content: parsed.data.message,
-    page_context: sanitizeCodexValue(parsed.data.pageContext)
+    page_context: {}
   }).select("*").single();
   if (userMessageResult.error) return jsonError(userMessageResult.error.message, 500);
 
@@ -226,8 +216,8 @@ export const POST: APIRoute = async ({ request }) => {
         let knowledge: AssistantKnowledgeChunk[] = [];
         let memories: AssistantMemory[] = [];
         const [knowledgeResult, memoryResult] = await Promise.allSettled([
-          retrieveAssistantKnowledge(auth.supabase, parsed.data.message, parsed.data.pageContext),
-          retrieveAssistantMemories(auth.supabase, parsed.data.message, parsed.data.pageContext)
+          retrieveAssistantKnowledge(auth.supabase, parsed.data.message),
+          retrieveAssistantMemories(auth.supabase, parsed.data.message)
         ]);
         if (knowledgeResult.status === "fulfilled") {
           knowledge = knowledgeResult.value;
@@ -266,10 +256,8 @@ export const POST: APIRoute = async ({ request }) => {
           userMessage: parsed.data.message,
           images: localImages,
           imageNames: attachmentRows.map((attachment) => attachment.name),
-          pageContext: parsed.data.pageContext,
           model: preferences.model,
           reasoningEffort: preferences.reasoningEffort,
-          reviewMode: preferences.reviewMode,
           knowledge,
           memories,
           recentChanges,

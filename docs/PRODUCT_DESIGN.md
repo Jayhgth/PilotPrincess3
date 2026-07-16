@@ -22,11 +22,11 @@ Associate-degree discovery uses one search field rather than stacked mode, award
 | Tool | Student job | Standout capability |
 | --- | --- | --- |
 | GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, and source-backed college-unit checks |
-| Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a docked rail that archives old conversations, shows readable work, and offers Manual or separate Auto-review routing |
+| Pilot Assistant | Ask across the workspace and request an exact, reviewable change | Optional onboarding connection plus a docked rail that archives old conversations, shows readable work, and applies approved changes through a mandatory separate safety review |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
 
-Pilot Assistant is one global, contextual rail rather than a second AI panel repeated on every page. It may explain or compare deterministic scenarios, but it does not replace the owning surface or silently change the plan.
+Pilot Assistant is one global rail rather than a second AI panel repeated on every page. The active tab does not change its tools, retrieval, or behavior. It may explain or compare deterministic scenarios, but it does not replace the owning surface or silently change the plan.
 
 ## Research synthesis
 
@@ -68,9 +68,9 @@ Use alignment, spacing, and surface tone before borders. A divider is reserved f
 
 React Bits adaptations may clarify loading, selection, reveal, drag, and bounded focus. Motion is never ornamental and must respect reduced motion. Loading removes stale output when it could be mistaken for the new result.
 
-AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps page context and review mode in one quiet metadata row; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. Read tools run automatically. Every write begins as a visible exact proposal. Manual mode uses a focused approval card. Auto-review makes an independent binary decision, then applies approved changes or declines unsupported ones without a student confirmation step.
+AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps the model picker on the left and the image attachment control at the far right; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. It does not display or send the active tab. Read tools run automatically. Every write begins as a visible exact proposal, receives an independent binary safety decision, then applies or declines without a student confirmation step.
 
-Assistant chrome stays secondary to the student's page. The rail stays attached to the workspace, uses a forgiving invisible resize target on wide screens, and stores only its width. Archiving updates the picker optimistically without closing it; archived conversations remain restorable for 14 days. Connection, model, review mode, and archive management live in the universal Settings page. The rail contains conversation work only. Mobile uses a full-width rail with resize controls removed.
+Assistant chrome stays secondary to the student's page. The rail stays attached to the workspace, uses a forgiving invisible resize target on wide screens, and stores only its width. Archiving updates the picker optimistically without closing it; archived conversations remain restorable for 14 days. Connection, model, reasoning, and archive management live in the universal Settings page. The rail contains conversation work only. Mobile uses a full-width rail with resize controls removed.
 
 The Pilot control sits in the authenticated top-right toolbar. At wide desktop sizes, the 420px rail docks without obscuring the current page; at narrower sizes it becomes a dismissible overlay and then a full-width mobile surface. Setup uses one recommended model, optional alternatives, one consent statement, one connection test, and one save action. No student is opted in by default.
 

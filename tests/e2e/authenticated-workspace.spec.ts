@@ -143,7 +143,17 @@ test.describe("authenticated student workspace", () => {
 
     await page.reload();
     await page.getByRole("button", { name: "Open Pilot", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Pilot Assistant" })).toBeVisible();
+    const pilot = page.getByRole("dialog", { name: "Pilot Assistant" });
+    await expect(pilot).toBeVisible();
+    const modelPicker = pilot.getByRole("button", { name: /^Model:/ });
+    const attachment = pilot.getByRole("button", { name: "Attach images" });
+    await expect(modelPicker).toBeVisible();
+    await expect(attachment).toBeVisible();
+    const modelBox = await modelPicker.boundingBox();
+    const attachmentBox = await attachment.boundingBox();
+    expect(modelBox).not.toBeNull();
+    expect(attachmentBox).not.toBeNull();
+    expect(attachmentBox!.x).toBeGreaterThan(modelBox!.x);
     await expect(page.getByText("Pilot could not open", { exact: false })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible();
   });

@@ -51,8 +51,7 @@ async function sendTurn(
     multipart: {
       conversationId,
       turnId: crypto.randomUUID(),
-      message,
-      pageContext: JSON.stringify({ view: "courses", courseArea: "plan" })
+      message
     },
     timeout: 180_000
   });
@@ -73,17 +72,14 @@ async function sendTurn(
   };
 }
 
-async function autoReview(
+async function reviewAndApply(
   request: APIRequestContext,
   accessToken: string,
   proposals: Proposal[]
 ) {
   const results = [];
   for (const proposal of proposals) {
-    const response = await authorizedPost(request, "/api/ai/tool", accessToken, {
-      toolCallId: proposal.id,
-      decision: "auto_review"
-    });
+    const response = await authorizedPost(request, "/api/ai/tool", accessToken, { toolCallId: proposal.id });
     const payload = await response.json() as { applied?: boolean; error?: string; review?: { decision?: string } };
     expect(response.ok(), payload.error).toBe(true);
     results.push({ proposal, ...payload });
@@ -150,8 +146,6 @@ test.describe("live Pilot behavior", () => {
       approved: true
     });
     expect(preferences.ok(), await preferences.text()).toBe(true);
-    const reviewMode = await authorizedPost(request, "/api/ai/review-mode", accessToken, { mode: "auto_review" });
-    expect(reviewMode.ok(), await reviewMode.text()).toBe(true);
   });
 
   test.afterEach(async () => {
@@ -228,7 +222,7 @@ test.describe("live Pilot behavior", () => {
       rigor: "advanced",
       include_college_courses: false
     });
-    const scheduleReviews = await autoReview(request, accessToken, scheduleTurn.proposals);
+    const scheduleReviews = await reviewAndApply(request, accessToken, scheduleTurn.proposals);
     expect(scheduleReviews.every((result) => result.applied === true), JSON.stringify(scheduleReviews)).toBe(true);
     const rebuiltRows = await supabase.from("plan_courses").select("id,course_id,grade_level,college_units,source_review_item_id").eq("user_id", userId);
     if (rebuiltRows.error) throw rebuiltRows.error;
@@ -249,7 +243,7 @@ test.describe("live Pilot behavior", () => {
 
     const undoTurn = await sendTurn(request, accessToken, conversationId, "Undo that schedule change.");
     expect(undoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
-    const undoReviews = await autoReview(request, accessToken, undoTurn.proposals);
+    const undoReviews = await reviewAndApply(request, accessToken, undoTurn.proposals);
     expect(undoReviews.every((result) => result.applied === true), JSON.stringify(undoReviews)).toBe(true);
     const restoredRows = await supabase.from("plan_courses").select("id").eq("user_id", userId);
     if (restoredRows.error) throw restoredRows.error;
@@ -263,7 +257,7 @@ test.describe("live Pilot behavior", () => {
       "Change my preferred name to Pilot Stress Test."
     );
     expect(settingsTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
-    const settingsReviews = await autoReview(request, accessToken, settingsTurn.proposals);
+    const settingsReviews = await reviewAndApply(request, accessToken, settingsTurn.proposals);
     expect(settingsReviews.every((result) => result.applied === true), JSON.stringify(settingsReviews)).toBe(true);
     const settingsResult = await supabase.from("student_settings").select("preferred_name").eq("id", userId).single();
     expect(settingsResult.data?.preferred_name).toBe("Pilot Stress Test");
@@ -300,7 +294,7 @@ test.describe("live Pilot behavior", () => {
     };
     const apply = async (turn: Awaited<ReturnType<typeof sendTurn>>) => {
       expect(turn.proposals.length, turn.message).toBeGreaterThan(0);
-      const results = await autoReview(request, accessToken, turn.proposals);
+      const results = await reviewAndApply(request, accessToken, turn.proposals);
       expect(results.every((result) => result.applied === true), JSON.stringify(results)).toBe(true);
       return results;
     };
@@ -381,7 +375,7 @@ test.describe("live Pilot behavior", () => {
     };
     const apply = async (turn: Awaited<ReturnType<typeof sendTurn>>) => {
       expect(turn.proposals.length, turn.message).toBeGreaterThan(0);
-      const results = await autoReview(request, accessToken, turn.proposals);
+      const results = await reviewAndApply(request, accessToken, turn.proposals);
       expect(results.every((result) => result.applied === true), JSON.stringify(results)).toBe(true);
     };
 

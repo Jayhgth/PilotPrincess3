@@ -8,7 +8,7 @@ import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 const settings: StudentSettings = {
   id: "student", school_id: "school", preferred_name: "Jay", age: 14, grade_level: 9, graduation_year: 2030,
   school_confirmed: true, school_selected_at: null, onboarding_complete: true, ai_enabled: true,
-  ai_model: "gpt-5.6-luna", ai_reasoning_effort: "low", ai_review_mode: "auto_review",
+  ai_model: "gpt-5.6-luna", ai_reasoning_effort: "low",
   ui_theme: "light",
   ai_connection_approved_at: null, ai_setup_tested_at: null, plan_start_grade: 9, plan_end_grade: 12,
   tracker_mode: "full", tracked_requirement_areas: []

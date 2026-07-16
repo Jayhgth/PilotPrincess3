@@ -89,7 +89,6 @@ export interface StudentSettings {
   ai_enabled: boolean;
   ai_model: "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4-mini";
   ai_reasoning_effort: "low" | "medium" | "high";
-  ai_review_mode: "manual" | "auto_review";
   ui_theme: "light" | "dark";
   ai_connection_approved_at: string | null;
   ai_setup_tested_at: string | null;

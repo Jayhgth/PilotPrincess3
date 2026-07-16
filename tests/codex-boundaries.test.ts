@@ -4,7 +4,7 @@ import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { autoReviewResultSchema, buildAutoReviewPrompt, reviewAssistantProposal } from "@/server/ai-auto-review";
-import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema, aiReviewModeSchema } from "@/lib/ai-preferences";
+import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema } from "@/lib/ai-preferences";
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 import { explicitDurableMemoryUpdates } from "@/server/ai-memory";
@@ -145,8 +145,6 @@ describe("Codex feature boundaries", () => {
     expect(AI_REASONING_OPTIONS.map((option) => option.value)).toEqual(["low", "medium", "high"]);
     expect(aiReasoningEffortSchema.parse("high")).toBe("high");
     expect(() => aiReasoningEffortSchema.parse("unbounded")).toThrow();
-    expect(aiReviewModeSchema.parse("auto_review")).toBe("auto_review");
-    expect(() => aiReviewModeSchema.parse("full_access")).toThrow();
   });
 
   it("builds a separate autonomous review prompt and bounds its decision", async () => {
@@ -156,7 +154,7 @@ describe("Codex feature boundaries", () => {
       arguments: { program_type: "concurrent" },
       explanation: "Apply the requested enrollment type."
     });
-    expect(prompt).toContain("separate approval reviewer");
+    expect(prompt).toContain("separate safety reviewer");
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
     expect(prompt).toContain("an explicit request to generate, suggest, or build a schedule may approve");
@@ -182,7 +180,7 @@ describe("Codex feature boundaries", () => {
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
   });
 
-  it("tells the assistant to read records and defer writes to the selected review mode", () => {
+  it("tells the assistant to read records and defer writes to the mandatory safety review", () => {
     const prompt = assistantConversationPrompt({
       history: [{
         role: "tool",
@@ -192,9 +190,7 @@ describe("Codex feature boundaries", () => {
       userMessage: "Add a math course",
       images: [{ type: "local_image", path: "/private/tmp/schedule.png" }],
       imageNames: ["schedule.png"],
-      pageContext: { view: "courses" },
       model: "gpt-5.6-luna",
-      reviewMode: "manual",
       knowledge: [{
         id: "schedule-generation-evidence",
         title: "Schedule generation evidence contract",
@@ -234,7 +230,7 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("printed GPA and earned-credit totals");
     expect(prompt).toContain("graduation requirement gap is a downstream plan result");
     expect(prompt).toContain("name at most three exact affected course records");
-    expect(prompt).toContain("manual or auto-review mode");
+    expect(prompt).toContain("independent safety review");
     expect(prompt).toContain("create a dashboard-style report or table");
     expect(prompt).toContain("Default to one to three short sentences");
     expect(prompt).toContain("Keep assistant_message under 900 characters");
@@ -257,19 +253,19 @@ describe("Codex feature boundaries", () => {
   });
 
   it("routes schedule questions to bounded application guidance tags", () => {
-    expect(assistantKnowledgeTags("Create a schedule with SMCCD classes", { view: "courses" })).toEqual([
+    expect(assistantKnowledgeTags("Create a schedule with SMCCD classes")).toEqual([
       "assistant",
       "courses",
       "schedule",
       "college",
       "smccd"
     ]);
-    expect(assistantKnowledgeTags("Audit my transcript GPA", { view: "sources" })).toEqual([
+    expect(assistantKnowledgeTags("Audit my transcript GPA")).toEqual([
       "assistant",
       "gpa",
       "transcript"
     ]);
-    expect(assistantKnowledgeTags("Bring the previous change back", { view: "courses" })).toContain("history");
+    expect(assistantKnowledgeTags("Bring the previous change back")).toContain("history");
   });
 
   it("resolves referential undo requests against the exact recent conversation action", async () => {
@@ -290,9 +286,7 @@ describe("Codex feature boundaries", () => {
     const result = await runAssistantChat({
       history: [],
       userMessage: "Bring em back",
-      pageContext: { view: "courses" },
       model: "gpt-5.6-luna",
-      reviewMode: "auto_review",
       recentChanges: [change],
       executeReadTool: async () => { throw new Error("The current plan must not be queried for an undo."); },
       onSdkEvent: () => undefined,
@@ -471,10 +465,9 @@ describe("Codex feature boundaries", () => {
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
     expect(parseScheduleAnswer("Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "add_schedule", accepted: false });
     expect(parseScheduleAnswer("Here are my answers:\n- **Add these proposed courses to your current four-year plan?** Yes (Recommended)")).toEqual({ kind: "add_schedule", accepted: true });
-    expect(scheduleProposalAction("auto_review", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
-    expect(scheduleProposalAction("manual", "Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
-    expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "decline" });
-    expect(scheduleProposalAction("auto_review", "Here are my answers:\n- **Keep college coursework within the district limit?** No")).toEqual({ kind: "propose", respectRecommendedLimit: false });
+    expect(scheduleProposalAction("Suggest a schedule for me.")).toEqual({ kind: "propose", respectRecommendedLimit: true });
+    expect(scheduleProposalAction("Here are my answers:\n- **Add this suggested schedule to your plan?** No")).toEqual({ kind: "decline" });
+    expect(scheduleProposalAction("Here are my answers:\n- **Keep college coursework within the district limit?** No")).toEqual({ kind: "propose", respectRecommendedLimit: false });
     expect(requestedUiTheme("Switch the app to dark mode")).toBe("dark");
     expect(requestedUiTheme("Use the light theme")).toBe("light");
     expect(requestedStudentSettings("Set my current grade to 10, graduation year to 2029, and planning window from grade 10 through grade 12.")).toEqual({ grade_level: 10, graduation_year: 2029, plan_start_grade: 10, plan_end_grade: 12 });

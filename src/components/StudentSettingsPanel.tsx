@@ -229,8 +229,7 @@ export default function StudentSettingsPanel({
       settings.ai_model,
       settings.ai_reasoning_effort,
       settings.ai_connection_approved_at,
-      settings.ai_setup_tested_at,
-      settings.ai_review_mode
+      settings.ai_setup_tested_at
     ].join(":");
     return <div className={styles.settingsPanel}><PilotSettingsSection key={pilotSettingsKey} settings={settings} onChanged={onAiPreferencesChanged} /></div>;
   }

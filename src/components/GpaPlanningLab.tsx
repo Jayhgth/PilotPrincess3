@@ -3,12 +3,12 @@ import {
   CheckIcon as Check,
   InfoIcon as Info
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import AnimatedContent from "@/components/reactbits/AnimatedContent";
 import AnimatedList from "@/components/reactbits/AnimatedList";
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import InstitutionMark from "@/components/InstitutionMark";
-import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
+import { resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import { calculateGpaScenario, initialGpaScenarioChoices, setAllGpaScenarioGrades, type GpaScenarioChoice } from "@/lib/gpa-planner";
 import type { InstitutionKey } from "@/lib/institutions";
 import { courseDisplayName, LETTER_GRADES } from "@/lib/planning";
@@ -30,7 +30,6 @@ interface Props {
   choices: GpaScenarioChoice[];
   onOpenCourses: () => void;
   onChoicesChange: (choices: GpaScenarioChoice[]) => void;
-  onScenarioChange: (context: Record<string, unknown>) => void;
 }
 
 function displayGpa(value: number | null) {
@@ -58,8 +57,7 @@ export default function GpaPlanningLab({
   equivalencies,
   choices,
   onOpenCourses,
-  onChoicesChange,
-  onScenarioChange
+  onChoicesChange
 }: Props) {
   const [bulkGrade, setBulkGrade] = useState("A");
   const courseMap = useMemo(() => new Map(courses.map((course) => [course.id, course])), [courses]);
@@ -74,31 +72,6 @@ export default function GpaPlanningLab({
     { id: "high-school", label: "High school", rows: openRows.filter((row) => !row.smccd_course_id && !row.college_provider_code && Number(row.college_units ?? 0) <= 0) },
     { id: "college", label: "College", rows: openRows.filter((row) => Boolean(row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0)) }
   ];
-
-  useEffect(() => {
-    const collegeCreditContext = rows.filter((row) => row.smccd_course_id || row.college_provider_code || Number(row.college_units ?? 0) > 0).map((row) => {
-      const resolution = resolvePlanCourseHighSchoolCredits(row, equivalencies);
-      return {
-        plan_course_id: row.id,
-        college_units: resolution.collegeUnits,
-        high_school_gpa_credits: resolution.credits,
-        credit_basis: resolution.basis
-      };
-    });
-    onScenarioChange({
-      current_weighted_gpa: result.baseline.projectedWeighted,
-      scenario_weighted_gpa: result.scenario.projectedWeighted,
-      all_a_schedule_ceiling: result.bestCase.projectedWeighted,
-      missing_grade_assumptions: result.missingExpectedGrades,
-      college_credit_policy: COLLEGE_HIGH_SCHOOL_CREDIT_POLICY,
-      college_credit_conversions: collegeCreditContext,
-      choices: effectiveChoices.map((choice) => ({
-        plan_course_id: choice.planCourseId,
-        included: choice.included,
-        expected_grade: choice.expectedGrade
-      }))
-    });
-  }, [effectiveChoices, equivalencies, result, rows, onScenarioChange]);
 
   function updateChoice(id: string, patch: Partial<GpaScenarioChoice>) {
     if (!effectiveChoices.some((choice) => choice.planCourseId === id)) return;

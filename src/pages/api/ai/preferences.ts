@@ -37,7 +37,6 @@ export const POST: APIRoute = async ({ request }) => {
     ai_enabled: parsed.data.enabled,
     ai_model: parsed.data.model,
     ai_reasoning_effort: parsed.data.reasoningEffort,
-    ai_review_mode: parsed.data.enabled ? current.reviewMode : "manual",
     ai_connection_approved_at: approvedAt,
     ai_setup_tested_at: parsed.data.enabled && current.model === parsed.data.model ? current.testedAt : null
   }).eq("id", auth.user.id);

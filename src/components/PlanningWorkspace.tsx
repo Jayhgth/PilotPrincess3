@@ -251,7 +251,6 @@ export default function PlanningWorkspace() {
   );
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
   const [settingsArea, setSettingsArea] = useState<SettingsArea>(() => locationState().settingsArea);
-  const [gpaScenarioContext, setGpaScenarioContext] = useState<Record<string, unknown>>({});
   const [gpaScenarioChoices, setGpaScenarioChoices] = useState<GpaScenarioChoice[]>([]);
   const [selectedDtechCourseId, setSelectedDtechCourseId] = useState<string | null>(null);
   const [focusedSmccdCourseId, setFocusedSmccdCourseId] = useState<string | null>(null);
@@ -382,13 +381,6 @@ export default function PlanningWorkspace() {
     };
   }), [activeCatalogGrade, courseDesignations, courses, defaultDtechPlacement, equivalencies, filteredCourses, planCourses, plannedSmccdCourses]);
   const plannedSmccdMap = useMemo(() => new Map(plannedSmccdCourses.map((course) => [course.id, course])), [plannedSmccdCourses]);
-  const assistantPageContext = useMemo(() => ({
-    view,
-    label: NAV_ITEMS.find((item) => item.id === view)?.label ?? "workspace",
-    ...(view === "courses" ? { course_area: courseArea } : {}),
-    ...(view === "gpa" ? { gpa_scenario: gpaScenarioContext } : {}),
-    ...(view === "graduation" ? { graduation_earned_percent: graduationEarnedPercent } : {})
-  }), [courseArea, gpaScenarioContext, graduationEarnedPercent, view]);
   const loadWorkspace = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!supabase) return;
     if (!options.silent) {
@@ -418,7 +410,6 @@ export default function PlanningWorkspace() {
         ai_enabled: rawSettings.ai_enabled ?? false,
         ai_model: rawSettings.ai_model ?? "gpt-5.6-luna",
         ai_reasoning_effort: rawSettings.ai_reasoning_effort ?? "low",
-        ai_review_mode: rawSettings.ai_review_mode ?? "manual",
         ai_connection_approved_at: rawSettings.ai_connection_approved_at ?? null,
         ai_setup_tested_at: rawSettings.ai_setup_tested_at ?? null
       };
@@ -1194,14 +1185,13 @@ export default function PlanningWorkspace() {
 
   async function refreshAiPreferences() {
     if (!supabase || !session) return;
-    const { data, error } = await supabase.from("student_settings").select("ai_enabled, ai_model, ai_reasoning_effort, ai_review_mode, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
+    const { data, error } = await supabase.from("student_settings").select("ai_enabled, ai_model, ai_reasoning_effort, ai_connection_approved_at, ai_setup_tested_at").eq("id", session.user.id).single();
     if (error) throw error;
     setSettings((current) => current ? {
       ...current,
       ai_enabled: data.ai_enabled,
       ai_model: data.ai_model as StudentSettings["ai_model"],
       ai_reasoning_effort: data.ai_reasoning_effort as StudentSettings["ai_reasoning_effort"],
-      ai_review_mode: data.ai_review_mode as StudentSettings["ai_review_mode"],
       ai_connection_approved_at: data.ai_connection_approved_at,
       ai_setup_tested_at: data.ai_setup_tested_at
     } : current);
@@ -1552,7 +1542,6 @@ export default function PlanningWorkspace() {
           if (error) notify(`GPA assumptions could not be saved: ${error.message}`, "error");
         });
       }}
-      onScenarioChange={setGpaScenarioContext}
     /></div>;
   }
 
@@ -1704,8 +1693,7 @@ export default function PlanningWorkspace() {
           key={`${settings.ai_enabled}:${settings.ai_connection_approved_at ?? "off"}`}
           session={session}
           open={assistantOpen}
-          pageContext={assistantPageContext}
-          preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reasoningEffort: settings.ai_reasoning_effort, reviewMode: settings.ai_review_mode }}
+          preferences={{ enabled: settings.ai_enabled, model: settings.ai_model, reasoningEffort: settings.ai_reasoning_effort }}
           onPreferencesChanged={refreshAiPreferences}
           onClose={() => setAssistantOpen(false)}
           onDataChanged={refreshAfterAssistantChange}

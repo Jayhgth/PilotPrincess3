@@ -27,7 +27,7 @@ import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import AssistantMarkdown from "@/components/AssistantMarkdown";
 import AiModelPicker from "@/components/AiModelPicker";
-import type { AiModel, AiReasoningEffort, AiReviewMode } from "@/lib/ai-preferences";
+import type { AiModel, AiReasoningEffort } from "@/lib/ai-preferences";
 import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
 import { asAssistantRecord, assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
@@ -38,12 +38,10 @@ import styles from "./GlobalAssistant.module.css";
 interface GlobalAssistantProps {
   session: Session;
   open: boolean;
-  pageContext: Record<string, unknown>;
   preferences: {
     enabled: boolean;
     model: AiModel;
     reasoningEffort: AiReasoningEffort;
-    reviewMode: AiReviewMode;
   };
   onPreferencesChanged: () => void | Promise<void>;
   onClose: () => void;
@@ -111,15 +109,11 @@ const EMPTY_PAYLOAD: ConversationPayload = {
   toolCalls: []
 };
 
-function contextSuggestions(context: Record<string, unknown>) {
-  const view = String(context.view ?? "dashboard");
-  return ({
-    dashboard: ["What should I focus on next?", "Check whether my current plan is balanced.", "What should I verify with my counselor?"],
-    courses: ["Find an eligible course for my plan.", "Check my current course sequence.", "Help me add a course to my plan."],
-    graduation: ["Which graduation requirement still needs attention?", "Explain what is completed versus only scheduled.", "What should I plan next for graduation?"],
-    gpa: ["Explain my GPA in plain language.", "Which courses are included in this GPA?", "What GPA evidence should I verify?"]
-  } as Record<string, string[]>)[view] ?? ["What should I focus on next?", "Check my current plan.", "What can you help me change?"];
-}
+const ASSISTANT_SUGGESTIONS = [
+  "What should I focus on next?",
+  "Check whether my full plan is balanced.",
+  "What can you help me change?"
+];
 
 function MessageImages({ message, onPreview }: { message: AiMessage; onPreview: (image: { url: string; name: string }) => void }) {
   if (!message.attachments?.length) return null;
@@ -250,13 +244,13 @@ function humanizeActivityText(value: unknown) {
 }
 
 function toolSummary(call: AiToolCall) {
-  const autoReview = (call.result as { auto_review?: { summary?: unknown } } | null)?.auto_review;
+  const safetyReview = (call.result as { safety_review?: { summary?: unknown } } | null)?.safety_review;
   const undone = call.result as { undone_at?: unknown; undo_summary?: unknown } | null;
   if (call.status === "completed" && undone?.undone_at) return String(undone.undo_summary ?? "Change undone");
   if (call.status === "completed") return String((call.result as { summary?: unknown } | null)?.summary ?? "Completed");
   if (call.status === "failed") return String((call.result as { error?: unknown } | null)?.error ?? "The tool failed.");
-  if (call.status === "rejected") return String(autoReview?.summary ?? "Not applied");
-  if (call.status === "pending_confirmation") return String(autoReview?.summary ?? "Waiting for your confirmation");
+  if (call.status === "rejected") return String(safetyReview?.summary ?? "Not applied");
+  if (call.status === "pending_confirmation") return "Safety review queued";
   return "Running";
 }
 
@@ -272,22 +266,15 @@ function readableArguments(call: AiToolCall) {
   });
 }
 
-function ToolCallRow({ call, busy, onDecision }: { call: AiToolCall; busy: boolean; onDecision: (call: AiToolCall, decision: "confirm" | "reject") => void }) {
+function ToolCallRow({ call, busy }: { call: AiToolCall; busy: boolean }) {
   const pending = call.status === "pending_confirmation";
   const label = friendlyToolLabel(call.tool_name);
-  const autoReview = (call.result as { auto_review?: { summary?: unknown } } | null)?.auto_review;
-  const autoReviewSummary = typeof autoReview?.summary === "string" ? autoReview.summary : null;
   if (pending) {
     return (
       <FadeContent className={styles.approvalCard} duration={0.16}>
-        <div className={styles.approvalHeading}><Wrench size={16} /><div><strong>Confirm this change</strong><span>{label}</span></div></div>
+        <div className={styles.approvalHeading}><ShieldCheck size={16} /><div><strong>{busy ? "Reviewing change" : "Change queued"}</strong><span>{label}</span></div></div>
         <p>{call.explanation}</p>
-        {autoReviewSummary && <p className={styles.reviewNote}><ShieldCheck size={15} /> Previous reviewer note: {autoReviewSummary}</p>}
         <dl>{readableArguments(call).map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>)}</dl>
-        <div className={styles.approvalActions}>
-          <button type="button" onClick={() => onDecision(call, "confirm")} disabled={busy}>Apply change</button>
-          <button type="button" onClick={() => onDecision(call, "reject")} disabled={busy}>Not now</button>
-        </div>
       </FadeContent>
     );
   }
@@ -305,10 +292,10 @@ function activityItem(event: LiveActivity) {
   if (event.type === "knowledge.failed") return { kind: "tool", label: "Planning guidance", detail: "Built-in guidance used because retrieved guidance was unavailable" };
   if (event.type === "memory.retrieved") return { kind: "tool", label: "Student context", detail: String(event.summary ?? "Retrieved relevant preferences") };
   if (event.type === "memory.updated") return { kind: "tool", label: "Student context", detail: String(event.summary ?? "Updated lightweight preferences") };
-  if (event.type === "auto_review.started") return { kind: "review", label: "Auto-review", detail: String(event.summary ?? "Checking the proposed change") };
-  if (event.type === "auto_review.completed") {
+  if (event.type === "safety_review.started" || event.type === "auto_review.started") return { kind: "review", label: "Safety review", detail: String(event.summary ?? "Checking the proposed change") };
+  if (event.type === "safety_review.completed" || event.type === "auto_review.completed") {
     const review = event.review as Record<string, unknown> | undefined;
-    return { kind: "review", label: "Auto-review", detail: String(review?.summary ?? "Review completed") };
+    return { kind: "review", label: "Safety review", detail: String(review?.summary ?? "Review completed") };
   }
   const toolCall = event.toolCall as Record<string, unknown> | undefined;
   if (toolCall) {
@@ -349,12 +336,11 @@ function LiveElapsed({ startedAt }: { startedAt: string }) {
   return <span ref={textRef} className={styles.turnDuration}>0s</span>;
 }
 
-function TurnActivity({ events, tools, running, busyTool, onDecision }: {
+function TurnActivity({ events, tools, running, reviewing }: {
   events: LiveActivity[];
   tools: AiToolCall[];
   running: boolean;
-  busyTool: string | null;
-  onDecision: (call: AiToolCall, decision: "confirm" | "reject") => void;
+  reviewing: boolean;
 }) {
   const [showAllTools, setShowAllTools] = useState(false);
   const items = events.map(activityItem).filter((item): item is NonNullable<ReturnType<typeof activityItem>> => Boolean(item));
@@ -377,14 +363,14 @@ function TurnActivity({ events, tools, running, busyTool, onDecision }: {
           {item.detail && <div className={styles.workDetails}><p>{item.detail}</p></div>}
         </details>)}
         {groupedTools.hiddenCount > 0 && <button className={styles.showMoreTools} type="button" onClick={() => setShowAllTools(true)}><CaretDown size={13} /> Show {groupedTools.hiddenCount} earlier tool {groupedTools.hiddenCount === 1 ? "call" : "calls"}</button>}
-        {groupedTools.visible.map((tool) => <ToolCallRow key={tool.id} call={tool} busy={Boolean(busyTool)} onDecision={onDecision} />)}
+        {groupedTools.visible.map((tool) => <ToolCallRow key={tool.id} call={tool} busy={reviewing} />)}
         {showAllTools && tools.length > 2 && <button className={styles.showMoreTools} type="button" onClick={() => setShowAllTools(false)}><CaretDown size={13} className={styles.caretUp} /> Show fewer tool calls</button>}
       </div>
     </details>
   );
 }
 
-export default function GlobalAssistant({ session, open, pageContext, preferences, onPreferencesChanged, onClose, onDataChanged }: GlobalAssistantProps) {
+export default function GlobalAssistant({ session, open, preferences, onPreferencesChanged, onClose, onDataChanged }: GlobalAssistantProps) {
   const [data, setData] = useState<ConversationPayload>(EMPTY_PAYLOAD);
   const [liveEvents, setLiveEvents] = useState<LiveActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -392,10 +378,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [busyTool, setBusyTool] = useState<string | null>(null);
   const [busyUndo, setBusyUndo] = useState<string | null>(null);
-  const [autoReviewing, setAutoReviewing] = useState(false);
-  const reviewMode = preferences.reviewMode;
+  const [reviewingChange, setReviewingChange] = useState(false);
   const [pendingModel, setPendingModel] = useState<AiModel | null>(null);
   const [savingModel, setSavingModel] = useState(false);
   const [images, setImages] = useState<ComposerImage[]>([]);
@@ -416,9 +400,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   const imagesRef = useRef<ComposerImage[]>([]);
   const queueRef = useRef<QueuedMessage[]>([]);
   const reviewedPendingRef = useRef<Set<string>>(new Set());
-  const autoReviewBacklogRef = useRef(false);
+  const reviewBacklogRef = useRef(false);
   const dockResizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
-  const suggestions = useMemo(() => contextSuggestions(pageContext), [pageContext]);
   const activeId = data.activeConversation?.id ?? null;
   const selectedModel = pendingModel ?? preferences.model;
 
@@ -469,17 +452,17 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     }
   }, [authorizedFetch]);
 
-  const autoReviewToolCalls = useCallback(async (toolCallIds: string[]) => {
+  const reviewToolCalls = useCallback(async (toolCallIds: string[]) => {
     let changed = false;
     try {
       for (const toolCallId of toolCallIds) {
         const reviewResponse = await authorizedFetch("/api/ai/tool", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ toolCallId, decision: "auto_review" })
+          body: JSON.stringify({ toolCallId })
         });
         const reviewPayload = await reviewResponse.json() as { error?: string; applied?: boolean; toolCall?: AiToolCall };
-        if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "Auto-review could not complete.");
+        if (!reviewResponse.ok) throw new Error(reviewPayload.error ?? "The safety review could not complete.");
         if (reviewPayload.toolCall) {
           setData((current) => ({
             ...current,
@@ -505,25 +488,25 @@ export default function GlobalAssistant({ session, open, pageContext, preference
   }, [open, preferences.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!open || reviewMode !== "auto_review" || running || autoReviewBacklogRef.current) return;
+    if (!open || running || reviewBacklogRef.current) return;
     const pendingIds = data.toolCalls
       .filter((call) => call.status === "pending_confirmation" && !reviewedPendingRef.current.has(call.id))
       .map((call) => call.id);
     if (!pendingIds.length) return;
     pendingIds.forEach((id) => reviewedPendingRef.current.add(id));
-    autoReviewBacklogRef.current = true;
-    setAutoReviewing(true);
-    void autoReviewToolCalls(pendingIds)
+    reviewBacklogRef.current = true;
+    setReviewingChange(true);
+    void reviewToolCalls(pendingIds)
       .then(() => loadConversation(data.activeConversation?.id))
       .catch((caught) => {
         pendingIds.forEach((id) => reviewedPendingRef.current.delete(id));
-        setError(caught instanceof Error ? caught.message : "Auto-review could not complete.");
+        setError(caught instanceof Error ? caught.message : "The safety review could not complete.");
       })
       .finally(() => {
-        autoReviewBacklogRef.current = false;
-        setAutoReviewing(false);
+        reviewBacklogRef.current = false;
+        setReviewingChange(false);
       });
-  }, [autoReviewToolCalls, data.activeConversation?.id, data.toolCalls, loadConversation, open, reviewMode, running]);
+  }, [data.activeConversation?.id, data.toolCalls, loadConversation, open, reviewToolCalls, running]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDraft(window.localStorage.getItem(assistantDraftKey(session.user.id, activeId)) ?? ""), 0);
@@ -723,7 +706,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       id: crypto.randomUUID(),
       content,
       images: queuedImages,
-      context: { ...pageContext, ...context }
+      context
     };
     commitQueue([...queueRef.current, queued]);
     setError(null);
@@ -814,7 +797,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
     const messageImages = options.images ?? (value === undefined ? images : []);
     if ((!message && !messageImages.length) || runningRef.current) return;
     const clearComposerDraft = options.clearComposerDraft ?? value === undefined;
-    const messageContext = { ...pageContext, ...(options.context ?? {}) };
+    const messageContext = options.context ?? {};
     setError(null);
     if (clearComposerDraft) {
       window.localStorage.removeItem(assistantDraftKey(session.user.id, activeId));
@@ -861,7 +844,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       form.set("conversationId", activeConversation.id);
       form.set("turnId", turnId);
       form.set("message", message);
-      form.set("pageContext", JSON.stringify(messageContext));
       for (const image of messageImages) form.append("images", image.file, image.file.name);
       const response = await authorizedFetch("/api/ai/chat", {
         method: "POST",
@@ -892,11 +874,11 @@ export default function GlobalAssistant({ session, open, pageContext, preference
         for (const line of lines) consume(line);
         if (done) { consume(buffer); break; }
       }
-      if (reviewMode === "auto_review" && proposalIds.length) {
-        setAutoReviewing(true);
+      if (proposalIds.length) {
+        setReviewingChange(true);
         proposalIds.forEach((id) => reviewedPendingRef.current.add(id));
         try {
-          await autoReviewToolCalls(proposalIds);
+          await reviewToolCalls(proposalIds);
         } catch (caught) {
           proposalIds.forEach((id) => reviewedPendingRef.current.delete(id));
           throw caught;
@@ -924,7 +906,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
       }
       if (!(caught instanceof DOMException && caught.name === "AbortError")) setError(caught instanceof Error ? caught.message : "Pilot could not complete that request.");
     } finally {
-      setAutoReviewing(false);
+      setReviewingChange(false);
       runningRef.current = false;
       setRunning(false);
       abortRef.current = null;
@@ -939,23 +921,6 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           clearComposerDraft: false
         });
       }
-    }
-  }
-
-  async function decideTool(call: AiToolCall, decision: "confirm" | "reject") {
-    setBusyTool(call.id);
-    setError(null);
-    try {
-      const response = await authorizedFetch("/api/ai/tool", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ toolCallId: call.id, decision }) });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "The change could not be handled.");
-      await loadConversation(call.conversation_id);
-      if (decision === "confirm") await onDataChanged();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "The change could not be handled.");
-      await loadConversation(call.conversation_id);
-    } finally {
-      setBusyTool(null);
     }
   }
 
@@ -1038,8 +1003,8 @@ export default function GlobalAssistant({ session, open, pageContext, preference
           {!loading && !data.messages.length && !running ? <div className={styles.empty}>
             <ChatCircleDots size={24} />
             <h2>Ask about your plan</h2>
-            <p>Pilot can read your records, search eligible courses, and {reviewMode === "auto_review" ? "apply changes after an independent review" : "prepare exact changes for your approval"}.</p>
-            <div>{suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => void submitMessage(suggestion)}>{suggestion}</button>)}</div>
+            <p>Pilot can read your records, search eligible courses, and apply valid changes after an independent safety review.</p>
+            <div>{ASSISTANT_SUGGESTIONS.map((suggestion) => <button type="button" key={suggestion} onClick={() => void submitMessage(suggestion)}>{suggestion}</button>)}</div>
           </div> : null}
 
           {data.messages.map((message) => {
@@ -1047,7 +1012,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             if (message.role === "user") return <div key={message.id} className={styles.userTurn}>
               <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <AssistantMarkdown text={message.content} />}</FadeContent>
               <MessageActions message={message} align="right" />
-              {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} running={running && message.turn_id === latestTurnId} busyTool={busyTool ?? (autoReviewing ? "auto-review" : null)} onDecision={decideTool} />}
+              {message.turn_id && <TurnActivity events={turn.events} tools={turn.tools} running={running && message.turn_id === latestTurnId} reviewing={reviewingChange} />}
             </div>;
             if (message.role === "assistant") {
               const questions = assistantQuestionsFromContext(message.page_context);
@@ -1061,7 +1026,7 @@ export default function GlobalAssistant({ session, open, pageContext, preference
             }
             return <ChangeReceipt message={message} busy={busyUndo === asAssistantRecord(message.page_context).tool_call_id} onUndo={(receipt) => void undoChange(receipt)} key={message.id} />;
           })}
-          {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={autoReviewing ? "Auto-review is checking" : "Pilot is working"} speed={1.8} /></div>}
+          {running && !data.messages.some((message) => message.turn_id === latestTurnId && message.role === "assistant") && <div className={styles.liveWorking}><ShinyText text={reviewingChange ? "Checking change" : "Pilot is working"} speed={1.8} /></div>}
           {error && <div className={styles.error} role="alert"><Warning size={16} /><span>{error}</span></div>}
         </div>
 
@@ -1088,18 +1053,16 @@ export default function GlobalAssistant({ session, open, pageContext, preference
               <input ref={fileInputRef} className={styles.fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { addImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
               <div className={styles.composerTools}>
                 <AiModelPicker compact side="top" value={selectedModel} disabled={savingModel || running} onChange={(model) => void changeModel(model)} />
-                <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images" title="Attach images"><Paperclip size={16} /></button>
-                <span className={styles.contextChip} title={`Using ${String(pageContext.label ?? "this page")} context`}>{String(pageContext.label ?? "Page")}</span>
               </div>
               <div className={styles.composerActions}>
-                <span className={styles.contextChip} title="Change this in Settings">{reviewMode === "auto_review" ? "Auto-review" : "Manual review"}</span>
+                <button type="button" className={styles.attachButton} onClick={() => fileInputRef.current?.click()} disabled={images.length >= MAX_ASSISTANT_ATTACHMENTS} aria-label="Attach images" title="Attach images"><Paperclip size={16} /></button>
                 {running && !draft.trim() && !images.length
                   ? <button className={styles.stopButton} type="button" onClick={() => abortRef.current?.abort()} aria-label="Stop current response" title="Stop current response"><Stop size={13} weight="fill" /></button>
                   : <button className={styles.sendButton} type="submit" disabled={!draft.trim() && !images.length} aria-label={running ? "Queue message" : "Send message"} title={running ? "Queue after the current response" : "Send message"}><PaperPlaneRight size={15} weight="fill" /></button>}
               </div>
             </div>
           </div>
-          {(running || autoReviewing || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : autoReviewing ? "Reviewing change" : "Pilot is working"}</span>}
+          {(running || reviewingChange || queuedMessages.length > 0) && <span className={styles.composerStatus} role="status">{queuedMessages.length ? `${queuedMessages.length} queued` : reviewingChange ? "Reviewing change" : "Pilot is working"}</span>}
         </form>
         </> : <div className={styles.disconnected}>
           <Cpu size={22} />

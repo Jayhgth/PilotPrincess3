@@ -14,10 +14,9 @@ export interface AssistantMemory {
 
 export async function retrieveAssistantMemories(
   supabase: SupabaseClient,
-  userMessage: string,
-  pageContext: Record<string, unknown>
+  userMessage: string
 ): Promise<AssistantMemory[]> {
-  const contextTags = assistantKnowledgeTags(userMessage, pageContext);
+  const contextTags = assistantKnowledgeTags(userMessage);
   const queryText = userMessage.trim() || contextTags.join(" ");
   const { data, error } = await supabase.rpc("search_student_memories", {
     query_text: queryText.slice(0, 500),

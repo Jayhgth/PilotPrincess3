@@ -96,7 +96,6 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   tracked_requirement_areas: "Tracked areas",
   ai_model: "Pilot model",
   ai_reasoning_effort: "Reasoning effort",
-  ai_review_mode: "Change review",
   credits: "Credits",
   college_units: "College units",
   is_weighted: "Weighted",

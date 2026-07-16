@@ -91,7 +91,7 @@ export default function CodexConnectionSetup({
       <label className={styles.consent}>
         <input type="checkbox" checked={value.approved} onChange={(event) => update({ approved: event.target.checked, testedAt: event.target.checked ? value.testedAt : null })} />
         <ShieldCheck size={18} />
-        <span>I approve sending my messages and the academic records needed for my request to OpenAI Codex. Pilot starts in Manual review; independent Auto-review can be enabled in Settings.</span>
+        <span>I approve sending my messages and the academic records needed for my request to OpenAI Codex. Every proposed change receives an independent safety review before it can apply.</span>
       </label>
       <div className={styles.testRow}>
         <button type="button" onClick={() => void testConnection()} disabled={testing || !value.approved}>

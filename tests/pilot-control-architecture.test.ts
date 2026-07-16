@@ -42,6 +42,7 @@ describe("Pilot complete academic control", () => {
     }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Primary major" }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("update_student_settings", { preferred_name: "Jay", plan_start_grade: 9, plan_end_grade: 12, ui_theme: "dark" }).mutatesData).toBe(true);
+    expect(() => parseAssistantToolCall("update_student_settings", { ai_review_mode: "manual" })).toThrow();
     expect(parseAssistantToolCall("clear_academic_plan", { courses: true, degree_bookmarks: true, gpa_scenario: true }).mutatesData).toBe(true);
   });
 
@@ -58,9 +59,7 @@ describe("Pilot complete academic control", () => {
     const prompt = assistantConversationPrompt({
       history: [],
       userMessage: "Optimize my four-year plan",
-      pageContext: { view: "courses" },
       model: "gpt-5.6-luna",
-      reviewMode: "auto_review",
       executeReadTool: async () => ({ summary: "", data: null }),
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
@@ -78,6 +77,9 @@ describe("Pilot complete academic control", () => {
     expect(prompt).toContain("get_academic_context is the bounded cross-feature view");
     expect(prompt).toContain("call resolve_academic_course_batch exactly once");
     expect(prompt).toContain("converted directly into one reversible add_academic_courses proposal");
+    expect(prompt).toContain("independent safety review");
+    expect(prompt).not.toContain("Current page context");
+    expect(prompt).not.toContain("Selected change-review mode");
   });
 
   it("does not expose account deletion or arbitrary database operations", () => {

@@ -45,7 +45,7 @@ const RESTORABLE_KEYS = {
 
 const RESTORABLE_SETTING_KEYS = [
   "preferred_name", "age", "grade_level", "graduation_year", "plan_start_grade", "plan_end_grade",
-  "tracker_mode", "tracked_requirement_areas", "ai_model", "ai_reasoning_effort", "ai_review_mode", "ui_theme"
+  "tracker_mode", "tracked_requirement_areas", "ai_model", "ai_reasoning_effort", "ui_theme"
 ] as const;
 
 function pickRow(row: Record<string, unknown>, keys: readonly string[], userId: string) {

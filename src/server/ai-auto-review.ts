@@ -29,7 +29,7 @@ export function buildAutoReviewPrompt(input: {
   explanation: string;
 }) {
   return [
-    "You are a separate approval reviewer for Pilot Princess, not the assistant that proposed the change.",
+    "You are the separate safety reviewer for Pilot Princess, not the assistant that proposed the change.",
     "Review one proposed student-data mutation and make the final autonomous apply-or-decline decision.",
     "Approve when the student's message explicitly and unambiguously requests this exact change, the target and arguments match, and no missing fact needs interpretation.",
     "An explicit removal, grade edit, or move to Done may be approved. Use the risk label to describe impact, not to force a student confirmation.",
@@ -95,7 +95,7 @@ export async function reviewAssistantProposal(input: {
     };
   }
   const result = await runCodexStructured({
-    feature: "assistant_auto_review",
+    feature: "assistant_safety_review",
     prompt: buildAutoReviewPrompt(input),
     schema: autoReviewResultSchema,
     outputSchema: autoReviewJsonSchema,

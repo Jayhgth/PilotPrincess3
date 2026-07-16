@@ -10,7 +10,7 @@ import { assistantTurnJsonSchema, assistantTurnSchema, type AssistantMemoryUpdat
 import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
 import type { AssistantKnowledgeChunk } from "@/server/ai-knowledge";
 import type { AssistantMemory } from "@/server/ai-memory";
-import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiReasoningEffort, type AiReviewMode } from "@/lib/ai-preferences";
+import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiReasoningEffort } from "@/lib/ai-preferences";
 
 const DEFAULT_TIMEOUT_MS = 9000;
 const DEFAULT_MODEL = DEFAULT_AI_MODEL;
@@ -165,7 +165,7 @@ export const CODEX_RUNTIME_CAPABILITIES = [
   { id: "skills", label: "Skills", state: "disabled", detail: "No Codex skill is loaded into student review threads." },
   { id: "plugins", label: "Plugins", state: "disabled", detail: "Plugin and remote-plugin features are disabled for student review threads." },
   { id: "subagents", label: "Subagents", state: "disabled", detail: "Multi-agent execution is disabled for student review threads." },
-  { id: "mutations", label: "Student-data changes", state: "approval_required", detail: "Codex may propose supported changes. Exact arguments follow the student's Manual or separate Auto-review route before validated execution." }
+  { id: "mutations", label: "Student-data changes", state: "review_required", detail: "Codex may propose supported changes. Exact arguments receive a separate safety review before validated execution." }
 ] as const;
 
 function localAuthFallbackEnabled() {
@@ -248,7 +248,7 @@ export function codexRuntimeStatus() {
     maxWaitingTurns: MAX_WAITING_TURNS,
     runtime: "Official Codex SDK",
     transport: "Codex exec JSONL through the TypeScript SDK",
-    accessPolicy: "Conversation context is sent to OpenAI Codex; student-data reads use scoped server tools and every write follows an exact Manual or separate Auto-review decision",
+    accessPolicy: "Conversation history is sent to OpenAI Codex; student-data reads use scoped server tools and every write receives a separate safety review",
     retentionPolicy: "No local Codex CLI session history is retained; provider handling follows the configured OpenAI account",
     features: CODEX_FEATURES,
     capabilities: CODEX_RUNTIME_CAPABILITIES
@@ -563,12 +563,10 @@ function academicBatchProposal(batch: NonNullable<ReturnType<typeof resolvedAcad
   };
 }
 
-function academicBatchMessage(batch: NonNullable<ReturnType<typeof resolvedAcademicBatch>>, reviewMode: AiReviewMode) {
+function academicBatchMessage(batch: NonNullable<ReturnType<typeof resolvedAcademicBatch>>) {
   const placements = batch.resolved.slice(0, 4).map((row) => `${String(row.name ?? "Course")} (${String(row.term ?? "term")}, grade ${String(row.grade_level ?? "")})`);
   const detail = placements.length ? `: ${placements.join("; ")}${batch.resolved.length > placements.length ? `; +${batch.resolved.length - placements.length} more` : ""}` : "";
-  return reviewMode === "auto_review"
-    ? `I resolved all ${batch.entries.length} requested placements${detail}. Auto-review will apply or decline the exact reversible batch automatically.`
-    : `I resolved all ${batch.entries.length} requested placements${detail}. Review the exact reversible batch before applying it.`;
+  return `I resolved all ${batch.entries.length} requested placements${detail}. The exact reversible batch will apply automatically if its safety review passes.`;
 }
 
 export interface AssistantChatResult {
@@ -587,10 +585,8 @@ export interface AssistantChatOptions {
   userMessage: string;
   images?: Array<{ type: "local_image"; path: string }>;
   imageNames?: string[];
-  pageContext: Record<string, unknown>;
   model: AiModel;
   reasoningEffort?: AiReasoningEffort;
-  reviewMode: AiReviewMode;
   knowledge?: AssistantKnowledgeChunk[];
   memories?: AssistantMemory[];
   recentChanges?: AssistantRecentChange[];
@@ -993,7 +989,7 @@ export function parseScheduleAnswer(userMessage: string): ScheduleAnswer | null 
   return null;
 }
 
-export function scheduleProposalAction(_reviewMode: AiReviewMode, userMessage: string): ScheduleProposalAction {
+export function scheduleProposalAction(userMessage: string): ScheduleProposalAction {
   const answer = parseScheduleAnswer(userMessage);
   if (!answer) {
     return { kind: "propose", respectRecommendedLimit: true };
@@ -1131,11 +1127,11 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     "For a request that adds multiple named courses, fills remaining graduation gaps, or mixes selected-school and college courses, call resolve_academic_course_batch exactly once instead of repeating search_course_catalog. Put every named course in requests, set fill_remaining_graduation_requirements when the student asks for needed or remaining diploma classes, and preserve an explicit grade or term only where the student actually stated it. A comma-separated placement phrase applies through the end of that phrase. Leave term null when it was not stated so the resolver can place prerequisite sequences safely. The resolver uses the saved district, existing plan, nearby-provider order, cross-college identity, and prerequisites to choose exact campuses and placements; do not ask the student to choose a campus unless they explicitly requested one. Its complete result is converted directly into one reversible add_academic_courses proposal; do not ask for course titles already derivable from graduation evidence.",
     "For transcript parsing or data-quality audits, call audit_transcript_data with include_source_text true. Start the answer with the audit verdict: either the exact confirmed mismatch count or a plain statement that no confirmed mismatch was found. Compare printed GPA and earned-credit totals, original text, parsed rows, review decisions, catalog identities, and imported plan rows. A source being marked needs_review is not itself an error. A graduation requirement gap is a downstream plan result, never evidence of a parsing error. Never substitute generic counselor verification for the requested internal audit. Separate confirmed mismatches from unresolved verification items; name at most three exact affected course records and count the rest.",
     "When the student explicitly asks to change app data, use the mutating tool that owns that data after reading any IDs or facts you need. Do not merely explain where the student could make the change, ask them to retry, ask for an internal record ID, or silently truncate a large request. Prefer a batch or cross-feature tool so the full request is one coherent action. Pilot covers normal student settings, selected public/charter high school, selected California community-college district, all editable course variables and schedule placement, canonical sorting, saved GPA assumptions, degree goals and manual completion evidence, reviewed transcript corrections, prerequisite-evidence submissions, source-backed enrollment preference, plan snapshots, and cross-feature academic-plan clearing/restoration. Read nearby districts before changing the college-district preference, and keep that preference distinct from concurrent/dual-enrollment policy or eligibility. Search first when an exact school, district, course, or program ID is needed, then complete the requested write in the same conversation. For an evidence-backed correction to shared institutional data, submit_shared_data_correction creates only a pending administrator-reviewed proposal; clearly say it is not published yet. Never attempt account deletion, authentication, institutional approval, admin actions, or another user's records.",
-    "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and Auto-review will deny it.",
-    "A mutating tool is a proposal only. Never claim a plan change happened. The product will show the exact proposed tool call and route it through the student's selected manual or auto-review mode. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
+    "For every mutation, include only arguments needed for the student's explicit request. Omit unchanged values, defaults, empty arrays, null fields, and nearby settings unless the student asked to change them. A proposal that echoes unrelated current settings is broader than the request and the safety review will deny it.",
+    "A mutating tool is a proposal only. Never claim a plan change happened. The product sends every exact proposed tool call through an independent safety review and automatically applies it only when approved. Only a later tool outcome proves that it ran. Every applied mutation produces a compact change receipt with a safe undo action; do not propose a write that cannot be reversed.",
     "Treat structured ACTION CONTEXT and the recent conversation change ledger as canonical thread history. Applied actions keep a durable private inverse; there is no arbitrary time window. When the student asks to undo, restore, revert, or bring back an applied change, call undo_change with that exact tool_call_id. Never query the current plan to reconstruct deleted rows, and never claim there is nothing to restore merely because current records no longer contain the deleted data. If a later conflicting edit makes restoration unsafe, report that exact conflict instead of overwriting newer data.",
     "Use recent conversation tool evidence to understand follow-up references to app data already read in this thread. It is bounded historical evidence, not guaranteed current state: reuse it for conversational continuity, but refresh through the owning read tool before a new answer or write when the underlying record may have changed.",
-    `Selected change-review mode: ${options.reviewMode === "auto_review" ? "Auto-review. A separate reviewer will autonomously apply an exact approved proposal or decline it; it will not ask the student to confirm." : "Manual. The student must approve every proposed change."}`,
+    "Every proposed change is reviewed by a separate reviewer and then applied or declined automatically; never ask the student to choose a review mode or confirm a valid proposal.",
     "A write may follow a completed read in the same turn when the read supplies the exact IDs and evidence needed for the student's explicit request. Never combine an unverified guess with a mutation.",
     "Never invent courses, prerequisites, requirement mappings, deadlines, counselor approvals, or admissions outcomes. State when official verification is still needed.",
     "When one missing academic fact materially blocks the next useful step, ask up to three short structured questions. Each question needs a stable lowercase id, two to four concise options, and allow_custom only when a written answer is genuinely useful. Ask no question when you can safely answer from current records. Do not combine questions with tool calls.",
@@ -1155,7 +1151,6 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
     options.recentToolEvidence?.length
       ? `Recent conversation tool evidence (bounded canonical app data already read or changed in this thread; refresh through the owning read tool when current state matters):\n${JSON.stringify(options.recentToolEvidence)}`
       : "No prior app-tool evidence is recorded in this conversation yet.",
-    `Current page context: ${JSON.stringify(options.pageContext)}`,
     history ? `Recent conversation:\n${history}` : "This is the first message in the conversation.",
     `USER: ${options.userMessage || "Please review the attached image context."}`
   ].join("\n\n");
@@ -1231,9 +1226,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review"
-        ? `I found the recent ${target.label.toLowerCase()}. Auto-review will apply or decline its exact stored undo automatically.`
-        : `I found the recent ${target.label.toLowerCase()} and prepared its exact stored undo for your approval.`,
+      message: `I found the recent ${target.label.toLowerCase()}. Its exact stored undo will apply automatically if the safety review passes.`,
       questions: [],
       threadId: null,
       usage: null,
@@ -1255,9 +1248,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review"
-        ? `I prepared the exact preferred-name change to ${preferredName}. Auto-review will apply or decline it automatically.`
-        : `I prepared the exact preferred-name change to ${preferredName} for your approval.`,
+      message: `I prepared the exact preferred-name change to ${preferredName}. It will apply automatically if the safety review passes.`,
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1274,9 +1265,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review"
-        ? `I prepared the ${uiTheme}-mode change. Auto-review will apply or decline it automatically.`
-        : `I prepared the ${uiTheme}-mode change for your approval.`,
+      message: `I prepared the ${uiTheme}-mode change. It will apply automatically if the safety review passes.`,
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1293,9 +1282,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review"
-        ? "I prepared the exact student and planning setting changes. Auto-review will apply or decline them automatically."
-        : "I prepared the exact student and planning setting changes for your approval.",
+      message: "I prepared the exact student and planning setting changes. They will apply automatically if the safety review passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1308,7 +1295,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review" ? "I prepared the exact academic-plan clearing request. Auto-review will apply or decline it automatically." : "I prepared the exact academic-plan clearing request for approval.",
+      message: "I prepared the exact academic-plan clearing request. It will apply automatically if the safety review passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1321,7 +1308,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review" ? "I prepared the enrollment-preference change. Auto-review will apply or decline it automatically." : "I prepared the enrollment-preference change for approval.",
+      message: "I prepared the enrollment-preference change. It will apply automatically if the safety review passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1333,7 +1320,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: options.reviewMode === "auto_review" ? "I prepared the standard course-board sort. Auto-review will apply or decline it automatically." : "I prepared the standard course-board sort for approval.",
+      message: "I prepared the standard course-board sort. It will apply automatically if the safety review passes.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1387,7 +1374,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             const proposal = academicBatchProposal(batch);
             await options.onToolActivity(proposal);
             return {
-              message: academicBatchMessage(batch, options.reviewMode),
+              message: academicBatchMessage(batch),
               questions: [],
               threadId: thread.id,
               usage,
@@ -1415,9 +1402,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: options.reviewMode === "auto_review"
-              ? "I found the requested academic areas. Auto-review will apply or decline one exact clear operation; transcript-backed courses stay intact, and the complete removed state remains restorable as one change."
-              : "I prepared one exact clear operation for the requested academic areas. Transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
+            message: "I found the requested academic areas and prepared one exact clear operation. It will apply automatically if the safety review passes; transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
             questions: [],
             threadId: thread.id,
             usage,
@@ -1497,9 +1482,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: options.reviewMode === "auto_review"
-                ? `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact move to ${targetLabel} automatically.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`
-                : `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared one exact move to ${targetLabel} for your approval.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
+              message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact move to ${targetLabel}. It will apply automatically if the safety review passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
               questions: [],
               threadId: thread.id,
               usage,
@@ -1519,9 +1502,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: options.reviewMode === "auto_review"
-              ? `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"}. Auto-review will apply or decline the exact batch removal automatically.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`
-              : `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared one exact batch removal for your approval.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
+            message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact batch removal. It will apply automatically if the safety review passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -1568,7 +1549,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          const scheduleAction = scheduleProposalAction(options.reviewMode, options.userMessage);
+          const scheduleAction = scheduleProposalAction(options.userMessage);
           if (scheduleAction.kind === "ask") {
             const includesCollegeCourses = courses.some((course) => Number(course.college_units ?? 0) > 0);
             return {
@@ -1631,9 +1612,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: options.reviewMode === "auto_review"
-              ? `${preview}\n\nAuto-review will apply or decline this exact batch automatically.`
-              : `${preview}\n\nReview the exact batch before applying it.`,
+            message: `${preview}\n\nThis exact batch will apply automatically if the safety review passes.`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -1664,9 +1643,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: options.reviewMode === "auto_review"
-                ? `I found the exact eligible ${String(exact.name ?? intent.query)} course. Auto-review will apply or decline the requested placement automatically.`
-                : `I found the exact eligible ${String(exact.name ?? intent.query)} course and prepared the requested placement for approval.`,
+              message: `I found the exact eligible ${String(exact.name ?? intent.query)} course. The requested placement will apply automatically if the safety review passes.`,
               questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
             };
           }
@@ -1688,9 +1665,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: options.reviewMode === "auto_review"
-                ? `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program. Auto-review will apply or decline the bookmark automatically.`
-                : `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program and prepared the bookmark for approval.`,
+              message: `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program. The bookmark will apply automatically if the safety review passes.`,
               questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
             };
           }
@@ -1710,7 +1685,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: options.reviewMode === "auto_review" ? `I found ${String(exact.name ?? requestedSchool)}. Auto-review will apply or decline the school change automatically.` : `I found ${String(exact.name ?? requestedSchool)} and prepared the school change for approval.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found ${String(exact.name ?? requestedSchool)}. The school change will apply automatically if the safety review passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         if (requiredRead.name === "get_nearby_education_providers" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
@@ -1734,7 +1709,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: options.reviewMode === "auto_review" ? `I found ${String(exact?.name ?? requestedDistrict)}. Auto-review will apply or decline the district change automatically.` : `I found ${String(exact?.name ?? requestedDistrict)} and prepared the district change for approval.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found ${String(exact?.name ?? requestedDistrict)}. The district change will apply automatically if the safety review passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         if (requiredRead.name === "get_gpa_scenario" && Array.isArray(result.data)) {
@@ -1748,7 +1723,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: options.reviewMode === "auto_review" ? `I found all ${rows.length} current and planned courses. Auto-review will apply or decline the exact GPA batch automatically.` : `I found all ${rows.length} current and planned courses and prepared the exact GPA batch for approval.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found all ${rows.length} current and planned courses. The exact GPA batch will apply automatically if the safety review passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         prompt += "\n\n" + [
@@ -1830,7 +1805,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           const proposal = academicBatchProposal(batch);
           await options.onToolActivity(proposal);
           return {
-            message: academicBatchMessage(batch, options.reviewMode),
+            message: academicBatchMessage(batch),
             questions: [],
             threadId: thread.id,
             usage,
@@ -1853,7 +1828,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       if (mutationCalls.length > 0) {
         for (const call of mutationCalls) await options.onToolActivity(call);
         return {
-          message: latestMessage || (options.reviewMode === "auto_review" ? "I prepared the requested change. Auto-review will apply or decline it automatically." : "I prepared the requested change. Review it before applying it."),
+          message: latestMessage || "I prepared the requested change. It will apply automatically if the safety review passes.",
           questions: [],
           threadId: thread.id,
           usage,
