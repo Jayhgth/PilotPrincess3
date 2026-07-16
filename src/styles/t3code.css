@@ -70,8 +70,8 @@
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-account-actions { grid-template-columns: 1fr; }
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip { min-height: 34px; margin-bottom: 6px; }
 }
-.t3code-app .app-toolbar { min-height: 52px; border-bottom: 1px solid var(--line); padding: 0 18px; }
-.t3code-app .app-toolbar button { min-height: 32px; border-radius: 8px; font-size: 12px; }
+.t3code-app .app-toolbar { height: 52px; min-height: 52px; border-bottom: 1px solid var(--line); padding: 0 12px; }
+.t3code-app .app-toolbar button { min-height: 30px; border-radius: 7px; padding-inline: 9px; font-size: 12px; }
 .t3code-app .app-content { width: min(100%, 1240px); min-width: 0; padding-top: 22px; }
 .t3code-app .page-header { min-height: 58px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
 .t3code-app .page-header h1 { color: var(--ink); font-size: var(--type-page); font-weight: 650; letter-spacing: -0.035em; line-height: var(--leading-page); }

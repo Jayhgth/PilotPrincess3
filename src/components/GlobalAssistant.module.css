@@ -36,12 +36,12 @@
   position: relative;
   display: flex;
   min-width: 0;
-  min-height: 50px;
+  min-height: 52px;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   border-bottom: 1px solid var(--line);
-  padding: 0 8px 0 11px;
+  padding: 0 12px;
   touch-action: none;
 }
 
@@ -107,19 +107,6 @@
 .renameConversation input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
 .renameConversation button { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-soft); padding: 0; }
 .renameConversation button:hover { background: var(--surface-strong); color: var(--ink); }
-
-.headerActions { display: flex; flex: 0 0 auto; gap: 3px; }
-.headerActions button {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--ink-soft);
-}
-.headerActions button:hover { background: var(--surface-muted); color: var(--ink); }
 
 .timeline {
   min-height: 0;

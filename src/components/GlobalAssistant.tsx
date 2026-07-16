@@ -991,10 +991,6 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
               </div>)}</div>
             </div>}
           </div>
-          <div className={styles.headerActions}>
-            <button type="button" onClick={startNewConversation} aria-label="New conversation" title="New conversation"><Plus size={15} /></button>
-            <button type="button" onClick={onClose} disabled={running} aria-label="Close assistant" title="Close"><X size={16} /></button>
-          </div>
         </header>
 
         {preferences.enabled ? <>

@@ -3,6 +3,7 @@ import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
 import { SignOutIcon as SignOut } from "@phosphor-icons/react/dist/csr/SignOut";
+import { SidebarSimpleIcon as SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SunIcon as Sun } from "@phosphor-icons/react/dist/csr/Sun";
 import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import type { Icon } from "@phosphor-icons/react";
@@ -76,6 +77,24 @@ export default function AppChrome<ViewId extends string>({
     return normalizeSidebarWidth(Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY)));
   });
   const pendingSidebarWidth = useRef(sidebarWidth);
+  const onAssistantToggleRef = useRef(onAssistantToggle);
+
+  useEffect(() => {
+    onAssistantToggleRef.current = onAssistantToggle;
+  }, [onAssistantToggle]);
+
+  useEffect(() => {
+    function togglePilotWithKeyboard(event: globalThis.KeyboardEvent) {
+      if (event.defaultPrevented || event.key.toLowerCase() !== "b" || event.altKey || event.shiftKey) return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onAssistantToggleRef.current();
+    }
+
+    window.addEventListener("keydown", togglePilotWithKeyboard);
+    return () => window.removeEventListener("keydown", togglePilotWithKeyboard);
+  }, []);
 
   useEffect(() => {
     pendingSidebarWidth.current = sidebarWidth;
@@ -199,8 +218,16 @@ export default function AppChrome<ViewId extends string>({
         </div>
       </div>
       <div className="app-toolbar">
-        <button className={assistantOpen ? "active" : ""} type="button" onClick={onAssistantToggle}>
+        <button
+          className={assistantOpen ? "active" : ""}
+          type="button"
+          onClick={onAssistantToggle}
+          aria-pressed={assistantOpen}
+          title={`${assistantOpen ? "Collapse" : "Open"} Pilot (Command or Control + B)`}
+        >
+          <SidebarSimple className="pilot-panel-icon" size={16} weight={assistantOpen ? "fill" : "regular"} aria-hidden />
           <span>{assistantOpen ? "Collapse Pilot" : aiEnabled ? "Open Pilot" : "Set up Pilot"}</span>
+          <kbd aria-hidden>⌘/Ctrl B</kbd>
         </button>
       </div>
       <div className="app-content">{children}</div>

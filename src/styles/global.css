@@ -911,6 +911,18 @@ input:focus, select:focus, textarea:focus {
 .app-toolbar button:hover,
 .app-toolbar button.active { border-color: color-mix(in srgb, var(--accent) 56%, var(--line-strong)); background: var(--accent-soft); }
 .app-toolbar button svg { color: var(--accent); }
+.app-toolbar button .pilot-panel-icon { color: var(--ink-soft); transform: scaleX(-1); }
+.app-toolbar button kbd {
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  padding: 0 0 0 2px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
 .app-content { width: min(100%, 1200px); margin: 0 auto; padding: 4px clamp(24px, 3vw, 40px) 64px; }
 
 @media (min-width: 1440px) {
