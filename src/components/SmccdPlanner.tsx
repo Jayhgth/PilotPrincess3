@@ -762,6 +762,13 @@ export default function SmccdPlanner({
           <div><h2>College gen-ed</h2><p>Each college's local AA and AS pattern is evaluated separately.</p></div>
           <label><span className="sr-only">College pattern</span><select value={geCollegeCode} onChange={(event) => setGeCollegeCode(event.target.value as SmccdCourse["college_code"])}><option value="CSM">College of San Mateo</option><option value="SKY">Skyline College</option><option value="CAN">Cañada College</option></select></label>
         </header>
+        {school.slug === "design-tech-high-school" && <aside className="enrollment-policy-callout" role="status">
+          <Warning size={16} weight="fill" aria-hidden />
+          <div>
+            <strong>Physical education credit may be missing from the high school transcript</strong>
+            <p>SMCCD physical education credits do not appear on d.tech transcripts. Check the <a href={SMCCD_LOCAL_GE_SOURCE_URLS[generalEducationCollege]} target="_blank" rel="noreferrer">official college source</a> and your DegreeWorks audit before relying on the Area 7A progress shown here.</p>
+          </div>
+        </aside>}
         <section className="smccd-general-education" aria-labelledby="smccd-general-education-title">
           <header><div><h3 id="smccd-general-education-title">{SMCCD_COLLEGE_NAMES[generalEducationCollege]} gen-ed requirements</h3><p>{generalEducationPattern?.minimumGeUnits ?? 0} units in this college's local pattern.</p></div><span>{generalEducationProgress.filter((area) => area.status === "completed" || area.status === "planned").length} of {generalEducationProgress.length} GE areas covered</span></header>
           <div className="smccd-ge-list">{generalEducationProgress.map((area) => {
