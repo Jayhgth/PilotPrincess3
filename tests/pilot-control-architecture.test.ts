@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
+import { assistantConversationPrompt, parseAssistantScheduleIntent, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 
@@ -78,9 +78,17 @@ describe("Pilot complete academic control", () => {
     const gradeTenRow = crypto.randomUUID();
     const algebraTwo = crypto.randomUUID();
     const precalculus = crypto.randomUUID();
+    const spanishRow = crypto.randomUUID();
+    const frenchRow = crypto.randomUUID();
+    const spanish = crypto.randomUUID();
+    const french = crypto.randomUUID();
+    const chineseThree = crypto.randomUUID();
+    const combinedEditPrompt = "Start my math at alg 2, and change the language credit to just Chinese 3 to be in my first semester of 9th grade.";
+    expect(parseAssistantScheduleIntent(combinedEditPrompt)).toMatchObject({ startGrade: 9, startingMathCourse: "algebra 2", startingLanguageCourse: "chinese 3" });
+    expect(requiredAssistantEvidenceReadForConversation(scheduleHistory, combinedEditPrompt)?.name).toBe("get_academic_context");
     const targeted = await runAssistantChat({
       history: scheduleHistory,
-      userMessage: "Edit my schedule, I start math at alg 2 in 9th",
+      userMessage: combinedEditPrompt,
       model: "gpt-5.6-luna",
       executeReadTool: async () => ({
         summary: "Read workspace.",
@@ -88,13 +96,22 @@ describe("Pilot complete academic control", () => {
           student: { plan_start_grade: 9 },
           plan: { courses: [
             { plan_course_id: gradeNineRow, name: "Precalculus", grade_level: 9, term: "full_year", transcript_locked: false },
-            { plan_course_id: gradeTenRow, name: "Calculus AB", grade_level: 10, term: "full_year", transcript_locked: false }
+            { plan_course_id: gradeTenRow, name: "Calculus AB", grade_level: 10, term: "full_year", transcript_locked: false },
+            { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false },
+            { plan_course_id: frenchRow, catalog_course_id: french, name: "French 2", grade_level: 10, term: "full_year", transcript_locked: false }
           ] },
           graduation: [{
             area: "math",
             eligible_course_options: [
               { course_id: algebraTwo, name: "Algebra 2", subject: "Math", weighted: false, term_type: "year", grade_levels: [9, 10] },
               { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [9, 10, 11] }
+            ]
+          }, {
+            area: "world_language",
+            eligible_course_options: [
+              { course_id: spanish, name: "Spanish 1", subject: "World Language", weighted: false, term_type: "year", grade_levels: [9] },
+              { course_id: french, name: "French 2", subject: "World Language", weighted: false, term_type: "year", grade_levels: [10] },
+              { course_id: chineseThree, name: "Chinese 3", subject: "World Language", weighted: false, term_type: "semester", grade_levels: [9, 10, 11] }
             ]
           }]
         }
@@ -105,7 +122,9 @@ describe("Pilot complete academic control", () => {
     expect(targeted.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
     expect(targeted.proposals[0]?.arguments).toMatchObject({ patches: [
       { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9, term: "full_year" },
-      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10, term: "full_year" }
+      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10, term: "full_year" },
+      { plan_course_id: spanishRow, course_id: chineseThree, grade_level: 9, term: "fall" },
+      { plan_course_id: frenchRow, remove: true }
     ] });
   });
 
@@ -205,6 +224,9 @@ describe("Pilot complete academic control", () => {
     expect(migration).toContain("course.user_id = target_user_id");
     expect(migration).toContain("course.source_review_item_id is not null");
     expect(migration).toContain("updated_count <> requested_count");
+    const removalMigration = readFileSync(new URL("../supabase/migrations/20260716220000_atomic_pilot_course_edit_removals.sql", import.meta.url), "utf8");
+    expect(removalMigration).toContain("updated_count + deleted_count <> requested_count");
+    expect(removalMigration).toContain("delete from public.plan_courses");
     }
   });
 });

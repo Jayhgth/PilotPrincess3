@@ -977,6 +977,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   const startGrade = startGradeMatch ? Number(startGradeMatch[1]) as 9 | 10 | 11 | 12 : gradeAlias;
   const mathName = "(pre[ -]?calc(?:ulus)?|integrated math\\s*[123]|alg(?:ebra)?\\s*(?:1|i|2|ii)|geometry|calculus(?:\\s+(?:ab|bc|i{1,3}|1|2|3))?)";
   const rawStartingMathCourse = [
+    new RegExp(`\\bstart(?:ing)?\\s+(?:my\\s+)?math\\s+(?:at|with|in)\\s+${mathName}\\b`),
     new RegExp(`\\bmath\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${mathName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+math\\s+(?:at|with|in)\\s+${mathName}\\b`),
     new RegExp(`\\b(?:change|switch|set|move)\\s+(?:my\\s+)?(?:starting\\s+)?math\\s+(?:course\\s+)?(?:to|as)\\s+${mathName}\\b`),
@@ -991,6 +992,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     ?? null;
   const languageName = "((?:spanish|french|chinese|mandarin|japanese|latin|german|italian)(?:\\s+(?:1|2|3|4|i|ii|iii|iv|ap))?|american sign language(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?|asl(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?)";
   const startingLanguageCourse = [
+    new RegExp(`\\b(?:change|switch|set)\\s+(?:(?:my|the)\\s+)?(?:world\\s+)?language(?:\\s+(?:course|credit))?\\s+(?:to|as)\\s+(?:just\\s+|only\\s+)?${languageName}\\b`),
     new RegExp(`\\b(?:language|world language)\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${languageName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:language|world language)\\s+(?:at|with|in)\\s+${languageName}\\b`),
     new RegExp(`\\b(?:change|switch|set)\\s+(?:my\\s+)?(?:world\\s+)?language\\s+(?:course\\s+)?(?:to|as)\\s+${languageName}\\b`),
@@ -1320,7 +1322,7 @@ export function requestedStudentSettings(userMessage: string) {
 
 function targetedStartingSequenceProposal(userMessage: string, context: Record<string, unknown>) {
   const intent = parseAssistantScheduleIntent(userMessage);
-  if (!intent.startingMathCourse) return null;
+  if (!intent.startingMathCourse && !intent.startingLanguageCourse) return null;
   const plan = context.plan && typeof context.plan === "object" && !Array.isArray(context.plan)
     ? context.plan as Record<string, unknown>
     : null;
@@ -1330,49 +1332,92 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   const graduation = Array.isArray(context.graduation)
     ? context.graduation.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
-  const mathEvidence = graduation.find((row) => row.area === "math");
-  const options = Array.isArray(mathEvidence?.eligible_course_options)
-    ? mathEvidence.eligible_course_options.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
-    : [];
-  const requestedRank = mathSequenceRankFromText(intent.startingMathCourse);
+  const eligibleOptions = (area: string) => {
+    const evidence = graduation.find((row) => row.area === area);
+    return Array.isArray(evidence?.eligible_course_options)
+      ? evidence.eligible_course_options.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+      : [];
+  };
+  const mathOptions = eligibleOptions("math");
+  const languageOptions = eligibleOptions("world_language");
+  const requestedRank = intent.startingMathCourse ? mathSequenceRankFromText(intent.startingMathCourse) : null;
   const startGrade = intent.startGrade ?? Number((context.student as Record<string, unknown> | undefined)?.plan_start_grade ?? 9);
-  if (requestedRank === null || ![9, 10, 11, 12].includes(startGrade)) return null;
+  if (![9, 10, 11, 12].includes(startGrade)) return null;
 
-  const currentMathRows = rows
-    .filter((row) => row.transcript_locked !== true && mathSequenceRankFromText(String(row.name ?? "")) !== null)
-    .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
   const patches: Array<Record<string, unknown>> = [];
-  for (const row of currentMathRows) {
-    const grade = Number(row.grade_level);
-    if (grade < startGrade) continue;
-    const targetRank = requestedRank + grade - startGrade;
-    const candidates = options
-      .filter((course) => mathSequenceRankFromText(`${String(course.name ?? "")} ${String(course.subject ?? "")}`) === targetRank)
-      .filter((course) => grade === startGrade || !Array.isArray(course.grade_levels) || course.grade_levels.length === 0 || course.grade_levels.map(Number).includes(grade))
-      .sort((left, right) => Number(right.weighted === true) - Number(left.weighted === true) || String(left.name).localeCompare(String(right.name)));
-    const replacement = candidates[0];
-    if (!replacement || typeof replacement.course_id !== "string" || typeof row.plan_course_id !== "string") continue;
-    patches.push({
-      plan_course_id: row.plan_course_id,
-      course_id: replacement.course_id,
-      grade_level: grade,
-      term: replacement.term_type === "year" ? "full_year" : row.term,
-      ...(grade === startGrade ? { prerequisite_override_reason: `The student explicitly stated that ${String(replacement.name)} is their starting math placement in grade ${grade}.` } : {})
-    });
+  if (intent.startingMathCourse && requestedRank !== null) {
+    const currentMathRows = rows
+      .filter((row) => row.transcript_locked !== true && mathSequenceRankFromText(String(row.name ?? "")) !== null)
+      .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
+    for (const row of currentMathRows) {
+      const grade = Number(row.grade_level);
+      if (grade < startGrade) continue;
+      const targetRank = requestedRank + grade - startGrade;
+      const candidates = mathOptions
+        .filter((course) => mathSequenceRankFromText(`${String(course.name ?? "")} ${String(course.subject ?? "")}`) === targetRank)
+        .filter((course) => grade === startGrade || !Array.isArray(course.grade_levels) || course.grade_levels.length === 0 || course.grade_levels.map(Number).includes(grade))
+        .sort((left, right) => Number(right.weighted === true) - Number(left.weighted === true) || String(left.name).localeCompare(String(right.name)));
+      const replacement = candidates[0];
+      if (!replacement || typeof replacement.course_id !== "string" || typeof row.plan_course_id !== "string") continue;
+      patches.push({
+        plan_course_id: row.plan_course_id,
+        course_id: replacement.course_id,
+        grade_level: grade,
+        term: replacement.term_type === "year" ? "full_year" : row.term,
+        ...(grade === startGrade ? { prerequisite_override_reason: `The student explicitly stated that ${String(replacement.name)} is their starting math placement in grade ${grade}.` } : {})
+      });
+    }
+    if (!patches.some((patch) => Number(patch.grade_level) === startGrade)) return null;
   }
-  if (!patches.length || !patches.some((patch) => Number(patch.grade_level) === startGrade)) return null;
+
+  if (intent.startingLanguageCourse) {
+    const normalized = (value: unknown) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const query = normalized(intent.startingLanguageCourse);
+    const replacement = languageOptions
+      .filter((course) => normalized(`${String(course.name ?? "")} ${String(course.subject ?? "")}`).includes(query))
+      .sort((left, right) => Number(right.weighted === true) - Number(left.weighted === true) || String(left.name).localeCompare(String(right.name)))[0];
+    const languageCourseIds = new Set(languageOptions.map((course) => course.course_id).filter((id): id is string => typeof id === "string"));
+    const existingLanguageRows = rows
+      .filter((row) => row.transcript_locked !== true && typeof row.catalog_course_id === "string" && languageCourseIds.has(row.catalog_course_id))
+      .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
+    const targetRow = existingLanguageRows[0];
+    if (!replacement || typeof replacement.course_id !== "string" || !targetRow || typeof targetRow.plan_course_id !== "string") return null;
+    const requestedTerm = /(?:to be|move|put|place)[^.]{0,50}\b(?:first|1st) semester\b/i.test(userMessage)
+      ? "fall"
+      : /(?:to be|move|put|place)[^.]{0,50}\b(?:second|2nd) semester\b/i.test(userMessage)
+        ? "spring"
+        : targetRow.term;
+    patches.push({
+      plan_course_id: targetRow.plan_course_id,
+      course_id: replacement.course_id,
+      grade_level: startGrade,
+      term: replacement.term_type === "year" ? "full_year" : requestedTerm,
+      prerequisite_override_reason: `The student explicitly selected ${String(replacement.name)} as their language placement in grade ${startGrade}.`
+    });
+    if (/\b(?:just|only)\b/i.test(userMessage)) {
+      for (const row of existingLanguageRows.slice(1)) {
+        if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
+      }
+    }
+  }
+
+  if (!patches.length) return null;
+  const requestedParts = [
+    intent.startingMathCourse ? `math starting with ${intent.startingMathCourse}` : null,
+    intent.startingLanguageCourse ? `language using ${intent.startingLanguageCourse}` : null
+  ].filter(Boolean).join(" and ");
   const proposal: AssistantChatToolActivity = {
-      id: crypto.randomUUID(),
-      name: "update_plan_courses",
-      label: assistantToolLabel("update_plan_courses"),
-      arguments: { patches },
-      explanation: `Replace only the editable math sequence so it starts with ${intent.startingMathCourse} in grade ${startGrade}; preserve every unrelated course.`,
-      mutatesData: true,
-      status: "pending_confirmation"
-    };
+    id: crypto.randomUUID(),
+    name: "update_plan_courses",
+    label: assistantToolLabel("update_plan_courses"),
+    arguments: { patches },
+    explanation: `Apply only the requested ${requestedParts} edit and preserve every unrelated course.`,
+    mutatesData: true,
+    status: "pending_confirmation"
+  };
   return {
     proposal,
-    message: `I prepared the exact math-sequence edit starting with ${intent.startingMathCourse} in grade ${startGrade}. Unrelated courses will stay unchanged; the explicit starting placement is recorded as student-provided if it overrides catalog prerequisite evidence.`
+    message: `I prepared the exact ${requestedParts} edit for grade ${startGrade}. Unrelated courses will stay unchanged; explicit placement corrections remain labeled student-provided when they override catalog evidence.`
   };
 }
 
