@@ -3286,9 +3286,6 @@ export async function executeAssistantMutationTool(
     if (!analysis.constraint_validation.satisfied) {
       throw new Error(`The proposed schedule does not satisfy the student's exact constraints: ${analysis.constraint_validation.failures.join(" ")}`);
     }
-    if (!analysis.graduation_coverage.all_requirements_covered_after) {
-      throw new Error("The proposed batch does not cover every verified diploma requirement, so Pilot will not apply it as a complete schedule.");
-    }
     const highSchoolInsertRows = selectedRows.map((row, index) => ({
       ...row,
       plan_version_id: workspace.activeVersion.id,

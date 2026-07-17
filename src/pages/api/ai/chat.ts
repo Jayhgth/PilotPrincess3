@@ -13,6 +13,7 @@ import { retrieveAssistantKnowledge, type AssistantKnowledgeChunk } from "@/serv
 import { explicitDurableMemoryUpdates, persistAssistantMemoryUpdates, retrieveAssistantMemories, type AssistantMemory } from "@/server/ai-memory";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
+import { classifyAssistantRequest } from "@/server/assistant-request-scope";
 
 export const prerender = false;
 
@@ -215,25 +216,28 @@ export const POST: APIRoute = async ({ request }) => {
       try {
         let knowledge: AssistantKnowledgeChunk[] = [];
         let memories: AssistantMemory[] = [];
+        const requestScope = classifyAssistantRequest(parsed.data.message);
+        const needsKnowledge = !["settings", "destructive", "targeted_course_edit"].includes(requestScope);
+        const needsMemory = ["full_plan", "plan_optimization", "course_batch"].includes(requestScope);
         const [knowledgeResult, memoryResult] = await Promise.allSettled([
-          retrieveAssistantKnowledge(auth.supabase, parsed.data.message),
-          retrieveAssistantMemories(auth.supabase, parsed.data.message)
+          needsKnowledge ? retrieveAssistantKnowledge(auth.supabase, parsed.data.message) : Promise.resolve([]),
+          needsMemory ? retrieveAssistantMemories(auth.supabase, parsed.data.message) : Promise.resolve([])
         ]);
-        if (knowledgeResult.status === "fulfilled") {
+        if (needsKnowledge && knowledgeResult.status === "fulfilled") {
           knowledge = knowledgeResult.value;
           record("knowledge.retrieved", {
             chunks: knowledge.map((chunk) => ({ id: chunk.id, title: chunk.title, sourcePath: chunk.sourcePath, score: chunk.score, matchReason: chunk.matchReason })),
             summary: `Retrieved ${knowledge.length} application-guidance ${knowledge.length === 1 ? "chunk" : "chunks"}.`
           });
-        } else {
+        } else if (needsKnowledge && knowledgeResult.status === "rejected") {
           record("knowledge.failed", {
             summary: knowledgeResult.reason instanceof Error ? knowledgeResult.reason.message : "Pilot application guidance could not be retrieved."
           });
         }
-        if (memoryResult.status === "fulfilled") {
+        if (needsMemory && memoryResult.status === "fulfilled") {
           memories = memoryResult.value;
           record("memory.retrieved", { count: memories.length, summary: `Retrieved ${memories.length} relevant student ${memories.length === 1 ? "memory" : "memories"}.` });
-        } else {
+        } else if (needsMemory && memoryResult.status === "rejected") {
           record("memory.failed", { summary: memoryResult.reason instanceof Error ? memoryResult.reason.message : "Pilot memory could not be retrieved." });
         }
         const localImages: Array<{ type: "local_image"; path: string }> = [];

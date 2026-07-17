@@ -175,8 +175,8 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("separate safety reviewer");
     expect(prompt).toContain("Approve when the student's message explicitly and unambiguously requests this exact change");
     expect(prompt).toContain("An explicit removal, grade edit, or move to Done may be approved");
-    expect(prompt).toContain("an explicit request to generate, edit, revise, or build a schedule may approve");
-    expect(prompt).toContain("changed a foundational starting placement and replace_existing is true");
+    expect(prompt).toContain("explicit full-plan or optimization request");
+    expect(prompt).toContain("Unfinished diploma or degree objectives are allowed");
     expect(prompt).toContain('"program_type":"concurrent"');
     expect(autoReviewResultSchema.parse({ decision: "approve", risk: "low", summary: "The request and proposal match." })).toMatchObject({ decision: "approve", risk: "low" });
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
@@ -340,32 +340,24 @@ describe("Codex feature boundaries", () => {
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
     });
-    expect(prompt).toContain("Use read-only student-data tools");
-    expect(prompt).toContain("audit_transcript_data with include_source_text true");
-    expect(prompt).toContain("A source being marked needs_review is not itself an error");
-    expect(prompt).toContain("printed GPA and earned-credit totals");
-    expect(prompt).toContain("graduation requirement gap is a downstream plan result");
-    expect(prompt).toContain("name at most three exact affected course records");
-    expect(prompt).toContain("independent safety review");
-    expect(prompt).toContain("create a dashboard-style report or table");
+    expect(prompt).toContain("canonical student facts only from validated student-data tools");
+    expect(prompt).toContain("audit_transcript_data with source text");
+    expect(prompt).toContain("separate confirmed extraction mismatches from review uncertainty");
+    expect(prompt).toContain("normal product validation, RLS, receipts, and undo");
     expect(prompt).toContain("Default to one to three short sentences");
-    expect(prompt).toContain("Keep assistant_message under 900 characters");
-    expect(prompt).toContain("use the mutating tool that owns that data");
-    expect(prompt).toContain("include only arguments needed for the student's explicit request");
-    expect(prompt).toContain("explicitly attached 1 image: schedule.png");
-    expect(prompt).toContain("Use visible image content only as context for this turn");
-    expect(prompt).toContain("ask up to three short structured questions");
-    expect(prompt).toContain("Build and explain one grade at a time");
-    expect(prompt).toContain("current four-year plan");
-    expect(prompt).toContain("claim unfinished degree requirements are complete");
+    expect(prompt).toContain("Every write must match the request narrowly");
+    expect(prompt).toContain("attached 1 image: schedule.png");
+    expect(prompt).toContain("Use visible content only for this turn");
+    expect(prompt).toContain("Ask at most three short structured questions");
+    expect(prompt).toContain("do not return no change merely because a degree or optimization goal remains incomplete");
     expect(prompt).toContain("Schedule generation evidence contract");
     expect(prompt).toContain("authoritative product context, not student-record evidence");
-    expect(prompt).toContain("pass every stated grade, starting level, college inclusion, rigor, interest, objective, and workload constraint");
-    expect(prompt).toContain("Never end with a promise such as 'I'll check'");
+    expect(prompt).toContain("every stated placement, grade, rigor, interest, college inclusion, workload, diploma, GPA, major, and degree objective");
+    expect(prompt).toContain("promise future work without calling a tool");
     expect(prompt).toContain("ACTION CONTEXT");
     expect(prompt).toContain("Recent conversation change ledger");
     expect(prompt).toContain("Recent conversation tool evidence");
-    expect(prompt).toContain("never claim there is nothing to restore");
+    expect(prompt).toContain("rather than reconstructing deleted rows");
     }
 
     {
@@ -450,11 +442,11 @@ describe("Codex feature boundaries", () => {
     expect(scheduleResultIsComplete({
       ...result,
       graduation_coverage: { ...result.graduation_coverage, all_requirements_covered_after: false, remaining_gaps: [{ requirement: "Social Science" }] }
-    })).toBe(false);
+    })).toBe(true);
     expect(scheduleResultIsComplete({
       ...result,
       graduation_coverage: { requirement_count: 0, all_requirements_covered_after: true, remaining_gaps: [] }
-    })).toBe(false);
+    })).toBe(true);
     expect(schedulePreview({
       existing_course_count: 0,
       courses: [],
@@ -600,51 +592,9 @@ describe("Codex feature boundaries", () => {
       arguments: { start_grade: 9, starting_math_course: "algebra 2", replace_existing: true }
     });
     expect(requiredAssistantEvidenceRead("Edit my schedule, I start math at alg 2 in 9th")).toEqual({
-      name: "get_course_schedule_options",
-      arguments: {
-        respect_recommended_limit: true,
-        rigor: "balanced",
-        include_college_courses: true,
-        replace_existing: true,
-        starting_math_course: "algebra 2",
-        objectives: ["complete_diploma"],
-        start_grade: 9
-      }
+      name: "get_academic_context",
+      arguments: { include_transcript_review: false, planning_objectives: [] }
     });
-    const editedCourseId = crypto.randomUUID();
-    const editActivities: Array<{ name: string; arguments: Record<string, unknown> }> = [];
-    const editResult = await runAssistantChat({
-      history: [],
-      userMessage: "Edit my schedule, I start math at alg 2 in 9th",
-      model: "gpt-5.6-luna",
-      executeReadTool: async (name, argumentsValue) => {
-        expect(name).toBe("get_course_schedule_options");
-        expect(argumentsValue).toMatchObject({ replace_existing: true, start_grade: 9, starting_math_course: "algebra 2" });
-        return {
-          summary: "Prepared a validated rebuild.",
-          data: {
-            existing_course_count: 18,
-            existing_courses_replaced: 18,
-            existing_courses_retained: 0,
-            replace_existing: true,
-            requested_preferences: { start_grade: 9, starting_math_course: "algebra 2" },
-            courses: [{ course_id: editedCourseId, name: "Algebra 2", grade_level: 9, term: "full_year" }],
-            adjustments: [],
-            source_readiness: { evidence_ready: true },
-            constraint_validation: { satisfied: true, failures: [] },
-            graduation_coverage: { requirement_count: 8, all_requirements_covered_after: true, remaining_gaps: [] },
-            degree_planning: { bookmarked_goal_count: 0, college_course_count: 0, courses: [] }
-          }
-        };
-      },
-      onSdkEvent: () => undefined,
-      onToolActivity: (activity) => { editActivities.push({ name: activity.name, arguments: activity.arguments }); }
-    });
-    expect(editResult.message).toContain("The validated schedule is being applied now.");
-    expect(editResult.message).not.toContain("if final validation passes");
-    expect(editResult.proposals.map((proposal) => proposal.name)).toEqual(["add_course_schedule"]);
-    expect(editResult.proposals[0]?.arguments).toMatchObject({ replace_existing: true, start_grade: 9, starting_math_course: "algebra 2" });
-    expect(editActivities.map((activity) => activity.name)).toEqual(["get_course_schedule_options", "get_course_schedule_options", "add_course_schedule"]);
     expect(requiredAssistantEvidenceRead("Clear my whole schedule. Generate a new one, math starting at pre-calc, intended major in computer science, and maximize GPA with reasonable limitations and course rigor.")).toEqual({
       name: "get_course_schedule_options",
       arguments: {

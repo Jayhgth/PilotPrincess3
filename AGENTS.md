@@ -4,6 +4,9 @@
 - Keep the app on Astro and put Supabase schema, RLS, auth, and storage changes in migrations. Never commit secrets.
 - Preserve every working student flow, official institution asset, written d.tech/SMCCD provenance, and accessible light/dark behavior when changing UI.
 - Keep Pilot Assistant opt-in and within `docs/AI_TRANSPARENCY.md`: validated reads, exact proposed writes, normal product rules at execution, and no hidden chain-of-thought.
+- Treat the student's explicit request as Pilot's primary objective. Graduation, degree, GPA, sequence, and workload rules guide recommendations only when relevant to the request; they must not silently broaden or block an otherwise valid targeted edit. Hard blockers are ownership locks, impossible records or placements, verified prerequisites that the student has not explicitly corrected or overridden, and true absolute product limits. Apply the best feasible result and disclose warnings or unmet objectives instead of returning no change.
+- Bookmarked degrees influence full-plan and degree-planning requests automatically, but do not constrain unrelated course edits. If a requested course is absent from the catalog, explain that and offer a custom course after collecting the minimum missing fields rather than inventing institutional evidence.
+- Pilot full-plan work may prioritize quality for up to six minutes. It must return and, when safely possible, apply the best verified work available before that limit rather than ending without a useful result.
 - Treat Pilot Princess as a student-first academic planning product. Application features may expand later, but do not introduce counselor/guardian collaboration, live enrollment, or admissions claims without an explicit product decision.
 - Register cross-feature reads and writes in `src/lib/app-capabilities.ts`. UI and Pilot mutations must share normal validation, affected-domain invalidation, receipts, and undo behavior. Preserve RAG and student memory when reorganizing Pilot.
 - Use `get_workspace_snapshot_v1` for initial authenticated state, targeted workspace refreshes after mutations, and atomic RPCs for multi-row course or transcript changes.
@@ -18,3 +21,4 @@
 - Treat applied migrations and official catalog/source data as immutable product history, not cleanup targets. Optimize them only with measured production evidence and a forward migration.
 - Keep documentation limited to `README.md` and durable references in `docs/`. Do not create task logs, completion reports, implementation-status files, or extra checklists.
 - Inspect Git status and commit coherent milestones without including unrelated work.
+- Use isolated QA accounts for destructive Pilot testing and remove their generated conversations, memories, receipts, and academic records afterward. Access Jay's personal plan only when Jay explicitly asks to investigate behavior observed in that account; never reset or repurpose another real user's data.

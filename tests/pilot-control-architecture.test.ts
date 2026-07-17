@@ -58,14 +58,14 @@ describe("Pilot complete academic control", () => {
       { prompt: "Set every current and planned course in my GPA calculator to an expected A.", read: "get_gpa_scenario" },
       { prompt: "From college, add linear algebra and calc 3. Put in 11th grade summer calc 2 and intercultural communication.", read: "resolve_academic_course_batch" },
       { prompt: "Create a full plan from grade 9 that finishes my diploma and bookmarked degrees.", read: "get_course_schedule_options" },
-      { prompt: "Edit my schedule, I start math at Algebra 2 in grade 9.", read: "get_course_schedule_options" },
+      { prompt: "Edit my schedule, I start math at Algebra 2 in grade 9.", read: "get_academic_context" },
       { prompt: "Here are my answers:\n- **What should the plan prioritize?** All of the above", read: "get_course_schedule_options", history: scheduleHistory },
-      { prompt: "Use ASL 1 instead as my world language and update the plan.", read: "get_course_schedule_options", history: scheduleHistory },
+      { prompt: "Use ASL 1 instead as my world language and update the plan.", read: "get_academic_context", history: scheduleHistory },
       { prompt: "Change my selected high school to Design Tech High School.", read: "search_california_high_schools" },
       { prompt: "Change my community-college district to San Mateo County Community College District.", read: "get_nearby_education_providers" },
       { prompt: "Clear every course in fall 2026.", read: "list_plan_courses" },
       { prompt: "Create a balanced plan starting from freshman year with no college courses.", read: "get_course_schedule_options" },
-      { prompt: "Change my intended major to biology and update the plan.", read: "get_course_schedule_options", history: scheduleHistory }
+      { prompt: "Change my intended major to biology and update the plan.", read: "get_academic_context", history: scheduleHistory }
     ];
     for (const scenario of routedCases) {
       const route = requiredAssistantEvidenceReadForConversation(scenario.history ?? [], scenario.prompt);
@@ -124,24 +124,20 @@ describe("Pilot complete academic control", () => {
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
     });
-    expect(prompt).toContain("Every verified college course is weighted in the app GPA");
-    expect(prompt).toContain("College units and high-school transcript credits are different measures");
-    expect(prompt).toContain("only through a verified selected-school crosswalk/equivalency");
-    expect(prompt).toContain("Never transfer one college's local GE pattern to another college");
-    expect(prompt).toContain("Never substitute d.tech's sequence");
-    expect(prompt).toContain("Propose only a complete validated schedule");
-    expect(prompt).toContain("apply the valid maximum-progress plan");
-    expect(prompt).toContain("retrieved school policy and deterministic validator—not a global sequence—control");
+    expect(prompt).toContain("student's explicit request is the primary objective");
+    expect(prompt).toContain("never silently broaden a targeted edit into a full-plan rebuild");
+    expect(prompt).toContain("College units and high-school credits are different");
+    expect(prompt).toContain("another college's local GE pattern");
+    expect(prompt).toContain("Never borrow d.tech curriculum");
+    expect(prompt).toContain("apply the best feasible verified result");
+    expect(prompt).toContain("full schedule optimizer only when the student explicitly asks");
     expect(prompt).not.toContain("English and Design Lab remain at d.tech every year");
     expect(prompt).not.toContain("Grades 9 through 11 must carry at least six classes");
-    expect(prompt).toContain("there is no arbitrary time window");
-    expect(prompt).toContain("get_academic_context is the bounded cross-feature view");
-    expect(prompt).toContain("automatically evaluates every bookmarked program's remaining major");
-    expect(prompt).toContain("school-specific course-count rules");
-    expect(prompt).toContain("server atomically includes the college portion");
-    expect(prompt).toContain("call resolve_academic_course_batch exactly once");
-    expect(prompt).toContain("converted directly into one reversible add_academic_courses proposal");
-    expect(prompt).toContain("independent safety review");
+    expect(prompt).toContain("durable inverse");
+    expect(prompt).toContain("call get_course_schedule_options");
+    expect(prompt).toContain("Bookmarked degrees influence those broader planning requests automatically");
+    expect(prompt).toContain("use resolve_academic_course_batch once");
+    expect(prompt).toContain("normal product validation, RLS, receipts, and undo");
     expect(prompt).not.toContain("Current page context");
     expect(prompt).not.toContain("Selected change-review mode");
     }
