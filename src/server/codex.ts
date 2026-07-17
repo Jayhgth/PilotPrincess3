@@ -1279,7 +1279,7 @@ export function assistantUndoIntent(userMessage: string) {
 export function selectAssistantUndoTarget(userMessage: string, changes: readonly AssistantRecentChange[]) {
   const available = changes.filter((change) => change.undoAvailable);
   if (!available.length) return null;
-  const ignored = new Set(["undo", "revert", "reverse", "rollback", "roll", "back", "bring", "restore", "previous", "last", "change", "changes", "that", "those", "them"]);
+  const ignored = new Set(["undo", "revert", "reverse", "rollback", "roll", "back", "bring", "restore", "previous", "last", "change", "changes", "edit", "edited", "schedule", "plan", "that", "those", "them"]);
   const terms = userMessage.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 3 && !ignored.has(term));
   if (!terms.length) return available[0];
   const ranked = available.map((change, index) => {
@@ -1316,6 +1316,64 @@ export function requestedStudentSettings(userMessage: string) {
     patch.plan_end_grade = Number(planningWindow[2]);
   }
   return Object.keys(patch).length ? patch : null;
+}
+
+function targetedStartingSequenceProposal(userMessage: string, context: Record<string, unknown>) {
+  const intent = parseAssistantScheduleIntent(userMessage);
+  if (!intent.startingMathCourse) return null;
+  const plan = context.plan && typeof context.plan === "object" && !Array.isArray(context.plan)
+    ? context.plan as Record<string, unknown>
+    : null;
+  const rows = Array.isArray(plan?.courses)
+    ? plan.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const graduation = Array.isArray(context.graduation)
+    ? context.graduation.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const mathEvidence = graduation.find((row) => row.area === "math");
+  const options = Array.isArray(mathEvidence?.eligible_course_options)
+    ? mathEvidence.eligible_course_options.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const requestedRank = mathSequenceRankFromText(intent.startingMathCourse);
+  const startGrade = intent.startGrade ?? Number((context.student as Record<string, unknown> | undefined)?.plan_start_grade ?? 9);
+  if (requestedRank === null || ![9, 10, 11, 12].includes(startGrade)) return null;
+
+  const currentMathRows = rows
+    .filter((row) => row.transcript_locked !== true && mathSequenceRankFromText(String(row.name ?? "")) !== null)
+    .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
+  const patches: Array<Record<string, unknown>> = [];
+  for (const row of currentMathRows) {
+    const grade = Number(row.grade_level);
+    if (grade < startGrade) continue;
+    const targetRank = requestedRank + grade - startGrade;
+    const candidates = options
+      .filter((course) => mathSequenceRankFromText(`${String(course.name ?? "")} ${String(course.subject ?? "")}`) === targetRank)
+      .filter((course) => grade === startGrade || !Array.isArray(course.grade_levels) || course.grade_levels.length === 0 || course.grade_levels.map(Number).includes(grade))
+      .sort((left, right) => Number(right.weighted === true) - Number(left.weighted === true) || String(left.name).localeCompare(String(right.name)));
+    const replacement = candidates[0];
+    if (!replacement || typeof replacement.course_id !== "string" || typeof row.plan_course_id !== "string") continue;
+    patches.push({
+      plan_course_id: row.plan_course_id,
+      course_id: replacement.course_id,
+      grade_level: grade,
+      term: replacement.term_type === "year" ? "full_year" : row.term,
+      ...(grade === startGrade ? { prerequisite_override_reason: `The student explicitly stated that ${String(replacement.name)} is their starting math placement in grade ${grade}.` } : {})
+    });
+  }
+  if (!patches.length || !patches.some((patch) => Number(patch.grade_level) === startGrade)) return null;
+  const proposal: AssistantChatToolActivity = {
+      id: crypto.randomUUID(),
+      name: "update_plan_courses",
+      label: assistantToolLabel("update_plan_courses"),
+      arguments: { patches },
+      explanation: `Replace only the editable math sequence so it starts with ${intent.startingMathCourse} in grade ${startGrade}; preserve every unrelated course.`,
+      mutatesData: true,
+      status: "pending_confirmation"
+    };
+  return {
+    proposal,
+    message: `I prepared the exact math-sequence edit starting with ${intent.startingMathCourse} in grade ${startGrade}. Unrelated courses will stay unchanged; the explicit starting placement is recorded as student-provided if it overrides catalog prerequisite evidence.`
+  };
 }
 
 export async function runAssistantChat(options: AssistantChatOptions): Promise<AssistantChatResult> {
@@ -1494,6 +1552,21 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               latencyMs: Date.now() - startedAt,
               model,
               proposals: [proposal]
+            };
+          }
+        }
+        if (requiredRead.name === "get_academic_context" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
+          const targetedSequence = targetedStartingSequenceProposal(options.userMessage, result.data as Record<string, unknown>);
+          if (targetedSequence) {
+            await options.onToolActivity(targetedSequence.proposal);
+            return {
+              message: targetedSequence.message,
+              questions: [],
+              threadId: thread.id,
+              usage,
+              latencyMs: Date.now() - startedAt,
+              model,
+              proposals: [targetedSequence.proposal]
             };
           }
         }

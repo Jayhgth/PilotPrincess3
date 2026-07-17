@@ -463,8 +463,10 @@ test.describe("live Pilot behavior", () => {
       .map((row) => ({ id: row.id, course_id: row.course_id, grade_level: row.grade_level, term: row.term }))
       .sort((left, right) => left.id.localeCompare(right.id));
     const placementEditTurn = await promptPilot(fullPlanConversation, "Edit my schedule, I start math at alg 2 in 9th");
+    const placementToolDebug = await supabase.from("ai_tool_calls").select("tool_name,status,result,arguments").eq("conversation_id", fullPlanConversation).order("created_at");
+    if (placementToolDebug.error) throw placementToolDebug.error;
     expect(placementEditTurn.message).not.toContain("if final validation passes");
-    expect(placementEditTurn.proposals.map((proposal) => proposal.name), placementEditTurn.message).toEqual(["update_plan_courses"]);
+    expect(placementEditTurn.proposals.map((proposal) => proposal.name), `${placementEditTurn.message}\n${JSON.stringify(placementToolDebug.data?.slice(-3))}`).toEqual(["update_plan_courses"]);
     await apply(placementEditTurn);
     const placementRowsResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
     if (placementRowsResult.error) throw placementRowsResult.error;

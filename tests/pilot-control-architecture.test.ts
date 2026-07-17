@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, type AssistantChatHistoryMessage } from "@/server/codex";
+import { assistantConversationPrompt, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 
@@ -73,6 +73,40 @@ describe("Pilot complete academic control", () => {
       expect(route?.name, scenario.prompt).toBe(scenario.read);
     }
     expect(directCases.length + routedCases.length).toBe(24);
+
+    const gradeNineRow = crypto.randomUUID();
+    const gradeTenRow = crypto.randomUUID();
+    const algebraTwo = crypto.randomUUID();
+    const precalculus = crypto.randomUUID();
+    const targeted = await runAssistantChat({
+      history: scheduleHistory,
+      userMessage: "Edit my schedule, I start math at alg 2 in 9th",
+      model: "gpt-5.6-luna",
+      executeReadTool: async () => ({
+        summary: "Read workspace.",
+        data: {
+          student: { plan_start_grade: 9 },
+          plan: { courses: [
+            { plan_course_id: gradeNineRow, name: "Precalculus", grade_level: 9, term: "full_year", transcript_locked: false },
+            { plan_course_id: gradeTenRow, name: "Calculus AB", grade_level: 10, term: "full_year", transcript_locked: false }
+          ] },
+          graduation: [{
+            area: "math",
+            eligible_course_options: [
+              { course_id: algebraTwo, name: "Algebra 2", subject: "Math", weighted: false, term_type: "year", grade_levels: [9, 10] },
+              { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [9, 10, 11] }
+            ]
+          }]
+        }
+      }),
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(targeted.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
+    expect(targeted.proposals[0]?.arguments).toMatchObject({ patches: [
+      { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9, term: "full_year" },
+      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10, term: "full_year" }
+    ] });
   });
 
   it("enforces reversible app-wide Pilot control and safety boundaries", async () => {
@@ -128,6 +162,9 @@ describe("Pilot complete academic control", () => {
     };
     expect(assistantUndoAvailability(result).available).toBe(true);
     expect(assistantUndoAvailability({ ...result, undone_at: new Date().toISOString() }).available).toBe(false);
+    const recentEdit = { toolCallId: crypto.randomUUID(), toolName: "update_plan_courses", label: "Update courses", summary: "Updated the math sequence.", data: {}, completedAt: new Date().toISOString(), undoAvailable: true, undoneAt: null, undoExpiresAt: null };
+    const earlierSchedule = { toolCallId: crypto.randomUUID(), toolName: "add_course_schedule", label: "Add course schedule", summary: "Added the full schedule.", data: {}, completedAt: new Date(Date.now() - 1000).toISOString(), undoAvailable: true, undoneAt: null, undoExpiresAt: null };
+    expect(selectAssistantUndoTarget("Undo that schedule edit", [recentEdit, earlierSchedule])?.toolCallId).toBe(recentEdit.toolCallId);
     }
 
     {

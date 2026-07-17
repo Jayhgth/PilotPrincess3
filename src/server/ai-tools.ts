@@ -353,7 +353,6 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "move_plan_courses", mutatesData: true, description: "Propose moving an exact set of editable plan courses to Done, In progress, or Planned in one request. Use this for all/every bulk state changes after listing the matching courses.", arguments: '{"plan_course_ids":["uuid"],"status":"completed|current|planned"}' },
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
   { name: "remove_plan_courses", mutatesData: true, description: "Propose removing an exact set of editable courses from the active plan in one atomic request. Use this for all/every bulk removal requests after listing the matching plan courses.", arguments: '{"plan_course_ids":["uuid"]}' },
-  { name: "update_plan_course", mutatesData: true, description: "Propose editing placement, grade, credits, college units, weighting, or notes on a non-transcript plan course. GPA recalculates from the resulting course variables.", arguments: '{"plan_course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","credits":number,"college_units":number|null,"is_weighted":boolean,"notes":"string|null"}' },
   { name: "update_plan_courses", mutatesData: true, description: "Apply one coherent batch of exact edits to existing non-transcript plan rows, including selected-school course replacements and placement changes. Use this for a requested subject-sequence or multi-course correction while preserving every unaffected row.", arguments: '{"patches":[{"plan_course_id":"uuid","course_id":"uuid","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","credits":number,"college_units":number|null,"is_weighted":boolean,"notes":"string|null","prerequisite_override_reason?":"string"}]}' },
   { name: "sort_plan_courses", mutatesData: true, description: "Propose applying the product's canonical course-board ordering across every grade, with graded college courses first, high-school courses next, pass/fail courses last, and full-year rows placed consistently.", arguments: "{}" },
   { name: "update_gpa_scenario", mutatesData: true, description: "Propose saving GPA-planner inclusion and expected-grade choices for current or planned courses. This changes only the calculator scenario, never completed transcript grades or the course plan.", arguments: '{"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
@@ -2403,7 +2402,7 @@ export async function executeAssistantReadTool(
                 : [];
             })
             .sort((left, right) => Number(right.weighted) - Number(left.weighted) || left.name.localeCompare(right.name))
-            .slice(0, 8)
+            .slice(0, 40)
         })),
         gpa: calculated.gpa,
         gpa_scenario: workspace.gpaScenarioChoices,
@@ -3865,7 +3864,7 @@ export async function executeAssistantMutationTool(
       const selectedCourse = next.course_id ? workspace.courses.find((course) => course.id === next.course_id) : null;
       if (patch.course_id && !selectedCourse) throw new Error("One or more replacement courses are no longer in the selected-school catalog.");
       if (selectedCourse) {
-        if (selectedCourse.grade_levels.length && !selectedCourse.grade_levels.includes(next.grade_level)) throw new Error(`${selectedCourse.name} is not offered in grade ${next.grade_level}.`);
+        if (selectedCourse.grade_levels.length && !selectedCourse.grade_levels.includes(next.grade_level) && !patch.prerequisite_override_reason) throw new Error(`${selectedCourse.name} is not offered in grade ${next.grade_level}. The student must explicitly correct or override that placement evidence to continue.`);
         if (selectedCourse.term_type === "year" && next.term !== "full_year") throw new Error(`${selectedCourse.name} is a full-year course.`);
         const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(selectedCourse, { gradeLevel: next.grade_level, term: next.term, instanceId: next.id }, workspace.courses, nextRows, workspace.plannedSmccdCourses, workspace.equivalencies, `${workspace.school.name} official course catalog`);
         if (prerequisite.result.status === "blocked" && !patch.prerequisite_override_reason) throw new Error(`${selectedCourse.name} has an unmet prerequisite for that placement. The student must explicitly correct or override that evidence to continue.`);
