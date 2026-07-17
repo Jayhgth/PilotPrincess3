@@ -146,6 +146,11 @@ test.describe("live Pilot behavior", () => {
       const results = await reviewAndApply(request, accessToken, turn.proposals);
       expect(results.every((result) => result.applied === true), JSON.stringify(results)).toBe(true);
     };
+    let livePromptCount = 0;
+    const promptPilot = async (conversationId: string, message: string) => {
+      livePromptCount += 1;
+      return sendTurn(request, accessToken, conversationId, message);
+    };
 
     // The fixture models a grade-11 d.tech student with a primary Communication
     // Studies goal, substantial completed work, and source-backed concurrent limits.
@@ -161,28 +166,59 @@ test.describe("live Pilot behavior", () => {
     }).eq("id", userId);
     if (studentContext.error) throw studentContext.error;
     const themeConversation = await createConversation("Theme persistence");
-    const darkThemeTurn = await sendTurn(request, accessToken, themeConversation, "Change the app to dark mode.");
+    const darkThemeTurn = await promptPilot(themeConversation, "Change the app to dark mode.");
     expect(darkThemeTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
     await apply(darkThemeTurn);
     expect((await supabase.from("student_settings").select("ui_theme").eq("id", userId).single()).data?.ui_theme).toBe("dark");
-    const lightThemeTurn = await sendTurn(request, accessToken, themeConversation, "Change the app back to light mode.");
+    const lightThemeTurn = await promptPilot(themeConversation, "Change the app back to light mode.");
     expect(lightThemeTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_student_settings"]);
     await apply(lightThemeTurn);
     expect((await supabase.from("student_settings").select("ui_theme").eq("id", userId).single()).data?.ui_theme).toBe("light");
-    const enrollment = await supabase.from("student_enrollment_preferences").upsert({
-      user_id: userId,
-      provider_code: "SMCCD",
-      program_type: "concurrent",
-      limit_mode: "recommended",
-      respect_recommended_limit: true
-    }, { onConflict: "user_id,provider_code" });
-    if (enrollment.error) throw enrollment.error;
+    const preferredNameTurn = await promptPilot(themeConversation, "Set my preferred name to Jay.");
+    await apply(preferredNameTurn);
+    expect((await supabase.from("student_settings").select("preferred_name").eq("id", userId).single()).data?.preferred_name).toBe("Jay");
+    const restoreNameTurn = await promptPilot(themeConversation, "Set my preferred name back to Pilot QA.");
+    await apply(restoreNameTurn);
+    expect((await supabase.from("student_settings").select("preferred_name").eq("id", userId).single()).data?.preferred_name).toBe("Pilot QA");
+    const enrollmentTurn = await promptPilot(themeConversation, "Use concurrent enrollment and respect the recommended unit limit.");
+    await apply(enrollmentTurn);
+    expect((await supabase.from("student_enrollment_preferences").select("program_type,respect_recommended_limit").eq("user_id", userId).eq("provider_code", "SMCCD").single()).data).toMatchObject({ program_type: "concurrent", respect_recommended_limit: true });
     const programId = "CSM:communication-studies-aa";
-    const bookmarkInsert = await supabase.from("student_smccd_goals").insert({ user_id: userId, program_id: programId, is_primary: true, notes: "Live integrated-planning fixture" });
-    if (bookmarkInsert.error) throw bookmarkInsert.error;
+    const bookmarkTurn = await promptPilot(themeConversation, "Bookmark the Communication Studies AA degree at CSM.");
+    await apply(bookmarkTurn);
     const savedGoals = await supabase.from("student_smccd_goals").select("program_id").eq("user_id", userId);
     if (savedGoals.error) throw savedGoals.error;
     expect((savedGoals.data ?? []).map((goal) => goal.program_id)).toEqual([programId]);
+
+    const controlCatalog = await supabase.from("courses")
+      .select("name,grade_levels,prerequisites")
+      .eq("school_id", dtech.data.id)
+      .eq("confidence", "verified")
+      .eq("review_status", "approved")
+      .contains("grade_levels", [12]);
+    if (controlCatalog.error) throw controlCatalog.error;
+    const removableCourse = (controlCatalog.data ?? []).find((course) => Array.isArray(course.prerequisites) && course.prerequisites.length === 0)
+      ?? controlCatalog.data?.[0];
+    expect(removableCourse, "The selected-school fixture needs one eligible grade-12 catalog course.").toBeDefined();
+    const addHighSchoolTurn = await promptPilot(themeConversation, `Add ${removableCourse!.name} to grade 12 full year.`);
+    expect(addHighSchoolTurn.proposals.map((proposal) => proposal.name), addHighSchoolTurn.message).toEqual(["add_high_school_course"]);
+    await apply(addHighSchoolTurn);
+    const removeHighSchoolTurn = await promptPilot(themeConversation, "Remove every planned course in grade 12.");
+    expect(removeHighSchoolTurn.proposals.map((proposal) => proposal.name)).toEqual(["remove_plan_courses"]);
+    await apply(removeHighSchoolTurn);
+
+    const addCollegeTurn = await promptPilot(themeConversation, "Add CSM ACTG 100 Accounting Procedures to grade 11 fall.");
+    expect(addCollegeTurn.proposals.map((proposal) => proposal.name)).toEqual(["add_smccd_course"]);
+    await apply(addCollegeTurn);
+    const gpaTurn = await promptPilot(themeConversation, "Set every current and planned course in my GPA calculator to an expected A.");
+    expect(gpaTurn.proposals.map((proposal) => proposal.name)).toEqual(["update_gpa_scenario"]);
+    await apply(gpaTurn);
+    const gpaUndoTurn = await promptPilot(themeConversation, "Undo that GPA change.");
+    expect(gpaUndoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(gpaUndoTurn);
+    const collegeUndoTurn = await promptPilot(themeConversation, "Undo that college course addition.");
+    expect(collegeUndoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(collegeUndoTurn);
 
     const activePlan = await supabase.from("four_year_plans").select("id").eq("user_id", userId).eq("is_active", true).single();
     const activeVersion = await supabase.from("plan_versions").select("id").eq("plan_id", activePlan.data!.id).eq("kind", "active").single();
@@ -293,7 +329,7 @@ test.describe("live Pilot behavior", () => {
     // This is the canonical autonomy test: natural-language intent plus saved
     // student context must become one validated, applied, reversible schedule.
     const scheduleConversation = await createConversation("Complete diploma and Communication Studies AA");
-    const scheduleTurn = await sendTurn(request, accessToken, scheduleConversation,
+    const scheduleTurn = await promptPilot(scheduleConversation,
       "Use my saved progress to build and apply the rest of my schedule from grade 11 summer through grade 12. My intended major is Communication Studies. Keep every completed or in-progress class, finish my d.tech diploma and my bookmarked CSM Communication Studies AA—including every remaining major, local GE, separate graduation, and 60-unit requirement—under my already-saved concurrent-enrollment preference and its recommended per-term unit limit. Do not change that preference. Balance the remaining work across the available terms and do not just describe the plan; add it.");
     expect(scheduleTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
     expect(scheduleTurn.message).not.toContain("College-unit check:");
@@ -329,7 +365,7 @@ test.describe("live Pilot behavior", () => {
     }
     expect([...openCollegeTerms.values()].every((units) => units <= 11)).toBe(true);
 
-    const undoTurn = await sendTurn(request, accessToken, scheduleConversation, "Undo that schedule addition.");
+    const undoTurn = await promptPilot(scheduleConversation, "Undo that schedule addition.");
     expect(undoTurn.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(undoTurn);
     const restoredRows = await supabase.from("plan_courses").select("id").eq("user_id", userId);
@@ -349,7 +385,7 @@ test.describe("live Pilot behavior", () => {
     const freshmanSettings = await supabase.from("student_settings").update({ grade_level: 9, graduation_year: 2030, plan_start_grade: 9, plan_end_grade: 12 }).eq("id", userId);
     if (freshmanSettings.error) throw freshmanSettings.error;
     const fullPlanConversation = await createConversation("Terse integrated full plan");
-    const fullPlanTurn = await sendTurn(request, accessToken, fullPlanConversation, "Create a full plan for me. I am starting Precalculus in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful overlap, and no more than 11 college units in any term.");
+    const fullPlanTurn = await promptPilot(fullPlanConversation, "Create a full plan for me. I am starting Precalculus in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful overlap, and no more than 11 college units in any term.");
     expect(fullPlanTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
     expect(fullPlanTurn.message).not.toContain("College-unit check:");
     expect(fullPlanTurn.runtime.latencyMs).toBeLessThan(120_000);
@@ -419,7 +455,7 @@ test.describe("live Pilot behavior", () => {
     // autonomous reviewer, apply, and remain reversible. This is the exact
     // phrasing that previously produced a preview without a completed change.
     const generatedFullPlanIds = new Set((generatedFullPlan.data ?? []).map((row) => row.id));
-    const placementEditTurn = await sendTurn(request, accessToken, fullPlanConversation, "Edit my schedule, I start math at alg 2 in 9th");
+    const placementEditTurn = await promptPilot(fullPlanConversation, "Edit my schedule, I start math at alg 2 in 9th");
     expect(placementEditTurn.message).not.toContain("if final validation passes");
     expect(placementEditTurn.message).toContain("being applied now");
     expect(placementEditTurn.proposals.map((proposal) => proposal.name), placementEditTurn.message).toEqual(["add_course_schedule"]);
@@ -443,14 +479,14 @@ test.describe("live Pilot behavior", () => {
       expect(placementEditTurn.message).toContain("remains incomplete");
       expect(placementEditTurn.message).toMatch(/remaining|too few prerequisite-ordered years/i);
     }
-    const placementUndo = await sendTurn(request, accessToken, fullPlanConversation, "Undo that schedule edit.");
+    const placementUndo = await promptPilot(fullPlanConversation, "Undo that schedule edit.");
     expect(placementUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(placementUndo);
     const restoredFullPlan = await supabase.from("plan_courses").select("id").eq("user_id", userId);
     if (restoredFullPlan.error) throw restoredFullPlan.error;
     expect(new Set((restoredFullPlan.data ?? []).map((row) => row.id))).toEqual(generatedFullPlanIds);
 
-    const fullPlanUndo = await sendTurn(request, accessToken, fullPlanConversation, "Undo that generated plan.");
+    const fullPlanUndo = await promptPilot(fullPlanConversation, "Undo that generated plan.");
     expect(fullPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(fullPlanUndo);
 
@@ -458,7 +494,7 @@ test.describe("live Pilot behavior", () => {
     // plan without skipping math, duplicating science, or violating d.tech's
     // high-school course minimums.
     const standardPlanConversation = await createConversation("Standard math integrated plan");
-    const standardPlanTurn = await sendTurn(request, accessToken, standardPlanConversation,
+    const standardPlanTurn = await promptPilot(standardPlanConversation,
       "Create and apply a reasonable four-year plan from grade 9 using d.tech's standard math starting point. Finish my diploma and make the maximum verified progress on both bookmarked CS degrees while following prerequisites, school course-count rules, and the 11-unit concurrent limit.");
     expect(standardPlanTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
     expect(standardPlanTurn.proposals.map((proposal) => proposal.name), standardPlanTurn.message).toEqual(["add_course_schedule"]);
@@ -496,8 +532,9 @@ test.describe("live Pilot behavior", () => {
       standardCollegeTerms.set(key, (standardCollegeTerms.get(key) ?? 0) + Number(row.college_units ?? 0));
     }
     expect([...standardCollegeTerms.values()].every((units) => units <= 11)).toBe(true);
-    const standardUndo = await sendTurn(request, accessToken, standardPlanConversation, "Undo that plan.");
+    const standardUndo = await promptPilot(standardPlanConversation, "Undo that plan.");
     expect(standardUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(standardUndo);
+    expect(livePromptCount).toBeGreaterThanOrEqual(20);
   });
 });

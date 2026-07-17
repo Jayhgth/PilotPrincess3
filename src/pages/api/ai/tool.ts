@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
-import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, reviewAssistantProposal } from "@/server/ai-auto-review";
+import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, reviewAssistantProposal, scheduleResolutionCoversProposal } from "@/server/ai-auto-review";
 import { executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
@@ -54,6 +54,25 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     let verifiedBatchResolution = false;
     let verifiedAcademicPlanResolution = false;
+    let verifiedScheduleResolution = false;
+    if (validated.name === "add_course_schedule") {
+      const resolution = await auth.supabase.from("ai_tool_calls")
+        .select("result")
+        .eq("turn_id", toolCall.turn_id)
+        .eq("user_id", auth.user.id)
+        .eq("tool_name", "get_course_schedule_options")
+        .eq("status", "completed")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const resultEnvelope = resolution.data?.result && typeof resolution.data.result === "object" && !Array.isArray(resolution.data.result)
+        ? resolution.data.result as { data?: unknown }
+        : null;
+      verifiedScheduleResolution = !resolution.error && scheduleResolutionCoversProposal({
+        arguments: validated.arguments,
+        scheduleOptions: resultEnvelope
+      });
+    }
     if (validated.name === "add_academic_courses") {
       const resolution = await auth.supabase.from("ai_tool_calls")
         .select("result")
@@ -103,14 +122,29 @@ export const POST: APIRoute = async ({ request }) => {
         });
       }
     }
+    const messageResult = await auth.supabase.from("ai_messages")
+      .select("role,content,turn_id,created_at")
+      .eq("conversation_id", toolCall.conversation_id)
+      .in("role", ["user", "assistant"])
+      .order("created_at", { ascending: false })
+      .limit(8);
+    const messages = [...(messageResult.data ?? [])].reverse();
+    const currentMessage = String(messages.find((message) => message.turn_id === toolCall.turn_id && message.role === "user")?.content ?? "");
+    const conversationContext = messages
+      .filter((message) => message.turn_id !== toolCall.turn_id)
+      .slice(-5)
+      .map((message) => `${String(message.role).toUpperCase()}: ${String(message.content)}`)
+      .join("\n\n");
     review = await reviewAssistantProposal({
-      userMessage: String((await auth.supabase.from("ai_messages").select("content").eq("turn_id", toolCall.turn_id).eq("role", "user").maybeSingle()).data?.content ?? ""),
+      userMessage: currentMessage,
+      conversationContext,
       toolName: validated.name,
       arguments: validated.arguments,
       explanation: toolCall.explanation,
       model: preferences.model,
       verifiedBatchResolution,
       verifiedAcademicPlanResolution,
+      verifiedScheduleResolution,
       signal: request.signal
     });
   } catch {

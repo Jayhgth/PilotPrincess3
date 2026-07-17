@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, requiredAssistantEvidenceRead } from "@/server/codex";
+import { assistantConversationPrompt, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, type AssistantChatHistoryMessage } from "@/server/codex";
 import { parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 
@@ -18,6 +18,60 @@ describe("Pilot complete academic control", () => {
         }
       });
     }
+  });
+
+  it("routes a broad 24-prompt student workflow matrix through executable tools", async () => {
+    const appliedChangeId = crypto.randomUUID();
+    const scheduleHistory: AssistantChatHistoryMessage[] = [
+      { role: "user", content: "Create a full four-year plan from grade 9, starting math at Geometry, using ASL 1 for language, and completing my bookmarked computer science degrees." },
+      { role: "assistant", content: "I prepared the integrated plan." }
+    ];
+    const directCases: Array<{ prompt: string; expected: string; recentChanges?: Parameters<typeof runAssistantChat>[0]["recentChanges"] }> = [
+      { prompt: "Change the app to dark mode.", expected: "update_student_settings" },
+      { prompt: "Switch back to light mode.", expected: "update_student_settings" },
+      { prompt: "Set my preferred name to Jay.", expected: "update_student_settings" },
+      { prompt: "Set my current grade to 10, graduation year to 2029, and planning window from grade 10 through grade 12.", expected: "update_student_settings" },
+      { prompt: "Use concurrent enrollment and respect the recommended unit limit.", expected: "update_enrollment_preference" },
+      { prompt: "Sort my entire course board.", expected: "sort_plan_courses" },
+      { prompt: "Clear my whole schedule, degree bookmarks, and GPA assumptions.", expected: "clear_academic_plan" },
+      { prompt: "Undo that change.", expected: "undo_change", recentChanges: [{ toolCallId: appliedChangeId, toolName: "clear_academic_plan", label: "Clear academic plan", summary: "Cleared the plan.", data: {}, completedAt: new Date().toISOString(), undoAvailable: true, undoneAt: null, undoExpiresAt: null }] }
+    ];
+    for (const scenario of directCases) {
+      const result = await runAssistantChat({
+        history: [],
+        userMessage: scenario.prompt,
+        model: "gpt-5.6-luna",
+        recentChanges: scenario.recentChanges,
+        executeReadTool: async () => ({ summary: "", data: null }),
+        onSdkEvent: () => undefined,
+        onToolActivity: () => undefined
+      });
+      expect(result.proposals.map((proposal) => proposal.name), scenario.prompt).toContain(scenario.expected);
+    }
+
+    const routedCases: Array<{ prompt: string; read: string; history?: AssistantChatHistoryMessage[] }> = [
+      { prompt: "Remove every planned course.", read: "list_plan_courses" },
+      { prompt: "Move every planned course to in progress.", read: "list_plan_courses" },
+      { prompt: "Add Biology in 10th grade as a full-year course.", read: "search_course_catalog" },
+      { prompt: "Add CSM MATH 251 to grade 11 in fall.", read: "search_course_catalog" },
+      { prompt: "Bookmark the Computer Science Applications and Development AS degree at CSM.", read: "search_smccd_programs" },
+      { prompt: "Set every current and planned course in my GPA calculator to an expected A.", read: "get_gpa_scenario" },
+      { prompt: "From college, add linear algebra and calc 3. Put in 11th grade summer calc 2 and intercultural communication.", read: "resolve_academic_course_batch" },
+      { prompt: "Create a full plan from grade 9 that finishes my diploma and bookmarked degrees.", read: "get_course_schedule_options" },
+      { prompt: "Edit my schedule, I start math at Algebra 2 in grade 9.", read: "get_course_schedule_options" },
+      { prompt: "Here are my answers:\n- **What should the plan prioritize?** All of the above", read: "get_course_schedule_options", history: scheduleHistory },
+      { prompt: "Use ASL 1 instead as my world language and update the plan.", read: "get_course_schedule_options", history: scheduleHistory },
+      { prompt: "Change my selected high school to Design Tech High School.", read: "search_california_high_schools" },
+      { prompt: "Change my community-college district to San Mateo County Community College District.", read: "get_nearby_education_providers" },
+      { prompt: "Clear every course in fall 2026.", read: "list_plan_courses" },
+      { prompt: "Create a balanced plan starting from freshman year with no college courses.", read: "get_course_schedule_options" },
+      { prompt: "Change my intended major to biology and update the plan.", read: "get_course_schedule_options", history: scheduleHistory }
+    ];
+    for (const scenario of routedCases) {
+      const route = requiredAssistantEvidenceReadForConversation(scenario.history ?? [], scenario.prompt);
+      expect(route?.name, scenario.prompt).toBe(scenario.read);
+    }
+    expect(directCases.length + routedCases.length).toBe(24);
   });
 
   it("enforces reversible app-wide Pilot control and safety boundaries", async () => {

@@ -150,7 +150,7 @@ const toolArgumentSchemas = {
   set_college_district_preference: z.object({ district_code: z.string().trim().min(3).max(180) }),
   undo_change: z.object({ tool_call_id: z.uuid() }),
   add_course_schedule: z.object({
-    course_ids: z.array(z.uuid()).max(40)
+    course_ids: z.array(z.uuid()).max(64)
       .refine((ids) => new Set(ids).size === ids.length, "Course IDs must be unique."),
     respect_recommended_limit: z.boolean().default(true),
     interests: z.array(z.string().trim().min(1).max(60)).max(6).default([]),
@@ -2469,9 +2469,13 @@ export async function executeAssistantReadTool(
         .replace(/\b(?:csm|college of san mateo|skyline(?: college)?|ca(?:ñ|n)ada(?: college)?)\b/gi, " ")
         .replace(/\s+/g, " ")
         .trim();
+      const courseCode = normalizeCollegeCourseCode(searchTerm);
+      const titleTerm = courseCode
+        ? searchTerm.replace(new RegExp(`^${courseCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(" ", "\\s*")}\\b`, "i"), "").trim()
+        : searchTerm;
       const [codeResult, titleResult] = await Promise.all([
-        supabase.from("smccd_courses").select("*").ilike("course_code", `%${searchTerm}%`).limit(8),
-        supabase.from("smccd_courses").select("*").ilike("title", `%${searchTerm}%`).limit(10)
+        supabase.from("smccd_courses").select("*").ilike("course_code", `%${courseCode ?? searchTerm}%`).limit(8),
+        supabase.from("smccd_courses").select("*").ilike("title", `%${titleTerm || searchTerm}%`).limit(10)
       ]);
       if (codeResult.error) throw new Error(codeResult.error.message);
       if (titleResult.error) throw new Error(titleResult.error.message);

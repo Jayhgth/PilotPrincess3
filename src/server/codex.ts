@@ -657,7 +657,7 @@ function requestsScheduleConstruction(userMessage: string) {
   const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
   const structuredPlanAnswer = /\bhere are my answers\b/.test(normalized) && /\bplan prioritize\b|\bprioritize\?\b/.test(normalized);
   const schedule = (/\b(?:schedule|course plan|academic plan|four[ -]?year plan)\b/.test(normalized)
-    || /\b(?:full|complete|new|replacement)\s+(?:academic\s+|course\s+)?plan\b/.test(normalized)
+    || /\b(?:full|complete|new|replacement|balanced|rigorous)\s+(?:academic\s+|course\s+)?plan\b/.test(normalized)
     || structuredPlanAnswer)
     && !/\b(?:meeting|appointment|calendar|study|homework|workout|sleep)\s+schedule\b/.test(normalized);
   if (!schedule) return false;
@@ -857,6 +857,25 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   return null;
 }
 
+export function requiredAssistantEvidenceReadForConversation(
+  history: AssistantChatHistoryMessage[],
+  userMessage: string
+) {
+  const direct = requiredAssistantEvidenceRead(userMessage);
+  const directSchedule = direct?.name === "get_course_schedule_options";
+  const currentIntent = parseAssistantScheduleIntent(userMessage);
+  const scheduleContinuation = Boolean(parseScheduleAnswer(userMessage))
+    || /\bhere are my answers\b/i.test(userMessage)
+    || (!directSchedule && Boolean(currentIntent.startingMathCourse || currentIntent.startingLanguageCourse))
+    || (!directSchedule && /\b(?:redo|rebuild|revise|adjust|update|change)\b.{0,40}\b(?:it|that|plan|schedule)\b/i.test(userMessage));
+  if (!scheduleContinuation) return direct;
+
+  const previousRequest = [...history].reverse().find((message) => message.role === "user"
+    && requiredAssistantEvidenceRead(message.content)?.name === "get_course_schedule_options");
+  if (!previousRequest) return direct;
+  return requiredAssistantEvidenceRead(`${userMessage}\n\nPrevious schedule request: ${previousRequest.content}`) ?? direct;
+}
+
 export function parseBulkGpaIntent(userMessage: string) {
   const normalized = userMessage.toLowerCase();
   if (!/\b(?:set|change|update)\b/.test(normalized) || !/\b(?:every|all)\b/.test(normalized) || !/\b(?:gpa|expected grade)\b/.test(normalized)) return null;
@@ -900,7 +919,7 @@ export function requestedCourseSort(userMessage: string) {
 }
 
 export function parseExactCourseAddition(userMessage: string) {
-  const match = userMessage.trim().match(/^add\s+(.+?)\s+to\s+(?:my\s+)?grade\s*(9|10|11|12)\b/i);
+  const match = userMessage.trim().match(/^add\s+(.+?)\s+(?:to|in|for)\s+(?:my\s+)?(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?(?:\s+grade)?\b/i);
   if (!match) return null;
   const suffix = userMessage.slice(match[0].length).toLowerCase();
   const status = /\bin[ -]?progress\b|\bcurrent\b/.test(suffix) ? "current" as const : "planned" as const;
@@ -946,11 +965,18 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   const startGradeMatch = normalized.match(/\bgrade\s*(9|10|11|12)\b/)
     ?? normalized.match(/\b(?:start(?:ing)?\s+(?:from|in|at)?\s*|from\s+)?(9|10|11|12)(?:th|st|nd|rd)?\s*grade\b/)
     ?? normalized.match(/\b(?:for|in|from)\s+(9|10|11|12)(?:th|st|nd|rd)\b/);
-  const startGrade = startGradeMatch ? Number(startGradeMatch[1]) as 9 | 10 | 11 | 12 : undefined;
+  const gradeAlias = /\b(?:start(?:ing)?\s+(?:from|in|at)\s+)?freshm(?:an|en)\b/.test(normalized) ? 9
+    : /\b(?:start(?:ing)?\s+(?:from|in|at)\s+)?sophomore\b/.test(normalized) ? 10
+      : /\b(?:start(?:ing)?\s+(?:from|in|at)\s+)?junior\b/.test(normalized) ? 11
+        : /\b(?:start(?:ing)?\s+(?:from|in|at)\s+)?senior\b/.test(normalized) ? 12
+          : undefined;
+  const startGrade = startGradeMatch ? Number(startGradeMatch[1]) as 9 | 10 | 11 | 12 : gradeAlias;
   const mathName = "(pre[ -]?calc(?:ulus)?|integrated math\\s*[123]|alg(?:ebra)?\\s*(?:1|i|2|ii)|geometry|calculus(?:\\s+(?:ab|bc|i{1,3}|1|2|3))?)";
   const rawStartingMathCourse = [
     new RegExp(`\\bmath\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${mathName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+math\\s+(?:at|with|in)\\s+${mathName}\\b`),
+    new RegExp(`\\b(?:change|switch|set|move)\\s+(?:my\\s+)?(?:starting\\s+)?math\\s+(?:course\\s+)?(?:to|as)\\s+${mathName}\\b`),
+    new RegExp(`\\b(?:make|have|use)\\s+${mathName}\\s+(?:as|for)\\s+(?:my\\s+)?(?:starting\\s+)?math\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${mathName}\\b`),
     new RegExp(`\\b${mathName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
   ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
@@ -963,6 +989,8 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   const startingLanguageCourse = [
     new RegExp(`\\b(?:language|world language)\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${languageName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:language|world language)\\s+(?:at|with|in)\\s+${languageName}\\b`),
+    new RegExp(`\\b(?:change|switch|set)\\s+(?:my\\s+)?(?:world\\s+)?language\\s+(?:course\\s+)?(?:to|as)\\s+${languageName}\\b`),
+    new RegExp(`\\b(?:use|take)\\s+${languageName}\\s+(?:instead|as\\s+(?:my\\s+)?(?:world\\s+)?language)\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${languageName}\\b`),
     new RegExp(`\\b(?:language|world language|spanish|french|chinese|mandarin|japanese|latin|german|italian|asl)\\s+(?:placement\\s+)?(?:at|with|in)\\s+${languageName}\\b`),
     new RegExp(`\\b${languageName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
@@ -976,7 +1004,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   // rebuild instead of attempting to append a second, conflicting sequence.
   const placementRebuild = Boolean(startingMathCourse || startingLanguageCourse)
     && /\b(edit|revise|adjust|update|redo|rebuild|regenerate|rework|change)\b/.test(normalized)
-    && /\b(schedule|course plan|academic plan|four[ -]?year plan)\b/.test(normalized);
+    && /\b(schedule|plan|course plan|academic plan|four[ -]?year plan)\b/.test(normalized);
   // A placement such as "pre-calc in grade 9" must never narrow an explicit
   // whole-plan rebuild. Only infer a grade scope when the user did not ask for
   // all/whole/every/entire schedule rows to be replaced.
@@ -995,7 +1023,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     : /\b(reasonable|realistic|balanced|manageable)\b.{0,28}\b(limit|load|course|schedule)|\b(reasonable|realistic|balanced|manageable)\s+(?:limitations?|workload)\b/.test(normalized)
       ? 6
       : null;
-  const intendedMajor = normalized.match(/\b(?:intended|planned|target)?\s*major\s+(?:is|in|of|:)?\s*([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
+  const intendedMajor = normalized.match(/\b(?:intended|planned|target)?\s*major\s+(?:is|in|of|to|:)?\s*([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
   const adjectiveMajor = normalized.match(/\b(?:an?\s+)?(?:intended|planned|target)\s+([a-z][a-z &-]{2,60}?)\s+major\b/)?.[1]?.trim();
   const intendedField = normalized.match(/\b(?:want|plan|hope)\s+to\s+(?:major|study)\s+in\s+([a-z][a-z &-]{2,60}?)(?=\s*(?:,|\.|;|\band\b|\bwith\b|$))/)?.[1]?.trim();
   const interests = [...new Set([intendedMajor, adjectiveMajor, intendedField].filter((value): value is string => Boolean(value)))].slice(0, 6);
@@ -1282,7 +1310,7 @@ export function selectAssistantUndoTarget(userMessage: string, changes: readonly
 }
 
 export function requestedPreferredName(userMessage: string) {
-  const match = userMessage.trim().match(/\b(?:set|change|update)\s+my\s+preferred\s+name\s+to\s+(.{1,80}?)[.!?]?$/i);
+  const match = userMessage.trim().match(/\b(?:set|change|update)\s+my\s+preferred\s+name\s+(?:back\s+)?to\s+(.{1,80}?)[.!?]?$/i);
   return match?.[1]?.trim().replace(/^["“”']+|["“”']+$/g, "") || null;
 }
 
@@ -1458,7 +1486,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       skipGitRepoCheck: true
     });
     let prompt = assistantConversationPrompt(options);
-    const requiredRead = requiredAssistantEvidenceRead(options.userMessage);
+    const requiredRead = requiredAssistantEvidenceReadForConversation(options.history, options.userMessage);
     if (requiredRead) {
       const activity: AssistantChatToolActivity = {
         id: crypto.randomUUID(),
@@ -1641,7 +1669,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               proposals: []
             };
           }
-          if (ids.length !== courses.length || ids.length > 40) throw new Error("The generated schedule did not return a safe batch of course IDs.");
+          if (ids.length !== courses.length || ids.length > 64) throw new Error("The generated schedule did not return a safe batch of course IDs.");
           const preview = schedulePreview(data);
           if (!scheduleResultIsComplete(data)) {
             return {

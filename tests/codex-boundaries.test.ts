@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantQuestionsWithCombinedOption, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantQuestionsWithCombinedOption, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
-import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, buildAutoReviewPrompt, reviewAssistantProposal } from "@/server/ai-auto-review";
+import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, buildAutoReviewPrompt, reviewAssistantProposal, scheduleResolutionCoversProposal } from "@/server/ai-auto-review";
 import { AI_MODEL_OPTIONS, AI_REASONING_OPTIONS, aiModelSchema, aiReasoningEffortSchema } from "@/lib/ai-preferences";
 import { assistantKnowledgeTags } from "@/server/ai-knowledge";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
@@ -125,6 +125,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("create_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("update_student_settings", { plan_start_grade: 11, plan_end_grade: 12 })).toMatchObject({ mutatesData: true });
     expect(requestedPreferredName("Change my preferred name to Jay.")).toBe("Jay");
+    expect(requestedPreferredName("Set my preferred name back to Pilot QA.")).toBe("Pilot QA");
     expect(parseAssistantToolCall("submit_shared_data_correction", { entity_type: "school", target_table: "schools", target_id: "00000000-0000-4000-8000-000000000003", proposed_payload: { website_url: "https://example.edu" }, evidence_url: "https://example.edu", evidence_summary: "The official school homepage uses this address." })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("correct_transcript_course", { review_item_id: "00000000-0000-4000-8000-000000000002", weighted: true, reason: "The transcript marks this as honors." })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("save_prerequisite_evidence", { target_course_id: "CSM:MATH 200", clearance_type: "placement", authority: "SMCCD placement", evidence_summary: "Placed into MATH 200", source_url: null })).toMatchObject({ mutatesData: true });
@@ -187,6 +188,48 @@ describe("Codex feature boundaries", () => {
       explanation: "The server resolved the exact batch.",
       model: "gpt-5.6-luna",
       verifiedBatchResolution: true
+    })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
+    const scheduleCourseId = crypto.randomUUID();
+    const scheduleArguments = {
+      course_ids: [scheduleCourseId],
+      respect_recommended_limit: true,
+      interests: ["computer science"],
+      rigor: "balanced",
+      max_courses_per_term: null,
+      start_grade: 9,
+      starting_math_course: "algebra 2",
+      starting_language_course: null,
+      include_college_courses: true,
+      exclude_college_courses_explicitly: false,
+      replace_existing: true,
+      replace_grade_levels: [],
+      objectives: ["complete_diploma", "maximize_degree_overlap"]
+    };
+    const scheduleEvidence = { data: {
+      respect_recommended_limit: true,
+      requested_preferences: {
+        interests: ["computer science"], rigor: "balanced", max_courses_per_term: null, start_grade: 9,
+        starting_math_course: "algebra 2", starting_language_course: null, include_college_courses: true,
+        exclude_college_courses_explicitly: false, replace_existing: true, replace_grade_levels: [],
+        objectives: ["complete_diploma", "maximize_degree_overlap"]
+      },
+      courses: [{ course_id: scheduleCourseId }],
+      adjustments: [],
+      source_readiness: { evidence_ready: true },
+      constraint_validation: { satisfied: true, failures: [] },
+      graduation_coverage: { requirement_count: 8, all_requirements_covered_after: true, remaining_gaps: [] },
+      degree_planning: { college_course_count: 12 }
+    } };
+    expect(scheduleResolutionCoversProposal({ arguments: scheduleArguments, scheduleOptions: scheduleEvidence })).toBe(true);
+    expect(scheduleResolutionCoversProposal({ arguments: { ...scheduleArguments, starting_math_course: "geometry" }, scheduleOptions: scheduleEvidence })).toBe(false);
+    await expect(reviewAssistantProposal({
+      userMessage: "Here are my answers: use all of the above.",
+      conversationContext: "USER: Rebuild my plan from Algebra 2 in grade 9 and finish my bookmarked degrees.",
+      toolName: "add_course_schedule",
+      arguments: scheduleArguments,
+      explanation: "Apply the exact deterministic result.",
+      model: "gpt-5.6-luna",
+      verifiedScheduleResolution: true
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
     await expect(reviewAssistantProposal({
       userMessage: "Edit my schedule, I start math at alg 2 in 9th",
@@ -532,6 +575,29 @@ describe("Codex feature boundaries", () => {
       replaceGradeLevels: [],
       startGrade: 9,
       startingMathCourse: "algebra 2"
+    });
+    expect(parseAssistantScheduleIntent("Change my starting math to Algebra 2 and rebuild it from freshman year")).toMatchObject({
+      startGrade: 9,
+      startingMathCourse: "algebra 2"
+    });
+    expect(parseAssistantScheduleIntent("Use ASL 1 instead as my world language and update the plan")).toMatchObject({
+      startingLanguageCourse: "asl 1"
+    });
+    expect(parseAssistantScheduleIntent("Change my intended major to biology and update the plan").interests).toContain("biology");
+    expect(parseExactCourseAddition("Add Biology in 10th grade as a full-year course.")).toMatchObject({ query: "Biology", gradeLevel: 10, term: "full_year" });
+    expect(requiredAssistantEvidenceReadForConversation([
+      { role: "user", content: "Create a full plan from grade 9 starting with Precalculus and finish both bookmarked degrees." },
+      { role: "assistant", content: "Which priorities should the plan use?" }
+    ], "Here are my answers:\n- **What should the plan prioritize?** All of the above")).toMatchObject({
+      name: "get_course_schedule_options",
+      arguments: { start_grade: 9, starting_math_course: "precalculus" }
+    });
+    expect(requiredAssistantEvidenceReadForConversation([
+      { role: "user", content: "Create a full plan from grade 9 starting with Geometry." },
+      { role: "assistant", content: "I created the plan." }
+    ], "Change my starting math to Algebra 2 and rebuild it")).toMatchObject({
+      name: "get_course_schedule_options",
+      arguments: { start_grade: 9, starting_math_course: "algebra 2", replace_existing: true }
     });
     expect(requiredAssistantEvidenceRead("Edit my schedule, I start math at alg 2 in 9th")).toEqual({
       name: "get_course_schedule_options",

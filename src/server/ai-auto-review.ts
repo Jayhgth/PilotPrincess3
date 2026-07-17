@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AiModel } from "@/lib/ai-preferences";
 import { mutationReviewMode } from "@/lib/app-capabilities";
 import { assistantToolLabel, type AssistantToolName } from "@/server/ai-tools";
-import { parseAssistantScheduleIntent, runCodexStructured } from "@/server/codex";
+import { parseAssistantScheduleIntent, runCodexStructured, scheduleResultIsComplete } from "@/server/codex";
 
 export const autoReviewResultSchema = z.object({
   decision: z.enum(["approve", "deny"]),
@@ -21,6 +21,53 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function records(value: unknown) {
   return Array.isArray(value) ? value.map(record).filter((item): item is Record<string, unknown> => Boolean(item)) : [];
+}
+
+function normalizedStringArray(value: unknown) {
+  return Array.isArray(value) ? value.map(String).sort() : [];
+}
+
+/**
+ * Binds a schedule mutation to the deterministic planner output created in
+ * the same turn. The safety decision should validate this evidence rather
+ * than trying to reconstruct multi-turn planning constraints from prose.
+ */
+export function scheduleResolutionCoversProposal(input: {
+  arguments: Record<string, unknown>;
+  scheduleOptions: EvidenceEnvelope;
+}) {
+  const data = record(input.scheduleOptions?.data);
+  if (!data || !scheduleResultIsComplete(data)) return false;
+
+  const proposedIds = normalizedStringArray(input.arguments.course_ids);
+  const resolvedIds = records(data.courses).map((course) => String(course.course_id ?? "")).filter(Boolean).sort();
+  if (JSON.stringify(proposedIds) !== JSON.stringify(resolvedIds)) return false;
+
+  const requested = record(data.requested_preferences);
+  if (!requested) return false;
+  const scalarKeys = [
+    "rigor",
+    "max_courses_per_term",
+    "starting_math_course",
+    "starting_language_course",
+    "include_college_courses",
+    "exclude_college_courses_explicitly",
+    "replace_existing"
+  ] as const;
+  for (const key of scalarKeys) {
+    const proposed = input.arguments[key] ?? null;
+    const resolved = requested[key] ?? null;
+    if (proposed !== resolved) return false;
+  }
+  if (input.arguments.start_grade !== undefined && Number(input.arguments.start_grade) !== Number(requested.start_grade)) return false;
+  for (const key of ["interests", "objectives", "replace_grade_levels"] as const) {
+    if (JSON.stringify(normalizedStringArray(input.arguments[key])) !== JSON.stringify(normalizedStringArray(requested[key]))) return false;
+  }
+  if ((input.arguments.respect_recommended_limit !== false) !== (data.respect_recommended_limit !== false)) return false;
+
+  const adjustments = records(data.adjustments);
+  const degreePlanning = record(data.degree_planning);
+  return resolvedIds.length > 0 || adjustments.length > 0 || Number(degreePlanning?.college_course_count ?? 0) > 0;
 }
 
 function eligibleOptions(item: Record<string, unknown>) {
@@ -106,11 +153,12 @@ const autoReviewJsonSchema = {
 
 function deterministicProposalReview(input: {
   userMessage: string;
+  conversationContext?: string;
   toolName: AssistantToolName;
   arguments: Record<string, unknown>;
 }): AutoReviewResult | null {
   if (mutationReviewMode(input.toolName, input.arguments) !== "deterministic") return null;
-  const text = input.userMessage.toLowerCase();
+  const text = `${input.conversationContext ?? ""}\n${input.userMessage}`.toLowerCase();
   const requested = (verbs: RegExp, subject: RegExp) => verbs.test(text) && subject.test(text);
   const approve = (summary: string, risk: AutoReviewResult["risk"] = "low"): AutoReviewResult => ({
     decision: "approve",
@@ -165,6 +213,7 @@ function deterministicProposalReview(input: {
 
 export function buildAutoReviewPrompt(input: {
   userMessage: string;
+  conversationContext?: string;
   toolName: AssistantToolName;
   arguments: Record<string, unknown>;
   explanation: string;
@@ -180,6 +229,7 @@ export function buildAutoReviewPrompt(input: {
     "Deny when the request is ambiguous, the proposal is unrelated or broader than requested, it contradicts the request, depends on counselor or institutional judgment, attempts to certify an outcome, or bypasses product evidence rules.",
     "Normal RLS, transcript locks, eligibility, prerequisite, and record validation will run again after approval. Do not assume approval guarantees execution.",
     "Return a short student-readable summary. Do not expose hidden reasoning or mention this schema.",
+    ...(input.conversationContext ? [`Recent conversation context: ${input.conversationContext}`] : []),
     `Student message: ${input.userMessage}`,
     `Proposed action: ${assistantToolLabel(input.toolName)}`,
     `Exact arguments: ${JSON.stringify(input.arguments)}`,
@@ -189,19 +239,21 @@ export function buildAutoReviewPrompt(input: {
 
 export async function reviewAssistantProposal(input: {
   userMessage: string;
+  conversationContext?: string;
   toolName: AssistantToolName;
   arguments: Record<string, unknown>;
   explanation: string;
   model: AiModel;
   verifiedBatchResolution?: boolean;
   verifiedAcademicPlanResolution?: boolean;
+  verifiedScheduleResolution?: boolean;
   signal?: AbortSignal;
 }): Promise<AutoReviewResult> {
   if (input.toolName === "undo_change" && /\b(?:undo|revert|restore|reverse|rollback|roll back|bring\b.+\bback)\b/i.test(input.userMessage)) {
     return { decision: "approve", risk: "low", summary: "The request targets the exact reversible change recorded in this conversation." };
   }
   if (input.toolName === "add_course_schedule") {
-    const intent = parseAssistantScheduleIntent(input.userMessage);
+    const intent = parseAssistantScheduleIntent(`${input.userMessage}\n${input.conversationContext ?? ""}`);
     const proposedReplacement = input.arguments.replace_existing === true;
     const proposedMath = String(input.arguments.starting_math_course ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     const requestedMath = String(intent.startingMathCourse ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -219,6 +271,15 @@ export async function reviewAssistantProposal(input: {
       || (intent.includeCollegeCourses === false && input.arguments.include_college_courses !== false)
       || (intent.maxCoursesPerTerm !== null && Number(input.arguments.max_courses_per_term) !== intent.maxCoursesPerTerm);
     if (mismatch) return { decision: "deny", risk: "high", summary: "The proposed schedule does not match every constraint in your request, so it was not applied." };
+    if (input.verifiedScheduleResolution) {
+      return {
+        decision: "approve",
+        risk: proposedReplacement ? "medium" : "low",
+        summary: proposedReplacement
+          ? "This exact rebuild matches the deterministic schedule prepared from the conversation and remains fully undoable."
+          : "This exact schedule change matches the deterministic plan prepared from the conversation."
+      };
+    }
     if (/\b(generate|build|create|make|draft|suggest|plan|recommend|find|design|edit|revise|adjust|update|change|redesign|replace|rebuild|regenerate|redo|rework)\b/i.test(input.userMessage)) {
       return {
         decision: "approve",
