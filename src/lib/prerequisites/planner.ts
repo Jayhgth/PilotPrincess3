@@ -57,10 +57,12 @@ export function plannerTargetTermIndex(gradeLevel: GradeLevel, term: PlannerTerm
 }
 
 function plannedTermIndex(course: PlanCourse): number | undefined {
+  // A completed row is historical evidence even when an imported transcript
+  // displays it in a grade/term lane that comes after the proposed target.
+  // Current and planned rows still need to precede a prior-only prerequisite.
+  if (course.status === "completed") return undefined;
   if (course.term === "full_year") {
-    return course.status === "completed"
-      ? undefined
-      : plannerTargetTermIndex(course.grade_level, "fall");
+    return plannerTargetTermIndex(course.grade_level, "fall");
   }
   return plannerTargetTermIndex(course.grade_level, course.term);
 }
@@ -106,6 +108,7 @@ export function plannerCourseInputs(
     const smccd = row.smccd_course_id ? smccdById.get(row.smccd_course_id) : undefined;
     const name = dtech?.name ?? (smccd ? `${smccd.course_code} ${smccd.title}` : row.custom_course_name ?? "Unidentified course");
     const code = dtech?.course_code ?? resolvePlanCollegeCourseCode(row, smccdById);
+    const termIndex = plannedTermIndex(row);
     return {
       instanceId: row.id,
       ...(dtech ? { courseId: dtech.id } : row.smccd_course_id ? { courseId: row.smccd_course_id } : {}),
@@ -113,7 +116,7 @@ export function plannerCourseInputs(
       name,
       ...(dtech && plannerPrerequisiteAliases(dtech).length ? { aliases: plannerPrerequisiteAliases(dtech) } : {}),
       status: row.status,
-      ...(plannedTermIndex(row) !== undefined ? { termIndex: plannedTermIndex(row) } : {}),
+      ...(termIndex !== undefined ? { termIndex } : {}),
       gradeLevel: row.grade_level,
       grade: row.letter_grade,
       source: row.source_review_item_id ? "transcript" : dtech || smccd ? "catalog" : "manual"

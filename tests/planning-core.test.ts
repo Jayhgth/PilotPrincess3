@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { compareCourseBoardRowsForTerm, courseTermForBoardDrop, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import { selectedSchoolCatalogEligibility, selectedSchoolCourseAllowsGradePlacement, selectedSchoolCourseGradeOptions, selectedSchoolCourseTermOptions } from "@/lib/catalog-eligibility";
-import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
+import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdCourse, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
+import { evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 
@@ -54,6 +55,30 @@ function equivalency(
   };
 }
 
+function smccdCourse(collegeCode: SmccdCourse["college_code"], courseCode: string, title: string, prerequisites: string[] = []): SmccdCourse {
+  const [subject, courseNumber] = courseCode.split(/\s+/, 2);
+  return {
+    id: `${collegeCode}:${courseCode}`,
+    college_code: collegeCode,
+    course_code: courseCode,
+    subject: subject ?? "MATH",
+    course_number: courseNumber ?? "",
+    title,
+    units_min: 5,
+    units_max: null,
+    degree_applicable: true,
+    transfer_credit: "CSU/UC",
+    attributes: [],
+    prerequisites,
+    corequisites: [],
+    recommended_preparation: [],
+    detail_status: "verified",
+    degree_applicability_source: "course_detail",
+    catalog_url: `https://catalog.example/${collegeCode}/${courseCode}`,
+    source_year: "2026-2027"
+  };
+}
+
 const requirement: GraduationRequirement = {
   id: "math-requirement", area: "math", name: "Math", credits_required: 30, years_required: 3,
   notes: null, confidence: "verified", review_status: "approved"
@@ -100,6 +125,51 @@ describe("core academic planning contracts", () => {
       [dtechCalculus],
       { schoolSlug: "design-tech-high-school" }
     )).toEqual({ eligible: false, reason: "below_math_level" });
+  });
+
+  it("accepts completed prerequisites across SMCCD colleges without weakening planned-course ordering", () => {
+    const skylineMath252 = smccdCourse("SKY", "MATH 252", "Calculus with Analytic Geometry II");
+    const csmMath253 = smccdCourse("CSM", "MATH 253", "Calculus with Analytic Geometry III", ["MATH 252"]);
+    const canadaMath253 = smccdCourse("CAN", "MATH 253", "Analytic Geometry and Calculus III", ["MATH 252"]);
+    const catalog = [skylineMath252, csmMath253, canadaMath253];
+    const laterDisplayLane = plan({
+      id: "skyline-math-252",
+      course_id: null,
+      smccd_course_id: skylineMath252.id,
+      college_provider_code: "SMCCD",
+      custom_course_name: null,
+      grade_level: 12,
+      term: "spring",
+      status: "completed",
+      credits: 10,
+      college_units: 5
+    });
+
+    for (const target of [csmMath253, canadaMath253]) {
+      const completed = evaluateSmccdPlannerPrerequisites(
+        target,
+        { gradeLevel: 11, term: "fall" },
+        catalog,
+        [laterDisplayLane],
+        []
+      );
+      expect(completed.result.status).toBe("satisfied");
+      expect(completed.result.orderingViolations).toEqual([]);
+      expect(completed.result.evidence[0]).toMatchObject({
+        matchedBy: "alias",
+        courseInstanceId: laterDisplayLane.id
+      });
+    }
+
+    const futurePlan = evaluateSmccdPlannerPrerequisites(
+      csmMath253,
+      { gradeLevel: 11, term: "fall" },
+      catalog,
+      [{ ...laterDisplayLane, status: "planned" }],
+      []
+    );
+    expect(futurePlan.result.status).toBe("blocked");
+    expect(futurePlan.result.orderingViolations).toHaveLength(1);
   });
   it("enforces ordering, credit, mapping, and GPA invariants", () => {
     {
