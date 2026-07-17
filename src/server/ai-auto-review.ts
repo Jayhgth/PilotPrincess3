@@ -185,13 +185,17 @@ function deterministicProposalReview(input: {
   if (input.toolName === "set_college_district_preference" && requested(/\b(set|switch|change|choose|select)\b/, /\b(college district|community.college district|district)\b/)) {
     return approve("The selected community-college district change is exact and reversible.");
   }
-  if (["add_dtech_course", "add_high_school_course", "add_smccd_course", "add_academic_courses"].includes(input.toolName)
+  if (["add_dtech_course", "add_high_school_course", "add_smccd_course", "add_custom_course", "add_academic_courses"].includes(input.toolName)
     && requested(/\b(add|put|take|include|schedule|plan)\b/, /\b(course|class|schedule|plan)\b/)) {
     return approve("The exact catalog-backed course addition matches the student's request.", input.toolName === "add_academic_courses" ? "medium" : "low");
   }
-  if (["move_plan_course", "move_plan_courses"].includes(input.toolName)
-    && requested(/\b(move|mark|change|put|shift)\b/, /\b(course|class|plan|done|progress|planned|grade|year|term)\b/)) {
+  if (["move_plan_course", "move_plan_courses", "update_plan_course", "update_plan_courses"].includes(input.toolName)
+    && requested(/\b(move|mark|change|put|shift|replace|start|set|update|edit)\b/, /\b(course|class|plan|schedule|math|language|done|progress|planned|grade|year|term)\b/)) {
     return approve("The exact reversible course placement change matches the student's request.");
+  }
+  if (["remove_plan_course", "remove_plan_courses"].includes(input.toolName)
+    && requested(/\b(remove|delete|drop)\b/, /\b(course|class|plan|schedule)\b/)) {
+    return approve("The exact editable course removal matches the student's request and remains reversible.", "medium");
   }
   if (input.toolName === "save_prerequisite_evidence" && requested(/\b(add|save|submit|record|provide)\b/, /\b(prerequisite|placement|approval|evidence|clearance)\b/)) {
     return approve("The request submits evidence for review without approving it.");

@@ -69,12 +69,14 @@ export const APP_CAPABILITY_REGISTRY = {
   add_dtech_course: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa"], review: "deterministic" },
   add_high_school_course: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa"], review: "deterministic" },
   add_smccd_course: { capabilities: ["courses", "schedule", "college"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
+  add_custom_course: { capabilities: ["courses", "schedule", "college"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
   add_academic_courses: { capabilities: ["courses", "schedule", "college", "degree"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
   move_plan_course: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
   move_plan_courses: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
-  remove_plan_course: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "model" },
-  remove_plan_courses: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "model" },
-  update_plan_course: { capabilities: ["courses", "schedule", "gpa"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "model" },
+  remove_plan_course: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
+  remove_plan_courses: { capabilities: ["courses", "schedule"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
+  update_plan_course: { capabilities: ["courses", "schedule", "gpa"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
+  update_plan_courses: { capabilities: ["courses", "schedule", "gpa"], affects: ["plan", "graduation", "gpa", "college", "enrollment"], review: "deterministic" },
   sort_plan_courses: { capabilities: ["courses", "schedule"], affects: ["plan"], review: "deterministic" },
   update_gpa_scenario: { capabilities: ["gpa"], affects: ["gpa"], review: "deterministic" },
   update_enrollment_preference: { capabilities: ["college", "settings"], affects: ["enrollment", "college"], review: "deterministic" },
@@ -104,7 +106,6 @@ export function affectedWorkspaceDomains(name: string): WorkspaceDomain[] {
 
 export function mutationReviewMode(name: string, argumentsValue: Record<string, unknown> = {}): MutationReviewMode {
   if (name === "add_course_schedule" && argumentsValue.replace_existing === true) return "model";
-  if ((name === "move_plan_course" || name === "move_plan_courses") && argumentsValue.status === "completed") return "model";
   return appCapability(name)?.review ?? "model";
 }
 

@@ -16,7 +16,7 @@ describe("application capability and authentication boundaries", () => {
     expect(mutationReviewMode("update_gpa_scenario")).toBe("deterministic");
     expect(mutationReviewMode("add_course_schedule", { replace_existing: false })).toBe("deterministic");
     expect(mutationReviewMode("add_course_schedule", { replace_existing: true })).toBe("model");
-    expect(mutationReviewMode("remove_plan_courses")).toBe("model");
+    expect(mutationReviewMode("remove_plan_courses")).toBe("deterministic");
     expect(pilotToolNamesForMessage("Change the app to dark mode")).toContain("update_student_settings");
     expect(affectedWorkspaceDomains("update_student_settings")).toEqual(["identity", "settings", "plan", "graduation", "pilot"]);
     expect(formatAssistantDuration(420)).toBe("<1s");

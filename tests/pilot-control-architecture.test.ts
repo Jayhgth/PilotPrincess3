@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { assistantConversationPrompt, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, type AssistantChatHistoryMessage } from "@/server/codex";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -86,6 +87,20 @@ describe("Pilot complete academic control", () => {
     });
     expect(call.mutatesData).toBe(true);
     expect(call.arguments.entries).toHaveLength(3);
+    expect(parseAssistantToolCall("update_plan_courses", {
+      patches: [{ plan_course_id: crypto.randomUUID(), course_id: crypto.randomUUID(), grade_level: 9, term: "full_year" }]
+    }).mutatesData).toBe(true);
+    expect(parseAssistantToolCall("add_custom_course", {
+      name: "Student-provided seminar",
+      status: "planned",
+      grade_level: 11,
+      term: "fall",
+      credits: 5,
+      college_units: null,
+      is_weighted: false,
+      requirement_area: "electives",
+      notes: "The verified school catalog does not list this student-supplied course."
+    }).mutatesData).toBe(true);
     }
 
     {
@@ -145,6 +160,14 @@ describe("Pilot complete academic control", () => {
     {
     expect(() => parseAssistantToolCall("delete_account", {})).toThrow("Unknown student-data tool");
     expect(() => parseAssistantToolCall("run_sql", { sql: "delete from auth.users" })).toThrow("Unknown student-data tool");
+    }
+
+    {
+    const migration = readFileSync(new URL("../supabase/migrations/20260716210000_atomic_pilot_course_edits.sql", import.meta.url), "utf8");
+    expect(migration).toContain("security invoker");
+    expect(migration).toContain("course.user_id = target_user_id");
+    expect(migration).toContain("course.source_review_item_id is not null");
+    expect(migration).toContain("updated_count <> requested_count");
     }
   });
 });

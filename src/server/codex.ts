@@ -1197,7 +1197,14 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? `${highSchoolCount ? `${highSchoolCount} high-school ${highSchoolCount === 1 ? "course" : "courses"}` : "No high-school courses"} and ${collegeCount ? `${collegeCount} college ${collegeCount === 1 ? "course" : "courses"}` : "no college courses"} are included${gradeCounts.length ? ` across ${gradeCounts.map(({ grade, count }) => `grade ${grade} (${count})`).join(", ")}` : ""}. The change card contains the complete course list.`
     : null;
   const degreeLine = scheduleDegreeLine(degreePlanning, courses, degreeCourses, requestedPreferences);
-  return [opening, compositionLine, coverageLine, degreeLine].filter(Boolean).join("\n\n");
+  const quality = data.quality_validation && typeof data.quality_validation === "object" && !Array.isArray(data.quality_validation)
+    ? data.quality_validation as Record<string, unknown>
+    : null;
+  const qualityFailures = Array.isArray(quality?.failures) ? quality.failures.map(String) : [];
+  const qualityLine = qualityFailures.length
+    ? `The best feasible result still has ${qualityFailures.length} planning ${qualityFailures.length === 1 ? "warning" : "warnings"}: ${qualityFailures.slice(0, 2).join(" ")}${qualityFailures.length > 2 ? ` Plus ${qualityFailures.length - 2} more in the change details.` : ""}`
+    : null;
+  return [opening, compositionLine, coverageLine, degreeLine, qualityLine].filter(Boolean).join("\n\n");
 }
 
 export function scheduleResultIsComplete(data: Record<string, unknown>) {
