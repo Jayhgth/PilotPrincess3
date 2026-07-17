@@ -639,6 +639,14 @@ export function courseNeedsExplicitPlanningIntent(course: Course, interests: rea
 
 export function mathSequenceRankFromText(value: string) {
   const text = normalizedPlannerText(value);
+  // College identities are normally passed as "SUBJECT number title". Once
+  // an explicit non-math subject code is present, words in the title describe
+  // course content rather than the student's mathematics ladder. In
+  // particular, PHYS 250 "Physics with Calculus I" must never stand in for
+  // MATH 251 Calculus I during prerequisite, degree, or schedule planning.
+  const explicitSubject = value.trim().match(/^([A-Z]{2,})\s*(?:C\s*)?\d+\b/)?.[1]?.toLowerCase();
+  if (explicitSubject && explicitSubject !== "math" && explicitSubject !== "mth") return null;
+  if (/\b(?:physics|phys)\b/.test(text)) return null;
   if (/\bmath\s*253\b|\bcalculus\b.*\b(?:3|iii)\b|\bmultivariable\b/.test(text)) return 7;
   if (/\bmath\s*252\b|\bcalculus bc\b|\bcalculus\b.*\b(?:2|ii)\b/.test(text)) return 6;
   if (/\bmath\s*251\b|\bcalculus ab\b|\bcalculus\b.*\b(?:1|i)\b/.test(text)) return 5;

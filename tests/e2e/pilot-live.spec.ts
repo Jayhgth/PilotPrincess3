@@ -561,6 +561,13 @@ test.describe("live Pilot behavior", () => {
     const gradeNineMathRanks = placementMathSequence.filter((item) => item.row.grade_level === 9).map((item) => item.rank);
     expect(gradeNineMathRanks).toContain(3);
     expect(gradeNineMathRanks).toEqual([3]);
+    const placementCollegeMathCodes = placementMathSequence.flatMap((item) => {
+      if (!item.row.smccd_course_id) return [];
+      const code = catalog.find((course) => course.id === item.row.smccd_course_id)?.course_code;
+      return code ? [code] : [];
+    });
+    expect(placementCollegeMathCodes).toContain("MATH 251");
+    expect(placementCollegeMathCodes).not.toContain("PHYS 250");
     for (let index = 1; index < placementMathSequence.length; index += 1) {
       expect(placementMathSequence[index]!.rank).toBeGreaterThanOrEqual(placementMathSequence[index - 1]!.rank);
       expect(placementMathSequence[index]!.rank - placementMathSequence[index - 1]!.rank).toBeLessThanOrEqual(1);

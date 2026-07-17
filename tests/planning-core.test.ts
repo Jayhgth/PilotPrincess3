@@ -42,6 +42,12 @@ describe("core academic planning contracts", () => {
   it("recognizes one cohesive high-school and college math ladder", () => {
     expect(["Algebra 1", "Geometry", "Algebra 2", "MATH 225 Path to Calculus", "MATH 251 Calculus with Analytic Geometry I", "MATH 252 Calculus with Analytic Geometry II", "MATH 253 Calculus with Analytic Geometry III"].map(mathSequenceRankFromText)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(mathSequenceRankFromText("MATH 270 Linear Algebra")).toBeNull();
+    expect([
+      "PHYS 250 Physics with Calculus I",
+      "PHYS 260 Physics with Calculus II",
+      "PHYS 270 Physics with Calculus III",
+      "Physics with Calculus I"
+    ].map(mathSequenceRankFromText)).toEqual([null, null, null, null]);
   });
   it("enforces ordering, credit, mapping, and GPA invariants", () => {
     {
