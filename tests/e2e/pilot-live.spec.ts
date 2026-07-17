@@ -412,10 +412,10 @@ test.describe("live Pilot behavior", () => {
       generatedCollegeTerms.set(key, (generatedCollegeTerms.get(key) ?? 0) + Number(row.college_units ?? 0));
     }
     expect([...generatedCollegeTerms.values()].every((units) => units <= 11)).toBe(true);
+    const languageRequirementIds = new Set((requirements.data ?? []).filter((requirement) => requirement.area === "world_language").map((requirement) => requirement.id));
+    const highSchoolLanguageIds = new Set((mappings.data ?? []).filter((mapping) => languageRequirementIds.has(mapping.requirement_id)).map((mapping) => mapping.course_id));
     const languageRows = (generatedFullPlan.data ?? []).filter((row) => row.requirement_area_override === "world_language");
     if (languageRows.reduce((total, row) => total + Number(row.credits ?? 0), 0) >= 20) {
-      const languageRequirementIds = new Set((requirements.data ?? []).filter((requirement) => requirement.area === "world_language").map((requirement) => requirement.id));
-      const highSchoolLanguageIds = new Set((mappings.data ?? []).filter((mapping) => languageRequirementIds.has(mapping.requirement_id)).map((mapping) => mapping.course_id));
       expect((generatedFullPlan.data ?? []).filter((row) => row.course_id && highSchoolLanguageIds.has(row.course_id))).toHaveLength(0);
     }
     const hist201 = (generatedFullPlan.data ?? []).find((row) => row.smccd_course_id === "CSM:HIST 201");
@@ -451,18 +451,46 @@ test.describe("live Pilot behavior", () => {
       expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
     }
 
-    // A terse placement edit changes only the dependent sequence, applies,
-    // and remains reversible. Bookmarked goals must not turn it into a full
-    // schedule rebuild.
-    const generatedFullPlanIds = new Set((generatedFullPlan.data ?? []).map((row) => row.id));
-    const nonMathBeforePlacement = (generatedFullPlan.data ?? [])
+    // A compound placement edit changes both requested sequences in one
+    // atomic call, preserves unrelated rows, applies, and remains reversible.
+    // Seed one editable language slot when degree overlap replaced every
+    // high-school language row in the generated fixture.
+    let placementBaseline = generatedFullPlan.data ?? [];
+    let seededLanguageRowId: string | null = null;
+    if (!placementBaseline.some((row) => row.course_id && highSchoolLanguageIds.has(row.course_id))) {
+      const fallbackLanguageCourse = (dtechCatalog.data ?? []).find((course) => highSchoolLanguageIds.has(course.id) && /spanish|french/i.test(course.name));
+      expect(fallbackLanguageCourse, "The d.tech fixture needs one editable high-school language course.").toBeDefined();
+      const insertedLanguage = await supabase.from("plan_courses").insert({
+        plan_version_id: activeVersion.data!.id,
+        user_id: userId,
+        course_id: fallbackLanguageCourse!.id,
+        grade_level: 9,
+        school_year: "2026-2027",
+        term: fallbackLanguageCourse!.term_type === "year" ? "full_year" : "fall",
+        status: "planned",
+        credits: fallbackLanguageCourse!.credits,
+        college_units: fallbackLanguageCourse!.college_units,
+        is_weighted: fallbackLanguageCourse!.is_weighted,
+        mapping_verified: true,
+        user_edited: true,
+        sort_order: 5_000
+      }).select("id").single();
+      if (insertedLanguage.error) throw insertedLanguage.error;
+      seededLanguageRowId = insertedLanguage.data.id;
+      const refreshedBaseline = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+      if (refreshedBaseline.error) throw refreshedBaseline.error;
+      placementBaseline = refreshedBaseline.data ?? [];
+    }
+    const generatedFullPlanIds = new Set(placementBaseline.map((row) => row.id));
+    const unrelatedBeforePlacement = placementBaseline
       .filter((row) => {
         const course = row.course_id ? courseById.get(row.course_id) : null;
-        return mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`) === null;
+        return mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`) === null
+          && !(row.course_id && highSchoolLanguageIds.has(row.course_id));
       })
       .map((row) => ({ id: row.id, course_id: row.course_id, grade_level: row.grade_level, term: row.term }))
       .sort((left, right) => left.id.localeCompare(right.id));
-    const placementEditTurn = await promptPilot(fullPlanConversation, "Edit my schedule, I start math at alg 2 in 9th");
+    const placementEditTurn = await promptPilot(fullPlanConversation, "I want to do Spanish 3 as my language. Also, start my math at Algebra 2.");
     const placementToolDebug = await supabase.from("ai_tool_calls").select("tool_name,status,result,arguments").eq("conversation_id", fullPlanConversation).order("created_at");
     if (placementToolDebug.error) throw placementToolDebug.error;
     expect(placementEditTurn.message).not.toContain("if final validation passes");
@@ -479,20 +507,30 @@ test.describe("live Pilot behavior", () => {
     });
     expect(gradeNineMathRanks).toContain(3);
     expect(gradeNineMathRanks.every((rank) => rank >= 3)).toBe(true);
-    const nonMathAfterPlacement = placementRows
+    const selectedLanguageAfterPlacement = placementRows
+      .filter((row) => row.course_id && highSchoolLanguageIds.has(row.course_id))
+      .map((row) => courseById.get(row.course_id!)?.name ?? "");
+    expect(selectedLanguageAfterPlacement).toHaveLength(1);
+    expect(selectedLanguageAfterPlacement[0]).toMatch(/Spanish 3/i);
+    const unrelatedAfterPlacement = placementRows
       .filter((row) => {
         const course = row.course_id ? courseById.get(row.course_id) : null;
-        return mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`) === null;
+        return mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`) === null
+          && !(row.course_id && highSchoolLanguageIds.has(row.course_id));
       })
       .map((row) => ({ id: row.id, course_id: row.course_id, grade_level: row.grade_level, term: row.term }))
       .sort((left, right) => left.id.localeCompare(right.id));
-    expect(nonMathAfterPlacement).toEqual(nonMathBeforePlacement);
+    expect(unrelatedAfterPlacement).toEqual(unrelatedBeforePlacement);
     const placementUndo = await promptPilot(fullPlanConversation, "Undo that schedule edit.");
     expect(placementUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(placementUndo);
     const restoredFullPlan = await supabase.from("plan_courses").select("id").eq("user_id", userId);
     if (restoredFullPlan.error) throw restoredFullPlan.error;
     expect(new Set((restoredFullPlan.data ?? []).map((row) => row.id))).toEqual(generatedFullPlanIds);
+    if (seededLanguageRowId) {
+      const removeSeed = await supabase.from("plan_courses").delete().eq("id", seededLanguageRowId);
+      if (removeSeed.error) throw removeSeed.error;
+    }
 
     const fullPlanUndo = await promptPilot(fullPlanConversation, "Undo that generated plan.");
     expect(fullPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);

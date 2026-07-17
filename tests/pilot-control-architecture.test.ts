@@ -76,6 +76,7 @@ describe("Pilot complete academic control", () => {
 
     const gradeNineRow = crypto.randomUUID();
     const gradeTenRow = crypto.randomUUID();
+    const algebraOne = crypto.randomUUID();
     const algebraTwo = crypto.randomUUID();
     const precalculus = crypto.randomUUID();
     const spanishRow = crypto.randomUUID();
@@ -83,8 +84,8 @@ describe("Pilot complete academic control", () => {
     const spanish = crypto.randomUUID();
     const french = crypto.randomUUID();
     const chineseThree = crypto.randomUUID();
-    const combinedEditPrompt = "Start my math at alg 2, and change the language credit to just Chinese 3 to be in my first semester of 9th grade.";
-    expect(parseAssistantScheduleIntent(combinedEditPrompt)).toMatchObject({ startGrade: 9, startingMathCourse: "algebra 2", startingLanguageCourse: "chinese 3" });
+    const combinedEditPrompt = "I want to do chinese as the language, just one semester of chinese 3. Also, start my math at algebra 2";
+    expect(parseAssistantScheduleIntent(combinedEditPrompt)).toMatchObject({ startingMathCourse: "algebra 2", startingLanguageCourse: "chinese 3" });
     expect(requiredAssistantEvidenceReadForConversation(scheduleHistory, combinedEditPrompt)?.name).toBe("get_academic_context");
     const targeted = await runAssistantChat({
       history: scheduleHistory,
@@ -95,8 +96,8 @@ describe("Pilot complete academic control", () => {
         data: {
           student: { plan_start_grade: 9 },
           plan: { courses: [
-            { plan_course_id: gradeNineRow, name: "Precalculus", grade_level: 9, term: "full_year", transcript_locked: false },
-            { plan_course_id: gradeTenRow, name: "Calculus AB", grade_level: 10, term: "full_year", transcript_locked: false },
+            { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
+            { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
             { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false },
             { plan_course_id: frenchRow, catalog_course_id: french, name: "French 2", grade_level: 10, term: "full_year", transcript_locked: false }
           ] },
@@ -104,7 +105,7 @@ describe("Pilot complete academic control", () => {
             area: "math",
             eligible_course_options: [
               { course_id: algebraTwo, name: "Algebra 2", subject: "Math", weighted: false, term_type: "year", grade_levels: [9, 10] },
-              { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [9, 10, 11] }
+              { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [9] }
             ]
           }, {
             area: "world_language",
@@ -120,12 +121,46 @@ describe("Pilot complete academic control", () => {
       onToolActivity: () => undefined
     });
     expect(targeted.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
+    expect(targeted.questions).toEqual([]);
+    expect(targeted.message).toContain("math starting with algebra 2 and language using chinese 3");
     expect(targeted.proposals[0]?.arguments).toMatchObject({ patches: [
       { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9, term: "full_year" },
       { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10, term: "full_year" },
       { plan_course_id: spanishRow, course_id: chineseThree, grade_level: 9, term: "fall" },
       { plan_course_id: frenchRow, remove: true }
     ] });
+
+    const partiallyResolvable = await runAssistantChat({
+      history: scheduleHistory,
+      userMessage: combinedEditPrompt,
+      model: "gpt-5.6-luna",
+      executeReadTool: async () => ({
+        summary: "Read workspace.",
+        data: {
+          student: { plan_start_grade: 9 },
+          plan: { courses: [
+            { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
+            { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
+            { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false }
+          ] },
+          graduation: [{ area: "math", eligible_course_options: [
+            { course_id: algebraTwo, name: "Algebra 2 / Algebra 2-Trigonometry Honors", subject: "Math", weighted: true, term_type: "year", grade_levels: [10] },
+            { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [11] }
+          ] }, { area: "world_language", eligible_course_options: [
+            { course_id: spanish, name: "Spanish 1", subject: "World Language", weighted: false, term_type: "year", grade_levels: [9] }
+          ] }]
+        }
+      }),
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(partiallyResolvable.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
+    expect(partiallyResolvable.proposals[0]?.arguments).toMatchObject({ patches: [
+      { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9 },
+      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10 }
+    ] });
+    expect(partiallyResolvable.questions.map((question) => question.id)).toEqual(["custom_language_course"]);
+    expect(partiallyResolvable.message).toContain("not in the selected school's verified catalog");
   });
 
   it("enforces reversible app-wide Pilot control and safety boundaries", async () => {

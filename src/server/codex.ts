@@ -991,7 +991,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     .replace(/^algebra\s+ii$/i, "algebra 2")
     ?? null;
   const languageName = "((?:spanish|french|chinese|mandarin|japanese|latin|german|italian)(?:\\s+(?:1|2|3|4|i|ii|iii|iv|ap))?|american sign language(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?|asl(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?)";
-  const startingLanguageCourse = [
+  const patternLanguageCourse = [
     new RegExp(`\\b(?:change|switch|set)\\s+(?:(?:my|the)\\s+)?(?:world\\s+)?language(?:\\s+(?:course|credit))?\\s+(?:to|as)\\s+(?:just\\s+|only\\s+)?${languageName}\\b`),
     new RegExp(`\\b(?:language|world language)\\s+start(?:ing|s)?\\s+(?:at|with|in)?\\s*${languageName}\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:language|world language)\\s+(?:at|with|in)\\s+${languageName}\\b`),
@@ -1001,6 +1001,15 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     new RegExp(`\\b(?:language|world language|spanish|french|chinese|mandarin|japanese|latin|german|italian|asl)\\s+(?:placement\\s+)?(?:at|with|in)\\s+${languageName}\\b`),
     new RegExp(`\\b${languageName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
   ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
+  const languageMentions = [...normalized.matchAll(new RegExp(`\\b${languageName}\\b`, "g"))]
+    .map((match) => match[1]?.trim())
+    .filter((value): value is string => Boolean(value));
+  const conversationalLanguageIntent = /\b(?:as|for)\s+(?:(?:my|the)\s+)?(?:world\s+)?language\b/.test(normalized)
+    || /\b(?:want|would like|prefer|plan)\s+to\s+(?:do|take|use)\b.{0,50}\b(?:language|spanish|french|chinese|mandarin|japanese|latin|german|italian|asl)\b/.test(normalized);
+  const mostSpecificLanguageMention = conversationalLanguageIntent
+    ? languageMentions.sort((left, right) => Number(/\b(?:1|2|3|4|i|ii|iii|iv|ap)\b/.test(right)) - Number(/\b(?:1|2|3|4|i|ii|iii|iv|ap)\b/.test(left)) || right.length - left.length)[0] ?? null
+    : null;
+  const startingLanguageCourse = mostSpecificLanguageMention ?? patternLanguageCourse;
   const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
     && /\b(schedule|plan|courses|classes)\b/.test(normalized)
     && (/\b(all|every|whole|entire)\b/.test(normalized) || requestsScheduleConstruction(userMessage))
@@ -1345,27 +1354,48 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   if (![9, 10, 11, 12].includes(startGrade)) return null;
 
   const patches: Array<Record<string, unknown>> = [];
+  const questions: AssistantQuestion[] = [];
+  const warnings: string[] = [];
   if (intent.startingMathCourse && requestedRank !== null) {
     const currentMathRows = rows
-      .filter((row) => row.transcript_locked !== true && mathSequenceRankFromText(String(row.name ?? "")) !== null)
-      .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
+      .filter((row) => row.transcript_locked !== true && typeof row.catalog_course_id === "string" && mathSequenceRankFromText(String(row.name ?? "")) !== null)
+      .filter((row) => Number(row.grade_level) >= startGrade)
+      .sort((left, right) => Number(left.grade_level) - Number(right.grade_level)
+        || Number(mathSequenceRankFromText(String(left.name ?? ""))) - Number(mathSequenceRankFromText(String(right.name ?? ""))));
+    const rowsByGrade = new Map<number, Array<Record<string, unknown>>>();
     for (const row of currentMathRows) {
       const grade = Number(row.grade_level);
-      if (grade < startGrade) continue;
+      rowsByGrade.set(grade, [...(rowsByGrade.get(grade) ?? []), row]);
+    }
+    const assignedCourseIds = new Set<string>();
+    for (const [grade, gradeRows] of [...rowsByGrade.entries()].sort(([left], [right]) => left - right)) {
       const targetRank = requestedRank + grade - startGrade;
       const candidates = mathOptions
         .filter((course) => mathSequenceRankFromText(`${String(course.name ?? "")} ${String(course.subject ?? "")}`) === targetRank)
-        .filter((course) => grade === startGrade || !Array.isArray(course.grade_levels) || course.grade_levels.length === 0 || course.grade_levels.map(Number).includes(grade))
         .sort((left, right) => Number(right.weighted === true) - Number(left.weighted === true) || String(left.name).localeCompare(String(right.name)));
-      const replacement = candidates[0];
-      if (!replacement || typeof replacement.course_id !== "string" || typeof row.plan_course_id !== "string") continue;
+      const replacement = candidates.find((course) => typeof course.course_id === "string" && !assignedCourseIds.has(course.course_id));
+      const row = gradeRows[0];
+      if (!replacement || typeof replacement.course_id !== "string" || typeof row?.plan_course_id !== "string") {
+        for (const staleRow of gradeRows) {
+          if (assignedCourseIds.has(String(staleRow.catalog_course_id ?? "")) && typeof staleRow.plan_course_id === "string") {
+            patches.push({ plan_course_id: staleRow.plan_course_id, remove: true });
+          }
+        }
+        continue;
+      }
+      assignedCourseIds.add(replacement.course_id);
       patches.push({
         plan_course_id: row.plan_course_id,
         course_id: replacement.course_id,
         grade_level: grade,
         term: replacement.term_type === "year" ? "full_year" : row.term,
-        ...(grade === startGrade ? { prerequisite_override_reason: `The student explicitly stated that ${String(replacement.name)} is their starting math placement in grade ${grade}.` } : {})
+        prerequisite_override_reason: grade === startGrade
+          ? `The student explicitly stated that ${String(replacement.name)} is their starting math placement in grade ${grade}.`
+          : `This placement is the direct prerequisite-ordered continuation of the student's explicit grade ${startGrade} math starting point.`
       });
+      for (const extraRow of gradeRows.slice(1)) {
+        if (typeof extraRow.plan_course_id === "string") patches.push({ plan_course_id: extraRow.plan_course_id, remove: true });
+      }
     }
     if (!patches.some((patch) => Number(patch.grade_level) === startGrade)) return null;
   }
@@ -1381,22 +1411,43 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
       .filter((row) => row.transcript_locked !== true && typeof row.catalog_course_id === "string" && languageCourseIds.has(row.catalog_course_id))
       .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
     const targetRow = existingLanguageRows[0];
-    if (!replacement || typeof replacement.course_id !== "string" || !targetRow || typeof targetRow.plan_course_id !== "string") return null;
-    const requestedTerm = /(?:to be|move|put|place)[^.]{0,50}\b(?:first|1st) semester\b/i.test(userMessage)
-      ? "fall"
-      : /(?:to be|move|put|place)[^.]{0,50}\b(?:second|2nd) semester\b/i.test(userMessage)
-        ? "spring"
-        : targetRow.term;
-    patches.push({
-      plan_course_id: targetRow.plan_course_id,
-      course_id: replacement.course_id,
-      grade_level: startGrade,
-      term: replacement.term_type === "year" ? "full_year" : requestedTerm,
-      prerequisite_override_reason: `The student explicitly selected ${String(replacement.name)} as their language placement in grade ${startGrade}.`
-    });
-    if (/\b(?:just|only)\b/i.test(userMessage)) {
-      for (const row of existingLanguageRows.slice(1)) {
-        if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
+    if (!replacement || typeof replacement.course_id !== "string") {
+      warnings.push(`${intent.startingLanguageCourse} is not in the selected school's verified catalog, so it was not invented as an official course.`);
+      questions.push({
+        id: "custom_language_course",
+        prompt: `To add ${intent.startingLanguageCourse} as a custom course, provide its credits, weighted or unweighted status, and graduation requirement area.`,
+        options: [{ id: "provide_details", label: "Provide course details" }, { id: "skip_for_now", label: "Skip it for now" }],
+        allow_custom: true
+      });
+    } else if (!targetRow || typeof targetRow.plan_course_id !== "string") {
+      warnings.push(`There is no editable selected-school language row to replace with ${intent.startingLanguageCourse}.`);
+      questions.push({
+        id: "language_course_placement",
+        prompt: `Where should ${intent.startingLanguageCourse} be added?`,
+        options: [{ id: "fall", label: "Fall / 1st semester" }, { id: "spring", label: "Spring / 2nd semester" }],
+        allow_custom: true
+      });
+    } else {
+      const requestedTerm = /(?:to be|move|put|place)[^.]{0,50}\b(?:first|1st) semester\b/i.test(userMessage)
+        ? "fall"
+        : /(?:to be|move|put|place)[^.]{0,50}\b(?:second|2nd) semester\b/i.test(userMessage)
+          ? "spring"
+          : replacement.term_type === "year"
+            ? "full_year"
+            : targetRow.term === "spring" || targetRow.term === "summer"
+              ? targetRow.term
+              : "fall";
+      patches.push({
+        plan_course_id: targetRow.plan_course_id,
+        course_id: replacement.course_id,
+        grade_level: startGrade,
+        term: replacement.term_type === "year" ? "full_year" : requestedTerm,
+        prerequisite_override_reason: `The student explicitly selected ${String(replacement.name)} as their language placement in grade ${startGrade}.`
+      });
+      if (/\b(?:just|only)\b/i.test(userMessage)) {
+        for (const row of existingLanguageRows.slice(1)) {
+          if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
+        }
       }
     }
   }
@@ -1417,7 +1468,8 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   };
   return {
     proposal,
-    message: `I prepared the exact ${requestedParts} edit for grade ${startGrade}. Unrelated courses will stay unchanged; explicit placement corrections remain labeled student-provided when they override catalog evidence.`
+    questions,
+    message: `I prepared the feasible ${requestedParts} edit for grade ${startGrade}. Unrelated courses will stay unchanged; explicit placement corrections remain labeled student-provided when they override catalog evidence.${warnings.length ? ` ${warnings.join(" ")}` : ""}`
   };
 }
 
@@ -1606,7 +1658,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             await options.onToolActivity(targetedSequence.proposal);
             return {
               message: targetedSequence.message,
-              questions: [],
+              questions: targetedSequence.questions,
               threadId: thread.id,
               usage,
               latencyMs: Date.now() - startedAt,
