@@ -11,7 +11,7 @@ const appOrigin = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4388";
 const liveConfigured = process.env.RUN_LIVE_PILOT === "1"
   && Boolean(supabaseUrl && supabaseAnonKey);
 
-type Proposal = { id: string; name: string };
+type Proposal = { id: string; name: string; arguments?: Record<string, unknown> };
 
 async function authorizedPost(
   request: APIRequestContext,
@@ -203,6 +203,22 @@ test.describe("live Pilot behavior", () => {
     const addHighSchoolTurn = await promptPilot(themeConversation, `Add ${removableCourse!.name} to grade 12 full year.`);
     expect(addHighSchoolTurn.proposals.map((proposal) => proposal.name), addHighSchoolTurn.message).toEqual(["add_high_school_course"]);
     await apply(addHighSchoolTurn);
+    const clearPlanTurn = await promptPilot(themeConversation, "clear plan");
+    expect(clearPlanTurn.proposals.map((proposal) => proposal.name)).toEqual(["clear_academic_plan"]);
+    expect(clearPlanTurn.proposals[0]?.arguments).toEqual({ courses: true, degree_bookmarks: false, gpa_scenario: false });
+    await apply(clearPlanTurn);
+    const clearedPlanRows = await supabase.from("plan_courses").select("id").eq("user_id", userId).is("source_review_item_id", null);
+    if (clearedPlanRows.error) throw clearedPlanRows.error;
+    expect(clearedPlanRows.data).toHaveLength(0);
+    const retainedGoals = await supabase.from("student_smccd_goals").select("program_id").eq("user_id", userId);
+    if (retainedGoals.error) throw retainedGoals.error;
+    expect((retainedGoals.data ?? []).map((goal) => goal.program_id)).toEqual([programId]);
+    const clearPlanUndo = await promptPilot(themeConversation, "Undo that clear.");
+    expect(clearPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(clearPlanUndo);
+    const restoredPlanRows = await supabase.from("plan_courses").select("id").eq("user_id", userId).is("source_review_item_id", null);
+    if (restoredPlanRows.error) throw restoredPlanRows.error;
+    expect(restoredPlanRows.data).toHaveLength(1);
     const removeHighSchoolTurn = await promptPilot(themeConversation, "Remove every planned course in grade 12.");
     expect(removeHighSchoolTurn.proposals.map((proposal) => proposal.name)).toEqual(["remove_plan_courses"]);
     await apply(removeHighSchoolTurn);

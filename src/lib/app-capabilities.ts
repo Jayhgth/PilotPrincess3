@@ -89,7 +89,7 @@ export const APP_CAPABILITY_REGISTRY = {
   set_college_goal: { capabilities: ["degree", "college"], affects: ["degree"], review: "deterministic" },
   set_college_goals: { capabilities: ["degree", "college"], affects: ["degree"], review: "deterministic" },
   clear_college_goal: { capabilities: ["degree", "college"], affects: ["degree"], review: "model" },
-  clear_academic_plan: { capabilities: ["schedule", "degree", "gpa"], affects: ["plan", "graduation", "gpa", "degree", "enrollment"], review: "model" }
+  clear_academic_plan: { capabilities: ["schedule", "degree", "gpa"], affects: ["plan", "graduation", "gpa", "degree", "enrollment"], review: "deterministic" }
 } as const satisfies Record<string, AppCapabilityDefinition>;
 
 export type AppCapabilityName = keyof typeof APP_CAPABILITY_REGISTRY;

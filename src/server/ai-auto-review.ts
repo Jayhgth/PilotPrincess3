@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AiModel } from "@/lib/ai-preferences";
 import { mutationReviewMode } from "@/lib/app-capabilities";
 import { assistantToolLabel, type AssistantToolName } from "@/server/ai-tools";
-import { parseAssistantScheduleIntent, runCodexStructured, scheduleResultIsComplete } from "@/server/codex";
+import { parseAcademicClearIntent, parseAssistantScheduleIntent, runCodexStructured, scheduleResultIsComplete } from "@/server/codex";
 
 export const autoReviewResultSchema = z.object({
   decision: z.enum(["approve", "deny"]),
@@ -169,6 +169,23 @@ function deterministicProposalReview(input: {
 
   if (input.toolName === "sort_plan_courses" && /\b(sort|arrange|organize|reorder)\b/.test(text)) {
     return approve("The request exactly matches the standard reversible course-board sort.");
+  }
+  if (input.toolName === "clear_academic_plan") {
+    const requestedScope = parseAcademicClearIntent(input.userMessage);
+    const proposedScope = {
+      courses: input.arguments.courses === true,
+      degree_bookmarks: input.arguments.degree_bookmarks === true,
+      gpa_scenario: input.arguments.gpa_scenario === true
+    };
+    if (requestedScope && JSON.stringify(requestedScope) === JSON.stringify(proposedScope)) {
+      return approve("The exact academic-plan areas explicitly requested will be cleared and remain fully undoable.", "medium");
+    }
+    return {
+      decision: "deny",
+      risk: "high",
+      summary: "The requested academic-plan areas do not exactly match the proposed clear operation.",
+      method: "deterministic"
+    };
   }
   if (input.toolName === "update_student_settings" && requested(/\b(set|switch|change|update|turn|use|enable)\b/, /\b(name|age|grade|graduation|planning|tracker|theme|mode|model|reasoning|setting)\b/)) {
     return approve("Only the explicitly requested student settings will change.");

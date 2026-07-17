@@ -1695,7 +1695,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the exact academic-plan clearing request. It will apply automatically if the validation passes.",
+      message: "I’m applying the exact academic-plan clearing request now.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1817,7 +1817,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: "I found the requested academic areas and prepared one exact clear operation. It will apply automatically if the validation passes; transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
+            message: "I found the requested academic areas and am applying one exact clear operation now. Transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
             questions: [],
             threadId: thread.id,
             usage,

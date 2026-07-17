@@ -182,6 +182,20 @@ describe("Codex feature boundaries", () => {
     expect(autoReviewResultSchema.parse({ decision: "deny", risk: "high", summary: "The proposal is broader than requested." })).toMatchObject({ decision: "deny", risk: "high" });
     expect(() => autoReviewResultSchema.parse({ decision: "manual", risk: "medium", summary: "Ask the student." })).toThrow();
     await expect(reviewAssistantProposal({
+      userMessage: "clear plan",
+      toolName: "clear_academic_plan",
+      arguments: { courses: true, degree_bookmarks: false, gpa_scenario: false },
+      explanation: "Clear only editable course rows.",
+      model: "gpt-5.6-luna"
+    })).resolves.toMatchObject({ decision: "approve", risk: "medium", method: "deterministic" });
+    await expect(reviewAssistantProposal({
+      userMessage: "clear plan",
+      toolName: "clear_academic_plan",
+      arguments: { courses: true, degree_bookmarks: true, gpa_scenario: false },
+      explanation: "Clear courses and degree bookmarks.",
+      model: "gpt-5.6-luna"
+    })).resolves.toMatchObject({ decision: "deny", method: "deterministic" });
+    await expect(reviewAssistantProposal({
       userMessage: "Add all of these graduation and college courses.",
       toolName: "add_academic_courses",
       arguments: { entries: [], respect_recommended_limit: false },
