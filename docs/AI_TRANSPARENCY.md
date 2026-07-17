@@ -1,6 +1,6 @@
 # Codex transparency contract
 
-Last reviewed: 2026-07-14
+Last reviewed: 2026-07-16
 
 Pilot Princess uses Codex as an optional conversational layer over deterministic academic records. GPA, graduation, prerequisite, catalog eligibility, and text-layer transcript extraction remain deterministic and usable without AI.
 
@@ -83,6 +83,8 @@ Evidence audits use a stricter rule than ordinary Q&A. Transcript-audit intent t
 Full schedule generation retains all existing active rows unless replacement was requested and uses only the currently selected school's compact verified planning profile, catalog, diploma requirements, course mappings, grade availability, sequence, and prerequisites. The retrieved profile supplies school-specific loads, on-campus subjects, normal flow, and college-course posture without expanding Pilot's global prompt. The d.tech standard flow is used only when d.tech is selected; it is never a fallback for another school. Starting grade, starting course or math level, college-course inclusion or exclusion, workload, rigor, interests, and stated goals are acceptance criteria. The planner balances placements across the requested years and respects the chosen provider boundary. Every verified college course is weighted in the app GPA; a high-school course is weighted only when the selected school's approved evidence says so. College units remain distinct from high-school credits, and a college course contributes to a high-school requirement only through a verified selected-school equivalency. Zero loaded requirements is missing evidence, never completion. The planner revises failed candidates and, when all requested objectives cannot be completed together, may apply the best feasible schedule while reporting exact warnings and unmet objectives. Replacements retain independent review.
 
 Targeted course edits use exact course commands rather than the full schedule generator. Only the affected records and directly relevant constraints are validated, and coherent multi-course edits commit atomically. A diploma gap, incomplete bookmarked degree, or non-optimal GPA is not a hard blocker unless the student asked the edit to satisfy that objective. A missing catalog course can be stored as a clearly labeled custom course only from student-supplied facts; Pilot asks for the minimum missing credit, term, weighting, and identity fields and never represents the custom row as verified institutional evidence. An explicit student correction or prerequisite override remains visibly unverified rather than being converted into institutional evidence.
+
+Pilot may spend up to six minutes on a quality-focused planning turn. At that limit it returns the strongest verified result already available and, when the normal write boundary permits it, applies that result rather than discarding the work.
 
 ## Retrieved application guidance
 
