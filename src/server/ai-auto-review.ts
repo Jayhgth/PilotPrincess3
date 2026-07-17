@@ -186,7 +186,7 @@ function deterministicProposalReview(input: {
     return approve("The selected community-college district change is exact and reversible.");
   }
   if (["add_dtech_course", "add_high_school_course", "add_smccd_course", "add_custom_course", "add_academic_courses"].includes(input.toolName)
-    && requested(/\b(add|put|take|include|schedule|plan)\b/, /\b(course|class|schedule|plan)\b/)) {
+    && /\b(add|put|take|include|schedule|plan)\b/.test(text)) {
     return approve("The exact catalog-backed course addition matches the student's request.", input.toolName === "add_academic_courses" ? "medium" : "low");
   }
   if (["move_plan_course", "move_plan_courses", "update_plan_course", "update_plan_courses"].includes(input.toolName)

@@ -790,10 +790,12 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
       ...(allPlanningPriorities || /\bmajor|career|field of study\b/.test(normalized) ? ["align_major"] : [])
     ];
     const requestsAdvancedRigor = /\brigorous\b|\b(?:high|strong|good|advanced)\s+(?:course\s+)?rigor\b|\brigor\b.{0,20}\b(?:high|strong|good|advanced)\b/.test(normalized);
+    const enforcesSchoolCourseCounts = /\b(?:follow|respect|stay within|keep within)\b.{0,36}\b(?:school|high school)\b.{0,24}\b(?:course count|course-count|load|guidance|rules?|limits?)\b|\b(?:school|high school)\b.{0,24}\b(?:course count|course-count|load)\b.{0,24}\b(?:guidance|rules?|limits?)\b/i.test(userMessage);
     return {
       name: "get_course_schedule_options",
       arguments: {
         respect_recommended_limit: true,
+        ...(enforcesSchoolCourseCounts ? { enforce_school_course_counts: true } : {}),
         rigor: objectives.includes("maximize_weighted_gpa") || requestsAdvancedRigor ? "advanced" : "balanced",
         include_college_courses: !excludesCollegeCourses,
         ...(excludesCollegeCourses ? { exclude_college_courses_explicitly: true } : {}),
@@ -1407,14 +1409,30 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
     // into exact college mathematics only when a bookmarked degree still needs
     // those courses, rather than treating the high-school and college plans as
     // unrelated schedules.
-    const existingCollegeCodes = new Set(rows
-      .filter((row) => typeof row.smccd_course_id === "string")
-      .map((row) => String(row.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
     const degreeMath = collegeSequenceOptions
       .filter((course) => Array.isArray(course.required_by_bookmarked_degrees) && course.required_by_bookmarked_degrees.length > 0)
       .map((course) => ({ course, rank: mathSequenceRankFromText(`${String(course.course_code ?? "")} ${String(course.title ?? "")}`) }))
       .filter((item): item is { course: Record<string, unknown>; rank: number } => item.rank !== null && item.rank > requestedRank)
       .sort((left, right) => left.rank - right.rank || String(left.course.course_code).localeCompare(String(right.course.course_code)));
+    const normalizedCollegeCode = (value: unknown) => String(value ?? "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+    const existingCollegeCodes = new Set(rows
+      .filter((row) => typeof row.smccd_course_id === "string")
+      .map((row) => normalizedCollegeCode(row.course_code ?? row.name)));
+    // Reuse editable prerequisite-path rows for the new exact degree sequence.
+    // This keeps a compound correction atomic and frees the same term capacity
+    // before validation, instead of applying the high-school half and then
+    // failing a separate college-course addition.
+    const replaceableCollegeMathRows = rows
+      .filter((row) => row.transcript_locked !== true && typeof row.smccd_course_id === "string")
+      .filter((row) => {
+        const text = `${String(row.course_code ?? "")} ${String(row.name ?? "")}`;
+        return mathSequenceRankFromText(text) !== null || /\b(?:trigonometry|path to calculus)\b/i.test(text);
+      })
+      .filter((row) => Number(row.grade_level) >= startGrade)
+      .sort((left, right) => Number(left.grade_level) - Number(right.grade_level)
+        || Number(mathSequenceRankFromText(`${String(left.course_code ?? "")} ${String(left.name ?? "")}`) ?? 0)
+          - Number(mathSequenceRankFromText(`${String(right.course_code ?? "")} ${String(right.name ?? "")}`) ?? 0));
+    const claimedCollegeRows = new Set<string>();
     let lastRank = Math.max(requestedRank, ...patches.flatMap((patch) => {
       const replacement = mathOptions.find((course) => course.course_id === patch.course_id);
       const rank = replacement ? mathSequenceRankFromText(`${String(replacement.name ?? "")} ${String(replacement.subject ?? "")}`) : null;
@@ -1425,21 +1443,34 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
     let nextCollegeTerm: "fall" | "spring" = "fall";
     for (const item of degreeMath) {
       if (item.rank <= lastRank || item.rank > lastRank + 1 || typeof item.course.course_id !== "string") continue;
-      const identity = `${String(item.course.course_code ?? "")} ${String(item.course.title ?? "")}`.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const identity = normalizedCollegeCode(item.course.course_code);
       if (existingCollegeCodes.has(identity)) {
         lastRank = item.rank;
         continue;
       }
       const period = { grade: nextCollegeGrade, term: nextCollegeTerm };
       if (period.grade > 12) break;
-      additions.push({
-        source: "smccd",
-        course_id: item.course.course_id,
-        status: period.grade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
-        grade_level: period.grade,
-        term: period.term,
-        prerequisite_override_reason: `This is the direct prerequisite-ordered continuation of the student's explicit ${intent.startingMathCourse} starting placement and an outstanding bookmarked-degree requirement.`
-      });
+      const replacementRow = replaceableCollegeMathRows.find((row) => typeof row.plan_course_id === "string" && !claimedCollegeRows.has(row.plan_course_id));
+      const overrideReason = `This is the direct prerequisite-ordered continuation of the student's explicit ${intent.startingMathCourse} starting placement and an outstanding bookmarked-degree requirement.`;
+      if (replacementRow && typeof replacementRow.plan_course_id === "string") {
+        claimedCollegeRows.add(replacementRow.plan_course_id);
+        patches.push({
+          plan_course_id: replacementRow.plan_course_id,
+          smccd_course_id: item.course.course_id,
+          grade_level: period.grade,
+          term: period.term,
+          prerequisite_override_reason: overrideReason
+        });
+      } else {
+        additions.push({
+          source: "smccd",
+          course_id: item.course.course_id,
+          status: period.grade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
+          grade_level: period.grade,
+          term: period.term,
+          prerequisite_override_reason: overrideReason
+        });
+      }
       lastRank = item.rank;
       if (nextCollegeTerm === "fall") nextCollegeTerm = "spring";
       else {
@@ -1481,18 +1512,27 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
             : /\bfall\b/i.test(String(collegeReplacement.high_school_equivalent ?? "")) ? "fall"
               : /\bspring\b/i.test(String(collegeReplacement.high_school_equivalent ?? "")) ? "spring"
                 : "fall";
-        additions.push({
-          source: "smccd",
-          course_id: collegeReplacement.course_id,
-          status: startGrade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
-          grade_level: startGrade,
-          term: requestedTerm,
-          prerequisite_override_reason: `The student explicitly stated ${intent.startingLanguageCourse} as their language placement; the selected school's verified equivalency identifies this college course as ${String(collegeReplacement.high_school_equivalent ?? "the matching language level")}.`
-        });
-        if (/\b(?:just|only)\b/i.test(userMessage)) {
-          for (const row of existingLanguageRows) {
-            if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
-          }
+        const overrideReason = `The student explicitly stated ${intent.startingLanguageCourse} as their language placement; the selected school's verified equivalency identifies this college course as ${String(collegeReplacement.high_school_equivalent ?? "the matching language level")}.`;
+        if (targetRow && typeof targetRow.plan_course_id === "string") {
+          patches.push({
+            plan_course_id: targetRow.plan_course_id,
+            smccd_course_id: collegeReplacement.course_id,
+            grade_level: startGrade,
+            term: requestedTerm,
+            prerequisite_override_reason: overrideReason
+          });
+        } else {
+          additions.push({
+            source: "smccd",
+            course_id: collegeReplacement.course_id,
+            status: startGrade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
+            grade_level: startGrade,
+            term: requestedTerm,
+            prerequisite_override_reason: overrideReason
+          });
+        }
+        for (const row of existingLanguageRows) {
+          if (typeof row.plan_course_id === "string" && row.plan_course_id !== targetRow?.plan_course_id) patches.push({ plan_course_id: row.plan_course_id, remove: true });
         }
       } else {
         warnings.push(`${intent.startingLanguageCourse} was not found in either the selected-school catalog or its verified college equivalencies.`);
@@ -1528,10 +1568,8 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
         term: replacement.term_type === "year" ? "full_year" : requestedTerm,
         prerequisite_override_reason: `The student explicitly selected ${String(replacement.name)} as their language placement in grade ${startGrade}.`
       });
-      if (/\b(?:just|only)\b/i.test(userMessage)) {
-        for (const row of existingLanguageRows.slice(1)) {
-          if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
-        }
+      for (const row of existingLanguageRows.slice(1)) {
+        if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
       }
     }
   }
@@ -1970,6 +2008,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             arguments: {
               course_ids: ids,
               respect_recommended_limit: respectsLimit,
+              enforce_school_course_counts: requiredRead.arguments.enforce_school_course_counts ?? false,
               interests: requiredRead.arguments.interests ?? [],
               rigor: requiredRead.arguments.rigor ?? "balanced",
               max_courses_per_term: requiredRead.arguments.max_courses_per_term ?? null,
@@ -2252,6 +2291,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             arguments: {
               course_ids: ids,
               respect_recommended_limit: argumentsValue.respect_recommended_limit ?? true,
+              enforce_school_course_counts: argumentsValue.enforce_school_course_counts ?? false,
               interests: argumentsValue.interests ?? [],
               rigor: argumentsValue.rigor ?? "balanced",
               max_courses_per_term: argumentsValue.max_courses_per_term ?? null,

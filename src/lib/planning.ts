@@ -897,7 +897,10 @@ export function generateSuggestedPlan(
       ? "full_year"
       : termLoad(grade, "fall") <= termLoad(grade, "spring") ? "fall" : "spring");
     const plannedTerms = term === "full_year" ? ["fall", "spring"] as const : [term] as const;
-    if (maximumPerTerm && plannedTerms.some((plannedTerm) => termLoad(grade, plannedTerm) >= maximumPerTerm)) return false;
+    const termCapacity = maximumPerTerm
+      ?? context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.target_total_courses
+      ?? null;
+    if (termCapacity && plannedTerms.some((plannedTerm) => termLoad(grade, plannedTerm) >= termCapacity)) return false;
     const collegeUnits = Number(course.college_units ?? 0);
     if (enrollmentPolicy && collegeUnits > 0) {
       const scheduleLimit = respectRecommendedLimit

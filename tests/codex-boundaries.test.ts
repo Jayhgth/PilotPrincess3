@@ -515,6 +515,10 @@ describe("Codex feature boundaries", () => {
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
     });
+    expect(requiredAssistantEvidenceRead("Create a four-year plan while following my high school's course-count rules.")).toEqual({
+      name: "get_course_schedule_options",
+      arguments: { respect_recommended_limit: true, enforce_school_course_counts: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }
+    });
     expect(requiredAssistantEvidenceRead("Create a full plan for me")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true, rigor: "balanced", include_college_courses: true, objectives: ["complete_diploma"] }

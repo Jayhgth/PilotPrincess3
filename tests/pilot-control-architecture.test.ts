@@ -87,6 +87,8 @@ describe("Pilot complete academic control", () => {
     const collegeChineseThree = "CSM:CHIN 131";
     const calculusOne = "CSM:MATH 251";
     const calculusTwo = "CSM:MATH 252";
+    const trigonometryRow = crypto.randomUUID();
+    const pathToCalculusRow = crypto.randomUUID();
     const combinedEditPrompt = "I want to do chinese as the language, just one semester of chinese 3. Also, start my math at algebra 2";
     expect(parseAssistantScheduleIntent(combinedEditPrompt)).toMatchObject({ startingMathCourse: "algebra 2", startingLanguageCourse: "chinese 3" });
     expect(requiredAssistantEvidenceReadForConversation(scheduleHistory, combinedEditPrompt)?.name).toBe("get_academic_context");
@@ -144,7 +146,9 @@ describe("Pilot complete academic control", () => {
           plan: { courses: [
             { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
             { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
-            { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false }
+            { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false },
+            { plan_course_id: trigonometryRow, smccd_course_id: "CSM:MATH 130", course_code: "MATH 130", name: "MATH 130 Analytic Trigonometry", grade_level: 11, term: "fall", transcript_locked: false, requirement_area: "math" },
+            { plan_course_id: pathToCalculusRow, smccd_course_id: "CSM:MATH 222", course_code: "MATH 222", name: "MATH 222 Path to Calculus", grade_level: 12, term: "spring", transcript_locked: false, requirement_area: "math" }
           ] },
           graduation: [{ area: "math", eligible_course_options: [
             { course_id: algebraTwo, name: "Algebra 2 / Algebra 2-Trigonometry Honors", subject: "Math", weighted: true, term_type: "year", grade_levels: [10] },
@@ -162,16 +166,13 @@ describe("Pilot complete academic control", () => {
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
     });
-    expect(partiallyResolvable.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses", "add_academic_courses"]);
+    expect(partiallyResolvable.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
     expect(partiallyResolvable.proposals[0]?.arguments).toMatchObject({ patches: [
       { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9 },
       { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10 },
-      { plan_course_id: spanishRow, remove: true }
-    ] });
-    expect(partiallyResolvable.proposals[1]?.arguments).toMatchObject({ entries: [
-      { source: "smccd", course_id: calculusOne, grade_level: 11, term: "fall" },
-      { source: "smccd", course_id: calculusTwo, grade_level: 11, term: "spring" },
-      { source: "smccd", course_id: collegeChineseThree, grade_level: 9, term: "fall" }
+      { plan_course_id: trigonometryRow, smccd_course_id: calculusOne, grade_level: 11, term: "fall" },
+      { plan_course_id: pathToCalculusRow, smccd_course_id: calculusTwo, grade_level: 11, term: "spring" },
+      { plan_course_id: spanishRow, smccd_course_id: collegeChineseThree, grade_level: 9, term: "fall" }
     ] });
     expect(partiallyResolvable.questions).toEqual([]);
     expect(partiallyResolvable.message).toContain("math starting with algebra 2 and language using chinese 3");
@@ -190,7 +191,7 @@ describe("Pilot complete academic control", () => {
     expect(call.mutatesData).toBe(true);
     expect(call.arguments.entries).toHaveLength(3);
     expect(parseAssistantToolCall("update_plan_courses", {
-      patches: [{ plan_course_id: crypto.randomUUID(), course_id: crypto.randomUUID(), grade_level: 9, term: "full_year" }]
+      patches: [{ plan_course_id: crypto.randomUUID(), smccd_course_id: "CSM:MATH 251", grade_level: 11, term: "fall" }]
     }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("add_custom_course", {
       name: "Student-provided seminar",

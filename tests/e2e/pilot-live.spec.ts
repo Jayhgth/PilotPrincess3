@@ -385,7 +385,7 @@ test.describe("live Pilot behavior", () => {
     const freshmanSettings = await supabase.from("student_settings").update({ grade_level: 9, graduation_year: 2030, plan_start_grade: 9, plan_end_grade: 12 }).eq("id", userId);
     if (freshmanSettings.error) throw freshmanSettings.error;
     const fullPlanConversation = await createConversation("Terse integrated full plan");
-    const fullPlanTurn = await promptPilot(fullPlanConversation, "Create a full plan for me. I am starting Precalculus in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful overlap, and no more than 11 college units in any term.");
+    const fullPlanTurn = await promptPilot(fullPlanConversation, "Create a full plan for me. I am starting Algebra 2 in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful high-school/college overlap, and no more than 11 college units in any term.");
     expect(fullPlanTurn.message).not.toMatch(/Grade\s+(?:9|10|11|12),\s+(?:fall|spring|summer|full year):/i);
     expect(fullPlanTurn.message).not.toContain("College-unit check:");
     expect(fullPlanTurn.runtime.latencyMs).toBeLessThan(120_000);
@@ -556,8 +556,9 @@ test.describe("live Pilot behavior", () => {
     await apply(fullPlanUndo);
 
     // Standard placement must still produce an applied best-effort degree
-    // plan without skipping math, duplicating science, or violating d.tech's
-    // high-school course minimums.
+    // plan without skipping math, duplicating science, or exceeding the
+    // school's total course-load guidance. College equivalents may replace
+    // diploma areas, while school-owned English and Design Lab remain local.
     const standardPlanConversation = await createConversation("Standard math integrated plan");
     const standardPlanTurn = await promptPilot(standardPlanConversation,
       "Create and apply a reasonable four-year plan from grade 9 using d.tech's standard math starting point. Finish my diploma and make the maximum verified progress on both bookmarked CS degrees while following prerequisites, school course-count rules, and the 11-unit concurrent limit.");
@@ -578,16 +579,29 @@ test.describe("live Pilot behavior", () => {
         return index(left.row) - index(right.row) || left.rank - right.rank;
       });
     for (let index = 1; index < standardMath.length; index += 1) {
-      expect(standardMath[index]!.rank).toBeGreaterThanOrEqual(standardMath[index - 1]!.rank);
-      expect(standardMath[index]!.rank - standardMath[index - 1]!.rank).toBeLessThanOrEqual(1);
+      const mathTimeline = JSON.stringify(standardMath.map((item) => ({
+        rank: item.rank,
+        grade_level: item.row.grade_level,
+        term: item.row.term,
+        course_id: item.row.course_id,
+        smccd_course_id: item.row.smccd_course_id,
+        name: item.row.course_id ? courseById.get(item.row.course_id)?.name : item.row.custom_course_name
+      })));
+      expect(standardMath[index]!.rank, mathTimeline).toBeGreaterThanOrEqual(standardMath[index - 1]!.rank);
+      expect(standardMath[index]!.rank - standardMath[index - 1]!.rank, mathTimeline).toBeLessThanOrEqual(1);
     }
-    const minimumHighSchoolByGrade = new Map([[9, 6], [10, 5], [11, 4], [12, 3]]);
-    for (const [grade, minimum] of minimumHighSchoolByGrade) {
+    const targetCoursesByGrade = new Map([[9, 7], [10, 7], [11, 6], [12, 6]]);
+    for (const [grade, target] of targetCoursesByGrade) {
       for (const term of ["fall", "spring"] as const) {
         const count = standardRows.filter((row) => row.grade_level === grade
-          && !row.smccd_course_id
           && (row.term === term || row.term === "full_year")).length;
-        expect(count, `grade ${grade} ${term}`).toBeGreaterThanOrEqual(minimum);
+        expect(count, JSON.stringify({ grade, term, courses: standardRows
+          .filter((row) => row.grade_level === grade && (row.term === term || row.term === "full_year"))
+          .map((row) => ({
+            term: row.term,
+            school: row.course_id ? courseById.get(row.course_id)?.name : null,
+            college: row.smccd_course_id ? catalog.find((course) => course.id === row.smccd_course_id)?.course_code : null
+          })) })).toBeLessThanOrEqual(target);
       }
       expect(standardRows.filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
     }
