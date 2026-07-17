@@ -34,6 +34,26 @@ function plan(overrides: Partial<PlanCourse> = {}): PlanCourse {
   };
 }
 
+function equivalency(
+  normalizedCourseCode: string,
+  highSchoolEquivalent: string,
+  requirementArea: SmccdHighSchoolEquivalency["requirement_area"],
+  highSchoolCredits: number
+): SmccdHighSchoolEquivalency {
+  return {
+    normalized_course_code: normalizedCourseCode,
+    college_course_code: normalizedCourseCode,
+    description: highSchoolEquivalent,
+    college_units: highSchoolCredits >= 10 ? 5 : 3,
+    high_school_credits: highSchoolCredits,
+    high_school_equivalent: highSchoolEquivalent,
+    requirement_area: requirementArea,
+    pairing_note: null,
+    source_id: "equivalency-source",
+    confidence: "verified"
+  };
+}
+
 const requirement: GraduationRequirement = {
   id: "math-requirement", area: "math", name: "Math", credits_required: 30, years_required: 3,
   notes: null, confidence: "verified", review_status: "approved"
@@ -103,6 +123,64 @@ describe("core academic planning contracts", () => {
     expect(appliedCreditBreakdown({ required: 30, completed: 10, current: 20, planned: 20 })).toEqual({
       completed: 10, current: 20, planned: 0, remaining: 0, total: 30, unverified: 0
     });
+    }
+
+    {
+    const labRequirement: GraduationRequirement = { ...requirement, id: "lab", area: "lab_science", name: "Laboratory Science", credits_required: 30, years_required: 3 };
+    const languageRequirement: GraduationRequirement = { ...requirement, id: "language", area: "world_language", name: "World Language", credits_required: 20, years_required: 2 };
+    const historyRequirement: GraduationRequirement = { ...requirement, id: "history", area: "social_science", name: "Social Science", credits_required: 30, years_required: 3 };
+    const environmental = course("environmental", "Environmental Science", "Laboratory Science");
+    const chemistry = course("chemistry", "Chemistry", "Laboratory Science");
+    const worldHistory = course("world-history", "World History", "Social Science");
+    const governmentEconomics = course("government-economics", "Government & Economics", "Social Science");
+    const requirementMappings: CourseRequirementMapping[] = [
+      { id: "environmental-map", course_id: environmental.id, requirement_id: labRequirement.id, confidence: "verified", is_user_override: false },
+      { id: "chemistry-map", course_id: chemistry.id, requirement_id: labRequirement.id, confidence: "verified", is_user_override: false },
+      { id: "world-map", course_id: worldHistory.id, requirement_id: historyRequirement.id, confidence: "verified", is_user_override: false },
+      { id: "government-map", course_id: governmentEconomics.id, requirement_id: historyRequirement.id, confidence: "verified", is_user_override: false }
+    ];
+    const verifiedEquivalencies = [
+      equivalency("BIOL 110", "Biology", "lab_science", 10),
+      equivalency("ASL 100", "ASL 100 meets the requirement for the 2nd year of a high school language.", "world_language", 10),
+      equivalency("HIST 201", "US History Fall", "social_science", 5),
+      equivalency("HIST 202", "US History Spring", "social_science", 5)
+    ];
+    const staleImportedCollegeRow = (id: string, name: string, units: number) => plan({
+      id,
+      course_id: null,
+      custom_course_name: name,
+      smccd_course_id: crypto.randomUUID(),
+      college_provider_code: "SMCCD",
+      college_units: units,
+      credits: units,
+      mapping_verified: false,
+      requirement_area_override: null,
+      source_review_item_id: `review-${id}`
+    });
+    const rows = [
+      plan({ id: "environmental-row", course_id: environmental.id }),
+      plan({ id: "chemistry-row", course_id: chemistry.id }),
+      plan({ id: "world-row", course_id: worldHistory.id }),
+      plan({ id: "government-row", course_id: governmentEconomics.id }),
+      staleImportedCollegeRow("biology-row", "BIOL 110 General Principles of Biology", 4),
+      staleImportedCollegeRow("language-row", "ASL 100 American Sign Language I", 5),
+      staleImportedCollegeRow("history-one-row", "HIST 201 United States History I", 3),
+      staleImportedCollegeRow("history-two-row", "HIST 202 United States History II", 3)
+    ];
+    const progress = calculateRequirementProgress(
+      [labRequirement, languageRequirement, historyRequirement],
+      rows,
+      requirementMappings,
+      [environmental, chemistry, worldHistory, governmentEconomics],
+      verifiedEquivalencies
+    );
+    expect(progress.find((item) => item.requirement.area === "lab_science")).toMatchObject({
+      completedCredits: 30,
+      ruleWarnings: []
+    });
+    expect(progress.find((item) => item.requirement.area === "lab_science")?.contributions.map((row) => row.planCourseId)).toContain("biology-row");
+    expect(progress.find((item) => item.requirement.area === "world_language")).toMatchObject({ completedCredits: 20, ruleWarnings: [] });
+    expect(progress.find((item) => item.requirement.area === "social_science")).toMatchObject({ completedCredits: 30, ruleWarnings: [] });
     }
   });
 

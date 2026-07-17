@@ -14,6 +14,7 @@ import type {
 } from "@/lib/models";
 import { courseEquivalenceKeys } from "@/lib/course-names";
 import { resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
+import { resolvePlanCollegeCourseCode } from "@/lib/college-course-identity";
 
 const GRADE_POINTS: Record<string, number> = {
   "A+": 4,
@@ -179,11 +180,17 @@ export function calculateRequirementProgress(
   equivalencies: SmccdHighSchoolEquivalency[] = []
 ): RequirementProgress[] {
   const courseMap = new Map(courses.map((course) => [course.id, course]));
+  const equivalencyMap = new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency]));
+  const verifiedEquivalencyByPlanCourseId = new Map(planCourses.flatMap((row) => {
+    const normalizedCollegeCode = resolvePlanCollegeCourseCode(row);
+    const equivalency = normalizedCollegeCode ? equivalencyMap.get(normalizedCollegeCode) : null;
+    return equivalency?.confidence === "verified" ? [[row.id, equivalency] as const] : [];
+  }));
   const hasVerifiedCatalogCredit = (row: PlanCourse) => {
     const course = row.course_id ? courseMap.get(row.course_id) : null;
-    return row.mapping_verified || Boolean(course && course.confidence === "verified" && course.review_status === "approved");
+    const verifiedEquivalency = verifiedEquivalencyByPlanCourseId.get(row.id);
+    return row.mapping_verified || Boolean(verifiedEquivalency) || Boolean(course && course.confidence === "verified" && course.review_status === "approved");
   };
-  const equivalencyMap = new Map(equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency]));
   const mappingsByCourse = new Map<string, CourseRequirementMapping[]>();
   for (const mapping of mappings) {
     const existing = mappingsByCourse.get(mapping.course_id) ?? [];
@@ -235,7 +242,9 @@ export function calculateRequirementProgress(
     const unverifiedRows: typeof verifiedRows = [];
 
     for (const planCourse of planCourses) {
-      const overrideMatches = planCourse.requirement_area_override === requirement.area;
+      const verifiedEquivalency = verifiedEquivalencyByPlanCourseId.get(planCourse.id) ?? null;
+      const effectiveRequirementArea = verifiedEquivalency?.requirement_area ?? planCourse.requirement_area_override;
+      const overrideMatches = effectiveRequirementArea === requirement.area;
       const mapping = planCourse.course_id
         ? (mappingsByCourse.get(planCourse.course_id) ?? []).find(
             (candidate) => candidate.requirement_id === requirement.id
@@ -248,7 +257,7 @@ export function calculateRequirementProgress(
       const lacksVerifiedEvidence = requirement.area === "electives"
         ? !countsAsExcessElective
         : overrideMatches
-          ? !planCourse.mapping_verified
+          ? !planCourse.mapping_verified && !verifiedEquivalency
           : mapping?.confidence !== "verified";
       if ((!overrideMatches && mapping?.confidence === "uncertain") || lacksVerifiedEvidence) {
         unverifiedCredits += credits;
@@ -273,9 +282,7 @@ export function calculateRequirementProgress(
         name: courseDisplayName(planCourse, courseMap),
         gradeLevel: planCourse.grade_level,
         institution: institutionForPlanCourse(planCourse),
-        equivalent: planCourse.smccd_course_id
-          ? equivalencyMap.get(planCourse.smccd_course_id.split(":").at(-1)?.toUpperCase() ?? "")?.high_school_equivalent ?? null
-          : null
+        equivalent: verifiedEquivalency?.high_school_equivalent ?? null
       });
     }
 
@@ -390,7 +397,7 @@ export function calculateRequirementProgress(
         : /\bchem(?:istry)?\b|\bphysics?\b|physical science/i.test(name)
           ? "physical"
           : "other";
-      const scienceRows = verifiedRows.map((row) => ({ ...row, lane: classify(row.name), remaining: row.credits }));
+      const scienceRows = verifiedRows.map((row) => ({ ...row, lane: classify(`${row.equivalent ?? ""} ${row.name}`), remaining: row.credits }));
       const allocate = (candidates: typeof scienceRows, limit: number) => {
         let remaining = limit;
         for (const status of statusOrder) {
