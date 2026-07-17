@@ -105,7 +105,7 @@ export function affectedWorkspaceDomains(name: string): WorkspaceDomain[] {
 }
 
 export function mutationReviewMode(name: string, argumentsValue: Record<string, unknown> = {}): MutationReviewMode {
-  if (name === "add_course_schedule" && argumentsValue.replace_existing === true) return "model";
+  void argumentsValue;
   return appCapability(name)?.review ?? "model";
 }
 

@@ -5,7 +5,7 @@ import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, reviewAssis
 import { executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
-import { affectedWorkspaceDomains } from "@/lib/app-capabilities";
+import { affectedWorkspaceDomains, mutationReviewMode } from "@/lib/app-capabilities";
 
 export const prerender = false;
 
@@ -45,13 +45,27 @@ export const POST: APIRoute = async ({ request }) => {
   if (!validated.mutatesData) return jsonError("This tool does not require review.", 400);
 
   let review: z.infer<typeof autoReviewResultSchema>;
-  const startedSequence = await nextSequence();
-  await recordEvent("safety_review.started", startedSequence, {
-    toolCallId: toolCall.id,
-    toolName: validated.name,
-    summary: "The application is validating this proposed change."
-  });
+  const reviewMode = mutationReviewMode(validated.name, validated.arguments);
+  if (reviewMode === "model") {
+    const startedSequence = await nextSequence();
+    await recordEvent("safety_review.started", startedSequence, {
+      toolCallId: toolCall.id,
+      toolName: validated.name,
+      summary: "The application is validating this ambiguous or institution-sensitive proposed change."
+    });
+  }
   try {
+    if (reviewMode !== "model") {
+      // Deterministic, reversible student-owned mutations do not need a
+      // second model to reinterpret a clear request. Execution below still
+      // enforces RLS, ownership, locks, record existence, atomicity, explicit
+      // prerequisite overrides, and true absolute limits.
+      review = {
+        decision: "approve",
+        risk: "low",
+        summary: "The requested reversible change will use the application's normal validation."
+      };
+    } else {
     let verifiedBatchResolution = false;
     let verifiedAcademicPlanResolution = false;
     let verifiedScheduleResolution = false;
@@ -147,6 +161,7 @@ export const POST: APIRoute = async ({ request }) => {
       verifiedScheduleResolution,
       signal: request.signal
     });
+    }
   } catch {
     review = { decision: "deny", risk: "high", summary: "The safety review could not verify this change, so it was not applied." };
   }
@@ -161,10 +176,10 @@ export const POST: APIRoute = async ({ request }) => {
       .maybeSingle();
     if (error) return jsonError(error.message, 500);
     if (!data) return jsonError("This tool request has already been handled.", 409);
-    await recordEvent("safety_review.completed", await nextSequence(), { review, toolCall: data });
+    if (reviewMode === "model") await recordEvent("safety_review.completed", await nextSequence(), { review, toolCall: data });
     return new Response(JSON.stringify({ toolCall: data, review, applied: false }), { headers: { "content-type": "application/json" } });
   }
-  await recordEvent("safety_review.completed", await nextSequence(), { review, toolCallId: toolCall.id });
+  if (reviewMode === "model") await recordEvent("safety_review.completed", await nextSequence(), { review, toolCallId: toolCall.id });
 
   const confirmedAt = new Date().toISOString();
   const claimResult = await auth.supabase.from("ai_tool_calls")

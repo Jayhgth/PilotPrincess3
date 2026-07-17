@@ -241,10 +241,15 @@ test.describe("live Pilot behavior", () => {
     const requirements = await supabase.from("graduation_requirements").select("*").eq("school_id", dtech.data!.id);
     const dtechCatalog = await supabase.from("courses").select("*").eq("school_id", dtech.data!.id).eq("confidence", "verified").eq("review_status", "approved");
     const mappings = await supabase.from("course_requirement_mappings").select("*").in("requirement_id", (requirements.data ?? []).map((row) => row.id));
+    const equivalencies = await supabase.from("smccd_high_school_equivalencies").select("normalized_course_code,requirement_area");
+    if (equivalencies.error) throw equivalencies.error;
     const personalDevelopment = (requirements.data ?? []).find((requirement) => requirement.area === "personal_development");
     expect(personalDevelopment?.notes).toContain("through d.tech intersession courses");
     expect(personalDevelopment?.notes).toContain("does not count toward this requirement");
     const courseById = new Map((dtechCatalog.data ?? []).map((course) => [course.id, course]));
+    const languageEquivalencyCodes = new Set((equivalencies.data ?? [])
+      .filter((equivalency) => equivalency.requirement_area === "world_language")
+      .map((equivalency) => equivalency.normalized_course_code));
     const usedCourseIds = new Set<string>();
     const graduationSeedRows: Array<Record<string, unknown>> = [];
     for (const requirement of requirements.data ?? []) {
@@ -292,6 +297,9 @@ test.describe("live Pilot behavior", () => {
     if (programOptionsResult.error) throw programOptionsResult.error;
     const programOptionCodes = new Set((programOptionsResult.data ?? []).map((row) => row.course_code));
     const catalog = csmCatalogResult.data ?? [];
+    const languageSmccdIds = new Set(catalog
+      .filter((course) => languageEquivalencyCodes.has(course.course_code.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim()))
+      .map((course) => course.id));
     const catalogByCode = new Map(catalog.map((course) => [course.course_code, course]));
     const initialDegreeCodes = [
       "COMM 115", "COMM C1000", "COMM 130", "COMM 140", "SOCI 110", "PSYC 110",
@@ -517,15 +525,22 @@ test.describe("live Pilot behavior", () => {
       placementBaseline = refreshedBaseline.data ?? [];
     }
     const generatedFullPlanIds = new Set(placementBaseline.map((row) => row.id));
+    const belongsToMathSequence = (value: string) => mathSequenceRankFromText(value) !== null
+      || /\b(?:trigonometry|path to calculus)\b/i.test(value);
     const unrelatedBeforePlacement = placementBaseline
       .filter((row) => {
         const course = row.course_id ? courseById.get(row.course_id) : null;
-        return mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`) === null
-          && !(row.course_id && highSchoolLanguageIds.has(row.course_id));
+        const collegeCourse = row.smccd_course_id ? catalog.find((candidate) => candidate.id === row.smccd_course_id) : null;
+        return !belongsToMathSequence(`${course?.course_code ?? collegeCourse?.course_code ?? ""} ${course?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""}`)
+          && !(row.course_id && highSchoolLanguageIds.has(row.course_id))
+          && !(row.smccd_course_id && languageSmccdIds.has(row.smccd_course_id))
+          && row.requirement_area_override !== "world_language"
+          && !/\b(?:spanish|french|chinese|mandarin|american sign language|asl)\b/i.test(String(row.custom_course_name ?? ""));
       })
       .map((row) => ({ id: row.id, course_id: row.course_id, grade_level: row.grade_level, term: row.term }))
       .sort((left, right) => left.id.localeCompare(right.id));
-    const placementEditTurn = await promptPilot(fullPlanConversation, "I want to do Spanish 3 as my language. Also, start my math at Algebra 2.");
+    const placementEditTurn = await promptPilot(fullPlanConversation,
+      "Replace my existing language path with just one semester of Chinese 3 in grade 9. Also start my math at Algebra 2 in grade 9 and reorganize every later math course into prerequisite order. Preserve unrelated courses.");
     const placementToolDebug = await supabase.from("ai_tool_calls").select("tool_name,status,result,arguments").eq("conversation_id", fullPlanConversation).order("created_at");
     if (placementToolDebug.error) throw placementToolDebug.error;
     expect(placementEditTurn.message).not.toContain("if final validation passes");
@@ -534,24 +549,44 @@ test.describe("live Pilot behavior", () => {
     const placementRowsResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
     if (placementRowsResult.error) throw placementRowsResult.error;
     const placementRows = placementRowsResult.data ?? [];
-    const gradeNineMathRanks = placementRows.flatMap((row) => {
-      if (row.grade_level !== 9 || !row.course_id) return [];
-      const course = courseById.get(row.course_id);
-      const rank = mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? ""}`);
-      return rank === null ? [] : [rank];
+    const placementMathSequence = placementRows.flatMap((row) => {
+      const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+      const collegeCourse = row.smccd_course_id ? catalog.find((course) => course.id === row.smccd_course_id) : null;
+      const rank = mathSequenceRankFromText(`${schoolCourse?.course_code ?? collegeCourse?.course_code ?? ""} ${schoolCourse?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""}`);
+      return rank === null ? [] : [{ row, rank }];
+    }).sort((left, right) => {
+      const termIndex = (row: typeof left.row) => (Number(row.grade_level) - 9) * 3 + (row.term === "spring" ? 1 : row.term === "summer" ? 2 : 0);
+      return termIndex(left.row) - termIndex(right.row) || left.rank - right.rank;
     });
+    const gradeNineMathRanks = placementMathSequence.filter((item) => item.row.grade_level === 9).map((item) => item.rank);
     expect(gradeNineMathRanks).toContain(3);
-    expect(gradeNineMathRanks.every((rank) => rank >= 3)).toBe(true);
+    expect(gradeNineMathRanks).toEqual([3]);
+    for (let index = 1; index < placementMathSequence.length; index += 1) {
+      expect(placementMathSequence[index]!.rank).toBeGreaterThanOrEqual(placementMathSequence[index - 1]!.rank);
+      expect(placementMathSequence[index]!.rank - placementMathSequence[index - 1]!.rank).toBeLessThanOrEqual(1);
+    }
+    expect(placementMathSequence.filter((item) => item.rank >= 5).every((item) => item.row.grade_level > 9)).toBe(true);
     const selectedLanguageAfterPlacement = placementRows
-      .filter((row) => row.course_id && highSchoolLanguageIds.has(row.course_id))
-      .map((row) => courseById.get(row.course_id!)?.name ?? "");
+      .filter((row) => (row.course_id && highSchoolLanguageIds.has(row.course_id))
+        || (row.smccd_course_id && languageSmccdIds.has(row.smccd_course_id))
+        || row.requirement_area_override === "world_language")
+      .map((row) => {
+        const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+        const collegeCourse = row.smccd_course_id ? catalog.find((course) => course.id === row.smccd_course_id) : null;
+        return `${schoolCourse?.name ?? ""} ${collegeCourse?.course_code ?? ""} ${collegeCourse?.title ?? row.custom_course_name ?? ""}`.trim();
+      });
     expect(selectedLanguageAfterPlacement).toHaveLength(1);
-    expect(selectedLanguageAfterPlacement[0]).toMatch(/Spanish 3/i);
+    expect(selectedLanguageAfterPlacement[0]).toMatch(/CHIN 131|Chinese 3|Intermediate Chinese/i);
+    expect(selectedLanguageAfterPlacement[0]).not.toMatch(/Spanish|ASL|American Sign Language/i);
     const unrelatedAfterPlacement = placementRows
       .filter((row) => {
         const course = row.course_id ? courseById.get(row.course_id) : null;
-        return mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`) === null
-          && !(row.course_id && highSchoolLanguageIds.has(row.course_id));
+        const collegeCourse = row.smccd_course_id ? catalog.find((candidate) => candidate.id === row.smccd_course_id) : null;
+        return !belongsToMathSequence(`${course?.course_code ?? collegeCourse?.course_code ?? ""} ${course?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""}`)
+          && !(row.course_id && highSchoolLanguageIds.has(row.course_id))
+          && !(row.smccd_course_id && languageSmccdIds.has(row.smccd_course_id))
+          && row.requirement_area_override !== "world_language"
+          && !/\b(?:spanish|french|chinese|mandarin|american sign language|asl)\b/i.test(String(row.custom_course_name ?? ""));
       })
       .map((row) => ({ id: row.id, course_id: row.course_id, grade_level: row.grade_level, term: row.term }))
       .sort((left, right) => left.id.localeCompare(right.id));

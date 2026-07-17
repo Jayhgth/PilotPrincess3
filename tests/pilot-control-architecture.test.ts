@@ -87,6 +87,7 @@ describe("Pilot complete academic control", () => {
     const collegeChineseThree = "CSM:CHIN 131";
     const calculusOne = "CSM:MATH 251";
     const calculusTwo = "CSM:MATH 252";
+    const calculusThree = "CSM:MATH 253";
     const trigonometryRow = crypto.randomUUID();
     const pathToCalculusRow = crypto.randomUUID();
     const combinedEditPrompt = "I want to do chinese as the language, just one semester of chinese 3. Also, start my math at algebra 2";
@@ -159,7 +160,8 @@ describe("Pilot complete academic control", () => {
           college_sequence_options: [
             { course_id: collegeChineseThree, course_code: "CHIN 131", title: "Intermediate Chinese I", high_school_requirement_area: "world_language", high_school_equivalent: "Mandarin 3 Fall", high_school_credits: 5, required_by_bookmarked_degrees: [] },
             { course_id: calculusOne, course_code: "MATH 251", title: "Calculus with Analytic Geometry I", high_school_requirement_area: "math", high_school_equivalent: "Calculus I", high_school_credits: 10, required_by_bookmarked_degrees: ["Computer and Information Science"] },
-            { course_id: calculusTwo, course_code: "MATH 252", title: "Calculus with Analytic Geometry II", high_school_requirement_area: "math", high_school_equivalent: "Calculus II", high_school_credits: 10, required_by_bookmarked_degrees: ["Computer and Information Science"] }
+            { course_id: calculusTwo, course_code: "MATH 252", title: "Calculus with Analytic Geometry II", high_school_requirement_area: "math", high_school_equivalent: "Calculus II", high_school_credits: 10, required_by_bookmarked_degrees: ["Computer and Information Science"] },
+            { course_id: calculusThree, course_code: "MATH 253", title: "Calculus with Analytic Geometry III", high_school_requirement_area: "math", high_school_equivalent: "Calculus III", high_school_credits: 10, required_by_bookmarked_degrees: ["Computer and Information Science"] }
           ]
         }
       }),
@@ -173,6 +175,8 @@ describe("Pilot complete academic control", () => {
       { plan_course_id: trigonometryRow, smccd_course_id: calculusOne, grade_level: 11, term: "fall" },
       { plan_course_id: pathToCalculusRow, smccd_course_id: calculusTwo, grade_level: 11, term: "spring" },
       { plan_course_id: spanishRow, smccd_course_id: collegeChineseThree, grade_level: 9, term: "fall" }
+    ], additions: [
+      { source: "smccd", course_id: calculusThree, grade_level: 12, term: "fall" }
     ] });
     expect(partiallyResolvable.questions).toEqual([]);
     expect(partiallyResolvable.message).toContain("math starting with algebra 2 and language using chinese 3");

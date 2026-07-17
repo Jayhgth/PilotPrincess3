@@ -252,7 +252,7 @@ function toolSummary(call: AiToolCall) {
   if (call.status === "completed") return String((call.result as { summary?: unknown } | null)?.summary ?? "Completed");
   if (call.status === "failed") return String((call.result as { error?: unknown } | null)?.error ?? "The tool failed.");
   if (call.status === "rejected") return String(safetyReview?.summary ?? "Not applied");
-  if (call.status === "pending_confirmation") return "Safety review queued";
+  if (call.status === "pending_confirmation") return "Applying automatically";
   return "Running";
 }
 
@@ -260,6 +260,8 @@ function readableArguments(call: AiToolCall) {
   const entries = Object.entries(call.arguments).filter(([, value]) => value !== null && value !== "");
   return entries.map(([key, value]) => {
     if (key === "course_ids" && Array.isArray(value)) return { label: "Courses", value: `${value.length} selected ${value.length === 1 ? "course" : "courses"}` };
+    if (key === "patches" && Array.isArray(value)) return { label: "Course edits", value: `${value.length} ${value.length === 1 ? "edit" : "edits"}` };
+    if (key === "additions" && Array.isArray(value)) return { label: "Course additions", value: `${value.length} ${value.length === 1 ? "addition" : "additions"}` };
     if (key === "include_college_courses") return { label: "College courses", value: value === true ? "Included" : "Excluded" };
     if (typeof value === "boolean") return { label: key.replaceAll("_", " "), value: value ? "Yes" : "No" };
     if (Array.isArray(value)) return { label: key.replaceAll("_", " "), value: value.map((item) => String(item).replaceAll("_", " ")).join(", ") || "None" };
@@ -274,7 +276,7 @@ function ToolCallRow({ call, busy }: { call: AiToolCall; busy: boolean }) {
   if (pending) {
     return (
       <FadeContent className={styles.approvalCard} duration={0.16}>
-        <div className={styles.approvalHeading}><ShieldCheck size={16} /><div><strong>{busy ? "Reviewing change" : "Change queued"}</strong><span>{label}</span></div></div>
+        <div className={styles.approvalHeading}><ShieldCheck size={16} /><div><strong>{busy ? "Applying change" : "Change queued"}</strong><span>{label}</span></div></div>
         <p>{call.explanation}</p>
         <dl>{readableArguments(call).map((entry) => <div key={entry.label}><dt>{entry.label}</dt><dd>{entry.value}</dd></div>)}</dl>
       </FadeContent>
