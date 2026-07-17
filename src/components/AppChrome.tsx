@@ -1,4 +1,3 @@
-import { Button as BaseButton } from "@base-ui/react/button";
 import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
@@ -160,7 +159,7 @@ export default function AppChrome<ViewId extends string>({
         {navItems.map((item) => {
           const NavIcon = item.icon;
           const active = view === item.id;
-          return <BaseButton
+          return <button
             key={item.id}
             className={active ? "active" : ""}
             onPointerEnter={() => onPreload?.(item.id)}
@@ -175,7 +174,7 @@ export default function AppChrome<ViewId extends string>({
           >
             <NavIcon size={18} weight={active ? "fill" : "regular"} aria-hidden />
             <span>{item.label}</span>
-          </BaseButton>;
+          </button>;
         })}
       </nav>
       <div className="sidebar-footer">

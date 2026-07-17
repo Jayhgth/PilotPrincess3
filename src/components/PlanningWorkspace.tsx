@@ -95,7 +95,6 @@ import { applyPlanCourseUpdates, commitTranscriptImport } from "@/lib/workspace-
 import { transcriptMimeType } from "@/lib/transcript-file";
 import AppChrome from "@/components/AppChrome";
 import PilotErrorBoundary from "@/components/PilotErrorBoundary";
-import SettingsDialog from "@/components/SettingsDialog";
 import SchoolSupportNotice from "@/components/SchoolSupportNotice";
 import { LoadingView, LoadingWorkspace, PageHeader } from "@/components/workspace/WorkspaceScaffold";
 import type { SchoolSupportReadiness } from "@/lib/workspace-bootstrap";
@@ -114,6 +113,7 @@ const GraduationWorkspace = lazy(loadGraduationWorkspace);
 const SmccdPlanner = lazy(loadSmccdPlanner);
 const GpaPlanningLab = lazy(loadGpaPlanningLab);
 const GlobalAssistant = lazy(loadGlobalAssistant);
+const SettingsDialog = lazy(() => import("@/components/SettingsDialog"));
 const AdminSettingsPanel = lazy(() => import("@/components/AdminSettingsPanel"));
 const CourseCatalogBrowser = lazy(() => import("@/components/CourseCatalogBrowser"));
 const CourseDetailLayout = lazy(() => import("@/components/CourseDetailLayout"));
@@ -1695,16 +1695,18 @@ export default function PlanningWorkspace() {
       >
         <Suspense fallback={<LoadingView />}>{renderView(contentView)}</Suspense>
       </AppChrome>
-      {view === "settings" && <SettingsDialog
-        open={view === "settings"}
-        activeId={activeSettingsArea}
-        description={SETTINGS_DESCRIPTIONS[activeSettingsArea]}
-        items={visibleSettingsNavItems}
-        onNavigate={(id) => openSettings(id as SettingsArea)}
-        onClose={closeSettings}
-      >
-        <Suspense fallback={<LoadingView />}>{renderSettings()}</Suspense>
-      </SettingsDialog>}
+      {view === "settings" && <Suspense fallback={null}>
+        <SettingsDialog
+          open
+          activeId={activeSettingsArea}
+          description={SETTINGS_DESCRIPTIONS[activeSettingsArea]}
+          items={visibleSettingsNavItems}
+          onNavigate={(id) => openSettings(id as SettingsArea)}
+          onClose={closeSettings}
+        >
+          <Suspense fallback={<LoadingView />}>{renderSettings()}</Suspense>
+        </SettingsDialog>
+      </Suspense>}
       {assistantOpen && <Suspense fallback={null}><PilotErrorBoundary onFailure={() => {
         setAssistantOpen(false);
         notify("Pilot could not open. Your workspace is still available; try opening Pilot again.", "error");

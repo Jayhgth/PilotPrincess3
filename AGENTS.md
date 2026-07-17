@@ -12,5 +12,9 @@
 - Run `pnpm check` for normal changes. Run focused, full, browser, catalog, or linked-Supabase checks only when the changed system or a release actually needs them.
 - Any Pilot schedule-generation change must keep a focused live read → proposal → validated apply → undo test. A prose preview or read-tool assertion alone is not sufficient, and at least one supported four-year rebuild must finish with an applied, reversible schedule.
 - Keep the complete suite at 30 cases or fewer. Prefer grouped academic invariants, auth boundaries, command contracts, and one canonical live Pilot workflow over prompt-string duplication.
+- Measure before optimizing. Keep noncritical workspace features behind lazy boundaries, enforce the client bundle budget, and compare production builds before accepting performance work.
+- Prefer the platform and an existing project primitive over a new dependency or abstraction. Add a layer only when it owns a real policy boundary or has multiple concrete consumers; remove obsolete paths in the same change.
+- Keep tests proportional to risk: unit-test durable rules, integration-test database and command boundaries, and reserve browser tests for complete user flows. Do not duplicate the same behavior across layers.
+- Treat applied migrations and official catalog/source data as immutable product history, not cleanup targets. Optimize them only with measured production evidence and a forward migration.
 - Keep documentation limited to `README.md` and durable references in `docs/`. Do not create task logs, completion reports, implementation-status files, or extra checklists.
 - Inspect Git status and commit coherent milestones without including unrelated work.
