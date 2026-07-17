@@ -39,6 +39,17 @@ export function boardTermForYearDrop(term: PlanCourse["term"], destinationGrade:
   return term;
 }
 
+export function courseTermForBoardDrop(
+  currentTerm: PlanCourse["term"],
+  catalogTermType: string | null | undefined,
+  destinationType: "course" | "lane" | "year" | undefined,
+  destinationTerm: CourseBoardTerm
+): PlanCourse["term"] {
+  if (catalogTermType === "year") return "full_year";
+  if (destinationType === "year" && currentTerm === "full_year") return "full_year";
+  return destinationTerm;
+}
+
 function boardSortGroup(row: PlanCourse) {
   if (isPassFailPlanCourse(row)) return 2;
   return isCollegePlanCourse(row) ? 0 : 1;

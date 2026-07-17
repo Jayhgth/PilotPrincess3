@@ -35,6 +35,7 @@ import {
   boardTermForYearDrop,
   compareCourseBoardRows,
   compareCourseBoardRowsForTerm,
+  courseTermForBoardDrop,
   courseStatusForBoardMove,
   courseAppearsInBoardTerm,
   courseBoardTermsForGrade,
@@ -338,7 +339,7 @@ export default function CourseKanban(props: CourseKanbanProps) {
       return;
     }
     const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
-    const term = catalogCourse?.term_type === "year" || row.term === "full_year" ? "full_year" : destinationBoardTerm;
+    const term = courseTermForBoardDrop(row.term, catalogCourse?.term_type, destination.type, destinationBoardTerm);
     const status = courseStatusForBoardMove(currentGrade, destination.gradeLevel, row.status);
     const destinationRows = props.rows
       .filter((candidate) => candidate.grade_level === destination.gradeLevel)

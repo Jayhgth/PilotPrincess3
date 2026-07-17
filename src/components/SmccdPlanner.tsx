@@ -207,7 +207,8 @@ export default function SmccdPlanner({
     name: "",
     collegeUnits: 3,
     dtechCredits: 0,
-    gradeLevel: (settings.grade_level ?? 11) as GradeLevel
+    gradeLevel: (settings.grade_level ?? 11) as GradeLevel,
+    term: "fall" as PlanCourse["term"]
   });
 
   function selectTargetGrade(grade: GradeLevel) {
@@ -215,6 +216,14 @@ export default function SmccdPlanner({
     if (grade === 12) {
       setCourseDraft((current) => current.term === "summer" ? { ...current, term: "fall" } : current);
     }
+  }
+
+  function selectManualGrade(gradeLevel: GradeLevel) {
+    setManualDraft((current) => ({
+      ...current,
+      gradeLevel,
+      term: gradeLevel === 12 && current.term === "summer" ? "fall" : current.term
+    }));
   }
 
   useEffect(() => {
@@ -550,6 +559,10 @@ export default function SmccdPlanner({
   async function addManualCourse(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     if (!manualDraft.name.trim()) return;
+    if (manualDraft.gradeLevel === 12 && manualDraft.term === "summer") {
+      setError("Senior year does not include a summer term. Choose fall or spring.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -559,7 +572,7 @@ export default function SmccdPlanner({
         custom_course_name: manualDraft.name.trim(),
         grade_level: manualDraft.gradeLevel,
         school_year: schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, manualDraft.gradeLevel),
-        term: "fall",
+        term: manualDraft.term,
         status: "planned",
         credits: manualDraft.dtechCredits,
         college_units: manualDraft.collegeUnits,
@@ -811,7 +824,12 @@ export default function SmccdPlanner({
         <form className="form-section compact-form" onSubmit={addManualCourse}>
           <h2>Add a manual course</h2>
           <label className="form-field"><span>Exact course code and title</span><input value={manualDraft.name} onChange={(event) => setManualDraft({ ...manualDraft, name: event.target.value })} required /></label>
-          <div className="form-grid three"><label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={manualDraft.collegeUnits} onChange={(event) => setManualDraft({ ...manualDraft, collegeUnits: Number(event.target.value) })} /></label><label className="form-field"><span>Proposed high school credits</span><input type="number" min={0} max={30} step={0.5} value={manualDraft.dtechCredits} onChange={(event) => setManualDraft({ ...manualDraft, dtechCredits: Number(event.target.value) })} /></label><label className="form-field"><span>Grade</span><select value={manualDraft.gradeLevel} onChange={(event) => setManualDraft({ ...manualDraft, gradeLevel: Number(event.target.value) as GradeLevel })}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label></div>
+          <div className="form-grid four">
+            <label className="form-field"><span>College units</span><input type="number" min={0.5} max={19} step={0.5} value={manualDraft.collegeUnits} onChange={(event) => setManualDraft({ ...manualDraft, collegeUnits: Number(event.target.value) })} /></label>
+            <label className="form-field"><span>Proposed high school credits</span><input type="number" min={0} max={30} step={0.5} value={manualDraft.dtechCredits} onChange={(event) => setManualDraft({ ...manualDraft, dtechCredits: Number(event.target.value) })} /></label>
+            <label className="form-field"><span>School year</span><select value={manualDraft.gradeLevel} onChange={(event) => selectManualGrade(Number(event.target.value) as GradeLevel)}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade} · {schoolYearForGrade(settings.graduation_year ?? new Date().getFullYear() + 3, grade)}</option>)}</select></label>
+            <label className="form-field"><span>Term</span><select value={manualDraft.term} onChange={(event) => setManualDraft({ ...manualDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option>{manualDraft.gradeLevel < 12 ? <option value="summer">Summer</option> : null}</select></label>
+          </div>
           <button className="secondary-button" type="submit" disabled={busy}><Plus size={17} /> Add manual course</button>
         </form>
       </details>}

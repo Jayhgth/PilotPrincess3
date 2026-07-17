@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareCourseBoardRowsForTerm, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
+import { compareCourseBoardRowsForTerm, courseTermForBoardDrop, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import { selectedSchoolCatalogEligibility } from "@/lib/catalog-eligibility";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
@@ -40,6 +40,13 @@ const requirement: GraduationRequirement = {
 };
 
 describe("core academic planning contracts", () => {
+  it("moves manual courses between school years and semester lanes", () => {
+    expect(courseTermForBoardDrop("full_year", null, "year", "fall")).toBe("full_year");
+    expect(courseTermForBoardDrop("full_year", null, "lane", "spring")).toBe("spring");
+    expect(courseTermForBoardDrop("fall", null, "lane", "summer")).toBe("summer");
+    expect(courseTermForBoardDrop("full_year", "year", "lane", "spring")).toBe("full_year");
+  });
+
   it("recognizes one cohesive high-school and college math ladder", () => {
     expect(["Algebra 1", "Geometry", "Algebra 2", "MATH 225 Path to Calculus", "MATH 251 Calculus with Analytic Geometry I", "MATH 252 Calculus with Analytic Geometry II", "MATH 253 Calculus with Analytic Geometry III"].map(mathSequenceRankFromText)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(["CSM:MATH 251", "SKY:MATH 252", "CAN:MATH 253"].map(mathSequenceRankFromText)).toEqual([5, 6, 7]);

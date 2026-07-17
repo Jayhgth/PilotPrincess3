@@ -50,6 +50,21 @@ async function dragCard(page: Page, source: Locator, target: Locator) {
   await page.mouse.up();
 }
 
+async function dragCardToLane(page: Page, source: Locator, target: Locator) {
+  const sourceBox = await source.boundingBox();
+  if (!sourceBox) throw new Error("The drag source is not visible.");
+  const sourceCenter = { x: sourceBox.x + sourceBox.width / 2, y: sourceBox.y + sourceBox.height / 2 };
+  await page.mouse.move(sourceCenter.x, sourceCenter.y);
+  await page.mouse.down();
+  await page.mouse.move(sourceCenter.x + 12, sourceCenter.y + 12, { steps: 4 });
+  const targetBox = await target.boundingBox();
+  if (!targetBox) throw new Error("The drag destination is not visible.");
+  const targetCenter = { x: targetBox.x + targetBox.width / 2, y: targetBox.y + 32 };
+  await page.mouse.move(targetCenter.x, targetCenter.y, { steps: 16 });
+  await expect(target).toHaveClass(/drop-target/);
+  await page.mouse.up();
+}
+
 test.describe("authenticated student workspace", () => {
   test.skip(!supabaseConfigured, "Set the public Supabase variables to run authenticated flows.");
 
@@ -195,6 +210,16 @@ test.describe("authenticated student workspace", () => {
     await page.getByRole("button", { name: "Add to plan" }).click();
     await expect(page.getByRole("status")).toContainText("Advanced Environmental Science Honors added");
 
+    await page.getByRole("tab", { name: "College catalog" }).click();
+    await page.getByText("Course missing from the catalog?").click();
+    await page.getByLabel("Exact course code and title").fill("TEST 199 Student-provided seminar");
+    await page.getByLabel("College units").fill("3");
+    await page.getByLabel("Proposed high school credits").fill("5");
+    await page.getByLabel("School year").selectOption("12");
+    await page.getByLabel("Term").selectOption("spring");
+    await page.getByRole("button", { name: "Add manual course" }).click();
+    await expect(page.locator(".smccd-notice")).toContainText("Manual college course added");
+
     await page.getByRole("tab", { name: "My plan" }).click();
     const moveCard = page.getByLabel(/Move Advanced Environmental Science Honors/);
     await expect(moveCard).toBeVisible();
@@ -205,6 +230,15 @@ test.describe("authenticated student workspace", () => {
     await dragCard(page, page.getByLabel(/Move Advanced Environmental Science Honors/), page.getByRole("tab", { name: /^Grade 11/ }));
     await expect(page.getByRole("tab", { name: /^Grade 11/ })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator(".toast")).toContainText("moved to Grade 11");
+
+    await page.getByRole("tab", { name: /^Grade 12/ }).click();
+    const manualCard = page.getByLabel(/Move TEST 199 Student-provided seminar/);
+    await expect(manualCard).toBeVisible();
+    await dragCard(page, manualCard, page.getByRole("tab", { name: /^Grade 11/ }));
+    await expect(page.locator(".toast")).toContainText("moved to Grade 11, Spring");
+    const fallLane = page.locator(".course-term-lane").filter({ has: page.getByRole("heading", { name: "Fall", exact: true }) });
+    await dragCardToLane(page, page.getByLabel(/Move TEST 199 Student-provided seminar/), fallLane);
+    await expect(page.locator(".toast")).toContainText("moved to Grade 11, Fall");
 
     await page.getByRole("button", { name: "GPA planner", exact: true }).click();
     const gradeSelect = page.getByLabel("Expected grade for Advanced Environmental Science Honors");
