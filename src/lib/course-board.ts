@@ -41,11 +41,11 @@ export function boardTermForYearDrop(term: PlanCourse["term"], destinationGrade:
 
 export function courseTermForBoardDrop(
   currentTerm: PlanCourse["term"],
-  catalogTermType: string | null | undefined,
+  catalogRequiresFullYear: boolean,
   destinationType: "course" | "lane" | "year" | undefined,
   destinationTerm: CourseBoardTerm
 ): PlanCourse["term"] {
-  if (catalogTermType === "year") return "full_year";
+  if (catalogRequiresFullYear) return "full_year";
   if (destinationType === "year" && currentTerm === "full_year") return "full_year";
   return destinationTerm;
 }

@@ -11,6 +11,35 @@ export interface CatalogEligibility {
   reason?: CatalogExclusionReason;
 }
 
+export function selectedSchoolCourseAllowsGradePlacement(course: Course, gradeLevel: GradeLevel): boolean {
+  return course.grade_levels.length === 0 || course.grade_levels.includes(gradeLevel);
+}
+
+export function selectedSchoolCourseGradeOptions(
+  course: Course,
+  planGrades: readonly GradeLevel[]
+): GradeLevel[] {
+  if (course.grade_levels.length === 0) return [...planGrades];
+  return planGrades.filter((grade) => course.grade_levels.includes(grade));
+}
+
+export function selectedSchoolCourseTermOptions(
+  course: Course,
+  gradeLevel: GradeLevel
+): PlanCourse["term"][] {
+  const semesterTerms: PlanCourse["term"][] = gradeLevel === 12
+    ? ["fall", "spring"]
+    : ["fall", "spring", "summer"];
+  if (course.grade_levels.length === 0 || course.term_type === "variable") {
+    return ["full_year", ...semesterTerms];
+  }
+  return course.term_type === "year" ? ["full_year"] : semesterTerms;
+}
+
+export function selectedSchoolCourseHasFixedFullYearTerm(course: Course): boolean {
+  return course.grade_levels.length > 0 && course.term_type === "year";
+}
+
 const DTECH_MATH_SEQUENCE: ReadonlyArray<{ rank: number; names: readonly string[] }> = [
   { rank: 1, names: ["Algebra 1", "Algebra I"] },
   { rank: 2, names: ["Geometry", "Geometry / Geometry Honors"] },
@@ -95,7 +124,7 @@ export function selectedSchoolCatalogEligibility(
     row.course_id === course.id || intersects(candidateKeys, planDtechKeys(row, courseById))
   );
   if (alreadyInPlan) return { eligible: false, reason: "already_in_plan" };
-  if (course.grade_levels.length > 0 && !course.grade_levels.includes(targetGrade)) return { eligible: false, reason: "outside_grade" };
+  if (!selectedSchoolCourseAllowsGradePlacement(course, targetGrade)) return { eligible: false, reason: "outside_grade" };
 
   if (options.schoolSlug === "design-tech-high-school") {
     const candidateMathRank = course.subject === "Mathematics" ? dtechMathRank(course.name) : null;

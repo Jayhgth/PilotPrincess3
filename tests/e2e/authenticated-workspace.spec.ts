@@ -207,6 +207,11 @@ test.describe("authenticated student workspace", () => {
     await page.getByRole("button", { name: "Add courses" }).click();
     await page.getByLabel("Search courses").fill("Advanced Environmental Science Honors");
     await page.getByRole("button", { name: /Advanced Environmental Science Honors/ }).first().click();
+    await expect(page.getByLabel("School year")).toBeEnabled();
+    await page.getByLabel("School year").selectOption("12");
+    await expect(page.getByLabel("School year")).toHaveValue("12");
+    await page.getByLabel("School year").selectOption("11");
+    await expect(page.getByLabel("Term")).toBeEnabled();
     await page.getByRole("button", { name: "Add to plan" }).click();
     await expect(page.getByRole("status")).toContainText("Advanced Environmental Science Honors added");
 

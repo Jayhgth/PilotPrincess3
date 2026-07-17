@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareCourseBoardRowsForTerm, courseTermForBoardDrop, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
-import { selectedSchoolCatalogEligibility } from "@/lib/catalog-eligibility";
+import { selectedSchoolCatalogEligibility, selectedSchoolCourseAllowsGradePlacement, selectedSchoolCourseGradeOptions, selectedSchoolCourseTermOptions } from "@/lib/catalog-eligibility";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
@@ -41,10 +41,24 @@ const requirement: GraduationRequirement = {
 
 describe("core academic planning contracts", () => {
   it("moves manual courses between school years and semester lanes", () => {
-    expect(courseTermForBoardDrop("full_year", null, "year", "fall")).toBe("full_year");
-    expect(courseTermForBoardDrop("full_year", null, "lane", "spring")).toBe("spring");
-    expect(courseTermForBoardDrop("fall", null, "lane", "summer")).toBe("summer");
-    expect(courseTermForBoardDrop("full_year", "year", "lane", "spring")).toBe("full_year");
+    expect(courseTermForBoardDrop("full_year", false, "year", "fall")).toBe("full_year");
+    expect(courseTermForBoardDrop("full_year", false, "lane", "spring")).toBe("spring");
+    expect(courseTermForBoardDrop("fall", false, "lane", "summer")).toBe("summer");
+    expect(courseTermForBoardDrop("full_year", true, "lane", "spring")).toBe("full_year");
+  });
+
+  it("allows user placement when local grade and term availability need verification", () => {
+    const ucopOnly = course("ucop-physics", "AP Physics C: Electricity and Magnetism", "Physics", []);
+    expect(selectedSchoolCourseGradeOptions(ucopOnly, [9, 10, 11, 12])).toEqual([9, 10, 11, 12]);
+    expect(selectedSchoolCourseAllowsGradePlacement(ucopOnly, 12)).toBe(true);
+    expect(selectedSchoolCourseTermOptions(ucopOnly, 9)).toEqual(["full_year", "fall", "spring", "summer"]);
+    expect(selectedSchoolCourseTermOptions(ucopOnly, 12)).toEqual(["full_year", "fall", "spring"]);
+    expect(selectedSchoolCatalogEligibility(ucopOnly, 12, [], [ucopOnly])).toEqual({ eligible: true });
+
+    const locallyVerified = course("local-physics", "AP Physics C", "Physics", [11, 12]);
+    expect(selectedSchoolCourseAllowsGradePlacement(locallyVerified, 9)).toBe(false);
+    expect(selectedSchoolCourseGradeOptions(locallyVerified, [9, 10, 11, 12])).toEqual([11, 12]);
+    expect(selectedSchoolCourseTermOptions(locallyVerified, 11)).toEqual(["full_year"]);
   });
 
   it("recognizes one cohesive high-school and college math ladder", () => {

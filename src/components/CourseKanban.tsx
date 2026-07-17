@@ -45,6 +45,7 @@ import {
   type CourseBoardTerm
 } from "@/lib/course-board";
 import { INSTITUTIONS } from "@/lib/institutions";
+import { selectedSchoolCourseHasFixedFullYearTerm } from "@/lib/catalog-eligibility";
 import { courseDisplayName, GRADE_LEVELS, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
 import type { Course, CourseStatus, GradeLevel, PlanCourse, SmccdCourse, StudentSettings } from "@/lib/models";
 
@@ -339,7 +340,12 @@ export default function CourseKanban(props: CourseKanbanProps) {
       return;
     }
     const catalogCourse = row.course_id ? courseMap.get(row.course_id) : null;
-    const term = courseTermForBoardDrop(row.term, catalogCourse?.term_type, destination.type, destinationBoardTerm);
+    const term = courseTermForBoardDrop(
+      row.term,
+      Boolean(catalogCourse && selectedSchoolCourseHasFixedFullYearTerm(catalogCourse)),
+      destination.type,
+      destinationBoardTerm
+    );
     const status = courseStatusForBoardMove(currentGrade, destination.gradeLevel, row.status);
     const destinationRows = props.rows
       .filter((candidate) => candidate.grade_level === destination.gradeLevel)

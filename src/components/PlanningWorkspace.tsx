@@ -86,7 +86,12 @@ import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPrefe
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
 import { evaluateSelectedSchoolPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
-import { selectedSchoolCatalogEligibility } from "@/lib/catalog-eligibility";
+import {
+  selectedSchoolCatalogEligibility,
+  selectedSchoolCourseAllowsGradePlacement,
+  selectedSchoolCourseGradeOptions,
+  selectedSchoolCourseTermOptions
+} from "@/lib/catalog-eligibility";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 import type { WorkspaceDomain } from "@/lib/app-capabilities";
@@ -325,12 +330,19 @@ export default function PlanningWorkspace() {
     )).sort((a, b) => a.name.localeCompare(b.name));
   }, [catalogAvailability.eligibleCourses, catalogSearch, catalogSubject]);
   const defaultDtechPlacement = useCallback((course: Course, preferredGrade?: GradeLevel) => {
-    const allowedGrades = course.grade_levels.filter((grade): grade is GradeLevel => grade >= 9 && grade <= 12);
     const currentGrade = preferredGrade ?? (catalogGrade === "all" ? undefined : catalogGrade) ?? (settings?.grade_level ?? 9) as GradeLevel;
+    const allowedGrades = selectedSchoolCourseGradeOptions(course, availableCatalogGrades);
     const gradeLevel = allowedGrades.find((grade) => grade >= currentGrade) ?? allowedGrades.at(-1) ?? currentGrade;
-    return { gradeLevel, term: (course.term_type === "semester" ? "fall" : "full_year") as PlanCourse["term"] };
-  }, [catalogGrade, settings?.grade_level]);
+    const term = selectedSchoolCourseTermOptions(course, gradeLevel)[0] ?? "full_year";
+    return { gradeLevel, term };
+  }, [availableCatalogGrades, catalogGrade, settings?.grade_level]);
   const selectedDtechCourse = selectedDtechCourseId ? courseMap.get(selectedDtechCourseId) ?? null : null;
+  const selectedDtechGradeOptions = selectedDtechCourse
+    ? selectedSchoolCourseGradeOptions(selectedDtechCourse, availableCatalogGrades)
+    : [];
+  const selectedDtechTermOptions = selectedDtechCourse
+    ? selectedSchoolCourseTermOptions(selectedDtechCourse, dtechDraft.gradeLevel)
+    : [];
   const selectedDtechEvaluation = useMemo(() => selectedDtechCourse
     ? evaluateSelectedSchoolPlannerPrerequisites(
         selectedDtechCourse,
@@ -763,6 +775,15 @@ export default function PlanningWorkspace() {
     setDtechDraft(defaultDtechPlacement(course));
   }
 
+  function selectDtechGrade(gradeLevel: GradeLevel) {
+    if (!selectedDtechCourse) return;
+    const terms = selectedSchoolCourseTermOptions(selectedDtechCourse, gradeLevel);
+    setDtechDraft((current) => ({
+      gradeLevel,
+      term: terms.includes(current.term) ? current.term : terms[0] ?? "full_year"
+    }));
+  }
+
   async function addCatalogCourse(
     course: Course,
     status: "completed" | "current" | "planned",
@@ -834,7 +855,7 @@ export default function PlanningWorkspace() {
       return false;
     }
     const dtechCourse = row.course_id ? courseMap.get(row.course_id) : null;
-    if (dtechCourse && !dtechCourse.grade_levels.includes(placement.gradeLevel)) {
+    if (dtechCourse && !selectedSchoolCourseAllowsGradePlacement(dtechCourse, placement.gradeLevel)) {
       notify(`${dtechCourse.name} is not offered for grade ${placement.gradeLevel}.`);
       return false;
     }
@@ -1479,8 +1500,8 @@ export default function PlanningWorkspace() {
           ]}
           description={selectedDtechCourse.description}
           controls={<form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
-            <label><span>School year</span><select value={dtechDraft.gradeLevel} disabled><option value={dtechDraft.gradeLevel}>Grade {dtechDraft.gradeLevel}</option></select></label>
-            <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })} disabled={selectedDtechCourse.term_type !== "semester"}>{selectedDtechCourse.term_type === "semester" ? <><option value="fall">Fall</option><option value="spring">Spring</option></> : <option value="full_year">Full year</option>}</select></label>
+            <label><span>School year</span><select value={dtechDraft.gradeLevel} onChange={(event) => selectDtechGrade(Number(event.target.value) as GradeLevel)}>{selectedDtechGradeOptions.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
+            <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })}>{selectedDtechTermOptions.map((term) => <option value={term} key={term}>{term === "full_year" ? "Full year" : term[0].toUpperCase() + term.slice(1)}</option>)}</select></label>
             <button className="primary-button" type="submit" disabled={selectedDtechEvaluation.result.status === "blocked"}><Plus size={16} /> Add to plan</button>
           </form>}
         >
