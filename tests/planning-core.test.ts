@@ -182,9 +182,9 @@ describe("core academic planning contracts", () => {
         "10": { minimum_high_school_courses: 0, target_total_courses: 0, required_areas: ["world_language"], preferred_course_names: ["Spanish 2"] }
       }
     };
-    const equivalencies: SmccdHighSchoolEquivalency[] = ["ASL 100", "ASL 110"].map((code) => ({
+    const equivalencies: SmccdHighSchoolEquivalency[] = ["ASL 100"].map((code) => ({
       normalized_course_code: code, college_course_code: code, description: "American Sign Language", college_units: 5,
-      high_school_credits: 10, high_school_equivalent: code, requirement_area: "world_language", pairing_note: null,
+      high_school_credits: 10, high_school_equivalent: "ASL 100 meets the requirement for the 2nd year of a high school language.", requirement_area: "world_language", pairing_note: null,
       source_id: "source", confidence: "verified"
     }));
     const collegeLanguage = equivalencies.map((equivalency, index) => plan({
@@ -311,7 +311,7 @@ describe("core academic planning contracts", () => {
     }
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "physical_education").map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "PE 1"], [10, "PE 2"]]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "math").map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "Pre-Calc Honors"], [10, "AP Calculus AB"], [11, "AP Calculus BC"], [12, "Multivariable Calculus"]]);
-    expect(generated.filter((row) => ["spanish-1", "spanish-2"].includes(row.course_id)).map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "Spanish I"], [10, "Spanish II"]]);
+    expect(generated.filter((row) => ["spanish-1", "spanish-2"].includes(row.course_id)).map((row) => [row.grade_level, names.get(row.course_id)])).toEqual([[9, "Spanish I"]]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "social_science").map((row) => names.get(row.course_id))).toEqual(["AP World History", "AP US History", "American Government", "Economics"]);
     expect(generated.filter((row) => areaByCourseId.get(row.course_id) === "visual_performing_arts")).toHaveLength(1);
     expect(generated.map((row) => names.get(row.course_id))).not.toContain("Phoenix Credit Recovery");

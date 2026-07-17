@@ -1026,6 +1026,15 @@ export function generateSuggestedPlan(
       .filter(({ course: candidate }) => courseMatchesArea(candidate, area))
       .reduce((total, { row }) => total + Number(row.credits ?? 0), 0)
       + verifiedCollegeAreaRows(area).reduce((total, row) => total + Number(row.credits ?? 0), 0);
+    const languageSequenceIsComplete = () => {
+      if (areaCreditsTotal("world_language") >= requirementCredits("world_language")) return true;
+      if (allPlannedCourses().some(({ course: candidate }) => (plannerLanguageIdentity(candidate).level ?? 0) >= 3)) return true;
+      return verifiedCollegeAreaRows("world_language").some((row) => {
+        const code = row.smccd_course_id?.split(":").at(-1)?.toUpperCase() ?? "";
+        const equivalent = (context.equivalencies ?? []).find((candidate) => candidate.normalized_course_code.toUpperCase() === code)?.high_school_equivalent ?? "";
+        return /\b(?:3|iii)\b/i.test(equivalent) || /meets the requirement for the 2nd year/i.test(equivalent);
+      });
+    };
     const targetLoadForGrade = (grade: GradeLevel) => Math.max(1, Math.min(
       maximumPerTerm ?? context.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`]?.target_total_courses ?? 6,
       12
@@ -1103,8 +1112,9 @@ export function generateSuggestedPlan(
         && (policyAreas.has("personal_development") || Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade))) {
         fillAreaForGrade("personal_development", grade, Math.min(10, remainingPersonalDevelopment));
       }
-      const languageTarget = advanced && courses.some((candidate) => courseMatchesArea(candidate, "world_language")) ? 2 : requirementYears("world_language");
-      if ((policyAreas.has("world_language") || areaCourseCount("world_language") < languageTarget)
+      const languageTarget = requirementYears("world_language");
+      if (!languageSequenceIsComplete()
+        && (policyAreas.has("world_language") || areaCourseCount("world_language") < languageTarget)
         && areaCreditsInGrade("world_language", grade) === 0
         && Math.min(termLoad(grade, "fall"), termLoad(grade, "spring")) < targetLoadForGrade(grade)) {
         fillAreaForGrade("world_language", grade);

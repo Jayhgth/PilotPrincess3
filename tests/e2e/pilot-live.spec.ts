@@ -449,6 +449,12 @@ test.describe("live Pilot behavior", () => {
     const labScienceCourseIds = new Set((mappings.data ?? []).filter((mapping) => labScienceRequirementIds.has(mapping.requirement_id)).map((mapping) => mapping.course_id));
     for (const grade of [9, 10, 11, 12]) {
       expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id)).length).toBeLessThanOrEqual(1);
+      const collegeScienceReplacesSchoolScience = (generatedFullPlan.data ?? []).some((row) => row.grade_level === grade
+        && row.smccd_course_id
+        && row.requirement_area_override === "lab_science");
+      if (collegeScienceReplacesSchoolScience) {
+        expect((generatedFullPlan.data ?? []).filter((row) => row.grade_level === grade && row.course_id && labScienceCourseIds.has(row.course_id))).toHaveLength(0);
+      }
     }
 
     // A compound placement edit changes both requested sequences in one
