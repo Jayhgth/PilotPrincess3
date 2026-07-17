@@ -84,6 +84,9 @@ describe("Pilot complete academic control", () => {
     const spanish = crypto.randomUUID();
     const french = crypto.randomUUID();
     const chineseThree = crypto.randomUUID();
+    const collegeChineseThree = "CSM:CHIN 131";
+    const calculusOne = "CSM:MATH 251";
+    const calculusTwo = "CSM:MATH 252";
     const combinedEditPrompt = "I want to do chinese as the language, just one semester of chinese 3. Also, start my math at algebra 2";
     expect(parseAssistantScheduleIntent(combinedEditPrompt)).toMatchObject({ startingMathCourse: "algebra 2", startingLanguageCourse: "chinese 3" });
     expect(requiredAssistantEvidenceReadForConversation(scheduleHistory, combinedEditPrompt)?.name).toBe("get_academic_context");
@@ -148,19 +151,30 @@ describe("Pilot complete academic control", () => {
             { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [11] }
           ] }, { area: "world_language", eligible_course_options: [
             { course_id: spanish, name: "Spanish 1", subject: "World Language", weighted: false, term_type: "year", grade_levels: [9] }
-          ] }]
+          ] }],
+          college_sequence_options: [
+            { course_id: collegeChineseThree, course_code: "CHIN 131", title: "Intermediate Chinese I", high_school_requirement_area: "world_language", high_school_equivalent: "Mandarin 3 Fall", high_school_credits: 5, required_by_bookmarked_degrees: [] },
+            { course_id: calculusOne, course_code: "MATH 251", title: "Calculus with Analytic Geometry I", high_school_requirement_area: "math", high_school_equivalent: "Calculus I", high_school_credits: 10, required_by_bookmarked_degrees: ["Computer and Information Science"] },
+            { course_id: calculusTwo, course_code: "MATH 252", title: "Calculus with Analytic Geometry II", high_school_requirement_area: "math", high_school_equivalent: "Calculus II", high_school_credits: 10, required_by_bookmarked_degrees: ["Computer and Information Science"] }
+          ]
         }
       }),
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
     });
-    expect(partiallyResolvable.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
+    expect(partiallyResolvable.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses", "add_academic_courses"]);
     expect(partiallyResolvable.proposals[0]?.arguments).toMatchObject({ patches: [
       { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9 },
-      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10 }
+      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10 },
+      { plan_course_id: spanishRow, remove: true }
     ] });
-    expect(partiallyResolvable.questions.map((question) => question.id)).toEqual(["custom_language_course"]);
-    expect(partiallyResolvable.message).toContain("not in the selected school's verified catalog");
+    expect(partiallyResolvable.proposals[1]?.arguments).toMatchObject({ entries: [
+      { source: "smccd", course_id: calculusOne, grade_level: 11, term: "fall" },
+      { source: "smccd", course_id: calculusTwo, grade_level: 11, term: "spring" },
+      { source: "smccd", course_id: collegeChineseThree, grade_level: 9, term: "fall" }
+    ] });
+    expect(partiallyResolvable.questions).toEqual([]);
+    expect(partiallyResolvable.message).toContain("math starting with algebra 2 and language using chinese 3");
   });
 
   it("enforces reversible app-wide Pilot control and safety boundaries", async () => {
@@ -242,6 +256,8 @@ describe("Pilot complete academic control", () => {
     expect(prompt).toContain("durable inverse");
     expect(prompt).toContain("call get_course_schedule_options");
     expect(prompt).toContain("Bookmarked degrees influence those broader planning requests automatically");
+    expect(prompt).toContain("satisfy exact unmet bookmarked-degree cores and their prerequisite chain before generic GE or unit fillers");
+    expect(prompt).toContain("audit the entire assembled schedule for duplicate or near-duplicate titles");
     expect(prompt).toContain("use resolve_academic_course_batch once");
     expect(prompt).toContain("normal product validation, RLS, receipts, and undo");
     expect(prompt).not.toContain("Current page context");

@@ -1349,11 +1349,15 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   };
   const mathOptions = eligibleOptions("math");
   const languageOptions = eligibleOptions("world_language");
+  const collegeSequenceOptions = Array.isArray(context.college_sequence_options)
+    ? context.college_sequence_options.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
   const requestedRank = intent.startingMathCourse ? mathSequenceRankFromText(intent.startingMathCourse) : null;
   const startGrade = intent.startGrade ?? Number((context.student as Record<string, unknown> | undefined)?.plan_start_grade ?? 9);
   if (![9, 10, 11, 12].includes(startGrade)) return null;
 
   const patches: Array<Record<string, unknown>> = [];
+  const additions: Array<Record<string, unknown>> = [];
   const questions: AssistantQuestion[] = [];
   const warnings: string[] = [];
   if (intent.startingMathCourse && requestedRank !== null) {
@@ -1398,6 +1402,51 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
       }
     }
     if (!patches.some((patch) => Number(patch.grade_level) === startGrade)) return null;
+
+    // A starting-placement correction changes the downstream ladder. Continue
+    // into exact college mathematics only when a bookmarked degree still needs
+    // those courses, rather than treating the high-school and college plans as
+    // unrelated schedules.
+    const existingCollegeCodes = new Set(rows
+      .filter((row) => typeof row.smccd_course_id === "string")
+      .map((row) => String(row.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()));
+    const degreeMath = collegeSequenceOptions
+      .filter((course) => Array.isArray(course.required_by_bookmarked_degrees) && course.required_by_bookmarked_degrees.length > 0)
+      .map((course) => ({ course, rank: mathSequenceRankFromText(`${String(course.course_code ?? "")} ${String(course.title ?? "")}`) }))
+      .filter((item): item is { course: Record<string, unknown>; rank: number } => item.rank !== null && item.rank > requestedRank)
+      .sort((left, right) => left.rank - right.rank || String(left.course.course_code).localeCompare(String(right.course.course_code)));
+    let lastRank = Math.max(requestedRank, ...patches.flatMap((patch) => {
+      const replacement = mathOptions.find((course) => course.course_id === patch.course_id);
+      const rank = replacement ? mathSequenceRankFromText(`${String(replacement.name ?? "")} ${String(replacement.subject ?? "")}`) : null;
+      return rank === null ? [] : [rank];
+    }));
+    const lastSchoolMathGrade = Math.max(startGrade, ...patches.flatMap((patch) => patch.course_id && Number.isInteger(patch.grade_level) ? [Number(patch.grade_level)] : []));
+    let nextCollegeGrade = lastSchoolMathGrade + 1;
+    let nextCollegeTerm: "fall" | "spring" = "fall";
+    for (const item of degreeMath) {
+      if (item.rank <= lastRank || item.rank > lastRank + 1 || typeof item.course.course_id !== "string") continue;
+      const identity = `${String(item.course.course_code ?? "")} ${String(item.course.title ?? "")}`.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      if (existingCollegeCodes.has(identity)) {
+        lastRank = item.rank;
+        continue;
+      }
+      const period = { grade: nextCollegeGrade, term: nextCollegeTerm };
+      if (period.grade > 12) break;
+      additions.push({
+        source: "smccd",
+        course_id: item.course.course_id,
+        status: period.grade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
+        grade_level: period.grade,
+        term: period.term,
+        prerequisite_override_reason: `This is the direct prerequisite-ordered continuation of the student's explicit ${intent.startingMathCourse} starting placement and an outstanding bookmarked-degree requirement.`
+      });
+      lastRank = item.rank;
+      if (nextCollegeTerm === "fall") nextCollegeTerm = "spring";
+      else {
+        nextCollegeTerm = "fall";
+        nextCollegeGrade += 1;
+      }
+    }
   }
 
   if (intent.startingLanguageCourse) {
@@ -1412,13 +1461,48 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
       .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
     const targetRow = existingLanguageRows[0];
     if (!replacement || typeof replacement.course_id !== "string") {
-      warnings.push(`${intent.startingLanguageCourse} is not in the selected school's verified catalog, so it was not invented as an official course.`);
-      questions.push({
-        id: "custom_language_course",
-        prompt: `To add ${intent.startingLanguageCourse} as a custom course, provide its credits, weighted or unweighted status, and graduation requirement area.`,
-        options: [{ id: "provide_details", label: "Provide course details" }, { id: "skip_for_now", label: "Skip it for now" }],
-        allow_custom: true
-      });
+      const normalizeLanguage = (value: unknown) => normalized(String(value ?? ""))
+        .replace(/\bmandarin\b/g, "chinese")
+        .replace(/\biii\b/g, "3").replace(/\bii\b/g, "2").replace(/\bi\b/g, "1");
+      const requested = normalizeLanguage(intent.startingLanguageCourse);
+      const collegeReplacement = collegeSequenceOptions
+        .filter((course) => course.high_school_requirement_area === "world_language")
+        .map((course) => ({
+          course,
+          text: normalizeLanguage(`${String(course.course_code ?? "")} ${String(course.title ?? "")} ${String(course.high_school_equivalent ?? "")}`)
+        }))
+        .filter((item) => item.text.includes(requested) || requested.includes(item.text))
+        .sort((left, right) => Number(right.text.includes(requested)) - Number(left.text.includes(requested))
+          || Number(right.course.high_school_credits ?? 0) - Number(left.course.high_school_credits ?? 0)
+          || String(left.course.course_code).localeCompare(String(right.course.course_code)))[0]?.course;
+      if (collegeReplacement && typeof collegeReplacement.course_id === "string") {
+        const requestedTerm = /\b(?:first|1st) semester\b/i.test(userMessage) ? "fall"
+          : /\b(?:second|2nd) semester\b/i.test(userMessage) ? "spring"
+            : /\bfall\b/i.test(String(collegeReplacement.high_school_equivalent ?? "")) ? "fall"
+              : /\bspring\b/i.test(String(collegeReplacement.high_school_equivalent ?? "")) ? "spring"
+                : "fall";
+        additions.push({
+          source: "smccd",
+          course_id: collegeReplacement.course_id,
+          status: startGrade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
+          grade_level: startGrade,
+          term: requestedTerm,
+          prerequisite_override_reason: `The student explicitly stated ${intent.startingLanguageCourse} as their language placement; the selected school's verified equivalency identifies this college course as ${String(collegeReplacement.high_school_equivalent ?? "the matching language level")}.`
+        });
+        if (/\b(?:just|only)\b/i.test(userMessage)) {
+          for (const row of existingLanguageRows) {
+            if (typeof row.plan_course_id === "string") patches.push({ plan_course_id: row.plan_course_id, remove: true });
+          }
+        }
+      } else {
+        warnings.push(`${intent.startingLanguageCourse} was not found in either the selected-school catalog or its verified college equivalencies.`);
+        questions.push({
+          id: "custom_language_course",
+          prompt: `To add ${intent.startingLanguageCourse} as a custom course, provide its credits, weighted or unweighted status, and graduation requirement area.`,
+          options: [{ id: "provide_details", label: "Provide course details" }, { id: "skip_for_now", label: "Skip it for now" }],
+          allow_custom: true
+        });
+      }
     } else if (!targetRow || typeof targetRow.plan_course_id !== "string") {
       warnings.push(`There is no editable selected-school language row to replace with ${intent.startingLanguageCourse}.`);
       questions.push({
@@ -1452,22 +1536,32 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
     }
   }
 
-  if (!patches.length) return null;
+  if (!patches.length && !additions.length) return null;
   const requestedParts = [
     intent.startingMathCourse ? `math starting with ${intent.startingMathCourse}` : null,
     intent.startingLanguageCourse ? `language using ${intent.startingLanguageCourse}` : null
   ].filter(Boolean).join(" and ");
-  const proposal: AssistantChatToolActivity = {
+  const proposals: AssistantChatToolActivity[] = [];
+  if (patches.length) proposals.push({
     id: crypto.randomUUID(),
     name: "update_plan_courses",
     label: assistantToolLabel("update_plan_courses"),
     arguments: { patches },
-    explanation: `Apply only the requested ${requestedParts} edit and preserve every unrelated course.`,
+    explanation: `Apply only the requested ${requestedParts} edits and remove superseded sequence rows while preserving unrelated courses.`,
     mutatesData: true,
     status: "pending_confirmation"
-  };
+  });
+  if (additions.length) proposals.push({
+    id: crypto.randomUUID(),
+    name: "add_academic_courses",
+    label: assistantToolLabel("add_academic_courses"),
+    arguments: { entries: additions, respect_recommended_limit: true },
+    explanation: "Add the verified college equivalents and prerequisite-ordered bookmarked-degree continuation selected by the requested sequence change.",
+    mutatesData: true,
+    status: "pending_confirmation"
+  });
   return {
-    proposal,
+    proposals,
     questions,
     message: `I prepared the feasible ${requestedParts} edit for grade ${startGrade}. Unrelated courses will stay unchanged; explicit placement corrections remain labeled student-provided when they override catalog evidence.${warnings.length ? ` ${warnings.join(" ")}` : ""}`
   };
@@ -1655,7 +1749,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         if (requiredRead.name === "get_academic_context" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
           const targetedSequence = targetedStartingSequenceProposal(options.userMessage, result.data as Record<string, unknown>);
           if (targetedSequence) {
-            await options.onToolActivity(targetedSequence.proposal);
+            for (const proposal of targetedSequence.proposals) await options.onToolActivity(proposal);
             return {
               message: targetedSequence.message,
               questions: targetedSequence.questions,
@@ -1663,7 +1757,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               usage,
               latencyMs: Date.now() - startedAt,
               model,
-              proposals: [targetedSequence.proposal]
+              proposals: targetedSequence.proposals
             };
           }
         }

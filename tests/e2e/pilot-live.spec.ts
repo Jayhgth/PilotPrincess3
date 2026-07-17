@@ -406,6 +406,19 @@ test.describe("live Pilot behavior", () => {
     expect(generatedFullPlan.data?.some((row) => Boolean(row.smccd_course_id))).toBe(true);
     expect(generatedFullPlan.data?.some((row) => row.smccd_course_id && row.grade_level === 9)).toBe(true);
     expect(generatedFullPlan.data?.some((row) => row.smccd_course_id && row.grade_level === 10)).toBe(true);
+    const generatedCollegeCodes = new Set((generatedFullPlan.data ?? [])
+      .flatMap((row) => row.smccd_course_id ? [catalog.find((course) => course.id === row.smccd_course_id)?.course_code] : [])
+      .filter((code): code is string => Boolean(code)));
+    expect(generatedCollegeCodes.has("MATH 251")).toBe(true);
+    expect(generatedCollegeCodes.has("MATH 252")).toBe(true);
+    expect(generatedCollegeCodes.has("CIS 256") || generatedCollegeCodes.has("CIS 279")).toBe(true);
+    const generatedCourseLabels = (generatedFullPlan.data ?? []).map((row) => {
+      const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+      const collegeCourse = row.smccd_course_id ? catalog.find((course) => course.id === row.smccd_course_id) : null;
+      return `${schoolCourse?.name ?? ""} ${collegeCourse?.course_code ?? ""} ${collegeCourse?.title ?? ""}`.trim();
+    });
+    expect(generatedCourseLabels.filter((label) => /\bbiology\b/i.test(label)).length).toBeLessThanOrEqual(1);
+    expect(generatedCourseLabels.filter((label) => /\bchemistry\b/i.test(label)).length).toBeLessThanOrEqual(1);
     const generatedCollegeTerms = new Map<string, number>();
     for (const row of (generatedFullPlan.data ?? []).filter((course) => course.status !== "completed" && course.smccd_course_id)) {
       const key = `${row.school_year}:${row.term}`;

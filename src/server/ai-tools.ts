@@ -707,7 +707,7 @@ function integratedDegreePlan(
   workspace: AssistantWorkspace,
   enrollmentPolicy: EnrollmentPolicy | null,
   respectRecommendedLimit: boolean,
-  preferences: { startGrade?: GradeLevel; startingMathCourse?: string | null; maxCoursesPerTerm?: number | null; interests?: string[]; objectives?: string[] }
+  preferences: { startGrade?: GradeLevel; startingMathCourse?: string | null; startingLanguageCourse?: string | null; maxCoursesPerTerm?: number | null; interests?: string[]; objectives?: string[] }
 ) {
   const degreeCode = (value: string) => normalizeCollegeCourseCode(value) ?? normalizedScheduleText(value).toUpperCase();
   const programs = workspace.degreePrograms.filter((program) => workspace.collegeGoals.some((goal) => goal.program_id === program.id));
@@ -767,7 +767,10 @@ function integratedDegreePlan(
       const separateComplete = local.graduationRequirements.every((requirement) => requirement.status === "completed" || requirement.status === "planned");
       const unitsComplete = progress.projectedDegreeApplicableUnits >= progress.totalDegreeUnits;
       for (const requirement of progress.requirements.filter((requirement) => requirement.status !== "satisfied" && !requirement.requirement.constraint_only)) {
-        for (const code of requirement.optionCourseCodes) neededMajorCodes.add(degreeCode(code));
+        const stillUseful = requirement.remainingOptions.length
+          ? requirement.remainingOptions.map((option) => option.courseCode)
+          : requirement.optionCourseCodes;
+        for (const code of stillUseful) neededMajorCodes.add(degreeCode(code));
       }
       complete &&= majorComplete && geComplete && separateComplete && unitsComplete;
       score += progress.satisfiedRequirements * 120_000;
@@ -888,6 +891,20 @@ function integratedDegreePlan(
       separateGraduationOptionCodes.add(code);
     }
   }
+  const requestedLanguageText = normalizedLanguageCourseText(preferences.startingLanguageCourse);
+  const requestedLanguageCourses = requestedLanguageText
+    ? catalog.filter((course) => {
+        const code = degreeCode(course.course_code);
+        const equivalency = workspace.equivalencies.find((candidate) => candidate.normalized_course_code === code);
+        if (equivalency?.requirement_area !== "world_language") return false;
+        const candidateText = normalizedLanguageCourseText(`${course.course_code} ${course.title} ${equivalency.high_school_equivalent}`);
+        return candidateText.includes(requestedLanguageText) || requestedLanguageText.includes(candidateText);
+      }).sort((left, right) => Number(awardingColleges.has(right.college_code)) - Number(awardingColleges.has(left.college_code))
+        || left.prerequisites.length - right.prerequisites.length
+        || left.course_code.localeCompare(right.course_code))
+    : [];
+  const requestedLanguageCodes = new Set(requestedLanguageCourses.map((course) => degreeCode(course.course_code)));
+  for (const code of requestedLanguageCodes) optionCodes.add(code);
   const primaryCandidates = catalog.filter((course) => optionCodes.has(degreeCode(course.course_code)));
   const fillerCandidates = catalog.filter((course) => course.degree_applicable
       && course.transfer_credit !== null
@@ -978,10 +995,18 @@ function integratedDegreePlan(
       ? currentGrade + Math.max(0, courseMathRank - startingMathRank)
       : currentGrade;
     const courseCode = degreeCode(course.course_code);
+    const isExplicitLanguagePlacement = requestedLanguageCodes.has(courseCode);
     const supportsLaterCourse = prerequisiteSupportCodes.has(courseCode) || (dependentCountByCode.get(courseCode) ?? 0) > 0;
     const difficulty = collegePlanningDifficulty(course);
-    const preferredGrade = placementHint?.grade
-      ?? (supportsLaterCourse
+    // Explicit placement defines the live math ladder. A static school-profile
+    // hint must not push prerequisite support such as precalculus to grade 12
+    // and make calculus unreachable.
+    const preferredGrade = isExplicitLanguagePlacement
+      ? currentGrade
+      : courseMathRank !== null && startingMathRank !== null
+      ? Math.min(endGrade, Math.max(currentGrade, earliestMathGrade)) as GradeLevel
+      : placementHint?.grade
+        ?? (supportsLaterCourse
         ? currentGrade
         : difficulty >= 42
           ? endGrade
@@ -1044,7 +1069,7 @@ function integratedDegreePlan(
         if (period.collegeCount >= collegeCourseCapacity) return false;
         if (preferences.maxCoursesPerTerm && period.count >= preferences.maxCoursesPerTerm) return false;
         const prerequisite = evaluateSmccdPlannerPrerequisites(course, { gradeLevel: period.grade, term: period.term }, catalog, currentRows, workspace.courses);
-        if (prerequisite.result.status === "blocked"
+        if (!isExplicitLanguagePlacement && (prerequisite.result.status === "blocked"
           || (prerequisite.result.status === "needs_review" && !explicitSmccdPrerequisitesReady(
             course,
             { gradeLevel: period.grade, term: period.term },
@@ -1052,7 +1077,7 @@ function integratedDegreePlan(
             catalog,
             workspace.courses,
             { gradeLevel: currentGrade, course: preferences.startingMathCourse ?? null }
-          ))) return false;
+          )))) return false;
         const collegeUnits = Number(course.units_max ?? course.units_min);
         const candidateRow = generatedDegreeCourseRow(workspace, {
           smccd_course_id: course.id,
@@ -1072,6 +1097,31 @@ function integratedDegreePlan(
         return !evaluateEnrollmentSchedule([...currentRows, candidateRow], enrollmentPolicy).some((evaluation) => evaluation.state === "blocked" || (respectRecommendedLimit && evaluation.state === "over_policy"));
       });
   };
+
+  const explicitLanguageCourse = requestedLanguageCourses.find((course) => !usedCodes.has(degreeCode(course.course_code)));
+  if (explicitLanguageCourse) {
+    const period = placementFor(explicitLanguageCourse);
+    if (period) {
+      const code = degreeCode(explicitLanguageCourse.course_code);
+      const equivalency = workspace.equivalencies.find((candidate) => candidate.normalized_course_code === code);
+      const collegeUnits = Number(explicitLanguageCourse.units_max ?? explicitLanguageCourse.units_min);
+      additions.push({
+        smccd_course_id: explicitLanguageCourse.id,
+        grade_level: period.grade,
+        school_year: schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, period.grade),
+        term: period.term,
+        status: period.grade === currentGrade ? "current" : "planned",
+        credits: resolveCollegeHighSchoolCredits({ collegeUnits, storedHighSchoolCredits: null, equivalencyHighSchoolCredits: equivalency?.high_school_credits, normalizedCourseCode: code }).credits,
+        college_units: collegeUnits,
+        college_provider_code: "SMCCD",
+        is_weighted: true,
+        mapping_verified: Boolean(equivalency),
+        requirement_area_override: equivalency?.requirement_area ?? null,
+        notes: `Student-requested ${preferences.startingLanguageCourse} college placement; verified equivalency is used for diploma overlap.`
+      });
+      usedCodes.add(code);
+    }
+  }
 
   let currentAudit = audit(rows());
   for (let pass = 0; pass < 44 && !currentAudit.complete; pass += 1) {
@@ -1133,9 +1183,17 @@ function integratedDegreePlan(
       const marginal = audit(nextRows).score - currentAudit.score;
       const interestBonus = normalizedScheduleText(`${course.subject} ${course.title}`).split(" ").some((token) => token.length > 3 && interestText.includes(token)) ? 800 : 0;
       const weightedBonus = preferences.objectives?.includes("maximize_weighted_gpa") ? 250 : 0;
-      const structuralBonus = Number(currentAudit.neededMajorCodes.has(code)) * 20_000
-        + Number(needsMajor && prerequisiteSupportCodes.has(code)) * 8_000
-        + Number(needsMajor && matchesMajorSubjectRule) * 5_000;
+      // Finish exact bookmarked-degree cores and their prerequisite chain
+      // before spending capacity on general units, GE alternatives, or diploma
+      // overlap. The previous marginal-only score could prefer a random
+      // 10-credit science over CIS 256 or Calculus even while the major stayed
+      // incomplete.
+      const structuralBonus = Number(needsMajor && currentAudit.neededMajorCodes.has(code)) * 2_000_000
+        + Number(needsMajor && mandatoryMajorCodes.has(code)) * 1_000_000
+        + Number(needsMajor && prerequisiteSupportCodes.has(code)) * 750_000
+        + Number(needsMajor && matchesMajorSubjectRule) * 500_000
+        + Number(needsLocalGe && localGeOptionCodes.has(code)) * 100_000
+        + Number(needsSeparateGraduation && separateGraduationOptionCodes.has(code)) * 75_000;
       const score = marginal + structuralBonus + interestBonus + weightedBonus - course.prerequisites.length * 20;
       if (score > 0 && (!best || score > best.score || (score === best.score && course.course_code.localeCompare(best.course.course_code) < 0))) best = { course, period, score };
     }
@@ -1241,6 +1299,17 @@ function normalizedScheduleText(value: string | null | undefined) {
   return String(value ?? "").toLowerCase()
     .replace(/\bpre[ -]?calc(?:ulus)?\b/g, "precalculus")
     .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizedLanguageCourseText(value: string | null | undefined) {
+  return normalizedScheduleText(value)
+    .replace(/\bmandarin\b/g, "chinese")
+    .replace(/\biii\b/g, "3")
+    .replace(/\bii\b/g, "2")
+    .replace(/\bi\b/g, "1")
+    .replace(/\b(?:fall|spring|summer|semester|first|second|intermediate|advanced|elementary|beginning)\b/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -1613,6 +1682,146 @@ function scheduleWorkspaceWithPlacementAdjustments(
   return { workspace: { ...workspace, planCourses }, adjustments: [adjustment] };
 }
 
+function pruneRedundantGeneratedSchedule(
+  workspace: AssistantWorkspace,
+  schoolAdditions: ReturnType<typeof generateSuggestedPlan>,
+  degreeAdditions: GeneratedDegreeCourse[],
+  preferences: { startGrade?: GradeLevel; startingMathCourse?: string | null; startingLanguageCourse?: string | null }
+) {
+  let school = [...schoolAdditions];
+  let college = [...degreeAdditions];
+  const requirementById = new Map(workspace.requirements.map((requirement) => [requirement.id, requirement]));
+  const areasByCourse = new Map<string, Set<string>>();
+  for (const mapping of workspace.mappings.filter((candidate) => candidate.confidence === "verified")) {
+    const area = requirementById.get(mapping.requirement_id)?.area;
+    if (!area) continue;
+    const areas = areasByCourse.get(mapping.course_id) ?? new Set<string>();
+    areas.add(area);
+    areasByCourse.set(mapping.course_id, areas);
+  }
+  const collegeById = new Map(workspace.degreeCatalogCourses.map((course) => [course.id, course]));
+  const courseById = new Map(workspace.courses.map((course) => [course.id, course]));
+  const generatedRows = () => [
+    ...school.map((row, index) => generatedPlanCourseRow(workspace, row, index)),
+    ...college.map((row, index) => generatedDegreeCourseRow(workspace, row, index))
+  ];
+  const allRows = () => [...workspace.planCourses, ...generatedRows()];
+  const diplomaSignature = (rows: PlanCourse[]) => new Map(calculateRequirementProgress(
+    workspace.requirements,
+    rows,
+    workspace.mappings,
+    workspace.courses,
+    workspace.equivalencies
+  ).map((item) => [item.requirement.id, Math.min(item.verifiedProjectedCredits, item.requirement.credits_required)]));
+  const bookmarkedPrograms = workspace.degreePrograms.filter((program) => workspace.collegeGoals.some((goal) => goal.program_id === program.id));
+  const bookmarkedRequirementIds = new Set(workspace.degreeRequirements
+    .filter((requirement) => bookmarkedPrograms.some((program) => program.id === requirement.program_id))
+    .map((requirement) => requirement.id));
+  const degreeSignature = (rows: PlanCourse[]) => {
+    const signature = new Map<string, number>();
+    if (!bookmarkedPrograms.length) return signature;
+    const context = createSmccdProgramProgressContext(
+      workspace.degreeRequirements.filter((requirement) => bookmarkedRequirementIds.has(requirement.id)),
+      workspace.degreeRequirementCourses.filter((option) => bookmarkedRequirementIds.has(option.requirement_id)),
+      rows,
+      workspace.degreeCatalogCourses
+    );
+    const manual = new Set(workspace.manualSmccdCompletions.map((completion) => completion.area));
+    for (const program of bookmarkedPrograms) {
+      const progress = calculateSmccdProgramProgressWithContext(program, context);
+      const local = calculateSmccdLocalDegreeProgress(context, program.college_code, manual);
+      signature.set(`${program.id}:units`, Math.min(progress.projectedDegreeApplicableUnits, progress.totalDegreeUnits));
+      for (const requirement of progress.requirements) signature.set(`${program.id}:major:${requirement.requirement.id}`, requirement.completionRatio);
+      for (const area of local.geAreas) {
+        signature.set(`${program.id}:ge:${area.area}:status`, Number(["completed", "planned"].includes(area.status)));
+        signature.set(`${program.id}:ge:${area.area}:units`, Math.min(area.projectedUnits, area.requiredUnits));
+      }
+      for (const requirement of local.graduationRequirements) {
+        signature.set(`${program.id}:other:${requirement.id}`, Number(["completed", "planned"].includes(requirement.status)));
+      }
+    }
+    return signature;
+  };
+  const initialRows = allRows();
+  const requiredDiploma = diplomaSignature(initialRows);
+  const requiredDegree = degreeSignature(initialRows);
+  const prerequisiteFailures = (rows: PlanCourse[]) => new Set(rows.flatMap((row) => {
+    if (!row.smccd_course_id) return [];
+    const course = collegeById.get(row.smccd_course_id);
+    if (!course) return [];
+    const result = evaluateSmccdPlannerPrerequisites(course, { gradeLevel: row.grade_level, term: row.term, instanceId: row.id }, workspace.degreeCatalogCourses, rows, workspace.courses);
+    return result.result.status === "blocked" && !/student-provided|placement override/i.test(row.notes ?? "") ? [row.smccd_course_id] : [];
+  }));
+  const initialPrerequisiteFailures = prerequisiteFailures(initialRows);
+  const startGrade = preferences.startGrade ?? workspace.settings.plan_start_grade ?? workspace.settings.grade_level ?? 9;
+  const requestedMath = normalizedScheduleText(preferences.startingMathCourse);
+  const requestedLanguage = normalizedLanguageCourseText(preferences.startingLanguageCourse);
+  const rowText = (row: PlanCourse) => {
+    const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+    const collegeCourse = row.smccd_course_id ? collegeById.get(row.smccd_course_id) : null;
+    const equivalency = collegeCourse
+      ? workspace.equivalencies.find((candidate) => candidate.normalized_course_code === normalizeCollegeCourseCode(collegeCourse.course_code))
+      : null;
+    return normalizedLanguageCourseText(`${schoolCourse?.course_code ?? collegeCourse?.course_code ?? ""} ${schoolCourse?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""} ${equivalency?.high_school_equivalent ?? ""}`);
+  };
+  const preservesPolicy = (rows: PlanCourse[]) => {
+    for (const grade of ([9, 10, 11, 12] as GradeLevel[]).filter((value) => value >= startGrade)) {
+      const rule = workspace.planningProfile?.grade_rules[String(grade) as `${GradeLevel}`];
+      if (rule) {
+        for (const term of ["fall", "spring"] as const) {
+          if (scheduleTermLoad(rows, workspace.courses, grade, term, true) < rule.minimum_high_school_courses) return false;
+        }
+      }
+      for (const area of workspace.planningProfile?.always_high_school_areas ?? []) {
+        if (!rows.some((row) => row.grade_level === grade && !row.smccd_course_id && Boolean(row.course_id) && areasByCourse.get(row.course_id!)?.has(area))) return false;
+      }
+    }
+    if (requestedMath && !rows.some((row) => row.grade_level === startGrade && rowText(row).includes(requestedMath))) return false;
+    if (requestedLanguage && !rows.some((row) => row.grade_level === startGrade && rowText(row).includes(requestedLanguage))) return false;
+    return true;
+  };
+  const preservesVerifiedOutcomes = (rows: PlanCourse[]) => {
+    const diploma = diplomaSignature(rows);
+    if ([...requiredDiploma].some(([key, value]) => Number(diploma.get(key) ?? 0) + 0.001 < value)) return false;
+    const degree = degreeSignature(rows);
+    if ([...requiredDegree].some(([key, value]) => Number(degree.get(key) ?? 0) + 0.001 < value)) return false;
+    const blocked = prerequisiteFailures(rows);
+    if ([...blocked].some((id) => !initialPrerequisiteFailures.has(id))) return false;
+    return preservesPolicy(rows);
+  };
+
+  // Prefer the concurrent course when it advances the same verified diploma
+  // area; then remove any remaining course whose absence changes no verified
+  // outcome. Later duplicated school courses are considered before earlier
+  // foundations, and college fillers are considered only after school overlap.
+  const collegeAreas = new Set(college.map((row) => row.requirement_area_override).filter(Boolean));
+  const schoolCandidates = [...school].sort((left, right) => {
+    const leftOverlap = Number([...(areasByCourse.get(left.course_id) ?? [])].some((area) => collegeAreas.has(area as PlanCourse["requirement_area_override"])));
+    const rightOverlap = Number([...(areasByCourse.get(right.course_id) ?? [])].some((area) => collegeAreas.has(area as PlanCourse["requirement_area_override"])));
+    return rightOverlap - leftOverlap || right.grade_level - left.grade_level || left.course_id.localeCompare(right.course_id);
+  });
+  for (const candidate of schoolCandidates) {
+    const index = school.findIndex((row) => row.course_id === candidate.course_id);
+    if (index < 0) continue;
+    const nextSchool = school.filter((_, rowIndex) => rowIndex !== index);
+    const previous = school;
+    school = nextSchool;
+    if (!preservesVerifiedOutcomes(allRows())) school = previous;
+  }
+  const collegeCandidates = [...college].sort((left, right) => right.grade_level - left.grade_level
+    || (right.term === "spring" ? 1 : 0) - (left.term === "spring" ? 1 : 0)
+    || left.smccd_course_id.localeCompare(right.smccd_course_id));
+  for (const candidate of collegeCandidates) {
+    const index = college.findIndex((row) => row.smccd_course_id === candidate.smccd_course_id);
+    if (index < 0) continue;
+    const nextCollege = college.filter((_, rowIndex) => rowIndex !== index);
+    const previous = college;
+    college = nextCollege;
+    if (!preservesVerifiedOutcomes(allRows())) college = previous;
+  }
+  return { schoolAdditions: school, degreeAdditions: college };
+}
+
 function generateValidatedSchedule(
   workspace: AssistantWorkspace,
   enrollmentPolicy: EnrollmentPolicy | null,
@@ -1649,6 +1858,7 @@ function generateValidatedSchedule(
     : integratedDegreePlan(workspace, enrollmentPolicy, respectRecommendedLimit, {
         startGrade: preferences.startGrade,
         startingMathCourse: preferences.startingMathCourse,
+        startingLanguageCourse: preferences.startingLanguageCourse,
         maxCoursesPerTerm: effectiveMaxCoursesPerTerm,
         interests: preferences.interests,
         objectives: preferences.objectives
@@ -2141,10 +2351,15 @@ function generateValidatedSchedule(
     slots.forEach((slot) => seenAreaSlots.add(slot));
     return true;
   });
+  const pruned = pruneRedundantGeneratedSchedule({ ...workspace, planCourses: basePlanCourses }, deduplicated, degreePlan.additions, {
+    startGrade: preferences.startGrade,
+    startingMathCourse: preferences.startingMathCourse,
+    startingLanguageCourse: preferences.startingLanguageCourse
+  });
   return {
-    additions: deduplicated,
-    degreeAdditions: degreePlan.additions,
-    degreeRows,
+    additions: pruned.schoolAdditions,
+    degreeAdditions: pruned.degreeAdditions,
+    degreeRows: pruned.degreeAdditions.map((row, index) => generatedDegreeCourseRow(workspace, row, index)),
     degreeGoals: degreePlan.goals,
     degreeComplete: degreePlan.complete,
     adjustments: prepared.adjustments,
@@ -2260,6 +2475,7 @@ function analyzeGeneratedSchedule(
   const requestedStartGrade = preferences.startGrade ?? workspace.settings.plan_start_grade ?? workspace.settings.grade_level ?? 9;
   const startingMathRows = [
     ...adjustedPlanCourses.map((row) => ({ grade_level: row.grade_level, course_id: row.course_id, custom_course_name: row.custom_course_name })),
+    ...integratedCollegeRows.map((row) => ({ grade_level: row.grade_level, course_id: row.course_id, custom_course_name: row.custom_course_name, smccd_course_id: row.smccd_course_id })),
     ...generated.map((row) => ({ grade_level: row.grade_level, course_id: row.course_id, custom_course_name: null }))
   ];
   const startingMathSatisfied = !preferences.startingMathCourse || startingMathRows.some((row) => {
@@ -2270,8 +2486,15 @@ function analyzeGeneratedSchedule(
   });
   const startingLanguageSatisfied = !preferences.startingLanguageCourse || startingMathRows.some((row) => {
     const course = row.course_id ? courseById.get(row.course_id) : null;
-    const query = normalizedScheduleText(preferences.startingLanguageCourse);
-    const candidate = normalizedScheduleText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`);
+    const collegeCourse = "smccd_course_id" in row && row.smccd_course_id
+      ? workspace.degreeCatalogCourses.find((candidate) => candidate.id === row.smccd_course_id)
+        ?? workspace.plannedSmccdCourses.find((candidate) => candidate.id === row.smccd_course_id)
+      : null;
+    const equivalency = collegeCourse
+      ? workspace.equivalencies.find((candidate) => candidate.normalized_course_code === normalizeCollegeCourseCode(collegeCourse.course_code))
+      : null;
+    const query = normalizedLanguageCourseText(preferences.startingLanguageCourse);
+    const candidate = normalizedLanguageCourseText(`${course?.course_code ?? collegeCourse?.course_code ?? ""} ${course?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""} ${equivalency?.high_school_equivalent ?? ""}`);
     return row.grade_level === requestedStartGrade && Boolean(query) && candidate.includes(query);
   });
   const collegeExclusionSatisfied = preferences.includeCollegeCourses !== false || generated.every((row) => Number(row.college_units ?? 0) === 0);
@@ -2405,6 +2628,9 @@ export async function executeAssistantReadTool(
 
   if (name === "get_academic_context") {
     const args = toolArgumentSchemas.get_academic_context.parse(argumentsValue);
+    const planningWorkspace = workspace.collegeGoals.length
+      ? await hydrateDegreePlanningCatalog(supabase, workspace, true)
+      : workspace;
     const planRows = workspace.planCourses.map((row) => ({
       plan_course_id: row.id,
       catalog_course_id: row.course_id,
@@ -2469,6 +2695,61 @@ export async function executeAssistantReadTool(
         gpa: calculated.gpa,
         gpa_scenario: workspace.gpaScenarioChoices,
         degree_bookmarks: workspace.collegeGoals,
+        college_sequence_options: (() => {
+          const bookmarkedProgramIds = new Set(planningWorkspace.collegeGoals.map((goal) => goal.program_id));
+          const programById = new Map(planningWorkspace.degreePrograms.map((program) => [program.id, program]));
+          const requirementIds = new Set(planningWorkspace.degreeRequirements
+            .filter((requirement) => bookmarkedProgramIds.has(requirement.program_id))
+            .map((requirement) => requirement.id));
+          const outstandingCodes = new Map<string, Set<string>>();
+          if (bookmarkedProgramIds.size) {
+            const progressContext = createSmccdProgramProgressContext(
+              planningWorkspace.degreeRequirements.filter((requirement) => requirementIds.has(requirement.id)),
+              planningWorkspace.degreeRequirementCourses.filter((option) => requirementIds.has(option.requirement_id)),
+              planningWorkspace.planCourses,
+              planningWorkspace.degreeCatalogCourses
+            );
+            for (const programId of bookmarkedProgramIds) {
+              const program = programById.get(programId);
+              if (!program) continue;
+              const progress = calculateSmccdProgramProgressWithContext(program, progressContext);
+              for (const requirement of progress.requirements.filter((item) => item.status !== "satisfied" && !item.requirement.constraint_only)) {
+                for (const option of requirement.remainingOptions) {
+                  const code = normalizeCollegeCourseCode(option.courseCode);
+                  if (!code) continue;
+                  const programs = outstandingCodes.get(code) ?? new Set<string>();
+                  programs.add(program.title);
+                  outstandingCodes.set(code, programs);
+                }
+              }
+            }
+          }
+          const equivalencyByCode = new Map(planningWorkspace.equivalencies.map((equivalency) => [equivalency.normalized_course_code, equivalency]));
+          return planningWorkspace.degreeCatalogCourses
+            .flatMap((course) => {
+              const code = normalizeCollegeCourseCode(course.course_code);
+              if (!code) return [];
+              const equivalency = equivalencyByCode.get(code);
+              const supportsSequence = equivalency?.requirement_area === "math" || equivalency?.requirement_area === "world_language";
+              const requiredBy = [...(outstandingCodes.get(code) ?? [])];
+              if (!supportsSequence && !requiredBy.length) return [];
+              return [{
+                course_id: course.id,
+                course_code: course.course_code,
+                title: course.title,
+                college: course.college_code,
+                units: Number(course.units_max ?? course.units_min),
+                prerequisites: course.prerequisites,
+                high_school_requirement_area: equivalency?.requirement_area ?? null,
+                high_school_equivalent: equivalency?.high_school_equivalent ?? null,
+                high_school_credits: equivalency?.high_school_credits ?? null,
+                required_by_bookmarked_degrees: requiredBy
+              }];
+            })
+            .sort((left, right) => Number(right.required_by_bookmarked_degrees.length > 0) - Number(left.required_by_bookmarked_degrees.length > 0)
+              || left.course_code.localeCompare(right.course_code))
+            .slice(0, 240);
+        })(),
         college_district_preference: workspace.collegeDistrictPreference,
         college_district: workspace.collegeDistrict,
         nearby_college_districts: workspace.nearbyCollegeDistricts,
