@@ -382,6 +382,13 @@ export interface StudentSmccdGoal {
   notes: string;
 }
 
+export interface StudentSmccdGeCompletion {
+  user_id: string;
+  college_code: SmccdCollege["code"];
+  area: "7A" | "information_literacy";
+  completion_source: "manual";
+}
+
 export interface EnrollmentPolicy {
   id: string;
   provider_code: string;

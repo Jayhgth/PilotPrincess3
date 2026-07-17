@@ -78,6 +78,7 @@ import type {
   SmccdProgramRequirement,
   SmccdRequirementCourse,
   StudentEnrollmentPreference,
+  StudentSmccdGeCompletion,
   StudentSmccdGoal,
   StudentSettings
 } from "@/lib/models";
@@ -259,6 +260,7 @@ export default function PlanningWorkspace() {
   const [degreePrograms, setDegreePrograms] = useState<SmccdProgram[]>([]);
   const [degreeRequirements, setDegreeRequirements] = useState<SmccdProgramRequirement[]>([]);
   const [degreeRequirementCourses, setDegreeRequirementCourses] = useState<SmccdRequirementCourse[]>([]);
+  const [manualSmccdCompletions, setManualSmccdCompletions] = useState<StudentSmccdGeCompletion[]>([]);
 
   const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogSubject, setCatalogSubject] = useState("all");
@@ -462,6 +464,7 @@ export default function PlanningWorkspace() {
       setDegreePrograms(bootstrap.degree_programs);
       setDegreeRequirements(bootstrap.degree_requirements);
       setDegreeRequirementCourses(bootstrap.degree_requirement_courses);
+      setManualSmccdCompletions(bootstrap.manual_smccd_completions);
       setSelectedTranscriptIds((current) => {
         const importedIds = new Set(loadedPlanCourses.map((row) => row.source_review_item_id).filter(Boolean));
         const availableIds = loadedReviewItems
@@ -517,6 +520,7 @@ export default function PlanningWorkspace() {
           setDegreePrograms(slice.programs);
           setDegreeRequirements(slice.requirements);
           setDegreeRequirementCourses(slice.requirementCourses);
+          setManualSmccdCompletions(slice.manualCompletions);
         }));
       }
       if (requested.has("enrollment")) {
@@ -1330,6 +1334,7 @@ export default function PlanningWorkspace() {
             programs={degreePrograms}
             requirements={degreeRequirements}
             requirementCourses={degreeRequirementCourses}
+            manualCompletions={manualSmccdCompletions}
             onOpen={() => openGraduationView("degree")}
           />}
           onOpenGraduation={() => openGraduationView("diploma")}
@@ -1505,6 +1510,8 @@ export default function PlanningWorkspace() {
             activeVersion={activeVersion}
             planCourses={planCourses}
             equivalencies={equivalencies}
+            manualCompletions={manualSmccdCompletions}
+            onManualCompletionsChanged={setManualSmccdCompletions}
             onFindCourse={(course) => {
               setFocusedSmccdCourseId(course.id);
               openCourses("smccd");
@@ -1520,6 +1527,8 @@ export default function PlanningWorkspace() {
             activeVersion={activeVersion}
             planCourses={planCourses}
             equivalencies={equivalencies}
+            manualCompletions={manualSmccdCompletions}
+            onManualCompletionsChanged={setManualSmccdCompletions}
             onFindCourse={(course) => {
               setFocusedSmccdCourseId(course.id);
               openCourses("smccd");

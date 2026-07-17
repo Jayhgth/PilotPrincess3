@@ -6,6 +6,7 @@ import type {
   SmccdProgramRequirement,
   SmccdRequirementCourse,
   StudentEnrollmentPreference,
+  StudentSmccdGeCompletion,
   StudentSettings,
   StudentSmccdGoal
 } from "@/lib/models";
@@ -45,8 +46,12 @@ export async function loadSettingsWorkspaceSlice(supabase: SupabaseClient, userI
 }
 
 export async function loadDegreeWorkspaceSlice(supabase: SupabaseClient, userId: string) {
-  const goalsResult = await supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("is_primary", { ascending: false }).order("created_at");
+  const [goalsResult, completionsResult] = await Promise.all([
+    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).order("is_primary", { ascending: false }).order("created_at"),
+    supabase.from("student_smccd_ge_completions").select("user_id,college_code,area,completion_source").eq("user_id", userId)
+  ]);
   if (goalsResult.error) throw goalsResult.error;
+  if (completionsResult.error) throw completionsResult.error;
   const goals = (goalsResult.data ?? []) as unknown as StudentSmccdGoal[];
   const programIds = goals.map((goal) => goal.program_id);
   const programsResult = programIds.length
@@ -68,7 +73,8 @@ export async function loadDegreeWorkspaceSlice(supabase: SupabaseClient, userId:
     goals,
     programs,
     requirements,
-    requirementCourses: (optionsResult.data ?? []) as unknown as SmccdRequirementCourse[]
+    requirementCourses: (optionsResult.data ?? []) as unknown as SmccdRequirementCourse[],
+    manualCompletions: (completionsResult.data ?? []) as unknown as StudentSmccdGeCompletion[]
   };
 }
 

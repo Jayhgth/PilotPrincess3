@@ -45,6 +45,7 @@ import type {
   SmccdProgram,
   SmccdProgramRequirement,
   SmccdRequirementCourse,
+  StudentSmccdGeCompletion,
   StudentSettings,
   StudentSmccdGoal
 } from "@/lib/models";
@@ -59,6 +60,8 @@ interface Props {
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
+  manualCompletions?: StudentSmccdGeCompletion[];
+  onManualCompletionsChanged?: (completions: StudentSmccdGeCompletion[]) => void;
   focusCourseId?: string | null;
   onCourseAdded?: (course: PlanCourse, catalogCourse?: SmccdCourse) => void;
   onCourseRemoved?: (id: string) => void;
@@ -68,13 +71,6 @@ interface Props {
 
 type CollegeFilter = "all" | SmccdCollege["code"];
 type SmccdSection = "courses" | "degree" | "general_education";
-
-interface SmccdGeCompletion {
-  user_id: string;
-  college_code: SmccdCourse["college_code"];
-  area: "7A" | "information_literacy";
-  completion_source: "manual";
-}
 
 interface SmccdCourseCatalog {
   colleges: SmccdCollege[];
@@ -91,7 +87,7 @@ let courseCatalogRequest: Promise<SmccdCourseCatalog> | null = null;
 let degreeCatalogRequest: Promise<SmccdDegreeCatalog> | null = null;
 let courseCatalogCache: SmccdCourseCatalog | null = null;
 let degreeCatalogCache: SmccdDegreeCatalog | null = null;
-const geCompletionsCache = new Map<string, SmccdGeCompletion[]>();
+const geCompletionsCache = new Map<string, StudentSmccdGeCompletion[]>();
 
 function loadCourseCatalog(supabase: SupabaseClient) {
   if (!courseCatalogRequest) {
@@ -171,6 +167,8 @@ export default function SmccdPlanner({
   activeVersion,
   planCourses,
   equivalencies,
+  manualCompletions,
+  onManualCompletionsChanged,
   focusCourseId,
   onCourseAdded,
   onCourseRemoved,
@@ -180,7 +178,7 @@ export default function SmccdPlanner({
   const [courseCatalogReady, setCourseCatalogReady] = useState(Boolean(courseCatalogCache));
   const [degreeCatalogReady, setDegreeCatalogReady] = useState(Boolean(degreeCatalogCache));
   const [goalsReady, setGoalsReady] = useState(surface === "courses" || cachedStudentSmccdGoals(session.user.id) !== null);
-  const [geCompletionsReady, setGeCompletionsReady] = useState(surface === "courses" || geCompletionsCache.has(session.user.id));
+  const [geCompletionsReady, setGeCompletionsReady] = useState(surface === "courses" || manualCompletions !== undefined || geCompletionsCache.has(session.user.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -190,7 +188,8 @@ export default function SmccdPlanner({
   const [requirements, setRequirements] = useState<SmccdProgramRequirement[]>(() => degreeCatalogCache?.requirements ?? []);
   const [requirementCourses, setRequirementCourses] = useState<SmccdRequirementCourse[]>(() => degreeCatalogCache?.requirementCourses ?? []);
   const [goals, setGoals] = useState<StudentSmccdGoal[]>(() => cachedStudentSmccdGoals(session.user.id) ?? []);
-  const [geCompletions, setGeCompletions] = useState<SmccdGeCompletion[]>(() => geCompletionsCache.get(session.user.id) ?? []);
+  const [geCompletions, setGeCompletions] = useState<StudentSmccdGeCompletion[]>(() => manualCompletions ?? geCompletionsCache.get(session.user.id) ?? []);
+  const effectiveGeCompletions = manualCompletions ?? geCompletions;
   const [geCollegeCode, setGeCollegeCode] = useState<SmccdCourse["college_code"]>("CSM");
   const [search, setSearch] = useState("");
   const [collegeFilter, setCollegeFilter] = useState<CollegeFilter>("all");
@@ -254,6 +253,7 @@ export default function SmccdPlanner({
 
   useEffect(() => {
     if (surface === "courses") return;
+    if (manualCompletions !== undefined) return;
     const cachedCompletions = geCompletionsCache.get(session.user.id);
     if (cachedCompletions) return;
     let active = true;
@@ -264,7 +264,7 @@ export default function SmccdPlanner({
           .eq("user_id", session.user.id);
         if (completionError) throw completionError;
         if (active) {
-          const loadedCompletions = (data ?? []) as unknown as SmccdGeCompletion[];
+          const loadedCompletions = (data ?? []) as unknown as StudentSmccdGeCompletion[];
           geCompletionsCache.set(session.user.id, loadedCompletions);
           setGeCompletions(loadedCompletions);
         }
@@ -275,7 +275,7 @@ export default function SmccdPlanner({
       }
     })();
     return () => { active = false; };
-  }, [session.user.id, supabase, surface]);
+  }, [manualCompletions, session.user.id, supabase, surface]);
 
   useEffect(() => {
     if (surface !== "degree" || degreeCatalogReady) return;
@@ -390,10 +390,10 @@ export default function SmccdPlanner({
       calculateSmccdLocalDegreeProgress(
         progressContext,
         collegeCode,
-        new Set(geCompletions.filter((completion) => completion.college_code === collegeCode || completion.area === "information_literacy").map((completion) => completion.area))
+        new Set(effectiveGeCompletions.filter((completion) => completion.college_code === collegeCode || completion.area === "information_literacy").map((completion) => completion.area))
       )
     ])
-  ), [geCompletions, progressContext, surface]);
+  ), [effectiveGeCompletions, progressContext, surface]);
   const selectedProgram = programs.find((program) => program.id === goalProgramId) ?? null;
   const generalEducationCollege = surface === "general_education" ? geCollegeCode : selectedProgram?.college_code ?? "CSM";
   const generalEducationPattern = localDegreeProgressByCollege.get(generalEducationCollege) ?? null;
@@ -594,7 +594,7 @@ export default function SmccdPlanner({
 
   async function toggleManualDegreeCompletion(area: "7A" | "information_literacy") {
     const completionCollege = area === "information_literacy" ? "SKY" : geCollegeCode;
-    const existing = geCompletions.find((completion) => completion.college_code === completionCollege && completion.area === area);
+    const existing = effectiveGeCompletions.find((completion) => completion.college_code === completionCollege && completion.area === area);
     setBusy(true);
     setError(null);
     try {
@@ -605,14 +605,13 @@ export default function SmccdPlanner({
           .eq("college_code", completionCollege)
           .eq("area", area);
         if (deleteError) throw deleteError;
-        setGeCompletions((current) => {
-          const next = current.filter((completion) => completion !== existing);
-          geCompletionsCache.set(session.user.id, next);
-          return next;
-        });
+        const next = effectiveGeCompletions.filter((completion) => completion !== existing);
+        geCompletionsCache.set(session.user.id, next);
+        setGeCompletions(next);
+        onManualCompletionsChanged?.(next);
         setNotice(area === "7A" ? "Manual PE completion removed." : "Information-literacy confirmation removed.");
       } else {
-        const completion: SmccdGeCompletion = {
+        const completion: StudentSmccdGeCompletion = {
           user_id: session.user.id,
           college_code: completionCollege,
           area,
@@ -620,11 +619,10 @@ export default function SmccdPlanner({
         };
         const { error: insertError } = await supabase.from("student_smccd_ge_completions").upsert(completion, { onConflict: "user_id,college_code,area" });
         if (insertError) throw insertError;
-        setGeCompletions((current) => {
-          const next = [...current.filter((item) => !(item.college_code === completionCollege && item.area === area)), completion];
-          geCompletionsCache.set(session.user.id, next);
-          return next;
-        });
+        const next = [...effectiveGeCompletions.filter((item) => !(item.college_code === completionCollege && item.area === area)), completion];
+        geCompletionsCache.set(session.user.id, next);
+        setGeCompletions(next);
+        onManualCompletionsChanged?.(next);
         setNotice(area === "7A" ? "PE marked complete for this college pattern." : "Skyline information literacy marked complete.");
       }
     } catch (caught) {

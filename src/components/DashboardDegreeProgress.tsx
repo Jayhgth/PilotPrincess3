@@ -2,13 +2,20 @@ import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/Arr
 import { BookmarkSimpleIcon as BookmarkSimple } from "@phosphor-icons/react/dist/csr/BookmarkSimple";
 import { useMemo, type CSSProperties } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
-import { createSmccdProgramProgressContext, calculateSmccdProgramProgressWithContext, SMCCD_COLLEGE_NAMES } from "@/lib/smccd";
+import {
+  calculateSmccdLocalDegreeProgress,
+  calculateSmccdProgramProgressWithContext,
+  createSmccdProgramProgressContext,
+  smccdDegreeOverallPercent,
+  SMCCD_COLLEGE_NAMES
+} from "@/lib/smccd";
 import type {
   PlanCourse,
   SmccdCourse,
   SmccdProgram,
   SmccdProgramRequirement,
   SmccdRequirementCourse,
+  StudentSmccdGeCompletion,
   StudentSmccdGoal
 } from "@/lib/models";
 
@@ -19,9 +26,10 @@ interface Props {
   programs: SmccdProgram[];
   requirements: SmccdProgramRequirement[];
   requirementCourses: SmccdRequirementCourse[];
+  manualCompletions: StudentSmccdGeCompletion[];
   onOpen: () => void;
 }
-export default function DashboardDegreeProgress({ planCourses, plannedSmccdCourses, goals, programs, requirements, requirementCourses, onOpen }: Props) {
+export default function DashboardDegreeProgress({ planCourses, plannedSmccdCourses, goals, programs, requirements, requirementCourses, manualCompletions, onOpen }: Props) {
 
   const rows = useMemo(() => {
     const progressContext = createSmccdProgramProgressContext(
@@ -35,19 +43,26 @@ export default function DashboardDegreeProgress({ planCourses, plannedSmccdCours
       const program = programById.get(goal.program_id);
       if (!program) return [];
       const progress = calculateSmccdProgramProgressWithContext(program, progressContext);
-      return [{ program, progress }];
+      const localDegreeProgress = calculateSmccdLocalDegreeProgress(
+        progressContext,
+        program.college_code,
+        new Set(manualCompletions
+          .filter((completion) => completion.college_code === program.college_code || completion.area === "information_literacy")
+          .map((completion) => completion.area))
+      );
+      return [{ program, percent: smccdDegreeOverallPercent(progress, localDegreeProgress) }];
     }).slice(0, 3);
-  }, [goals, planCourses, plannedSmccdCourses, programs, requirementCourses, requirements]);
+  }, [goals, manualCompletions, planCourses, plannedSmccdCourses, programs, requirementCourses, requirements]);
 
   if (!goals.length) return <div className="degree-dashboard-state"><BookmarkSimple size={20} aria-hidden /><strong>No degrees bookmarked</strong><button type="button" onClick={onOpen}>Browse degrees <ArrowRight size={14} /></button></div>;
 
-  return <div className="degree-dashboard-chart" role="img" aria-label={rows.map(({ program, progress }) => `${program.title}: ${progress.majorPercent}% complete`).join(". ")}>
-    {rows.map(({ program, progress }) => <button type="button" className="degree-chart-row" onClick={onOpen} key={program.id}>
+  return <div className="degree-dashboard-chart" role="img" aria-label={rows.map(({ program, percent }) => `${program.title}: ${percent}% complete`).join(". ")}>
+    {rows.map(({ program, percent }) => <button type="button" className="degree-chart-row" onClick={onOpen} key={program.id}>
       <span className="degree-chart-identity"><InstitutionMark institution={program.college_code} decorative /><span><strong>{program.title}</strong><small>{program.award_type}, {SMCCD_COLLEGE_NAMES[program.college_code]}</small></span></span>
       <span className="degree-chart-bars" aria-hidden>
-        <span style={{ "--degree-progress": `${progress.majorPercent}%` } as CSSProperties} />
+        <span style={{ "--degree-progress": `${percent}%` } as CSSProperties} />
       </span>
-      <b className="degree-chart-value">{progress.majorPercent}%</b>
+      <b className="degree-chart-value">{percent}%</b>
     </button>)}
     {goals.length > rows.length && <button className="degree-chart-more" type="button" onClick={onOpen}>+{goals.length - rows.length} more <ArrowRight size={13} /></button>}
   </div>;

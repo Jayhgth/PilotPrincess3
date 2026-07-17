@@ -21,6 +21,7 @@ import type {
   SmccdRequirementCourse,
   StudentEnrollmentPreference,
   StudentCollegeDistrictPreference,
+  StudentSmccdGeCompletion,
   StudentSmccdGoal,
   StudentSettings,
   SmccdPrerequisiteClearance
@@ -65,6 +66,7 @@ export interface WorkspaceBootstrap {
   degree_programs: SmccdProgram[];
   degree_requirements: SmccdProgramRequirement[];
   degree_requirement_courses: SmccdRequirementCourse[];
+  manual_smccd_completions: StudentSmccdGeCompletion[];
   is_admin: boolean;
 }
 
@@ -73,10 +75,6 @@ export interface AssistantWorkspaceBootstrap extends WorkspaceBootstrap {
   transcript_sources: OfficialSource[];
   transcript_review_items: CatalogReviewItem[];
   prerequisite_clearances: SmccdPrerequisiteClearance[];
-  manual_smccd_completions: Array<{
-    college_code: SmccdCourse["college_code"];
-    area: "7A" | "information_literacy";
-  }>;
   memories: Array<{ memory_key: string; content: string; tags: string[] }>;
   nearby_providers: Array<{
     provider_id: string;
@@ -137,7 +135,8 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     degree_goals: Array.isArray(snapshot.degree_goals) ? snapshot.degree_goals : [],
     degree_programs: Array.isArray(snapshot.degree_programs) ? snapshot.degree_programs : [],
     degree_requirements: Array.isArray(snapshot.degree_requirements) ? snapshot.degree_requirements : [],
-    degree_requirement_courses: Array.isArray(snapshot.degree_requirement_courses) ? snapshot.degree_requirement_courses : []
+    degree_requirement_courses: Array.isArray(snapshot.degree_requirement_courses) ? snapshot.degree_requirement_courses : [],
+    manual_smccd_completions: Array.isArray(snapshot.manual_smccd_completions) ? snapshot.manual_smccd_completions : []
   };
 }
 
@@ -150,7 +149,6 @@ export function normalizeAssistantWorkspaceBootstrap(value: unknown): AssistantW
     transcript_sources: Array.isArray(snapshot.transcript_sources) ? snapshot.transcript_sources : [],
     transcript_review_items: Array.isArray(snapshot.transcript_review_items) ? snapshot.transcript_review_items : [],
     prerequisite_clearances: Array.isArray(snapshot.prerequisite_clearances) ? snapshot.prerequisite_clearances : [],
-    manual_smccd_completions: Array.isArray(snapshot.manual_smccd_completions) ? snapshot.manual_smccd_completions : [],
     memories: Array.isArray(snapshot.memories) ? snapshot.memories : [],
     nearby_providers: Array.isArray(snapshot.nearby_providers) ? snapshot.nearby_providers : [],
     nearby_college_districts: Array.isArray(snapshot.nearby_college_districts) ? snapshot.nearby_college_districts : [],
