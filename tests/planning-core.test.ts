@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compareCourseBoardRowsForTerm, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
+import { selectedSchoolCatalogEligibility } from "@/lib/catalog-eligibility";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
 import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
@@ -41,6 +42,7 @@ const requirement: GraduationRequirement = {
 describe("core academic planning contracts", () => {
   it("recognizes one cohesive high-school and college math ladder", () => {
     expect(["Algebra 1", "Geometry", "Algebra 2", "MATH 225 Path to Calculus", "MATH 251 Calculus with Analytic Geometry I", "MATH 252 Calculus with Analytic Geometry II", "MATH 253 Calculus with Analytic Geometry III"].map(mathSequenceRankFromText)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(["CSM:MATH 251", "SKY:MATH 252", "CAN:MATH 253"].map(mathSequenceRankFromText)).toEqual([5, 6, 7]);
     expect(mathSequenceRankFromText("MATH 270 Linear Algebra")).toBeNull();
     expect([
       "PHYS 250 Physics with Calculus I",
@@ -48,6 +50,15 @@ describe("core academic planning contracts", () => {
       "PHYS 270 Physics with Calculus III",
       "Physics with Calculus I"
     ].map(mathSequenceRankFromText)).toEqual([null, null, null, null]);
+
+    const dtechCalculus = course("dtech-calculus", "Calculus / Calculus Honors", "Mathematics", [11, 12], true);
+    expect(selectedSchoolCatalogEligibility(
+      dtechCalculus,
+      12,
+      [plan({ id: "college-calculus-two", status: "planned", course_id: null, smccd_course_id: "CSM:MATH 252" })],
+      [dtechCalculus],
+      { schoolSlug: "design-tech-high-school" }
+    )).toEqual({ eligible: false, reason: "below_math_level" });
   });
   it("enforces ordering, credit, mapping, and GPA invariants", () => {
     {

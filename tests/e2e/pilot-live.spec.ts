@@ -436,6 +436,10 @@ test.describe("live Pilot behavior", () => {
     expect(generatedCollegeCodes.has("MATH 251")).toBe(true);
     expect(generatedCollegeCodes.has("MATH 252")).toBe(true);
     expect(generatedCollegeCodes.has("CIS 256") || generatedCollegeCodes.has("CIS 279")).toBe(true);
+    const dtechCalculusIds = new Set((dtechCatalog.data ?? [])
+      .filter((course) => /^Calculus(?:\s*\/|$)/i.test(course.name))
+      .map((course) => course.id));
+    expect((generatedFullPlan.data ?? []).filter((row) => row.course_id && dtechCalculusIds.has(row.course_id))).toHaveLength(0);
     const generatedCourseLabels = (generatedFullPlan.data ?? []).map((row) => {
       const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
       const collegeCourse = row.smccd_course_id ? catalog.find((course) => course.id === row.smccd_course_id) : null;

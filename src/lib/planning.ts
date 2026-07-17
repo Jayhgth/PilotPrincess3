@@ -638,13 +638,14 @@ export function courseNeedsExplicitPlanningIntent(course: Course, interests: rea
 }
 
 export function mathSequenceRankFromText(value: string) {
-  const text = normalizedPlannerText(value);
+  const identity = value.trim().replace(/^[A-Z]{2,}\s*:/, "").trim();
+  const text = normalizedPlannerText(identity);
   // College identities are normally passed as "SUBJECT number title". Once
   // an explicit non-math subject code is present, words in the title describe
   // course content rather than the student's mathematics ladder. In
   // particular, PHYS 250 "Physics with Calculus I" must never stand in for
   // MATH 251 Calculus I during prerequisite, degree, or schedule planning.
-  const explicitSubject = value.trim().match(/^([A-Z]{2,})\s*(?:C\s*)?\d+\b/)?.[1]?.toLowerCase();
+  const explicitSubject = identity.match(/^([A-Z]{2,})\s*(?:C\s*)?\d+\b/)?.[1]?.toLowerCase();
   if (explicitSubject && explicitSubject !== "math" && explicitSubject !== "mth") return null;
   if (/\b(?:physics|phys)\b/.test(text)) return null;
   if (/\bmath\s*253\b|\bcalculus\b.*\b(?:3|iii)\b|\bmultivariable\b/.test(text)) return 7;
@@ -1051,9 +1052,9 @@ export function generateSuggestedPlan(
       12
     ));
     const priorCourses = (grade: GradeLevel) => allPlannedCourses().filter(({ row }) => row.grade_level < grade).map(({ course: candidate }) => candidate);
-    const planRowMathSequenceRank = (row: { course_id: string | null; custom_course_name?: string | null }) => {
+    const planRowMathSequenceRank = (row: { course_id: string | null; smccd_course_id?: string | null; custom_course_name?: string | null }) => {
       const candidate = row.course_id ? courseById.get(row.course_id) : null;
-      return mathSequenceRankFromText(`${candidate?.course_code ?? ""} ${candidate?.name ?? row.custom_course_name ?? ""}`);
+      return mathSequenceRankFromText(`${candidate?.course_code ?? row.smccd_course_id ?? ""} ${candidate?.name ?? row.custom_course_name ?? ""}`);
     };
     const priorMathSequenceRank = (grade: GradeLevel) => Math.max(0, ...[...existing, ...generated]
       .filter((row) => row.grade_level < grade)

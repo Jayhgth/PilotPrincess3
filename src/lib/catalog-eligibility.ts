@@ -1,5 +1,6 @@
 import { courseEquivalenceKeys } from "@/lib/course-names";
 import { normalizeCollegeCourseCode, resolvePlanCollegeCourseCode } from "@/lib/college-course-identity";
+import { mathSequenceRankFromText } from "@/lib/planning";
 import { normalizeCourseKey } from "@/lib/prerequisites/normalize";
 import type { Course, GradeLevel, PlanCourse, SmccdCourse } from "@/lib/models";
 
@@ -66,6 +67,21 @@ export function highestDemonstratedDtechMathRank(
     .reduce((highest, rank) => Math.max(highest, rank), 0);
 }
 
+function highestPlannedDtechMathRank(
+  planCourses: readonly PlanCourse[],
+  dtechCourses: readonly Course[]
+): number {
+  const courseById = new Map(dtechCourses.map((course) => [course.id, course]));
+  return planCourses
+    .map((row) => {
+      const selectedSchoolName = row.course_id ? courseById.get(row.course_id)?.name : null;
+      return dtechMathRank(selectedSchoolName ?? row.custom_course_name ?? "")
+        ?? mathSequenceRankFromText(row.smccd_course_id ?? row.custom_course_name ?? "")
+        ?? 0;
+    })
+    .reduce((highest, rank) => Math.max(highest, rank), 0);
+}
+
 export function selectedSchoolCatalogEligibility(
   course: Course,
   targetGrade: GradeLevel,
@@ -83,8 +99,8 @@ export function selectedSchoolCatalogEligibility(
 
   if (options.schoolSlug === "design-tech-high-school") {
     const candidateMathRank = course.subject === "Mathematics" ? dtechMathRank(course.name) : null;
-    const demonstratedMathRank = highestDemonstratedDtechMathRank(planCourses, selectedSchoolCourses);
-    if (candidateMathRank !== null && candidateMathRank <= demonstratedMathRank) {
+    const plannedMathRank = highestPlannedDtechMathRank(planCourses, selectedSchoolCourses);
+    if (candidateMathRank !== null && candidateMathRank <= plannedMathRank) {
       return { eligible: false, reason: "below_math_level" };
     }
   }
