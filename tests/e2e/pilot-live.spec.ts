@@ -543,6 +543,49 @@ test.describe("live Pilot behavior", () => {
     const standardUndo = await promptPilot(standardPlanConversation, "Undo that plan.");
     expect(standardUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(standardUndo);
+
+    // Carlmont is the second complete high-school profile. Exercise the same
+    // real read -> deterministic proposal -> apply -> undo contract without
+    // borrowing d.tech courses, degree goals, or concurrent coursework.
+    const clearBeforeCarlmont = await promptPilot(standardPlanConversation, "Clear my whole schedule and all degree bookmarks.");
+    await apply(clearBeforeCarlmont);
+    const carlmont = await supabase.from("schools").select("id").ilike("name", "Carlmont High").single();
+    if (carlmont.error) throw carlmont.error;
+    const carlmontSelection = await supabase.rpc("select_current_school", { target_school_id: carlmont.data.id });
+    if (carlmontSelection.error) throw carlmontSelection.error;
+    const carlmontContext = await supabase.from("student_settings").update({
+      grade_level: 9,
+      graduation_year: 2030,
+      plan_start_grade: 9,
+      plan_end_grade: 12
+    }).eq("id", userId);
+    if (carlmontContext.error) throw carlmontContext.error;
+    const carlmontCoursesResult = await supabase.from("courses").select("*").eq("school_id", carlmont.data.id);
+    if (carlmontCoursesResult.error) throw carlmontCoursesResult.error;
+    const carlmontCourseById = new Map((carlmontCoursesResult.data ?? []).map((course) => [course.id, course]));
+    const carlmontConversation = await createConversation("Carlmont verified four-year plan");
+    const carlmontTurn = await promptPilot(carlmontConversation,
+      "Create and apply a balanced four-year Carlmont plan from grade 9, starting math at Precalculus. Finish the verified diploma requirements, use only Carlmont high-school courses, and do not add college courses.");
+    expect(carlmontTurn.proposals.map((proposal) => proposal.name), carlmontTurn.message).toEqual(["add_course_schedule"]);
+    await apply(carlmontTurn);
+    const carlmontPlanResult = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+    if (carlmontPlanResult.error) throw carlmontPlanResult.error;
+    const carlmontPlan = carlmontPlanResult.data ?? [];
+    expect(carlmontPlan.length).toBeGreaterThan(0);
+    expect(carlmontPlan.every((row) => !row.smccd_course_id && Number(row.college_units ?? 0) === 0)).toBe(true);
+    const carlmontMath = carlmontPlan.flatMap((row) => {
+      const course = row.course_id ? carlmontCourseById.get(row.course_id) : null;
+      const rank = mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? row.custom_course_name ?? ""}`);
+      return rank === null ? [] : [{ row, rank }];
+    }).sort((left, right) => Number(left.row.grade_level) - Number(right.row.grade_level));
+    expect(carlmontMath.some(({ row, rank }) => row.grade_level === 9 && rank === 4)).toBe(true);
+    for (let index = 1; index < carlmontMath.length; index += 1) {
+      expect(carlmontMath[index]!.rank).toBeGreaterThanOrEqual(carlmontMath[index - 1]!.rank);
+      expect(carlmontMath[index]!.rank - carlmontMath[index - 1]!.rank).toBeLessThanOrEqual(1);
+    }
+    const carlmontUndo = await promptPilot(carlmontConversation, "Undo that generated Carlmont plan.");
+    expect(carlmontUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(carlmontUndo);
     expect(livePromptCount).toBeGreaterThanOrEqual(20);
   });
 });
