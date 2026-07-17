@@ -87,7 +87,6 @@ export default function GpaPlanningLab({
       <header className={styles.header}>
         <div>
           <h1>GPA planner</h1>
-          <p>Try grade assumptions against the courses already in your plan. Completed transcript grades never change here.</p>
         </div>
         <button className="secondary-button" type="button" onClick={onOpenCourses}>Edit course plan <ArrowRight size={15} /></button>
       </header>

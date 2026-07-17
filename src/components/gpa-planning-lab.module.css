@@ -1,6 +1,6 @@
 .lab { width: min(100%, 1080px); margin: 0 auto; padding: 24px 0 64px; }
 .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px; }
-.header h1 { margin: 0 0 5px; font-size: var(--type-page); line-height: var(--leading-page); letter-spacing: -0.04em; }
+.header h1 { margin: 0; font-size: var(--type-page); line-height: var(--leading-page); letter-spacing: -0.04em; }
 .header p { max-width: 66ch; margin: 0; color: var(--ink-soft); font-size: var(--type-body); line-height: var(--leading-body); }
 .resultPanel { display: grid; width: min(100%, 780px); grid-template-columns: minmax(150px, .7fr) minmax(0, 2fr); align-items: center; gap: 28px; border-bottom: 1px solid var(--line); padding: 0 0 16px; }
 .primaryResult { display: flex; min-width: 0; flex-direction: column; justify-content: center; }
