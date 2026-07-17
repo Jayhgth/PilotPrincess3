@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { assistantConversationPrompt, parseAssistantScheduleIntent, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
-import { parseAssistantToolCall } from "@/server/ai-tools";
+import { assistantToolContractNames, parseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 
 describe("Pilot complete academic control", () => {
@@ -60,6 +60,7 @@ describe("Pilot complete academic control", () => {
       { prompt: "From college, add linear algebra and calc 3. Put in 11th grade summer calc 2 and intercultural communication.", read: "resolve_academic_course_batch" },
       { prompt: "Create a full plan from grade 9 that finishes my diploma and bookmarked degrees.", read: "get_course_schedule_options" },
       { prompt: "Edit my schedule, I start math at Algebra 2 in grade 9.", read: "get_academic_context" },
+      { prompt: "Start at algebra 2", read: "get_academic_context" },
       { prompt: "Here are my answers:\n- **What should the plan prioritize?** All of the above", read: "get_course_schedule_options", history: scheduleHistory },
       { prompt: "Use ASL 1 instead as my world language and update the plan.", read: "get_academic_context", history: scheduleHistory },
       { prompt: "Change my selected high school to Design Tech High School.", read: "search_california_high_schools" },
@@ -72,7 +73,7 @@ describe("Pilot complete academic control", () => {
       const route = requiredAssistantEvidenceReadForConversation(scenario.history ?? [], scenario.prompt);
       expect(route?.name, scenario.prompt).toBe(scenario.read);
     }
-    expect(directCases.length + routedCases.length).toBe(24);
+    expect(directCases.length + routedCases.length).toBe(25);
 
     const gradeNineRow = crypto.randomUUID();
     const gradeTenRow = crypto.randomUUID();
@@ -91,6 +92,29 @@ describe("Pilot complete academic control", () => {
     const trigonometryRow = crypto.randomUUID();
     const pathToCalculusRow = crypto.randomUUID();
     const combinedEditPrompt = "I want to do chinese as the language, just one semester of chinese 3. Also, start my math at algebra 2";
+    const targetedContext = {
+      student: { plan_start_grade: 9 },
+      plan: { courses: [
+        { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
+        { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
+        { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false },
+        { plan_course_id: frenchRow, catalog_course_id: french, name: "French 2", grade_level: 10, term: "full_year", transcript_locked: false }
+      ] },
+      graduation: [{
+        area: "math",
+        eligible_course_options: [
+          { course_id: algebraTwo, name: "Algebra 2", subject: "Math", weighted: false, term_type: "year", grade_levels: [9, 10] },
+          { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [9] }
+        ]
+      }, {
+        area: "world_language",
+        eligible_course_options: [
+          { course_id: spanish, name: "Spanish 1", subject: "World Language", weighted: false, term_type: "year", grade_levels: [9] },
+          { course_id: french, name: "French 2", subject: "World Language", weighted: false, term_type: "year", grade_levels: [10] },
+          { course_id: chineseThree, name: "Chinese 3", subject: "World Language", weighted: false, term_type: "semester", grade_levels: [9, 10, 11] }
+        ]
+      }]
+    };
     expect(parseAssistantScheduleIntent(combinedEditPrompt)).toMatchObject({ startingMathCourse: "algebra 2", startingLanguageCourse: "chinese 3" });
     expect(requiredAssistantEvidenceReadForConversation(scheduleHistory, combinedEditPrompt)?.name).toBe("get_academic_context");
     const targeted = await runAssistantChat({
@@ -99,29 +123,7 @@ describe("Pilot complete academic control", () => {
       model: "gpt-5.6-luna",
       executeReadTool: async () => ({
         summary: "Read workspace.",
-        data: {
-          student: { plan_start_grade: 9 },
-          plan: { courses: [
-            { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
-            { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
-            { plan_course_id: spanishRow, catalog_course_id: spanish, name: "Spanish 1", grade_level: 9, term: "full_year", transcript_locked: false },
-            { plan_course_id: frenchRow, catalog_course_id: french, name: "French 2", grade_level: 10, term: "full_year", transcript_locked: false }
-          ] },
-          graduation: [{
-            area: "math",
-            eligible_course_options: [
-              { course_id: algebraTwo, name: "Algebra 2", subject: "Math", weighted: false, term_type: "year", grade_levels: [9, 10] },
-              { course_id: precalculus, name: "Precalculus", subject: "Math", weighted: true, term_type: "year", grade_levels: [9] }
-            ]
-          }, {
-            area: "world_language",
-            eligible_course_options: [
-              { course_id: spanish, name: "Spanish 1", subject: "World Language", weighted: false, term_type: "year", grade_levels: [9] },
-              { course_id: french, name: "French 2", subject: "World Language", weighted: false, term_type: "year", grade_levels: [10] },
-              { course_id: chineseThree, name: "Chinese 3", subject: "World Language", weighted: false, term_type: "semester", grade_levels: [9, 10, 11] }
-            ]
-          }]
-        }
+        data: targetedContext
       }),
       onSdkEvent: () => undefined,
       onToolActivity: () => undefined
@@ -134,6 +136,20 @@ describe("Pilot complete academic control", () => {
       { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10, term: "full_year" },
       { plan_course_id: spanishRow, course_id: chineseThree, grade_level: 9, term: "fall" },
       { plan_course_id: frenchRow, remove: true }
+    ] });
+
+    const terseMathEdit = await runAssistantChat({
+      history: [],
+      userMessage: "Start at algebra 2",
+      model: "gpt-5.6-luna",
+      executeReadTool: async () => ({ summary: "Read workspace.", data: targetedContext }),
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(terseMathEdit.proposals.map((proposal) => proposal.name)).toEqual(["update_plan_courses"]);
+    expect(terseMathEdit.proposals[0]?.arguments).toMatchObject({ patches: [
+      { plan_course_id: gradeNineRow, course_id: algebraTwo, grade_level: 9, term: "full_year" },
+      { plan_course_id: gradeTenRow, course_id: precalculus, grade_level: 10, term: "full_year" }
     ] });
 
     const partiallyResolvable = await runAssistantChat({
@@ -184,6 +200,15 @@ describe("Pilot complete academic control", () => {
 
   it("enforces reversible app-wide Pilot control and safety boundaries", async () => {
     {
+    const contracts = assistantToolContractNames();
+    expect(contracts.catalog).toEqual(contracts.schemas);
+    expect(contracts.capabilities).toEqual(contracts.schemas);
+    expect(contracts.mutationMismatches).toEqual([]);
+    expect(parseAssistantToolCall("update_plan_course", {
+      plan_course_id: crypto.randomUUID(),
+      course_id: crypto.randomUUID(),
+      prerequisite_override_reason: "The student explicitly corrected the course placement."
+    }).mutatesData).toBe(true);
     const call = parseAssistantToolCall("add_academic_courses", {
       entries: [
         { source: "selected_school", course_id: crypto.randomUUID(), status: "current", grade_level: 9, term: "full_year" },

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { pilotToolNamesForMessage } from "@/lib/app-capabilities";
+import { APP_CAPABILITY_REGISTRY, appCapability, pilotToolNamesForMessage } from "@/lib/app-capabilities";
 import { createSmccdPlanCourseIndex, selectedSchoolCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import type {
@@ -226,14 +226,18 @@ const toolArgumentSchemas = {
   }),
   update_plan_course: z.object({
     plan_course_id: z.uuid(),
+    course_id: z.uuid().optional(),
+    smccd_course_id: z.string().trim().min(3).max(160).optional(),
     grade_level: gradeSchema.optional(),
     term: termSchema.optional(),
     letter_grade: optionalText(12).optional(),
     notes: optionalText(1200).optional(),
     credits: z.number().min(0).max(100).optional(),
     college_units: z.number().min(0).max(30).nullable().optional(),
-    is_weighted: z.boolean().optional()
-  }).refine((value) => Object.keys(value).some((key) => key !== "plan_course_id"), "Provide at least one course field to update."),
+    is_weighted: z.boolean().optional(),
+    prerequisite_override_reason: z.string().trim().min(3).max(600).optional()
+  }).refine((value) => !(value.course_id && value.smccd_course_id), "Choose either a selected-school or college replacement, not both.")
+    .refine((value) => Object.keys(value).some((key) => key !== "plan_course_id"), "Provide at least one course field to update."),
   update_plan_courses: z.object({
     patches: z.array(z.object({
       plan_course_id: z.uuid(),
@@ -367,6 +371,7 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
   { name: "move_plan_courses", mutatesData: true, description: "Propose moving an exact set of editable plan courses to Done, In progress, or Planned in one request. Use this for all/every bulk state changes after listing the matching courses.", arguments: '{"plan_course_ids":["uuid"],"status":"completed|current|planned"}' },
   { name: "remove_plan_course", mutatesData: true, description: "Propose removing an editable course from the active plan. Transcript-backed courses cannot be removed.", arguments: '{"plan_course_id":"uuid"}' },
   { name: "remove_plan_courses", mutatesData: true, description: "Propose removing an exact set of editable courses from the active plan in one atomic request. Use this for all/every bulk removal requests after listing the matching plan courses.", arguments: '{"plan_course_ids":["uuid"]}' },
+  { name: "update_plan_course", mutatesData: true, description: "Update one exact editable plan row using the same atomic validation path as a multi-course update. It can replace the course identity, placement, grade assumptions, credits, units, weighting, or notes while preserving every other row.", arguments: '{"plan_course_id":"uuid","course_id?":"uuid","smccd_course_id?":"catalog id","grade_level?":9|10|11|12,"term?":"fall|spring|summer|full_year","letter_grade?":"string|null","credits?":number,"college_units?":"number|null","is_weighted?":boolean,"notes?":"string|null","prerequisite_override_reason?":"string"}' },
   { name: "update_plan_courses", mutatesData: true, description: "Atomically apply one coherent batch of exact edits, removals, and prerequisite-ordered additions while preserving every unaffected non-transcript row. Use this for requested subject-sequence or multi-course corrections so no downstream course can apply if an earlier edit fails.", arguments: '{"patches":[{"plan_course_id":"uuid","remove":boolean,"course_id":"uuid","smccd_course_id":"catalog id","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","letter_grade":"string|null","credits":number,"college_units":number|null,"is_weighted":boolean,"notes":"string|null","prerequisite_override_reason?":"string"}],"additions":[{"source":"selected_school|smccd","course_id":"catalog id","status":"current|planned","grade_level":9|10|11|12,"term":"fall|spring|summer|full_year","prerequisite_override_reason?":"string"}]}' },
   { name: "sort_plan_courses", mutatesData: true, description: "Propose applying the product's canonical course-board ordering across every grade, with graded college courses first, high-school courses next, pass/fail courses last, and full-year rows placed consistently.", arguments: "{}" },
   { name: "update_gpa_scenario", mutatesData: true, description: "Propose saving GPA-planner inclusion and expected-grade choices for current or planned courses. This changes only the calculator scenario, never completed transcript grades or the course plan.", arguments: '{"choices":[{"plan_course_id":"uuid","included":boolean,"expected_grade":"A|B|C|D|F|null"}]}' },
@@ -385,11 +390,14 @@ const ASSISTANT_TOOL_CATALOG: ReadonlyArray<{
 
 export function assistantToolCatalogPrompt(userMessage?: string) {
   const selectedTools = userMessage ? pilotToolNamesForMessage(userMessage) : null;
-  return ASSISTANT_TOOL_CATALOG.filter((tool) => !selectedTools || selectedTools.has(tool.name)).map((tool) => [
-    `- ${tool.name}${tool.mutatesData ? " (exact validated change; independent review when risk requires it)" : " (read-only)"}`,
-    `  ${tool.description}`,
-    `  Arguments: ${tool.arguments}`
-  ].join("\n")).join("\n");
+  return ASSISTANT_TOOL_CATALOG.filter((tool) => !selectedTools || selectedTools.has(tool.name)).map((tool) => {
+    const mutatesData = appCapability(tool.name)?.review !== "none";
+    return [
+      `- ${tool.name}${mutatesData ? " (exact validated change; independent review when risk requires it)" : " (read-only)"}`,
+      `  ${tool.description}`,
+      `  Arguments: ${tool.arguments}`
+    ].join("\n");
+  }).join("\n");
 }
 
 export function assistantToolLabel(name: string) {
@@ -448,11 +456,24 @@ export function assistantToolLabel(name: string) {
 export function parseAssistantToolCall(name: string, argumentsValue: unknown) {
   if (!(name in toolArgumentSchemas)) throw new Error(`Unknown student-data tool: ${name}`);
   const toolName = name as AssistantToolName;
+  const capability = appCapability(toolName);
+  if (!capability) throw new Error(`Unregistered student-data tool: ${name}`);
   const parsed = toolArgumentSchemas[toolName].parse(argumentsValue);
   return {
     name: toolName,
     arguments: parsed as Record<string, unknown>,
-    mutatesData: ASSISTANT_TOOL_CATALOG.find((tool) => tool.name === toolName)?.mutatesData === true
+    mutatesData: capability.review !== "none"
+  };
+}
+
+export function assistantToolContractNames() {
+  return {
+    schemas: Object.keys(toolArgumentSchemas).sort(),
+    catalog: ASSISTANT_TOOL_CATALOG.map((tool) => tool.name).sort(),
+    capabilities: Object.keys(APP_CAPABILITY_REGISTRY).sort(),
+    mutationMismatches: ASSISTANT_TOOL_CATALOG
+      .filter((tool) => tool.mutatesData !== (appCapability(tool.name)?.review !== "none"))
+      .map((tool) => tool.name)
   };
 }
 
@@ -4021,6 +4042,17 @@ export async function executeAssistantMutationTool(
     };
   }
 
+  if (name === "update_plan_course") {
+    const args = toolArgumentSchemas.update_plan_course.parse(argumentsValue);
+    // Single-row edits are a convenience surface, not a second mutation
+    // implementation. Keeping both forms on the same atomic executor prevents
+    // validation, prerequisite overrides, receipts, and undo from drifting.
+    return executeAssistantMutationTool(supabase, userId, "update_plan_courses", {
+      patches: [args],
+      additions: []
+    }, context);
+  }
+
   const workspace = await loadAssistantWorkspace(supabase, userId);
 
   if (name === "set_current_school") {
@@ -4861,50 +4893,6 @@ export async function executeAssistantMutationTool(
         inserted_plan_course_ids: additionRows.map((row) => row.id),
         summary: "The previous course sequence and placements were restored."
       }
-    };
-  }
-
-  if (name === "update_plan_course") {
-    const args = toolArgumentSchemas.update_plan_course.parse(argumentsValue);
-    const row = workspace.planCourses.find((candidate) => candidate.id === args.plan_course_id);
-    if (!row) throw new Error("That course is no longer in the active plan.");
-    if (row.source_review_item_id) throw new Error("Transcript-backed course evidence must be corrected through transcript review.");
-    const gradeLevel = args.grade_level ?? row.grade_level;
-    const term = args.term ?? row.term;
-    assertPlanningTermExists(gradeLevel, term);
-    const highSchoolCourse = row.course_id ? workspace.courses.find((course) => course.id === row.course_id) : null;
-    if (highSchoolCourse) {
-      if (highSchoolCourse.grade_levels.length && !highSchoolCourse.grade_levels.includes(gradeLevel)) throw new Error(`That course is not offered in grade ${gradeLevel}.`);
-      if (highSchoolCourse.term_type === "year" && term !== "full_year") throw new Error(`That ${workspace.school.short_name} course is a full-year course.`);
-      const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(highSchoolCourse, { gradeLevel, term, instanceId: row.id }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies, `${workspace.school.name} official course catalog`);
-      if (prerequisite.result.status === "blocked") throw new Error("The listed prerequisite is not satisfied for that placement.");
-    }
-    if (row.smccd_course_id && (args.grade_level !== undefined || args.term !== undefined)) {
-      const catalogResult = await supabase.from("smccd_courses").select("*");
-      if (catalogResult.error) throw new Error(catalogResult.error.message);
-      const course = (catalogResult.data as unknown as SmccdCourse[]).find((candidate) => candidate.id === row.smccd_course_id);
-      if (!course) throw new Error("That SMCCD course is no longer in the catalog.");
-      const prerequisite = evaluateSmccdPlannerPrerequisites(course, { gradeLevel, term, instanceId: row.id }, catalogResult.data as unknown as SmccdCourse[], workspace.planCourses, workspace.courses);
-      if (prerequisite.result.status === "blocked") throw new Error("The listed SMCCD prerequisite is not satisfied for that placement.");
-    }
-    const patch: Record<string, unknown> = { user_edited: true };
-    if (args.grade_level !== undefined) {
-      patch.grade_level = args.grade_level;
-      patch.school_year = schoolYearForGrade(workspace.settings.graduation_year ?? new Date().getFullYear() + 3, args.grade_level);
-    }
-    if (args.term !== undefined) patch.term = args.term;
-    if (args.letter_grade !== undefined) patch.letter_grade = args.letter_grade;
-    if (args.notes !== undefined) patch.notes = args.notes;
-    if (args.credits !== undefined) patch.credits = args.credits;
-    if (args.college_units !== undefined) patch.college_units = args.college_units;
-    if (args.is_weighted !== undefined) patch.is_weighted = args.is_weighted;
-    const { error } = await supabase.from("plan_courses").update(patch).eq("id", row.id);
-    if (error) throw new Error(error.message);
-    return {
-      summary: "The course details were updated.",
-      data: { plan_course_id: row.id, ...patch },
-      changed: { entity: "plan_course", id: row.id },
-      undo: { kind: "restore_rows", table: "plan_courses", rows: [row as unknown as Record<string, unknown>], summary: "The previous course details were restored." }
     };
   }
 

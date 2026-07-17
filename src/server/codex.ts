@@ -811,6 +811,22 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
     };
   }
 
+  // Placement commands such as "Start at Algebra 2" are complete targeted
+  // edits even when the student omits words like math, schedule, or plan.
+  // Route from the parsed academic intent instead of relying only on generic
+  // request nouns, which otherwise sends the command through catalog search
+  // and lets the model guess at a mutation tool.
+  const targetedPlacement = parseAssistantScheduleIntent(userMessage);
+  if (targetedPlacement.startingMathCourse || targetedPlacement.startingLanguageCourse) {
+    return {
+      name: "get_academic_context",
+      arguments: {
+        include_transcript_review: false,
+        planning_objectives: []
+      }
+    };
+  }
+
   const courseBatch = requestedCourseBatch(normalized);
   if (courseBatch) return { name: "list_plan_courses", arguments: courseBatch.filters };
 
@@ -1361,7 +1377,12 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
     ? context.college_sequence_options.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
   const requestedRank = intent.startingMathCourse ? mathSequenceRankFromText(intent.startingMathCourse) : null;
-  const startGrade = intent.startGrade ?? Number((context.student as Record<string, unknown> | undefined)?.plan_start_grade ?? 9);
+  const editableMathRows = rows
+    .filter((row) => row.transcript_locked !== true && typeof row.catalog_course_id === "string" && mathSequenceRankFromText(String(row.name ?? "")) !== null);
+  const earliestEditableMathGrade = Math.min(...editableMathRows.map((row) => Number(row.grade_level)).filter((grade) => [9, 10, 11, 12].includes(grade)));
+  const startGrade = intent.startGrade
+    ?? (intent.startingMathCourse && Number.isFinite(earliestEditableMathGrade) ? earliestEditableMathGrade : undefined)
+    ?? Number((context.student as Record<string, unknown> | undefined)?.plan_start_grade ?? 9);
   if (![9, 10, 11, 12].includes(startGrade)) return null;
 
   const patches: Array<Record<string, unknown>> = [];
@@ -1369,8 +1390,7 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   const questions: AssistantQuestion[] = [];
   const warnings: string[] = [];
   if (intent.startingMathCourse && requestedRank !== null) {
-    const currentMathRows = rows
-      .filter((row) => row.transcript_locked !== true && typeof row.catalog_course_id === "string" && mathSequenceRankFromText(String(row.name ?? "")) !== null)
+    const currentMathRows = editableMathRows
       .filter((row) => Number(row.grade_level) >= startGrade)
       .sort((left, right) => Number(left.grade_level) - Number(right.grade_level)
         || Number(mathSequenceRankFromText(String(left.name ?? ""))) - Number(mathSequenceRankFromText(String(right.name ?? ""))));

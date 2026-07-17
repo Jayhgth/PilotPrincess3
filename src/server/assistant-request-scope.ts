@@ -54,7 +54,11 @@ export function classifyAssistantRequest(userMessage: string): AssistantRequestS
   ]);
   if (optimization && includesAny(value, [/\b(schedule|plan|courses?|classes?)\b/])) return "plan_optimization";
 
-  const courseEdit = includesAny(value, [/\b(course|class|schedule|plan|math|language|semester|term|grade)\b/])
+  const courseEdit = includesAny(value, [
+    /\b(course|class|schedule|plan|math|language|semester|term|grade)\b/,
+    /\b(?:alg(?:ebra)?\s*(?:1|2|i|ii)|geometry|pre[ -]?calc(?:ulus)?|calculus(?:\s+(?:ab|bc|i{1,3}|1|2|3))?)\b/,
+    /\b(?:spanish|french|chinese|mandarin|japanese|latin|german|italian|asl|american sign language)(?:\s+(?:1|2|3|4|i|ii|iii|iv|ap))?\b/
+  ])
     && includesAny(value, [/\b(change|edit|move|switch|replace|start|set|put|shift|update)\b/]);
   if (courseEdit) return "targeted_course_edit";
 

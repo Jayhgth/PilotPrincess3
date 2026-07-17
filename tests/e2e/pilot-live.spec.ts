@@ -602,6 +602,52 @@ test.describe("live Pilot behavior", () => {
       if (removeSeed.error) throw removeSeed.error;
     }
 
+    // Exact regression for the terse production prompt that previously fell
+    // through to catalog search and misclassified update_plan_course as a
+    // read. It must route straight through academic context, apply the whole
+    // downstream sequence, and remain reversible.
+    const algebraOneCourse = (dtechCatalog.data ?? []).find((course) => mathSequenceRankFromText(`${course.course_code ?? ""} ${course.name}`) === 1);
+    const gradeNineMathSeed = placementBaseline.find((row) => {
+      const course = row.course_id ? courseById.get(row.course_id) : null;
+      return row.grade_level === 9 && mathSequenceRankFromText(`${course?.course_code ?? ""} ${course?.name ?? ""}`) !== null;
+    });
+    expect(algebraOneCourse).toBeDefined();
+    expect(gradeNineMathSeed).toBeDefined();
+    const algebraOneSeed = await supabase.from("plan_courses").update({
+      course_id: algebraOneCourse!.id,
+      smccd_course_id: null,
+      college_provider_code: null,
+      custom_course_name: null,
+      credits: algebraOneCourse!.credits,
+      college_units: algebraOneCourse!.college_units,
+      is_weighted: algebraOneCourse!.is_weighted,
+      mapping_verified: true
+    }).eq("id", gradeNineMathSeed!.id).eq("user_id", userId);
+    if (algebraOneSeed.error) throw algebraOneSeed.error;
+    const tersePlacementConversation = await createConversation("Terse Algebra 2 placement");
+    const tersePlacementTurn = await promptPilot(tersePlacementConversation, "Start at algebra 2");
+    expect(tersePlacementTurn.proposals.map((proposal) => proposal.name), tersePlacementTurn.message).toEqual(["update_plan_courses"]);
+    const terseToolCalls = await supabase.from("ai_tool_calls").select("tool_name,status").eq("conversation_id", tersePlacementConversation).order("created_at");
+    if (terseToolCalls.error) throw terseToolCalls.error;
+    expect(terseToolCalls.data?.map((call) => call.tool_name)).toEqual(["get_academic_context", "update_plan_courses"]);
+    await apply(tersePlacementTurn);
+    const tersePlacementRows = await supabase.from("plan_courses").select("*").eq("user_id", userId);
+    if (tersePlacementRows.error) throw tersePlacementRows.error;
+    const terseGradeNineMathRanks = (tersePlacementRows.data ?? []).flatMap((row) => {
+      if (row.grade_level !== 9) return [];
+      const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+      const collegeCourse = row.smccd_course_id ? catalog.find((course) => course.id === row.smccd_course_id) : null;
+      const rank = mathSequenceRankFromText(`${schoolCourse?.course_code ?? collegeCourse?.course_code ?? ""} ${schoolCourse?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""}`);
+      return rank === null ? [] : [rank];
+    });
+    expect(terseGradeNineMathRanks).toEqual([3]);
+    const tersePlacementUndo = await promptPilot(tersePlacementConversation, "Undo that course change.");
+    expect(tersePlacementUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
+    await apply(tersePlacementUndo);
+    const restoredAlgebraOne = await supabase.from("plan_courses").select("course_id").eq("id", gradeNineMathSeed!.id).single();
+    if (restoredAlgebraOne.error) throw restoredAlgebraOne.error;
+    expect(restoredAlgebraOne.data.course_id).toBe(algebraOneCourse!.id);
+
     const fullPlanUndo = await promptPilot(fullPlanConversation, "Undo that generated plan.");
     expect(fullPlanUndo.proposals.map((proposal) => proposal.name)).toEqual(["undo_change"]);
     await apply(fullPlanUndo);
