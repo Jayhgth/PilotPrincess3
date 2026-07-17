@@ -113,7 +113,8 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("resolve_academic_course_batch", {
       requests: [
         { query: "linear algebra", source: "smccd", grade_level: 12, term: null, status: "planned" },
-        { query: "calc 2", source: "smccd", grade_level: 11, term: "summer", status: "planned" }
+        { query: "calc 2", source: "smccd", grade_level: 11, term: "summer", status: "planned" },
+        { query: "intercultural communication", source: "all", grade_level: 11, term: null, status: "planned" }
       ],
       fill_remaining_graduation_requirements: true,
       graduation_grade_level: 12
@@ -675,6 +676,22 @@ describe("Codex feature boundaries", () => {
       ]
     });
     expect(requiredAssistantEvidenceRead(compoundRequest)).toEqual({ name: "resolve_academic_course_batch", arguments: compoundArguments });
+    const gradeScopedBatch = "In 11th grade, add eng c1000, intercultural communication, nosql, and calc 2";
+    const gradeScopedArguments = parseCompoundAcademicCourseRequest(gradeScopedBatch);
+    expect(gradeScopedArguments).toMatchObject({
+      fill_remaining_graduation_requirements: false,
+      requests: [
+        { query: "eng c1000", source: "all", grade_level: 11, term: null },
+        { query: "intercultural communication", source: "all", grade_level: 11, term: null },
+        { query: "nosql", source: "all", grade_level: 11, term: null },
+        { query: "calc 2", source: "all", grade_level: 11, term: null }
+      ]
+    });
+    expect(requiredAssistantEvidenceRead(gradeScopedBatch)).toEqual({ name: "resolve_academic_course_batch", arguments: gradeScopedArguments });
+    expect(parseCompoundAcademicCourseRequest("For grade 10 spring, add Biology and World History")?.requests).toEqual([
+      { query: "Biology", source: "all", grade_level: 10, term: "spring", status: "planned" },
+      { query: "World History", source: "all", grade_level: 10, term: "spring", status: "planned" }
+    ]);
     expect(requiredAssistantEvidenceRead("Here are my answers:\n- **Keep college coursework within the 11-unit per-term district planning limit?** Yes (Recommended)")).toEqual({
       name: "get_course_schedule_options",
       arguments: { respect_recommended_limit: true }

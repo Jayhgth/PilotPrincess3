@@ -58,6 +58,7 @@ describe("Pilot complete academic control", () => {
       { prompt: "Bookmark the Computer Science Applications and Development AS degree at CSM.", read: "search_smccd_programs" },
       { prompt: "Set every current and planned course in my GPA calculator to an expected A.", read: "get_gpa_scenario" },
       { prompt: "From college, add linear algebra and calc 3. Put in 11th grade summer calc 2 and intercultural communication.", read: "resolve_academic_course_batch" },
+      { prompt: "In 11th grade, add eng c1000, intercultural communication, nosql, and calc 2.", read: "resolve_academic_course_batch" },
       { prompt: "Create a full plan from grade 9 that finishes my diploma and bookmarked degrees.", read: "get_course_schedule_options" },
       { prompt: "Edit my schedule, I start math at Algebra 2 in grade 9.", read: "get_academic_context" },
       { prompt: "Start at algebra 2", read: "get_academic_context" },
@@ -73,7 +74,37 @@ describe("Pilot complete academic control", () => {
       const route = requiredAssistantEvidenceReadForConversation(scenario.history ?? [], scenario.prompt);
       expect(route?.name, scenario.prompt).toBe(scenario.read);
     }
-    expect(directCases.length + routedCases.length).toBe(25);
+    expect(directCases.length + routedCases.length).toBe(26);
+
+    const partiallyResolvedBatch = await runAssistantChat({
+      history: [],
+      userMessage: "In 11th grade, add eng c1000, intercultural communication, nosql, and calc 2.",
+      model: "gpt-5.6-luna",
+      executeReadTool: async () => ({
+        summary: "Resolved three placements; one remains unresolved.",
+        data: {
+          complete: false,
+          apply_ready: true,
+          entries: [
+            { source: "smccd", course_id: crypto.randomUUID(), grade_level: 11, term: "fall", status: "planned" },
+            { source: "smccd", course_id: crypto.randomUUID(), grade_level: 11, term: "fall", status: "planned" },
+            { source: "smccd", course_id: crypto.randomUUID(), grade_level: 11, term: "spring", status: "planned" }
+          ],
+          resolved: [
+            { query: "eng c1000", name: "ENGL C1000 Academic Reading and Writing", grade_level: 11, term: "fall" },
+            { query: "intercultural communication", name: "COMM 150 Intercultural Communication", grade_level: 11, term: "fall" },
+            { query: "nosql", name: "CIS 133 NoSQL Databases", grade_level: 11, term: "spring" }
+          ],
+          unresolved: [{ query: "calc 2", reason: "An unmet prerequisite prevents placement." }],
+          respect_recommended_limit: true
+        }
+      }),
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(partiallyResolvedBatch.proposals.map((proposal) => proposal.name)).toEqual(["add_academic_courses"]);
+    expect(partiallyResolvedBatch.proposals[0]?.arguments.entries).toHaveLength(3);
+    expect(partiallyResolvedBatch.message).toContain("calc 2");
 
     const gradeNineRow = crypto.randomUUID();
     const gradeTenRow = crypto.randomUUID();

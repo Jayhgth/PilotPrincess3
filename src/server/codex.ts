@@ -540,13 +540,18 @@ function resolvedAcademicBatch(result: AssistantToolResult) {
   const entries = Array.isArray(data?.entries)
     ? data.entries.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry))
     : [];
-  if (data?.complete !== true || entries.length === 0) return null;
+  if (!data || data.apply_ready === false || entries.length === 0) return null;
   const resolved = Array.isArray(data.resolved)
     ? data.resolved.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    : [];
+  const unresolved = Array.isArray(data.unresolved)
+    ? data.unresolved.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
   return {
     entries,
     resolved,
+    unresolved,
+    complete: data.complete === true,
     respectRecommendedLimit: data.respect_recommended_limit !== false
   };
 }
@@ -569,7 +574,9 @@ function academicBatchProposal(batch: NonNullable<ReturnType<typeof resolvedAcad
 function academicBatchMessage(batch: NonNullable<ReturnType<typeof resolvedAcademicBatch>>) {
   const placements = batch.resolved.slice(0, 4).map((row) => `${String(row.name ?? "Course")} (${String(row.term ?? "term")}, grade ${String(row.grade_level ?? "")})`);
   const detail = placements.length ? `: ${placements.join("; ")}${batch.resolved.length > placements.length ? `; +${batch.resolved.length - placements.length} more` : ""}` : "";
-  return `I resolved all ${batch.entries.length} requested placements${detail}. The exact reversible batch will apply automatically if its validation passes.`;
+  if (batch.complete) return `I resolved ${batch.entries.length} requested placements${detail}. The exact reversible batch is being applied now.`;
+  const unresolved = batch.unresolved.slice(0, 3).map((row) => `${String(row.query ?? "course")}: ${String(row.reason ?? "unresolved")}`).join(" ");
+  return `I resolved and am applying ${batch.entries.length} requested placement${batch.entries.length === 1 ? "" : "s"}${detail}. ${batch.unresolved.length} item${batch.unresolved.length === 1 ? " remains" : "s remain"} unresolved${unresolved ? `: ${unresolved}` : ""}.`;
 }
 
 export interface AssistantChatResult {
@@ -696,7 +703,7 @@ function requestedCourseBatch(normalized: string): CourseBatchRequest | null {
 export function isCompoundCourseAdditionRequest(userMessage: string) {
   const normalized = userMessage.toLowerCase();
   return /\b(?:add|put|place|schedule|enroll)\b/.test(normalized)
-    && /\b(?:course|class|graduation|college|high[ -]?school|grade\s*(?:9|10|11|12))\b/.test(normalized)
+    && /\b(?:course|class|graduation|college|high[ -]?school|grade\s*(?:9|10|11|12)|(?:9|10|11|12)(?:th|st|nd|rd)?\s+grade)\b/.test(normalized)
     && (/,|\band\b|\bremaining requirements?\b|\bclasses? needed\b/.test(normalized));
 }
 
@@ -717,14 +724,24 @@ export function parseCompoundAcademicCourseRequest(userMessage: string) {
     ?? userMessage.match(/graduation.{0,50}(?:in|for)\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?/i);
   const requests: Array<{
     query: string;
-    source: "selected_school" | "smccd";
+    source: "selected_school" | "smccd" | "all";
     grade_level?: 9 | 10 | 11 | 12;
     term: "fall" | "spring" | "summer" | "full_year" | null;
     status: "planned";
   }> = [];
   const coveredRanges: Array<[number, number]> = [];
+  const leadingPlacementPattern = /(?:^|[.!?]\s*)(?:in|for)\s+(?:grade\s*(9|10|11|12)|(9|10|11|12)(?:th|st|nd|rd)?\s+grade)(?:\s+(fall|spring|summer|full[ -]?year))?\s*,?\s*(?:add|include|take|schedule|enroll(?:\s+in)?)\s+(.+?)(?=[.!?]|$)/gi;
+  for (const match of userMessage.matchAll(leadingPlacementPattern)) {
+    const grade = Number(match[1] ?? match[2]) as 9 | 10 | 11 | 12;
+    const term = match[3]
+      ? match[3].toLowerCase().replace(/[ -]/g, "_") as "fall" | "spring" | "summer" | "full_year"
+      : null;
+    for (const query of splitRequestedCourseList(match[4]!)) requests.push({ query, source: "all", grade_level: grade, term, status: "planned" });
+    if (match.index !== undefined) coveredRanges.push([match.index, match.index + match[0].length]);
+  }
   const placedPattern = /(?:put|place|add)\s+(?:them\s+)?in\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?\s+grade\s+(fall|spring|summer|full[ -]?year)\s+(.+?)(?=[.!?]|$)/gi;
   for (const match of userMessage.matchAll(placedPattern)) {
+    if (match.index !== undefined && coveredRanges.some(([start, end]) => match.index! >= start && match.index! < end)) continue;
     const grade = Number(match[1]) as 9 | 10 | 11 | 12;
     const term = match[2]!.toLowerCase().replace(/[ -]/g, "_") as "fall" | "spring" | "summer" | "full_year";
     for (const query of splitRequestedCourseList(match[3]!)) requests.push({ query, source: "smccd", grade_level: grade, term, status: "planned" });
