@@ -1022,7 +1022,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
   return (
     <>
       <button className={styles.backdrop} type="button" onClick={() => !running && onClose()} aria-label="Close Pilot Assistant" />
-      <aside ref={drawerRef} style={{ width: panelWidth }} className={`${styles.drawer} ${styles.dockedDrawer}`} role="dialog" aria-modal="false" aria-label="Pilot Assistant">
+      <aside ref={drawerRef} style={{ width: panelWidth }} className={`${styles.drawer} ${styles.dockedDrawer} desktop-assistant-drawer`} role="dialog" aria-modal="false" aria-label="Pilot Assistant">
         <div className={styles.resizeRail} role="separator" aria-label="Resize Pilot Assistant" aria-orientation="vertical" onPointerDown={handleDockResizeStart} onPointerMove={handleDockResizeMove} onPointerUp={handleDockResizeEnd} onPointerCancel={handleDockResizeEnd}><span /></div>
         <header className={styles.header}>
           <div className={styles.conversationPicker}>

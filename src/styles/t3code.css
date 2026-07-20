@@ -76,11 +76,21 @@
 .desktop-macos .desktop-navigation {
   position: fixed;
   z-index: 2147483646;
-  top: 5px;
-  left: 148px;
+  inset: 0 0 auto;
+  display: flex;
+  height: 44px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  background: var(--chrome-surface);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.desktop-macos .desktop-navigation-controls {
   display: flex;
   align-items: center;
   gap: 2px;
+  margin-left: max(86px, calc(var(--app-sidebar-width, 248px) - 100px));
+  transition: margin-left 180ms cubic-bezier(0.16, 1, 0.3, 1);
   -webkit-app-region: no-drag;
 }
 .desktop-macos .desktop-navigation button {
@@ -93,15 +103,39 @@
   background: transparent;
   color: var(--ink-faint);
   padding: 0;
+  -webkit-app-region: no-drag;
 }
 .desktop-macos .desktop-navigation button:hover {
   background: var(--surface-muted);
   color: var(--ink);
 }
+.desktop-macos .t3code-app .app-sidebar {
+  top: 44px;
+}
+.desktop-macos .t3code-app .app-main {
+  padding-top: 44px;
+}
+.desktop-macos .t3code-app .app-toolbar {
+  top: 44px;
+}
 .desktop-macos .t3code-app .sidebar-top {
-  min-height: 86px;
-  align-items: flex-end;
-  padding-bottom: 11px;
+  min-height: 52px;
+  align-items: center;
+  padding-bottom: 0;
+}
+.desktop-macos .desktop-assistant-drawer {
+  top: 44px;
+}
+:root[data-sidebar-resizing="true"] .desktop-macos .desktop-navigation-controls {
+  transition: none;
+}
+@media (min-width: 961px) {
+  :root[data-sidebar-collapsed="true"] .desktop-macos .desktop-navigation-controls {
+    margin-left: 86px;
+  }
+  :root[data-sidebar-collapsed="true"] .desktop-macos .desktop-navigation-controls button:not(:first-child) {
+    display: none;
+  }
 }
 .t3code-app .app-content { width: min(100%, 1240px); min-width: 0; padding-top: 22px; }
 .t3code-app .page-header { min-height: 58px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }

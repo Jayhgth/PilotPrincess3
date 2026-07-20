@@ -162,15 +162,17 @@ export default function AppChrome<ViewId extends string>({
 
   return <>
     <div className="desktop-navigation" aria-label="Window navigation">
-      <button type="button" onClick={toggleSidebar} aria-label={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"} title={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"}>
-        <SidebarSimple size={18} />
-      </button>
-      <button type="button" onClick={() => window.history.back()} aria-label="Go back" title="Go back">
-        <ArrowLeft size={18} />
-      </button>
-      <button type="button" onClick={() => window.history.forward()} aria-label="Go forward" title="Go forward">
-        <ArrowRight size={18} />
-      </button>
+      <div className="desktop-navigation-controls">
+        <button type="button" onClick={toggleSidebar} aria-label={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"} title={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"}>
+          <SidebarSimple size={18} />
+        </button>
+        <button type="button" onClick={() => window.history.back()} aria-label="Go back" title="Go back">
+          <ArrowLeft size={18} />
+        </button>
+        <button type="button" onClick={() => window.history.forward()} aria-label="Go forward" title="Go forward">
+          <ArrowRight size={18} />
+        </button>
+      </div>
     </div>
     <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
       <div className="sidebar-top">

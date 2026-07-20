@@ -614,12 +614,12 @@ input:focus, select:focus, textarea:focus {
 .desktop-window-drag-region { display: none; }
 .desktop-macos .desktop-window-drag-region {
   position: fixed;
-  z-index: 2147483647;
+  z-index: 2147483645;
   top: 0;
-  right: 320px;
-  left: 250px;
+  right: 0;
+  left: calc(var(--app-sidebar-width, 248px) + 12px);
   display: block;
-  height: 34px;
+  height: 44px;
   -webkit-app-region: drag;
   user-select: none;
 }
