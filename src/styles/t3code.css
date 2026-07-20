@@ -41,7 +41,6 @@
 .t3code-app .onboarding-topbar { background: var(--chrome-surface); }
 .t3code-app .app-toolbar { background: var(--bg); }
 .t3code-app .app-sidebar { border-right-color: var(--line); }
-.t3code-app .sidebar-top { min-height: 52px; border-bottom-color: var(--line); padding: 0 14px; }
 .t3code-app .wordmark { font-size: 13px; font-weight: 600; }
 .t3code-app button.wordmark { border: 0; background: transparent; padding: 0; text-align: left; }
 .t3code-app .wordmark-mark { width: 28px; height: 28px; flex-basis: 28px; }
@@ -57,7 +56,6 @@
 :root[data-sidebar-resizing="true"] .t3code-app .app-sidebar,
 :root[data-sidebar-resizing="true"] .t3code-app .app-main { transition: none; }
 @media (min-width: 961px) {
-  :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-top { justify-content: center; padding-inline: 8px; }
   :root[data-sidebar-collapsed="true"] .t3code-app .wordmark > span,
   :root[data-sidebar-collapsed="true"] .t3code-app .sidebar-nav button > span,
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip-copy,
@@ -82,15 +80,16 @@
   align-items: center;
   border-bottom: 1px solid var(--line);
   background: var(--chrome-surface);
+  padding-right: 10px;
   -webkit-app-region: drag;
   user-select: none;
 }
 .desktop-macos .desktop-navigation-controls {
   display: flex;
+  height: 100%;
   align-items: center;
   gap: 2px;
-  margin-left: max(86px, calc(var(--app-sidebar-width, 248px) - 100px));
-  transition: margin-left 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  margin-left: 150px;
   -webkit-app-region: no-drag;
 }
 .desktop-macos .desktop-navigation button {
@@ -109,33 +108,35 @@
   background: var(--surface-muted);
   color: var(--ink);
 }
+.desktop-macos .desktop-navigation .desktop-pilot-toggle {
+  display: inline-flex;
+  width: auto;
+  min-width: 0;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.desktop-macos .desktop-navigation .desktop-pilot-toggle:hover,
+.desktop-macos .desktop-navigation .desktop-pilot-toggle.active {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--line-strong));
+  background: var(--accent-soft);
+}
 .desktop-macos .t3code-app .app-sidebar {
   top: 44px;
 }
 .desktop-macos .t3code-app .app-main {
   padding-top: 44px;
 }
-.desktop-macos .t3code-app .app-toolbar {
-  top: 44px;
-}
-.desktop-macos .t3code-app .sidebar-top {
-  min-height: 52px;
-  align-items: center;
-  padding-bottom: 0;
-}
+.desktop-macos .t3code-app .app-toolbar { display: none; }
 .desktop-macos .desktop-assistant-drawer {
   top: 44px;
-}
-:root[data-sidebar-resizing="true"] .desktop-macos .desktop-navigation-controls {
-  transition: none;
-}
-@media (min-width: 961px) {
-  :root[data-sidebar-collapsed="true"] .desktop-macos .desktop-navigation-controls {
-    margin-left: 86px;
-  }
-  :root[data-sidebar-collapsed="true"] .desktop-macos .desktop-navigation-controls button:not(:first-child) {
-    display: none;
-  }
 }
 .t3code-app .app-content { width: min(100%, 1240px); min-width: 0; padding-top: 22px; }
 .t3code-app .page-header { min-height: 58px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }

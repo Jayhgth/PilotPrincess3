@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import BrandMark from "@/components/BrandMark";
 
 export function PageHeader({
   title,
@@ -21,7 +20,6 @@ export function PageHeader({
 
 export function LoadingWorkspace() {
   return <main className="workspace-loading" aria-live="polite">
-    <div className="loading-brand"><BrandMark /> Pilot Princess</div>
     <div className="skeleton-line wide" />
     <div className="skeleton-line" />
     <div className="skeleton-grid"><div /><div /><div /></div>

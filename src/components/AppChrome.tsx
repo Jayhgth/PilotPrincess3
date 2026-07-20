@@ -16,7 +16,6 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode
 } from "react";
-import BrandMark from "@/components/BrandMark";
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import type { School } from "@/lib/models";
 
@@ -161,7 +160,7 @@ export default function AppChrome<ViewId extends string>({
   }
 
   return <>
-    <div className="desktop-navigation" aria-label="Window navigation">
+    <div className="desktop-navigation" role="toolbar" aria-label="Window navigation">
       <div className="desktop-navigation-controls">
         <button type="button" onClick={toggleSidebar} aria-label={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"} title={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"}>
           <SidebarSimple size={18} />
@@ -173,10 +172,18 @@ export default function AppChrome<ViewId extends string>({
           <ArrowRight size={18} />
         </button>
       </div>
+      <button
+        className={`desktop-pilot-toggle ${assistantOpen ? "active" : ""}`}
+        type="button"
+        onClick={onAssistantToggle}
+        aria-pressed={assistantOpen}
+        title={`${assistantOpen ? "Collapse Pilot" : aiEnabled ? "Open Pilot" : "Set up Pilot"} (⌘ B)`}
+      >
+        {assistantOpen ? "Collapse Pilot" : aiEnabled ? "Open Pilot" : "Set up Pilot"}
+      </button>
     </div>
     <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
-      <div className="sidebar-top">
-        <button className="wordmark" type="button" onClick={() => onNavigate(navItems[0].id)}><BrandMark /><span>Pilot Princess</span></button>
+      <div className="sidebar-mobile-top">
         <button className="mobile-close icon-button" type="button" onClick={() => onMobileNavChange(false)} aria-label="Close navigation"><X size={18} /></button>
       </div>
       <nav className="sidebar-nav" aria-label="Planning workspace">
@@ -236,7 +243,7 @@ export default function AppChrome<ViewId extends string>({
 
     <main className="app-main">
       <div className="mobile-bar">
-        <button className="icon-button" type="button" onClick={() => onMobileNavChange(true)} aria-label="Open navigation"><BrandMark /></button>
+        <button className="icon-button" type="button" onClick={() => onMobileNavChange(true)} aria-label="Open navigation"><SidebarSimple size={18} /></button>
         <span>{activeLabel}</span>
         <div className="mobile-bar-actions">
           <button className="icon-button" type="button" onClick={onAssistantToggle} aria-label="Open Pilot Assistant"><ChatCircleDots size={18} /></button>

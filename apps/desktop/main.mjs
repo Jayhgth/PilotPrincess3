@@ -61,7 +61,7 @@ async function createWindow() {
     backgroundColor: "#111315",
     title: "Pilot Princess",
     autoHideMenuBar: true,
-    trafficLightPosition: { x: 18, y: 18 },
+    trafficLightPosition: { x: 18, y: 15 },
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       contextIsolation: true,
