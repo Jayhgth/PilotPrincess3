@@ -51,6 +51,9 @@ export const GET: APIRoute = async ({ request }) => {
     toolCalls,
     memories,
     attachments,
+    gpaScenarioChoices,
+    supportRequests,
+    sharedDataProposals,
     eventLogs
   ] = await Promise.all([
     auth.supabase.from("student_settings").select("*").eq("id", userId).maybeSingle(),
@@ -71,6 +74,9 @@ export const GET: APIRoute = async ({ request }) => {
     readAllUserRows(auth.supabase, "ai_tool_calls", userId),
     readAllUserRows(auth.supabase, "ai_student_memories", userId),
     readAllUserRows(auth.supabase, "ai_message_attachments", userId, { columns: "id,conversation_id,message_id,user_id,name,mime_type,size_bytes,created_at" }),
+    readAllUserRows(auth.supabase, "student_gpa_scenario_choices", userId, { order: ["plan_course_id"] }),
+    readAllUserRows(auth.supabase, "support_requests", userId),
+    readAllUserRows(auth.supabase, "shared_data_proposals", userId, { userColumn: "submitted_by" }),
     readAllUserRows(auth.supabase, "event_logs", userId)
   ]);
   const error = [
@@ -92,6 +98,9 @@ export const GET: APIRoute = async ({ request }) => {
     toolCalls.error,
     memories.error,
     attachments.error,
+    gpaScenarioChoices.error,
+    supportRequests.error,
+    sharedDataProposals.error,
     eventLogs.error
   ].find(Boolean);
   if (error) return jsonError(error.message, 500);
@@ -110,7 +119,8 @@ export const GET: APIRoute = async ({ request }) => {
     planning: {
       plans: plans.data ?? [],
       versions: versions.data ?? [],
-      courses: planCourses.data ?? []
+      courses: planCourses.data ?? [],
+      gpa_scenario_choices: gpaScenarioChoices.data ?? []
     },
     transcript: {
       sources: sources.data ?? [],
@@ -132,6 +142,8 @@ export const GET: APIRoute = async ({ request }) => {
       memories: memories.data ?? [],
       attachments: attachments.data ?? []
     },
+    support_requests: supportRequests.data ?? [],
+    shared_data_proposals: sharedDataProposals.data ?? [],
     event_logs: eventLogs.data ?? []
   };
   const date = exportedAt.toISOString().slice(0, 10);

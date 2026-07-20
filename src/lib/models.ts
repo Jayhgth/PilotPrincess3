@@ -92,8 +92,6 @@ export interface StudentSettings {
   ui_theme: "light" | "dark";
   ai_connection_approved_at: string | null;
   ai_setup_tested_at: string | null;
-  plan_start_grade: GradeLevel | null;
-  plan_end_grade: GradeLevel | null;
   tracker_mode: "full" | "selected";
   tracked_requirement_areas: RequirementArea[];
 }
@@ -257,6 +255,8 @@ export interface PlanVersion {
   generation_config: Record<string, unknown>;
   ai_summary: string | null;
   created_at: string;
+  updated_at?: string;
+  archived_at?: string | null;
 }
 
 export interface PlanCourse {
@@ -377,6 +377,7 @@ export interface SmccdRequirementCourse {
 export interface StudentSmccdGoal {
   id: string;
   user_id: string;
+  plan_id: string;
   program_id: string;
   is_primary: boolean;
   notes: string;

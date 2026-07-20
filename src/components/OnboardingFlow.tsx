@@ -54,8 +54,7 @@ const ALL_REQUIREMENT_AREAS = Object.keys(REQUIREMENT_LABELS) as RequirementArea
 export function applyOnboardingPlanningDefaults(settings: StudentSettings, gradeLevel: GradeLevel): StudentSettings {
   return {
     ...settings,
-    plan_start_grade: gradeLevel,
-    plan_end_grade: 12,
+    grade_level: gradeLevel,
     tracker_mode: "full",
     tracked_requirement_areas: ALL_REQUIREMENT_AREAS
   };
@@ -147,7 +146,7 @@ export default function OnboardingFlow({
   const [stage, setStage] = useState<OnboardingStage>("student");
   const [settings, setSettings] = useState<StudentSettings>(() => applyOnboardingPlanningDefaults(
     initialSettings,
-    (initialSettings.grade_level ?? initialSettings.plan_start_grade ?? 9) as GradeLevel
+    (initialSettings.grade_level ?? 9) as GradeLevel
   ));
   const [activeSchool, setActiveSchool] = useState(school);
   const [selectedSchool, setSelectedSchool] = useState<SchoolSearchResult | null>(() => initialSettings.school_confirmed ? school : null);
@@ -176,7 +175,6 @@ export default function OnboardingFlow({
 
   const stageIndex = STAGES.findIndex((candidate) => candidate.id === stage);
   const currentGrade = (settings.grade_level ?? 9) as GradeLevel;
-  const planEndGrade = 12 as GradeLevel;
   const planYears = 13 - currentGrade;
   const completedCourseCount = existingPlanCourses.filter((course) => course.status === "completed").length;
 
@@ -219,7 +217,7 @@ export default function OnboardingFlow({
     if (!selectedSchool) return;
     void Promise.all([
       supabase.rpc("nearby_college_districts", { target_school_id: selectedSchool.id, result_limit: 5 }),
-      supabase.from("student_college_district_preferences").select("district_code,selection_method").eq("user_id", session.user.id).maybeSingle()
+      supabase.from("student_college_district_preferences").select("district_code,selection_method").eq("user_id", session.user.id).eq("school_id_at_selection", selectedSchool.id).maybeSingle()
     ]).then(([{ data, error: providerError }, preferenceResult]) => {
       if (!active) return;
       const districts = providerError ? [] : (data ?? []) as unknown as NearbyDistrictResult[];
@@ -506,8 +504,6 @@ export default function OnboardingFlow({
         .update({
           generation_config: {
             ...activeVersion.generation_config,
-            plan_start_grade: currentGrade,
-            plan_end_grade: planEndGrade,
             tracker_mode: completedSettings.tracker_mode,
             tracked_requirement_areas: completedSettings.tracked_requirement_areas,
             ai_enabled: completedSettings.ai_enabled,

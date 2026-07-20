@@ -33,10 +33,12 @@ async function sendTurn(
 ) {
   const response = await request.post("/api/ai/chat", {
     headers: { authorization: `Bearer ${accessToken}`, origin: appOrigin },
-    multipart: {
+    data: {
       conversationId,
       turnId: crypto.randomUUID(),
-      message
+      messageId: crypto.randomUUID(),
+      message,
+      attachments: []
     },
     timeout: 180_000
   });
@@ -108,8 +110,6 @@ test.describe("live Pilot behavior", () => {
       age: 14,
       grade_level: 9,
       graduation_year: 2030,
-      plan_start_grade: 9,
-      plan_end_grade: 12,
       onboarding_complete: true
     }).eq("id", userId);
     if (settings.error) throw settings.error;
@@ -160,9 +160,7 @@ test.describe("live Pilot behavior", () => {
     if (schoolSelection.error) throw schoolSelection.error;
     const studentContext = await supabase.from("student_settings").update({
       grade_level: 11,
-      graduation_year: 2027,
-      plan_start_grade: 11,
-      plan_end_grade: 12
+      graduation_year: 2027
     }).eq("id", userId);
     if (studentContext.error) throw studentContext.error;
     const themeConversation = await createConversation("Theme persistence");
@@ -366,7 +364,11 @@ test.describe("live Pilot behavior", () => {
     expect(Number(scheduleRead?.data?.degree_planning?.college_course_count ?? 0)).toBeGreaterThan(0);
     const proposalRecord = scheduleTools.data?.find((tool) => tool.tool_name === "add_course_schedule");
     expect(proposalRecord, `${scheduleTurn.message}\n${JSON.stringify(scheduleTools.data)}`).toBeDefined();
-    expect(proposalRecord?.arguments, `${scheduleTurn.message}\n${JSON.stringify(scheduleTools.data)}`).toMatchObject({ respect_recommended_limit: true, include_college_courses: true });
+    expect(proposalRecord?.arguments, `${scheduleTurn.message}\n${JSON.stringify(scheduleTools.data)}`).toMatchObject({
+      target_plan_version_id: activeVersion.data!.id,
+      respect_recommended_limit: true,
+      include_college_courses: true
+    });
     expect(scheduleTurn.proposals.map((proposal) => proposal.name), scheduleTurn.message).toEqual(["add_course_schedule"]);
     await apply(scheduleTurn);
 
@@ -406,7 +408,7 @@ test.describe("live Pilot behavior", () => {
       { user_id: userId, program_id: "CSM:computer-science-applications-and-development-as", is_primary: false, notes: "Live multi-degree planner fixture" }
     ]);
     if (twoDegreeGoals.error) throw twoDegreeGoals.error;
-    const freshmanSettings = await supabase.from("student_settings").update({ grade_level: 9, graduation_year: 2030, plan_start_grade: 9, plan_end_grade: 12 }).eq("id", userId);
+    const freshmanSettings = await supabase.from("student_settings").update({ grade_level: 9, graduation_year: 2030 }).eq("id", userId);
     if (freshmanSettings.error) throw freshmanSettings.error;
     const fullPlanConversation = await createConversation("Terse integrated full plan");
     const fullPlanTurn = await promptPilot(fullPlanConversation, "Create a full plan for me. I am starting Algebra 2 in grade 9; finish my diploma and both bookmarked CS degrees with verified prerequisite order, maximum useful high-school/college overlap, and no more than 11 college units in any term.");
@@ -734,9 +736,7 @@ test.describe("live Pilot behavior", () => {
     if (carlmontSelection.error) throw carlmontSelection.error;
     const carlmontContext = await supabase.from("student_settings").update({
       grade_level: 9,
-      graduation_year: 2030,
-      plan_start_grade: 9,
-      plan_end_grade: 12
+      graduation_year: 2030
     }).eq("id", userId);
     if (carlmontContext.error) throw carlmontContext.error;
     const carlmontCoursesResult = await supabase.from("courses").select("*").eq("school_id", carlmont.data.id);

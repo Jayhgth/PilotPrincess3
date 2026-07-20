@@ -1,10 +1,131 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, parseAssistantScheduleIntent, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
-import { assistantToolContractNames, parseAssistantToolCall } from "@/server/ai-tools";
+import { assistantConversationPrompt, parseAcademicClearIntent, parseAssistantScheduleIntent, parsePlanVersionCreationIntent, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
+import { assistantToolContractNames, courseCatalogMatchScore, normalizedCatalogSearchText, parseAssistantToolCall, safeParseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
+import { createOwnedPlanVersion } from "@/lib/plan-version-store";
 
 describe("Pilot complete academic control", () => {
+  it("creates a distinct named strategy plan instead of rewriting the active plan", async () => {
+    expect(parsePlanVersionCreationIntent("Create a new gpa maxed plan for me")).toEqual({
+      label: "Highest GPA plan",
+      strategy: "highest_gpa",
+      startEmpty: true,
+      populateStrategy: true
+    });
+    expect(requiredAssistantEvidenceRead("Create a new gpa maxed plan for me")).toEqual({
+      name: "get_plan_versions",
+      arguments: { include_backups: false }
+    });
+
+    const result = await runAssistantChat({
+      history: [],
+      userMessage: "Create a new gpa maxed plan for me",
+      model: "gpt-5.6-luna",
+      executeReadTool: async (name) => {
+        expect(name).toBe("get_plan_versions");
+        return {
+          summary: "Found two visible plans.",
+          data: [
+            { version_id: crypto.randomUUID(), label: "Main plan", active: true, role: "plan" },
+            { version_id: crypto.randomUUID(), label: "Highest GPA plan", active: false, role: "plan" }
+          ]
+        };
+      },
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(result.proposals).toHaveLength(1);
+    expect(result.proposals[0]).toMatchObject({
+      name: "create_plan_version",
+      arguments: {
+        label: "Highest GPA plan 2",
+        start_empty: true,
+        activate: true,
+        strategy: "highest_gpa",
+        populate_strategy: true
+      }
+    });
+
+    let hiddenLabel = "Plan 2";
+    const rpcCalls: string[] = [];
+    const supabase = {
+      rpc: async (name: string) => {
+        rpcCalls.push(name);
+        if (name === "create_plan_version_v3") return { data: null, error: { code: "PGRST202", message: "Function create_plan_version_v3 was not found" } };
+        if (hiddenLabel === "Plan 2") return { data: null, error: { message: "A plan with that name already exists." } };
+        return { data: { id: crypto.randomUUID(), previous_active_version_id: crypto.randomUUID(), course_count: 0 }, error: null };
+      },
+      from: () => {
+        const builder = {
+          select: () => builder,
+          update: (values: { label?: string }) => {
+            if (values.label) hiddenLabel = values.label;
+            return builder;
+          },
+          eq: () => builder,
+          ilike: async () => ({
+            data: [{ id: "00000000-0000-4000-8000-000000000099", label: hiddenLabel, generation_config: { role: "backup" } }],
+            error: null
+          }),
+          then: (resolve: (value: { error: null }) => unknown) => resolve({ error: null })
+        };
+        return builder;
+      }
+    };
+    await expect(createOwnedPlanVersion(supabase as never, {
+      userId: crypto.randomUUID(),
+      activeVersion: { id: crypto.randomUUID(), plan_id: crypto.randomUUID(), updated_at: new Date().toISOString() } as never,
+      label: "Plan 2",
+      activate: true,
+      startEmpty: true,
+      role: "plan",
+      strategy: "highest_gpa"
+    })).resolves.toMatchObject({ course_count: 0 });
+    expect(hiddenLabel).toContain("backup");
+    expect(rpcCalls).toEqual(["create_plan_version_v3", "create_plan_version_v2", "create_plan_version_v3", "create_plan_version_v2"]);
+  });
+
+  it("binds a generated schedule to the exact active named plan", async () => {
+    const targetPlanVersionId = crypto.randomUUID();
+    const courseId = crypto.randomUUID();
+    const result = await runAssistantChat({
+      history: [],
+      userMessage: "Create and apply a full schedule to this plan.",
+      model: "gpt-5.6-luna",
+      executeReadTool: async (name) => {
+        expect(name).toBe("get_course_schedule_options");
+        return {
+          summary: "Prepared the active named plan.",
+          data: {
+            target_plan_version_id: targetPlanVersionId,
+            target_plan_name: "Test",
+            respect_recommended_limit: true,
+            requested_preferences: {
+              interests: [], rigor: "balanced", max_courses_per_term: null, start_grade: 9,
+              starting_math_course: null, starting_language_course: null, include_college_courses: true,
+              exclude_college_courses_explicitly: false, replace_existing: false, replace_grade_levels: [],
+              objectives: ["complete_diploma"]
+            },
+            courses: [{ course_id: courseId, name: "English 1", grade_level: 9, term: "full_year" }],
+            adjustments: [],
+            source_readiness: { evidence_ready: true },
+            constraint_validation: { satisfied: true, failures: [] },
+            graduation_coverage: { requirement_count: 8, all_requirements_covered_after: false, remaining_gaps: [{ requirement: "Math", credits_remaining: 30 }] },
+            degree_planning: { college_course_count: 0 }
+          }
+        };
+      },
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(result.proposals).toHaveLength(1);
+    expect(result.proposals[0]).toMatchObject({
+      name: "add_course_schedule",
+      arguments: { target_plan_version_id: targetPlanVersionId, course_ids: [courseId] }
+    });
+  });
+
   it("routes complete mixed plans from every supported starting grade", () => {
     for (const grade of [9, 10, 11, 12] as const) {
       const read = requiredAssistantEvidenceRead(`Create a full schedule starting from ${grade}th grade with concurrent and high school courses for the highest GPA, most degrees, and my major`);
@@ -26,6 +147,10 @@ describe("Pilot complete academic control", () => {
     const scheduleHistory: AssistantChatHistoryMessage[] = [
       { role: "user", content: "Create a full four-year plan from grade 9, starting math at Geometry, using ASL 1 for language, and completing my bookmarked computer science degrees." },
       { role: "assistant", content: "I prepared the integrated plan." }
+    ];
+    const targetedReplacementHistory: AssistantChatHistoryMessage[] = [
+      { role: "user", content: "Remove discrete math and replace it with Calculus 3 from Skyline." },
+      { role: "assistant", content: "I found CSM MATH 253 instead. Is CSM acceptable?" }
     ];
     const directCases: Array<{ prompt: string; expected: string; recentChanges?: Parameters<typeof runAssistantChat>[0]["recentChanges"] }> = [
       { prompt: "Change the app to dark mode.", expected: "update_student_settings" },
@@ -55,14 +180,16 @@ describe("Pilot complete academic control", () => {
       { prompt: "Move every planned course to in progress.", read: "list_plan_courses" },
       { prompt: "Add Biology in 10th grade as a full-year course.", read: "search_course_catalog" },
       { prompt: "Add CSM MATH 251 to grade 11 in fall.", read: "search_course_catalog" },
-      { prompt: "Bookmark the Computer Science Applications and Development AS degree at CSM.", read: "search_smccd_programs" },
+      { prompt: "Bookmark the Computer Science Applications and Development AS degree at CSM.", read: "search_college_programs" },
       { prompt: "Set every current and planned course in my GPA calculator to an expected A.", read: "get_gpa_scenario" },
       { prompt: "From college, add linear algebra and calc 3. Put in 11th grade summer calc 2 and intercultural communication.", read: "resolve_academic_course_batch" },
       { prompt: "In 11th grade, add eng c1000, intercultural communication, nosql, and calc 2.", read: "resolve_academic_course_batch" },
+      { prompt: "Add nosql, calc 2, and intercultural communication to 11th", read: "resolve_academic_course_batch" },
       { prompt: "Create a full plan from grade 9 that finishes my diploma and bookmarked degrees.", read: "get_course_schedule_options" },
       { prompt: "Edit my schedule, I start math at Algebra 2 in grade 9.", read: "get_academic_context" },
       { prompt: "Start at algebra 2", read: "get_academic_context" },
       { prompt: "Here are my answers:\n- **What should the plan prioritize?** All of the above", read: "get_course_schedule_options", history: scheduleHistory },
+      { prompt: "Here are my answers:\n- **Use CSM MATH 253 instead?** Yes, use CSM", read: "get_academic_context", history: targetedReplacementHistory },
       { prompt: "Use ASL 1 instead as my world language and update the plan.", read: "get_academic_context", history: scheduleHistory },
       { prompt: "Change my selected high school to Design Tech High School.", read: "search_california_high_schools" },
       { prompt: "Change my community-college district to San Mateo County Community College District.", read: "get_nearby_education_providers" },
@@ -74,7 +201,57 @@ describe("Pilot complete academic control", () => {
       const route = requiredAssistantEvidenceReadForConversation(scenario.history ?? [], scenario.prompt);
       expect(route?.name, scenario.prompt).toBe(scenario.read);
     }
-    expect(directCases.length + routedCases.length).toBe(26);
+    expect(directCases.length + routedCases.length).toBe(28);
+
+    expect(requiredAssistantEvidenceRead("Add nosql, calc 2, and intercultural communication to 11th")).toEqual({
+      name: "resolve_academic_course_batch",
+      arguments: {
+        requests: [
+          { query: "nosql", source: "all", grade_level: 11, term: null, status: "planned" },
+          { query: "calc 2", source: "all", grade_level: 11, term: null, status: "planned" },
+          { query: "intercultural communication", source: "all", grade_level: 11, term: null, status: "planned" }
+        ],
+        fill_remaining_graduation_requirements: false,
+        graduation_status: "planned",
+        respect_recommended_limit: false
+      }
+    });
+    expect(normalizedCatalogSearchText("ENG C1000, No SQL, Calc II, Intercultural Comm")).toBe("engl c1000 nosql calculus 2 intercultural communication");
+    expect(courseCatalogMatchScore("nosql", "CIS 133 NoSQL Databases CSM")).toBeGreaterThan(0);
+    expect(courseCatalogMatchScore("calc 2", "MATH 252 Calculus with Analytic Geometry II SKY")).toBeGreaterThan(0);
+    expect(courseCatalogMatchScore("calc2", "MATH 252 Calculus with Analytic Geometry II SKY")).toBeGreaterThan(0);
+    expect(courseCatalogMatchScore("engc1000", "ENGL C1000 Academic Reading and Writing SKY")).toBeGreaterThan(0);
+    expect(courseCatalogMatchScore("intercultural comm", "COMM 150 Intercultural Communication CSM")).toBeGreaterThan(0);
+    expect(courseCatalogMatchScore("calc 1", "PHYS 250 Physics with Calculus I CSM")).toBe(-1);
+
+    const shorthandBatch = await runAssistantChat({
+      history: [],
+      userMessage: "Add nosql, calc 2, and intercultural communication to 11th",
+      model: "gpt-5.6-luna",
+      executeReadTool: async () => ({
+        summary: "Resolved all three shorthand course requests.",
+        data: {
+          complete: true,
+          apply_ready: true,
+          entries: [
+            { source: "smccd", course_id: "CSM:CIS 133", grade_level: 11, term: "fall", status: "planned" },
+            { source: "smccd", course_id: "CSM:MATH 252", grade_level: 11, term: "spring", status: "planned" },
+            { source: "smccd", course_id: "CSM:COMM 150", grade_level: 11, term: "fall", status: "planned" }
+          ],
+          resolved: [
+            { query: "nosql", name: "CIS 133 NoSQL Databases", grade_level: 11, term: "fall" },
+            { query: "calc 2", name: "MATH 252 Calculus with Analytic Geometry II", grade_level: 11, term: "spring" },
+            { query: "intercultural communication", name: "COMM 150 Intercultural Communication", grade_level: 11, term: "fall" }
+          ],
+          unresolved: [],
+          respect_recommended_limit: false
+        }
+      }),
+      onSdkEvent: () => undefined,
+      onToolActivity: () => undefined
+    });
+    expect(shorthandBatch.proposals.map((proposal) => proposal.name)).toEqual(["add_academic_courses"]);
+    expect(shorthandBatch.proposals[0]?.arguments.entries).toHaveLength(3);
 
     const partiallyResolvedBatch = await runAssistantChat({
       history: [],
@@ -124,7 +301,7 @@ describe("Pilot complete academic control", () => {
     const pathToCalculusRow = crypto.randomUUID();
     const combinedEditPrompt = "I want to do chinese as the language, just one semester of chinese 3. Also, start my math at algebra 2";
     const targetedContext = {
-      student: { plan_start_grade: 9 },
+      student: { grade_level: 9 },
       plan: { courses: [
         { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
         { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
@@ -190,7 +367,7 @@ describe("Pilot complete academic control", () => {
       executeReadTool: async () => ({
         summary: "Read workspace.",
         data: {
-          student: { plan_start_grade: 9 },
+          student: { grade_level: 9 },
           plan: { courses: [
             { plan_course_id: gradeNineRow, catalog_course_id: algebraOne, name: "Algebra 1", grade_level: 9, term: "full_year", transcript_locked: false },
             { plan_course_id: gradeTenRow, catalog_course_id: algebraTwo, name: "Algebra 2", grade_level: 10, term: "full_year", transcript_locked: false },
@@ -279,9 +456,14 @@ describe("Pilot complete academic control", () => {
     }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Primary major" }).mutatesData).toBe(true);
     expect(parseAssistantToolCall("set_college_goals", { program_ids: ["CSM:computer-science-as", "CSM:mathematics-as"], notes: "Dual-degree plan" }).mutatesData).toBe(true);
-    expect(parseAssistantToolCall("update_student_settings", { preferred_name: "Jay", plan_start_grade: 9, plan_end_grade: 12, ui_theme: "dark" }).mutatesData).toBe(true);
+    expect(parseAssistantToolCall("update_student_settings", { preferred_name: "Jay", ui_theme: "dark" }).mutatesData).toBe(true);
     expect(() => parseAssistantToolCall("update_student_settings", { ai_review_mode: "manual" })).toThrow();
     expect(parseAssistantToolCall("clear_academic_plan", { courses: true, degree_bookmarks: true, gpa_scenario: true }).mutatesData).toBe(true);
+    expect(parseAcademicClearIntent("Remove Spanish 1 and replace it with Chinese 1.")).toBeNull();
+    expect(safeParseAssistantToolCall("clear_academic_plan", {})).toEqual({
+      success: false,
+      error: "Select at least one academic-plan area to clear."
+    });
     }
 
     {
@@ -317,6 +499,9 @@ describe("Pilot complete academic control", () => {
     expect(prompt).toContain("durable inverse");
     expect(prompt).toContain("call get_course_schedule_options");
     expect(prompt).toContain("Bookmarked degrees influence those broader planning requests automatically");
+    expect(prompt).toContain("scoped to exactly one active named plan");
+    expect(prompt).toContain("target_plan_version_id");
+    expect(prompt).toContain("full grade 9–12 timeline");
     expect(prompt).toContain("satisfy exact unmet bookmarked-degree cores and their prerequisite chain before generic GE or unit fillers");
     expect(prompt).toContain("audit the entire assembled schedule for duplicate or near-duplicate titles");
     expect(prompt).toContain("use resolve_academic_course_batch once");
@@ -339,6 +524,22 @@ describe("Pilot complete academic control", () => {
     const removalMigration = readFileSync(new URL("../supabase/migrations/20260716220000_atomic_pilot_course_edit_removals.sql", import.meta.url), "utf8");
     expect(removalMigration).toContain("updated_count + deleted_count <> requested_count");
     expect(removalMigration).toContain("delete from public.plan_courses");
+    const planContextMigration = readFileSync(new URL("../supabase/migrations/20260719130000_plan_context_and_transcript_history.sql", import.meta.url), "utf8");
+    expect(planContextMigration).toContain("course.source_review_item_id is not null");
+    expect(planContextMigration).toContain("existing.plan_version_id = target.id");
+    const toolSource = readFileSync(new URL("../src/server/ai-tools.ts", import.meta.url), "utf8");
+    expect(toolSource).toContain('.eq("plan_version_id", workspace.activeVersion.id)');
+    expect(toolSource).toContain("target_plan_version_id !== workspace.activeVersion.id");
+    const removedPlanWindowMigration = readFileSync(new URL("../supabase/migrations/20260719131000_remove_plan_window_settings.sql", import.meta.url), "utf8");
+    expect(removedPlanWindowMigration).toContain("drop column if exists plan_start_grade");
+    expect(removedPlanWindowMigration).toContain("drop column if exists plan_end_grade");
+    const boundScheduleMigration = readFileSync(new URL("../supabase/migrations/20260719132000_bind_schedule_rebuild_to_plan_version.sql", import.meta.url), "utf8");
+    expect(boundScheduleMigration).toContain("p_target_plan_version_id uuid");
+    expect(boundScheduleMigration).toContain("course.plan_version_id = p_target_plan_version_id");
+    const planNameMigration = readFileSync(new URL("../supabase/migrations/20260720100000_plan_version_name_reuse.sql", import.meta.url), "utf8");
+    expect(planNameMigration).toContain("create_plan_version_v3");
+    expect(planNameMigration).toContain("generation_config ->> 'role' = 'backup'");
+    expect(toolSource).toContain('rpc("replace_pilot_course_schedule_v2"');
     }
   });
 });

@@ -90,8 +90,6 @@ const CHANGE_DETAIL_LABELS: Record<string, string> = {
   preferred_name: "Preferred name",
   age: "Age",
   graduation_year: "Graduation year",
-  plan_start_grade: "Plan starts",
-  plan_end_grade: "Plan ends",
   tracker_mode: "Tracker mode",
   tracked_requirement_areas: "Tracked areas",
   ai_model: "Pilot model",

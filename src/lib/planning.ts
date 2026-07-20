@@ -129,9 +129,8 @@ export function planCourseMovePatch(
 }
 
 export function selectedPlanGrades(settings: StudentSettings) {
-  const start = (settings.plan_start_grade ?? settings.grade_level ?? 9) as GradeLevel;
-  const end = (settings.plan_end_grade ?? 12) as GradeLevel;
-  return GRADE_LEVELS.filter((grade) => grade >= start && grade <= end);
+  void settings;
+  return [...GRADE_LEVELS];
 }
 
 export function requirementsForSettings(requirements: GraduationRequirement[], settings: StudentSettings) {
@@ -855,7 +854,7 @@ export function generateSuggestedPlan(
     }
   }
 
-  const planningStartGrade = (context.startGrade ?? Math.max(currentGrade, settings.plan_start_grade ?? currentGrade)) as GradeLevel;
+  const planningStartGrade = (context.startGrade ?? currentGrade) as GradeLevel;
   const planningGrades = selectedPlanGrades(settings).filter((grade) => grade >= planningStartGrade);
   const isDtech = context.schoolSlug === "design-tech-high-school";
   const includeCollegeCourses = context.includeCollegeCourses !== false;

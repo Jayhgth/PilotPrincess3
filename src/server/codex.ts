@@ -168,7 +168,7 @@ export const CODEX_RUNTIME_CAPABILITIES = [
   { id: "skills", label: "Skills", state: "disabled", detail: "No Codex skill is loaded into student review threads." },
   { id: "plugins", label: "Plugins", state: "disabled", detail: "Plugin and remote-plugin features are disabled for student review threads." },
   { id: "subagents", label: "Subagents", state: "disabled", detail: "Multi-agent execution is disabled for student review threads." },
-  { id: "mutations", label: "Student-data changes", state: "review_required", detail: "Codex may propose supported changes. Exact low-risk arguments are validated deterministically; ambiguous or destructive changes receive an independent review." }
+  { id: "mutations", label: "Student-data changes", state: "review_required", detail: "Codex may propose supported changes. Exact arguments use deterministic product rules and durable undo; ambiguous destructive intent must be clarified." }
 ] as const;
 
 function localAuthFallbackEnabled() {
@@ -251,7 +251,7 @@ export function codexRuntimeStatus() {
     maxWaitingTurns: MAX_WAITING_TURNS,
     runtime: "Official Codex SDK",
     transport: "Codex exec JSONL through the TypeScript SDK",
-    accessPolicy: "Conversation history is sent to OpenAI Codex; student-data reads use scoped server tools and ambiguous or destructive writes receive a separate safety review",
+    accessPolicy: "Conversation history is sent to OpenAI Codex; student-data reads and exact reversible writes use scoped server tools and normal product rules",
     retentionPolicy: "No local Codex CLI session history is retained; provider handling follows the configured OpenAI account",
     features: CODEX_FEATURES,
     capabilities: CODEX_RUNTIME_CAPABILITIES
@@ -668,6 +668,48 @@ function requestsScheduleConstruction(userMessage: string) {
   return requestUsesFullPlanner(classifyAssistantRequest(userMessage));
 }
 
+export interface PlanVersionCreationIntent {
+  label: string;
+  strategy: "balanced" | "highest_gpa" | "degree_overlap" | "minimum_courses";
+  startEmpty: boolean;
+  populateStrategy: boolean;
+}
+
+export function parsePlanVersionCreationIntent(userMessage: string): PlanVersionCreationIntent | null {
+  const normalized = userMessage.toLowerCase().replace(/[’']/g, "'");
+  const createsSeparatePlan = /\b(?:create|make|start|build|generate)\b.{0,24}\b(?:new|another|alternate|alternative|separate)\b.{0,32}\b(?:plan|version)\b/.test(normalized)
+    || /\b(?:new|another|alternate|alternative|separate)\b.{0,24}\b(?:four[ -]?year\s+)?plan\b/.test(normalized);
+  if (!createsSeparatePlan) return null;
+  const strategy = /\b(?:gpa|maximi[sz]e(?:d)?\s+gpa|highest\s+gpa)\b/.test(normalized)
+    ? "highest_gpa"
+    : /\b(?:degree overlap|degrees?|associate)\b/.test(normalized)
+      ? "degree_overlap"
+      : /\b(?:minimum|fewest|least)\b.{0,20}\b(?:course|class)/.test(normalized)
+        ? "minimum_courses"
+        : "balanced";
+  const explicitLabel = userMessage.match(/\b(?:named|called)\s+["“]?([^"”.,!?]{1,80})["”]?/i)?.[1]?.trim();
+  const label = explicitLabel
+    ?? (strategy === "highest_gpa" ? "Highest GPA plan"
+      : strategy === "degree_overlap" ? "Degree overlap plan"
+        : strategy === "minimum_courses" ? "Minimum courses plan"
+          : "New plan");
+  const copiesCurrent = /\b(?:copy|duplicate|clone|based on|from)\b.{0,24}\b(?:current|active|main|this)\b.{0,12}\bplan\b/.test(normalized);
+  const populateStrategy = strategy !== "balanced" || /\b(?:fill|populate|build|generate|schedule|courses?)\b/.test(normalized);
+  return { label, strategy, startEmpty: !copiesCurrent, populateStrategy };
+}
+
+function availablePlanVersionLabel(preferred: string, rows: unknown[]) {
+  const names = new Set(rows.flatMap((row) => row && typeof row === "object" && !Array.isArray(row)
+    ? [String((row as Record<string, unknown>).label ?? "").trim().toLowerCase()]
+    : []).filter(Boolean));
+  if (!names.has(preferred.toLowerCase())) return preferred;
+  for (let suffix = 2; suffix < 1000; suffix += 1) {
+    const candidate = `${preferred} ${suffix}`;
+    if (!names.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${preferred} ${crypto.randomUUID().slice(0, 6)}`;
+}
+
 export function assistantQuestionsWithCombinedOption(questions: AssistantQuestion[]) {
   return questions.map((question) => {
     const combinable = /\b(?:prioritize|priorities|goals?|focus|include|optimi[sz]e)\b/i.test(question.prompt)
@@ -702,9 +744,10 @@ function requestedCourseBatch(normalized: string): CourseBatchRequest | null {
 
 export function isCompoundCourseAdditionRequest(userMessage: string) {
   const normalized = userMessage.toLowerCase();
-  return /\b(?:add|put|place|schedule|enroll)\b/.test(normalized)
-    && /\b(?:course|class|graduation|college|high[ -]?school|grade\s*(?:9|10|11|12)|(?:9|10|11|12)(?:th|st|nd|rd)?\s+grade)\b/.test(normalized)
-    && (/,|\band\b|\bremaining requirements?\b|\bclasses? needed\b/.test(normalized));
+  const addsCourses = /\b(?:add|put|place|schedule|include|take|enroll)\b/.test(normalized);
+  const hasMultipleItems = /,|\band\b|\bremaining requirements?\b|\bclasses? needed\b/.test(normalized);
+  const hasAcademicContext = /\b(?:course|class|graduation|college|high[ -]?school|grade\s*(?:9|10|11|12)|(?:9|10|11|12)(?:th|st|nd|rd)?(?:\s+grade)?|freshm(?:an|en)|sophomore|junior|senior)\b/.test(normalized);
+  return addsCourses && hasMultipleItems && hasAcademicContext;
 }
 
 function splitRequestedCourseList(value: string) {
@@ -737,6 +780,25 @@ export function parseCompoundAcademicCourseRequest(userMessage: string) {
       ? match[3].toLowerCase().replace(/[ -]/g, "_") as "fall" | "spring" | "summer" | "full_year"
       : null;
     for (const query of splitRequestedCourseList(match[4]!)) requests.push({ query, source: "all", grade_level: grade, term, status: "planned" });
+    if (match.index !== undefined) coveredRanges.push([match.index, match.index + match[0].length]);
+  }
+  // Students commonly put the placement after a natural-language list:
+  // "Add NoSQL, calc 2, and intercultural communication to 11th." Treat the
+  // ordinal as a grade even when they omit the word "grade" and resolve every
+  // list item independently instead of sending one literal catalog query.
+  const trailingPlacementPattern = /(?:^|[.!?]\s*)(?:add|include|take|schedule|enroll(?:\s+in)?|put|place)\s+(.+?)\s+(?:to|in|for)\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?(?:\s+grade)?(?:\s+(fall|spring|summer|full[ -]?year))?(?=[.!?]|$)/gi;
+  for (const match of userMessage.matchAll(trailingPlacementPattern)) {
+    if (match.index !== undefined && coveredRanges.some(([start, end]) => match.index! >= start && match.index! < end)) continue;
+    const grade = Number(match[2]) as 9 | 10 | 11 | 12;
+    const term = match[3]
+      ? match[3].toLowerCase().replace(/[ -]/g, "_") as "fall" | "spring" | "summer" | "full_year"
+      : null;
+    for (const query of splitRequestedCourseList(match[1]!)) {
+      // "Add the classes needed for graduation" is an instruction to fill
+      // requirement gaps, not the title of a custom course.
+      if (/\b(?:classes?|courses?)\s+(?:needed|required|remaining)\b.{0,32}\b(?:graduation|diploma)\b/i.test(query)) continue;
+      requests.push({ query, source: "all", grade_level: grade, term, status: "planned" });
+    }
     if (match.index !== undefined) coveredRanges.push([match.index, match.index + match[0].length]);
   }
   const placedPattern = /(?:put|place|add)\s+(?:them\s+)?in\s+(?:grade\s*)?(9|10|11|12)(?:th|st|nd|rd)?\s+grade\s+(fall|spring|summer|full[ -]?year)\s+(.+?)(?=[.!?]|$)/gi;
@@ -777,6 +839,7 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   if (districtSelection) return { name: "get_nearby_education_providers", arguments: {} };
   const schoolSelection = parseSchoolSelection(userMessage);
   if (schoolSelection) return { name: "search_california_high_schools", arguments: { query: schoolSelection } };
+  if (parsePlanVersionCreationIntent(userMessage)) return { name: "get_plan_versions", arguments: { include_backups: false } };
   const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
     && !/\b(without|do not|don't|dont|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(normalized);
   const clearsScheduleArea = /\b(schedule|plan|courses|classes)\b/.test(normalized);
@@ -891,7 +954,7 @@ export function requiredAssistantEvidenceRead(userMessage: string): { name: Assi
   const degreeGoal = parseDegreeGoalIntent(userMessage);
   if (degreeGoal) {
     return {
-      name: "search_smccd_programs",
+      name: "search_college_programs",
       arguments: { query: degreeGoal.query, college: degreeGoal.college, award_type: degreeGoal.awardType }
     };
   }
@@ -904,8 +967,12 @@ export function requiredAssistantEvidenceReadForConversation(
   userMessage: string
 ) {
   const direct = requiredAssistantEvidenceRead(userMessage);
+  const continuedRequest = effectiveAssistantRequestForConversation(history, userMessage);
+  if (continuedRequest !== userMessage) {
+    return requiredAssistantEvidenceRead(continuedRequest) ?? direct;
+  }
+
   const scheduleContinuation = Boolean(parseScheduleAnswer(userMessage))
-    || /\bhere are my answers\b/i.test(userMessage)
     || /\b(?:redo|rebuild|regenerate|redesign)\b.{0,30}\b(?:it|that|plan|schedule)\b/i.test(userMessage);
   if (!scheduleContinuation) return direct;
 
@@ -913,6 +980,27 @@ export function requiredAssistantEvidenceReadForConversation(
     && requiredAssistantEvidenceRead(message.content)?.name === "get_course_schedule_options");
   if (!previousRequest) return direct;
   return requiredAssistantEvidenceRead(`${userMessage}\n\nPrevious schedule request: ${previousRequest.content}`) ?? direct;
+}
+
+function isStructuredAssistantAnswer(value: string) {
+  return /\bhere are my answers\b/i.test(value);
+}
+
+/**
+ * Structured answers continue the nearest unresolved student request. They
+ * must not be attached to an older full-plan request simply because that
+ * request also exists in the thread.
+ */
+export function effectiveAssistantRequestForConversation(
+  history: AssistantChatHistoryMessage[],
+  userMessage: string
+) {
+  if (!isStructuredAssistantAnswer(userMessage)) return userMessage;
+  const pendingRequest = [...history].reverse().find((message) =>
+    message.role === "user" && !isStructuredAssistantAnswer(message.content)
+  );
+  if (!pendingRequest) return userMessage;
+  return `${pendingRequest.content}\n\nStudent clarification:\n${userMessage}`;
 }
 
 export function parseBulkGpaIntent(userMessage: string) {
@@ -1249,24 +1337,24 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? `${highSchoolCount ? `${highSchoolCount} high-school ${highSchoolCount === 1 ? "course" : "courses"}` : "No high-school courses"} and ${collegeCount ? `${collegeCount} college ${collegeCount === 1 ? "course" : "courses"}` : "no college courses"} are included${gradeCounts.length ? ` across ${gradeCounts.map(({ grade, count }) => `grade ${grade} (${count})`).join(", ")}` : ""}. The change card contains the complete course list.`
     : null;
   const degreeLine = scheduleDegreeLine(degreePlanning, courses, degreeCourses, requestedPreferences);
-  const quality = data.quality_validation && typeof data.quality_validation === "object" && !Array.isArray(data.quality_validation)
-    ? data.quality_validation as Record<string, unknown>
+  const planningWarnings = Array.isArray(data.planning_warnings) ? data.planning_warnings.map(String) : [];
+  const warningLine = planningWarnings.length
+    ? `The best feasible result still has ${planningWarnings.length} planning ${planningWarnings.length === 1 ? "warning" : "warnings"}: ${planningWarnings.slice(0, 2).join(" ")}${planningWarnings.length > 2 ? ` Plus ${planningWarnings.length - 2} more in the change details.` : ""}`
     : null;
-  const qualityFailures = Array.isArray(quality?.failures) ? quality.failures.map(String) : [];
-  const qualityLine = qualityFailures.length
-    ? `The best feasible result still has ${qualityFailures.length} planning ${qualityFailures.length === 1 ? "warning" : "warnings"}: ${qualityFailures.slice(0, 2).join(" ")}${qualityFailures.length > 2 ? ` Plus ${qualityFailures.length - 2} more in the change details.` : ""}`
-    : null;
-  return [opening, compositionLine, coverageLine, degreeLine, qualityLine].filter(Boolean).join("\n\n");
+  return [opening, compositionLine, coverageLine, degreeLine, warningLine].filter(Boolean).join("\n\n");
 }
 
 export function scheduleResultIsComplete(data: Record<string, unknown>) {
+  const targetPlanVersionId = typeof data.target_plan_version_id === "string" ? data.target_plan_version_id : "";
   const readiness = data.source_readiness && typeof data.source_readiness === "object" && !Array.isArray(data.source_readiness)
     ? data.source_readiness as Record<string, unknown>
     : null;
   const constraints = data.constraint_validation && typeof data.constraint_validation === "object" && !Array.isArray(data.constraint_validation)
     ? data.constraint_validation as Record<string, unknown>
     : null;
-  return readiness?.evidence_ready === true && constraints?.satisfied === true;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(targetPlanVersionId)
+    && readiness?.evidence_ready === true
+    && constraints?.satisfied === true;
 }
 
 function addUsage(current: Usage | null, next: Usage): Usage {
@@ -1279,6 +1367,7 @@ function addUsage(current: Usage | null, next: Usage): Usage {
 }
 
 export function assistantConversationPrompt(options: AssistantChatOptions) {
+  const effectiveRequest = effectiveAssistantRequestForConversation(options.history, options.userMessage);
   const history = options.history.slice(-24).map((message) => {
     const actionContext = message.actionContext
       ? `\nACTION CONTEXT: ${JSON.stringify(message.actionContext)}`
@@ -1303,7 +1392,7 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
       attachmentCount: options.images?.length ?? 0,
       attachmentNames: options.imageNames ?? []
     }),
-    "Available tools for this request (Pilot retains the full application capability registry; this bounded subset is selected from the student's message, never the active app tab):\n" + assistantToolCatalogPrompt(options.userMessage),
+    "Available tools for this request (Pilot retains the full application capability registry; this bounded subset is selected from the student's effective request, never the active app tab):\n" + assistantToolCatalogPrompt(effectiveRequest),
     knowledge.length
       ? `Retrieved application guidance (authoritative product context, not student-record evidence):\n${JSON.stringify(knowledge)}`
       : "No additional application-guidance chunks were retrieved. Follow the built-in safety and tool rules above.",
@@ -1317,6 +1406,9 @@ export function assistantConversationPrompt(options: AssistantChatOptions) {
       ? `Recent conversation tool evidence (bounded canonical app data already read or changed in this thread; refresh through the owning read tool when current state matters):\n${JSON.stringify(options.recentToolEvidence)}`
       : "No prior app-tool evidence is recorded in this conversation yet.",
     history ? `Recent conversation:\n${history}` : "This is the first message in the conversation.",
+    effectiveRequest !== options.userMessage
+      ? `Effective current task (the structured answer clarifies this pending request; continue its original scope and execute it rather than starting a different workflow):\n${effectiveRequest}`
+      : "The current message is a new request, not a structured continuation.",
     `USER: ${options.userMessage || "Please review the attached image context."}`
   ].join("\n\n");
 }
@@ -1360,13 +1452,8 @@ export function requestedStudentSettings(userMessage: string) {
   const patch: Record<string, unknown> = {};
   const currentGrade = normalized.match(/\bcurrent grade\s+(?:to|as|is)?\s*(9|10|11|12)\b/)?.[1];
   const graduationYear = normalized.match(/\bgraduation year\s+(?:to|as|is)?\s*(20\d{2}|2100)\b/)?.[1];
-  const planningWindow = normalized.match(/\bplanning window\s+from\s+(?:grade\s*)?(9|10|11|12)\s+(?:through|to|-)\s+(?:grade\s*)?(9|10|11|12)\b/);
   if (currentGrade) patch.grade_level = Number(currentGrade);
   if (graduationYear) patch.graduation_year = Number(graduationYear);
-  if (planningWindow) {
-    patch.plan_start_grade = Number(planningWindow[1]);
-    patch.plan_end_grade = Number(planningWindow[2]);
-  }
   return Object.keys(patch).length ? patch : null;
 }
 
@@ -1399,7 +1486,7 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   const earliestEditableMathGrade = Math.min(...editableMathRows.map((row) => Number(row.grade_level)).filter((grade) => [9, 10, 11, 12].includes(grade)));
   const startGrade = intent.startGrade
     ?? (intent.startingMathCourse && Number.isFinite(earliestEditableMathGrade) ? earliestEditableMathGrade : undefined)
-    ?? Number((context.student as Record<string, unknown> | undefined)?.plan_start_grade ?? 9);
+    ?? Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? 9);
   if (![9, 10, 11, 12].includes(startGrade)) return null;
 
   const patches: Array<Record<string, unknown>> = [];
@@ -1679,7 +1766,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: `I found the recent ${target.label.toLowerCase()}. Its exact stored undo will apply automatically if the validation passes.`,
+      message: `I found the recent ${target.label.toLowerCase()} and am applying its exact stored undo now.`,
       questions: [],
       threadId: null,
       usage: null,
@@ -1701,7 +1788,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: `I prepared the exact preferred-name change to ${preferredName}. It will apply automatically if the validation passes.`,
+      message: `I’m applying the preferred-name change to ${preferredName} now.`,
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1718,7 +1805,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: `I prepared the ${uiTheme}-mode change. It will apply automatically if the validation passes.`,
+      message: `I’m switching the workspace to ${uiTheme} mode now.`,
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1735,7 +1822,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the exact student and planning setting changes. They will apply automatically if the validation passes.",
+      message: "I’m applying the requested student and planning setting changes now.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1761,7 +1848,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the enrollment-preference change. It will apply automatically if the validation passes.",
+      message: "I’m applying the enrollment-preference change now.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1773,7 +1860,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     };
     await options.onToolActivity(proposal);
     return {
-      message: "I prepared the standard course-board sort. It will apply automatically if the validation passes.",
+      message: "I’m applying the standard course-board sort now.",
       questions: [], threadId: null, usage: null, latencyMs: 0, model: options.model, proposals: [proposal]
     };
   }
@@ -1789,6 +1876,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
   let latestMessage = "";
   let latestQuestions: AssistantQuestion[] = [];
   let latestMemoryUpdates: AssistantMemoryUpdate[] = [];
+  let latestProposals: AssistantChatToolActivity[] = [];
 
   try {
     scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-assistant-"));
@@ -1805,6 +1893,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       workingDirectory: scratchDirectory,
       skipGitRepoCheck: true
     });
+    const effectiveRequest = effectiveAssistantRequestForConversation(options.history, options.userMessage);
     let prompt = assistantConversationPrompt(options);
     const requiredRead = requiredAssistantEvidenceReadForConversation(options.history, options.userMessage);
     if (requiredRead) {
@@ -1838,7 +1927,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           }
         }
         if (requiredRead.name === "get_academic_context" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
-          const targetedSequence = targetedStartingSequenceProposal(options.userMessage, result.data as Record<string, unknown>);
+          const targetedSequence = targetedStartingSequenceProposal(effectiveRequest, result.data as Record<string, unknown>);
           if (targetedSequence) {
             for (const proposal of targetedSequence.proposals) await options.onToolActivity(proposal);
             return {
@@ -1852,32 +1941,31 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
           }
         }
-        if (requiredRead.name === "get_academic_context" && result.data && typeof result.data === "object" && !Array.isArray(result.data)
-          && /\b(clear|empty|wipe|remove|delete)\b/.test(options.userMessage.toLowerCase())
-          && !/\b(without|do not|don't|dont|never)\b.{0,28}\b(clear|empty|wipe|remove|delete|deleting)\b/.test(options.userMessage.toLowerCase())) {
-          const normalized = options.userMessage.toLowerCase();
-          const clearsCourses = /\b(schedule|plan|courses|classes)\b/.test(normalized);
-          const clearsGoals = /\b(degree|bookmark|goal)s?\b/.test(normalized);
-          const clearsGpa = /\b(gpa|grade assumptions?|calculator)\b/.test(normalized);
-          const proposal: AssistantChatToolActivity = {
-            id: crypto.randomUUID(),
-            name: "clear_academic_plan",
-            label: assistantToolLabel("clear_academic_plan"),
-            arguments: { courses: clearsCourses, degree_bookmarks: clearsGoals, gpa_scenario: clearsGpa },
-            explanation: "Clear the requested student-owned academic areas as one durable reversible action while retaining transcript-backed evidence.",
-            mutatesData: true,
-            status: "pending_confirmation"
-          };
-          await options.onToolActivity(proposal);
-          return {
-            message: "I found the requested academic areas and am applying one exact clear operation now. Transcript-backed courses stay intact, and the complete removed state remains restorable as one change.",
-            questions: [],
-            threadId: thread.id,
-            usage,
-            latencyMs: Date.now() - startedAt,
-            model,
-            proposals: [proposal]
-          };
+        if (requiredRead.name === "get_plan_versions" && Array.isArray(result.data)) {
+          const intent = parsePlanVersionCreationIntent(options.userMessage);
+          if (intent) {
+            const label = availablePlanVersionLabel(intent.label, result.data);
+            const proposal: AssistantChatToolActivity = {
+              id: crypto.randomUUID(),
+              name: "create_plan_version",
+              label: assistantToolLabel("create_plan_version"),
+              arguments: {
+                label,
+                start_empty: intent.startEmpty,
+                activate: true,
+                strategy: intent.strategy,
+                populate_strategy: intent.populateStrategy
+              },
+              explanation: `Create and open the requested ${intent.strategy.replaceAll("_", " ")} named plan${intent.populateStrategy ? " and populate its course strategy" : ""}.`,
+              mutatesData: true,
+              status: "pending_confirmation"
+            };
+            await options.onToolActivity(proposal);
+            return {
+              message: `I’m creating and opening “${label}”${intent.populateStrategy ? " with its requested course strategy" : ""} now.`,
+              questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
+            };
+          }
         }
         if (requiredRead.name === "list_plan_courses" && Array.isArray(result.data)) {
           const normalized = options.userMessage.toLowerCase();
@@ -1950,7 +2038,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact move to ${targetLabel}. It will apply automatically if the validation passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
+              message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and am moving ${ids.length === 1 ? "it" : "them"} to ${targetLabel} now.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
               questions: [],
               threadId: thread.id,
               usage,
@@ -1970,7 +2058,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and prepared the exact batch removal. It will apply automatically if the validation passes.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
+            message: `I found ${ids.length} editable ${statusLabel} ${ids.length === 1 ? "course" : "courses"} and am removing ${ids.length === 1 ? "it" : "them"} now.${locked.length ? ` ${locked.length} transcript-backed ${locked.length === 1 ? "course stays" : "courses stay"} unchanged.` : ""}`,
             questions: [],
             threadId: thread.id,
             usage,
@@ -2059,6 +2147,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             name: "add_course_schedule",
             label: assistantToolLabel("add_course_schedule"),
             arguments: {
+              target_plan_version_id: String(data.target_plan_version_id),
               course_ids: ids,
               respect_recommended_limit: respectsLimit,
               enforce_school_course_counts: requiredRead.arguments.enforce_school_course_counts ?? false,
@@ -2113,12 +2202,12 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: `I found the exact eligible ${String(exact.name ?? intent.query)} course. The requested placement will apply automatically if the validation passes.`,
+              message: `I found the exact eligible ${String(exact.name ?? intent.query)} course and am adding the requested placement now.`,
               questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
             };
           }
         }
-        if (requiredRead.name === "search_smccd_programs" && Array.isArray(result.data)) {
+        if (requiredRead.name === "search_college_programs" && Array.isArray(result.data)) {
           const intent = parseDegreeGoalIntent(options.userMessage);
           const matches = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
           const exact = matches.length === 1 ? matches[0] : matches.find((row) => {
@@ -2135,7 +2224,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             };
             await options.onToolActivity(proposal);
             return {
-              message: `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program. The bookmark will apply automatically if the validation passes.`,
+              message: `I found the exact ${String(exact.title ?? intent.query)} ${intent.awardType} program and am bookmarking it now.`,
               questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal]
             };
           }
@@ -2155,7 +2244,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: `I found ${String(exact.name ?? requestedSchool)}. The school change will apply automatically if the validation passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found ${String(exact.name ?? requestedSchool)} and am changing the selected school now.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         if (requiredRead.name === "get_nearby_education_providers" && result.data && typeof result.data === "object" && !Array.isArray(result.data)) {
@@ -2179,7 +2268,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: `I found ${String(exact?.name ?? requestedDistrict)}. The district change will apply automatically if the validation passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found ${String(exact?.name ?? requestedDistrict)} and am changing the selected district now.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         if (requiredRead.name === "get_gpa_scenario" && Array.isArray(result.data)) {
@@ -2193,7 +2282,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
               mutatesData: true, status: "pending_confirmation"
             };
             await options.onToolActivity(proposal);
-            return { message: `I found all ${rows.length} current and planned courses. The exact GPA batch will apply automatically if the validation passes.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
+            return { message: `I found all ${rows.length} current and planned courses and am applying the GPA assumptions now.`, questions: [], threadId: thread.id, usage, latencyMs: Date.now() - startedAt, model, proposals: [proposal] };
           }
         }
         prompt += "\n\n" + [
@@ -2271,6 +2360,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           }
         ];
       }
+      if (mutationCalls.length > 0) latestProposals = mutationCalls;
       if (readCalls.length > 0) {
         const results: Array<Record<string, unknown>> = [];
         for (const call of readCalls) {
@@ -2342,6 +2432,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             name: "add_course_schedule",
             label: assistantToolLabel("add_course_schedule"),
             arguments: {
+              target_plan_version_id: String(data.target_plan_version_id),
               course_ids: ids,
               respect_recommended_limit: argumentsValue.respect_recommended_limit ?? true,
               enforce_school_course_counts: argumentsValue.enforce_school_course_counts ?? false,
@@ -2361,6 +2452,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             mutatesData: true,
             status: "pending_confirmation"
           };
+          latestProposals = [proposal];
           await options.onToolActivity(proposal);
           return {
             message: `${preview}\n\nThe validated schedule is being applied now.`,
@@ -2373,6 +2465,10 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
             memoryUpdates: latestMemoryUpdates
           };
         }
+        // Reads can disprove a speculative write from the same model turn. Do
+        // not surface that stale proposal if the continuation reaches its time
+        // budget before the model submits a supported replacement.
+        latestProposals = [];
         prompt = [
           "Continue the same student conversation using these actual tool results.",
           "Answer with only the result that matters. Keep it to one to three short sentences or at most three compact bullets. Do not dump or restate the tool data. For an audit, distinguish confirmed mismatches from unresolved verification, name at most three exact affected records, count any remainder, and never convert a downstream planning gap into a source-data error.",
@@ -2386,7 +2482,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       if (mutationCalls.length > 0) {
         for (const call of mutationCalls) await options.onToolActivity(call);
         return {
-          message: latestMessage || "I prepared the requested change. It will apply automatically if the validation passes.",
+          message: latestMessage || "I’m applying the requested change now.",
           questions: [],
           threadId: thread.id,
           usage,
@@ -2431,7 +2527,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         usage,
         latencyMs: Date.now() - startedAt,
         model,
-        proposals: [],
+        proposals: latestProposals,
         memoryUpdates: latestMemoryUpdates
       };
     }
@@ -2443,7 +2539,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
       usage,
       latencyMs: Date.now() - startedAt,
       model,
-      proposals: [],
+      proposals: latestProposals,
       memoryUpdates: latestMemoryUpdates
     };
   } catch (error) {
@@ -2455,7 +2551,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         usage,
         latencyMs: Date.now() - startedAt,
         model: options.model,
-        proposals: [],
+        proposals: latestProposals,
         memoryUpdates: latestMemoryUpdates
       };
     }

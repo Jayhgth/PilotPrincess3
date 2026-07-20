@@ -32,7 +32,7 @@ import { schoolYearForGrade, selectedPlanGrades } from "@/lib/planning";
 import { createSmccdPlannerPrerequisiteEvaluator } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import { createSmccdPlanCourseIndex, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
-import { resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
+import { resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import { cachedStudentSmccdGoals, cacheStudentSmccdGoals, loadStudentSmccdGoals } from "@/lib/smccd-goals";
 import type {
   GradeLevel,
@@ -177,7 +177,7 @@ export default function SmccdPlanner({
 }: Props) {
   const [courseCatalogReady, setCourseCatalogReady] = useState(Boolean(courseCatalogCache));
   const [degreeCatalogReady, setDegreeCatalogReady] = useState(Boolean(degreeCatalogCache));
-  const [goalsReady, setGoalsReady] = useState(surface === "courses" || cachedStudentSmccdGoals(session.user.id) !== null);
+  const [goalsReady, setGoalsReady] = useState(surface === "courses" || cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id) !== null);
   const [geCompletionsReady, setGeCompletionsReady] = useState(surface === "courses" || manualCompletions !== undefined || geCompletionsCache.has(session.user.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +187,7 @@ export default function SmccdPlanner({
   const [programs, setPrograms] = useState<SmccdProgram[]>(() => degreeCatalogCache?.programs ?? []);
   const [requirements, setRequirements] = useState<SmccdProgramRequirement[]>(() => degreeCatalogCache?.requirements ?? []);
   const [requirementCourses, setRequirementCourses] = useState<SmccdRequirementCourse[]>(() => degreeCatalogCache?.requirementCourses ?? []);
-  const [goals, setGoals] = useState<StudentSmccdGoal[]>(() => cachedStudentSmccdGoals(session.user.id) ?? []);
+  const [goals, setGoals] = useState<StudentSmccdGoal[]>(() => cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id) ?? []);
   const [geCompletions, setGeCompletions] = useState<StudentSmccdGeCompletion[]>(() => manualCompletions ?? geCompletionsCache.get(session.user.id) ?? []);
   const effectiveGeCompletions = manualCompletions ?? geCompletions;
   const [geCollegeCode, setGeCollegeCode] = useState<SmccdCourse["college_code"]>("CSM");
@@ -243,12 +243,22 @@ export default function SmccdPlanner({
 
   useEffect(() => {
     if (surface !== "degree") return;
-    const cachedGoals = cachedStudentSmccdGoals(session.user.id);
-    if (cachedGoals) return;
+    const cachedGoals = cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id);
+    if (cachedGoals) {
+      void Promise.resolve().then(() => {
+        setGoals(cachedGoals);
+        setGoalsReady(true);
+      });
+      return;
+    }
     let active = true;
     void (async () => {
       try {
-        const loadedGoals = await loadStudentSmccdGoals(supabase, session.user.id);
+        await Promise.resolve();
+        if (!active) return;
+        setGoals([]);
+        setGoalsReady(false);
+        const loadedGoals = await loadStudentSmccdGoals(supabase, session.user.id, activeVersion.plan_id);
         if (!active) return;
         setGoals(loadedGoals);
       } catch (caught) {
@@ -258,7 +268,7 @@ export default function SmccdPlanner({
       }
     })();
     return () => { active = false; };
-  }, [session.user.id, supabase, surface]);
+  }, [activeVersion.plan_id, session.user.id, supabase, surface]);
 
   useEffect(() => {
     if (surface === "courses") return;
@@ -461,13 +471,14 @@ export default function SmccdPlanner({
       }
       const { data, error: mutationError } = await supabase.from("student_smccd_goals").insert({
         user_id: session.user.id,
+        plan_id: activeVersion.plan_id,
         program_id: programId,
         is_primary: false
       }).select("*").single();
       if (mutationError) throw mutationError;
       setGoals((current) => {
         const next = [...current, data as unknown as StudentSmccdGoal];
-        cacheStudentSmccdGoals(session.user.id, next);
+        cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);
         return next;
       });
       setNotice("Degree bookmarked.");
@@ -486,7 +497,7 @@ export default function SmccdPlanner({
       if (error) throw error;
       setGoals((current) => {
         const next = current.filter((item) => item.id !== goal.id);
-        cacheStudentSmccdGoals(session.user.id, next);
+        cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);
         return next;
       });
       setNotice("Bookmark removed. Your course plan was not changed.");
@@ -697,7 +708,7 @@ export default function SmccdPlanner({
 
       {!embedded && <section className="content-section smccd-plan-section">
         <header className="section-heading"><div><h2>College courses in this plan</h2><p>Transcript imports and planned catalog courses use the same district record when matched.</p></div></header>
-        {districtRows.length ? <div className="source-list">{districtRows.map((row) => { const catalogCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null; return <article className="source-row dual-enrollment-row" key={row.id}>{catalogCourse ? <InstitutionMark institution={catalogCourse.college_code} decorative /> : <InstitutionMark institution="smccd" decorative />}<div><strong>{row.custom_course_name ?? "College course"}</strong><span>{row.college_units ?? 0} college units, {row.credits ?? 0} proposed high school credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>; })}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the college catalog or import a transcript to add exact courses.</p></div>}
+        {districtRows.length ? <div className="source-list">{districtRows.map((row) => { const catalogCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null; const highSchoolCredits = resolvePlanCourseHighSchoolCredits(row, equivalencies).credits; return <article className="source-row dual-enrollment-row" key={row.id}>{catalogCourse ? <InstitutionMark institution={catalogCourse.college_code} decorative /> : <InstitutionMark institution="smccd" decorative />}<div><strong>{row.custom_course_name ?? "College course"}</strong><span>{row.college_units ?? 0} college units, {highSchoolCredits} proposed high school credits, grade {row.grade_level}</span></div><span className="confidence-tag uncertain">Verify</span><button className="icon-button danger" type="button" onClick={() => void removeCourse(row)} aria-label={`Remove ${row.custom_course_name ?? "college course"}`}><Trash size={16} /></button>{row.notes && <p>{row.notes}</p>}</article>; })}</div> : <div className="empty-state"><BookOpen size={23} weight="duotone" /><strong>No college courses planned</strong><p>Search the college catalog or import a transcript to add exact courses.</p></div>}
       </section>}
 
       {surface === "degree" && !degreeCatalogReady && <div className="smccd-loading smccd-degree-loading" role="status">Loading degree requirements...</div>}

@@ -9,6 +9,10 @@ on:
         description: Optional California high school name; leave blank to refresh every selected school.
         required: false
         type: string
+      promote_run_id:
+        description: Optional staged run ID to promote after administrator review.
+        required: false
+        type: string
 
 concurrency:
   group: selected-school-academics
@@ -32,8 +36,11 @@ jobs:
           PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SCHOOL_NAME: ${{ inputs.school_name }}
+          PROMOTE_RUN_ID: ${{ inputs.promote_run_id }}
         run: |
-          if [ -n "$SCHOOL_NAME" ]; then
+          if [ -n "$PROMOTE_RUN_ID" ]; then
+            pnpm schools:academics --promote-run "$PROMOTE_RUN_ID"
+          elif [ -n "$SCHOOL_NAME" ]; then
             pnpm schools:academics --school-name "$SCHOOL_NAME"
           else
             pnpm schools:academics --selected

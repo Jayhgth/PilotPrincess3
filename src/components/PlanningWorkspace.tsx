@@ -44,6 +44,7 @@ import {
 
 import { orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import type { GpaScenarioChoice } from "@/lib/gpa-planner";
+import { COLLEGE_COURSE_SELECT, COLLEGE_DATA } from "@/lib/college-provider-contract";
 import { requirementsForSettings } from "@/lib/planning";
 import {
   findExistingTranscriptPlanCourse,
@@ -95,11 +96,12 @@ import {
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 import type { WorkspaceDomain } from "@/lib/app-capabilities";
-import { loadDegreeWorkspaceSlice, loadEnrollmentWorkspaceSlice, loadPlanWorkspaceSlice, loadSettingsWorkspaceSlice } from "@/lib/workspace-refresh";
+import { cachedPlanWorkspaceSlice, loadDegreeWorkspaceSlice, loadEnrollmentWorkspaceSlice, loadPlanWorkspaceSlice, loadSettingsWorkspaceSlice } from "@/lib/workspace-refresh";
 import { applyPlanCourseUpdates, commitTranscriptImport } from "@/lib/workspace-commands";
 import { transcriptMimeType } from "@/lib/transcript-file";
 import AppChrome from "@/components/AppChrome";
 import PilotErrorBoundary from "@/components/PilotErrorBoundary";
+import WorkspaceErrorBoundary from "@/components/WorkspaceErrorBoundary";
 import SchoolSupportNotice from "@/components/SchoolSupportNotice";
 import { LoadingView, LoadingWorkspace, PageHeader } from "@/components/workspace/WorkspaceScaffold";
 import type { SchoolSupportReadiness } from "@/lib/workspace-bootstrap";
@@ -112,17 +114,20 @@ const loadGraduationWorkspace = () => import("@/components/GraduationWorkspace")
 const loadSmccdPlanner = () => import("@/components/SmccdPlanner");
 const loadGpaPlanningLab = () => import("@/components/GpaPlanningLab");
 const loadGlobalAssistant = () => import("@/components/GlobalAssistant");
+const loadCustomHighSchoolCourseForm = () => import("@/components/CustomHighSchoolCourseForm");
 
 const OnboardingFlow = lazy(loadOnboardingFlow);
 const GraduationWorkspace = lazy(loadGraduationWorkspace);
 const SmccdPlanner = lazy(loadSmccdPlanner);
 const GpaPlanningLab = lazy(loadGpaPlanningLab);
 const GlobalAssistant = lazy(loadGlobalAssistant);
+const CustomHighSchoolCourseForm = lazy(loadCustomHighSchoolCourseForm);
 const SettingsDialog = lazy(() => import("@/components/SettingsDialog"));
 const AdminSettingsPanel = lazy(() => import("@/components/AdminSettingsPanel"));
 const CourseCatalogBrowser = lazy(() => import("@/components/CourseCatalogBrowser"));
 const CourseDetailLayout = lazy(() => import("@/components/CourseDetailLayout"));
 const CourseKanban = lazy(() => import("@/components/CourseKanban"));
+const PlanVersionManager = lazy(() => import("@/components/PlanVersionManager"));
 const TranscriptAiRunDetails = lazy(() => import("@/components/TranscriptAiRunDetails"));
 const TranscriptCourseEditor = lazy(() => import("@/components/TranscriptCourseEditor"));
 const StudentSettingsPanel = lazy(() => import("@/components/StudentSettingsPanel"));
@@ -130,7 +135,7 @@ const SupportSettingsPanel = lazy(() => import("@/components/SupportSettingsPane
 const PrerequisiteReadout = lazy(() => import("@/components/PrerequisiteReadout"));
 
 function preloadWorkspaceView(view: WorkspaceViewId) {
-  if (view === "courses") void Promise.all([import("@/components/CourseKanban"), import("@/components/CourseCatalogBrowser"), import("@/components/SmccdPlanner")]);
+  if (view === "courses") void Promise.all([import("@/components/CourseKanban"), import("@/components/PlanVersionManager"), import("@/components/CourseCatalogBrowser"), import("@/components/SmccdPlanner")]);
   if (view === "graduation") void Promise.all([loadGraduationWorkspace(), loadSmccdPlanner()]);
   if (view === "gpa") void loadGpaPlanningLab();
 }
@@ -155,12 +160,11 @@ const PRIMARY_NAV_ITEMS: Array<{ id: WorkspaceViewId; label: string; icon: Icon 
 const NAV_ITEMS = [...PRIMARY_NAV_ITEMS, { id: "settings" as const, label: "Settings", icon: GearSix }, { id: "sources" as const, label: "Transcript import", icon: FileArrowUp }];
 
 type CourseArea = "mine" | "dtech" | "smccd";
-type SettingsArea = "general" | "planning" | "pilot" | "support" | "admin";
+type SettingsArea = "general" | "pilot" | "support" | "admin";
 type SourceAiTransparency = TranscriptAiTransparency;
 
 const SETTINGS_NAV_ITEMS: Array<{ id: SettingsArea; label: string; icon: Icon }> = [
   { id: "general", label: "General", icon: GearSix },
-  { id: "planning", label: "Planning", icon: GraduationCap },
   { id: "pilot", label: "Pilot", icon: ChatCircleDots },
   { id: "support", label: "Support", icon: Lifebuoy },
   { id: "admin", label: "Admin", icon: ShieldCheck }
@@ -168,7 +172,6 @@ const SETTINGS_NAV_ITEMS: Array<{ id: SettingsArea; label: string; icon: Icon }>
 
 const SETTINGS_DESCRIPTIONS: Record<SettingsArea, string> = {
   general: "Account and student details.",
-  planning: "Choose the high-school years included in the plan.",
   pilot: "Model, reasoning, change access, and conversation settings.",
   support: "Contact administrators about support, bugs, or course data.",
   admin: "Account-specific testing and workspace reset controls."
@@ -176,7 +179,7 @@ const SETTINGS_DESCRIPTIONS: Record<SettingsArea, string> = {
 
 const VIEW_IDS = new Set<ViewId>(["dashboard", "courses", "sources", "graduation", "gpa", "settings"]);
 const COURSE_AREAS = new Set<CourseArea>(["mine", "dtech", "smccd"]);
-const SETTINGS_AREAS = new Set<SettingsArea>(["general", "planning", "pilot", "support", "admin"]);
+const SETTINGS_AREAS = new Set<SettingsArea>(["general", "pilot", "support", "admin"]);
 
 function locationState() {
   if (typeof window === "undefined") return { view: "dashboard" as ViewId, courseArea: "mine" as CourseArea, settingsArea: "general" as SettingsArea };
@@ -237,6 +240,7 @@ export default function PlanningWorkspace() {
     typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light"
   );
   const themeWriteQueue = useRef<Promise<void>>(Promise.resolve());
+  const gpaSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeIntentVersion = useRef(0);
   const [courseArea, setCourseArea] = useState<CourseArea>(() => locationState().courseArea);
   const [settingsArea, setSettingsArea] = useState<SettingsArea>(() => locationState().settingsArea);
@@ -257,6 +261,7 @@ export default function PlanningWorkspace() {
   const [plannedSmccdCourses, setPlannedSmccdCourses] = useState<SmccdCourse[]>([]);
   const [plan, setPlan] = useState<FourYearPlan | null>(null);
   const [activeVersion, setActiveVersion] = useState<PlanVersion | null>(null);
+  const [planVersionRevision, setPlanVersionRevision] = useState(0);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
   const [reviewItems, setReviewItems] = useState<CatalogReviewItem[]>([]);
   const [enrollmentPolicies, setEnrollmentPolicies] = useState<EnrollmentPolicy[]>([]);
@@ -343,7 +348,7 @@ export default function PlanningWorkspace() {
   const selectedDtechTermOptions = selectedDtechCourse
     ? selectedSchoolCourseTermOptions(selectedDtechCourse, dtechDraft.gradeLevel)
     : [];
-  const selectedDtechEvaluation = useMemo(() => selectedDtechCourse
+  const selectedDtechEvaluation = selectedDtechCourse
     ? evaluateSelectedSchoolPlannerPrerequisites(
         selectedDtechCourse,
         dtechDraft,
@@ -352,7 +357,7 @@ export default function PlanningWorkspace() {
         plannedSmccdCourses,
         equivalencies
       )
-    : null, [courses, dtechDraft, equivalencies, planCourses, plannedSmccdCourses, selectedDtechCourse]);
+    : null;
   const dtechCatalogResults = useMemo(() => filteredCourses.map((course) => {
     const evaluation = evaluateSelectedSchoolPlannerPrerequisites(
       course,
@@ -379,6 +384,9 @@ export default function PlanningWorkspace() {
     };
   }), [activeCatalogGrade, courseDesignations, courses, defaultDtechPlacement, equivalencies, filteredCourses, planCourses, plannedSmccdCourses]);
   const plannedSmccdMap = useMemo(() => new Map(plannedSmccdCourses.map((course) => [course.id, course])), [plannedSmccdCourses]);
+  useEffect(() => () => {
+    if (gpaSaveTimer.current) clearTimeout(gpaSaveTimer.current);
+  }, []);
   const loadWorkspace = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!supabase) return;
     if (!options.silent) {
@@ -501,10 +509,35 @@ export default function PlanningWorkspace() {
 
   const refreshWorkspaceSilently = useCallback(() => loadWorkspace({ silent: true }), [loadWorkspace]);
 
+  const openActivePlanVersion = useCallback(async (nextVersion: PlanVersion) => {
+    if (!supabase || !session) return;
+    setActiveVersion(nextVersion);
+    setPlanVersionRevision((current) => current + 1);
+    const cached = cachedPlanWorkspaceSlice(nextVersion.id);
+    if (cached) {
+      setPlanCourses(cached.planCourses);
+      if (!cached.collegeCatalogError) setPlannedSmccdCourses(cached.plannedCollegeCourses);
+      setGpaScenarioChoices(cached.gpaChoices as GpaScenarioChoice[]);
+    }
+    try {
+      const slice = await loadPlanWorkspaceSlice(supabase, session.user.id, nextVersion.id);
+      setPlanCourses(slice.planCourses);
+      if (!slice.collegeCatalogError) setPlannedSmccdCourses(slice.plannedCollegeCourses);
+      setGpaScenarioChoices(slice.gpaChoices as GpaScenarioChoice[]);
+      if (slice.collegeCatalogError) {
+        setToastKind("info");
+        setToast("The plan opened. College catalog details will refresh automatically when the provider is available.");
+      }
+    } catch {
+      await refreshWorkspaceSilently();
+    }
+  }, [refreshWorkspaceSilently, session, supabase]);
+
   async function refreshAfterAssistantChange(domains: WorkspaceDomain[] = []) {
     if (!supabase || !session || !activeVersion) return;
     const requested = new Set(domains);
-    if (requested.size === 0 || requested.has("institution") || requested.has("transcript")) {
+    if (requested.has("history") || requested.has("plan")) setPlanVersionRevision((current) => current + 1);
+    if (requested.size === 0 || requested.has("institution") || requested.has("transcript") || requested.has("active_plan")) {
       await refreshWorkspaceSilently();
       return;
     }
@@ -513,8 +546,16 @@ export default function PlanningWorkspace() {
       if (["plan", "graduation", "gpa", "college"].some((domain) => requested.has(domain as WorkspaceDomain))) {
         tasks.push(loadPlanWorkspaceSlice(supabase, session.user.id, activeVersion.id).then((slice) => {
           setPlanCourses(slice.planCourses);
-          setPlannedSmccdCourses(slice.plannedCollegeCourses);
+          // The owned plan is the source of truth for immediate UI state. A
+          // transient provider-catalog failure must not make an applied Pilot
+          // change look missing until reload; retain the previous course
+          // metadata and refresh it on the next successful read instead.
+          if (!slice.collegeCatalogError) setPlannedSmccdCourses(slice.plannedCollegeCourses);
           setGpaScenarioChoices(slice.gpaChoices as GpaScenarioChoice[]);
+          if (slice.collegeCatalogError) {
+            setToastKind("info");
+            setToast("The plan updated. College catalog details will refresh automatically when the provider is available.");
+          }
         }));
       }
       if (["identity", "settings", "pilot"].some((domain) => requested.has(domain as WorkspaceDomain))) {
@@ -527,7 +568,7 @@ export default function PlanningWorkspace() {
         }));
       }
       if (requested.has("degree")) {
-        tasks.push(loadDegreeWorkspaceSlice(supabase, session.user.id).then((slice) => {
+        tasks.push(loadDegreeWorkspaceSlice(supabase, session.user.id, activeVersion.plan_id).then((slice) => {
           setDegreeGoals(slice.goals);
           setDegreePrograms(slice.programs);
           setDegreeRequirements(slice.requirements);
@@ -1193,7 +1234,7 @@ export default function PlanningWorkspace() {
         }));
         const smccdIds = [...new Set(savedPlanRows.map((row) => row.smccd_course_id).filter((id): id is string => Boolean(id)))];
         if (smccdIds.length > 0) {
-          const { data: smccdRows, error: smccdError } = await supabase.from("smccd_courses").select("*").in("id", smccdIds);
+          const { data: smccdRows, error: smccdError } = await supabase.from(COLLEGE_DATA.courses).select(COLLEGE_COURSE_SELECT).in("id", smccdIds);
           if (smccdError) throw smccdError;
           setPlannedSmccdCourses((current) => mergeRowsById(current, (smccdRows ?? []) as unknown as SmccdCourse[]));
         }
@@ -1467,6 +1508,7 @@ export default function PlanningWorkspace() {
 
   function renderDtechCatalog() {
     return (
+      <>
       <CourseCatalogBrowser
         source={school?.slug === "design-tech-high-school" ? "dtech" : "high_school"}
         sourceIdentity={school ? <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} size="header" decorative /> : <Buildings size={25} aria-hidden />}
@@ -1508,6 +1550,25 @@ export default function PlanningWorkspace() {
           <PrerequisiteReadout evaluation={selectedDtechEvaluation} />
         </CourseDetailLayout> : <div className="catalog-detail-empty"><BookOpen size={20} aria-hidden /><strong>Select a high school course</strong><p>Review the course and choose its term before adding it.</p></div>}
       />
+      {supabase && session && activeVersion && settings && <Suspense fallback={<div className="smccd-loading" role="status">Loading custom course form…</div>}>
+        <CustomHighSchoolCourseForm
+          supabase={supabase}
+          session={session}
+          activeVersion={activeVersion}
+          settings={settings}
+          availableGrades={availableCatalogGrades}
+          planCourses={planCourses}
+          onAdded={(row) => {
+            setPlanCourses((current) => [...current, row]);
+            notifyUndo(`${row.custom_course_name ?? "Custom course"} added as an unverified custom course.`, async () => {
+              const { error } = await supabase.from("plan_courses").delete().eq("id", row.id);
+              if (error) throw error;
+              setPlanCourses((current) => current.filter((candidate) => candidate.id !== row.id));
+            });
+          }}
+        />
+      </Suspense>}
+      </>
     );
   }
 
@@ -1573,14 +1634,17 @@ export default function PlanningWorkspace() {
       onChoicesChange={(choices) => {
         setGpaScenarioChoices(choices);
         if (!supabase || !session) return;
-        void supabase.from("student_gpa_scenario_choices").upsert(choices.map((choice) => ({
-          user_id: session.user.id,
-          plan_course_id: choice.planCourseId,
-          included: choice.included,
-          expected_grade: choice.expectedGrade
-        })), { onConflict: "user_id,plan_course_id" }).then(({ error }) => {
-          if (error) notify(`GPA assumptions could not be saved: ${error.message}`, "error");
-        });
+        if (gpaSaveTimer.current) clearTimeout(gpaSaveTimer.current);
+        gpaSaveTimer.current = setTimeout(() => {
+          void supabase.from("student_gpa_scenario_choices").upsert(choices.map((choice) => ({
+            user_id: session.user.id,
+            plan_course_id: choice.planCourseId,
+            included: choice.included,
+            expected_grade: choice.expectedGrade
+          })), { onConflict: "user_id,plan_course_id" }).then(({ error }) => {
+            if (error) notify(`GPA assumptions could not be saved: ${error.message}`, "error");
+          });
+        }, 350);
       }}
     /></div>;
   }
@@ -1601,6 +1665,7 @@ export default function PlanningWorkspace() {
         session={session}
         settings={settings}
         school={school}
+        schoolSupport={schoolSupport}
         busy={Boolean(busyLabel)}
         onSave={saveStudentSettings}
         onAiPreferencesChanged={refreshAiPreferences}
@@ -1620,11 +1685,17 @@ export default function PlanningWorkspace() {
         rows={planCourses}
         courses={courses}
         smccdCourses={plannedSmccdCourses}
+        equivalencies={equivalencies}
+        requirements={requirements}
+        mappings={mappings}
+        goals={degreeGoals}
+        programs={degreePrograms}
+        degreeRequirements={degreeRequirements}
+        degreeRequirementCourses={degreeRequirementCourses}
         settings={settings}
         busy={Boolean(busyLabel)}
         onMove={movePlanCourse}
         onRemove={(id) => void removePlanCourse(id)}
-        onSort={sortPlanCourses}
       />
     );
   }
@@ -1638,6 +1709,24 @@ export default function PlanningWorkspace() {
     return <div className="courses-page page-frame wide">
       <PageHeader title="Courses" description="A four-year schedule for completed, current, and planned classes." actions={courseArea === "mine" && <><button className="secondary-button" type="button" onClick={() => navigate("sources")}><FileArrowUp size={17} /> Import transcript</button><button className="primary-button" type="button" onClick={() => setCourseArea("dtech")}><Plus size={17} /> Add courses</button></>} />
       <WorkspaceTabs className="course-workspace-tabs" items={[{ id: "mine", label: "My plan" }, { id: "dtech", label: "High school catalog" }, { id: "smccd", label: "College catalog" }]} value={courseArea} onChange={(area) => openCourses(area)} label="Courses workspace" />
+      {courseArea === "mine" && <PlanVersionManager
+        supabase={supabase}
+        userId={session.user.id}
+        activeVersion={activeVersion}
+        courses={courses}
+        requirements={requirements}
+        mappings={mappings}
+        equivalencies={equivalencies}
+        goals={degreeGoals}
+        programs={degreePrograms}
+        degreeRequirements={degreeRequirements}
+        degreeRequirementCourses={degreeRequirementCourses}
+        manualCompletions={manualSmccdCompletions}
+        refreshToken={planVersionRevision}
+        onSort={sortPlanCourses}
+        sortDisabled={Boolean(busyLabel) || planCourses.length < 2}
+        onActiveVersionChanged={openActivePlanVersion}
+      />}
       {enrollmentWarnings.length > 0 && activeEnrollmentPolicy && !unitWarningHidden && <aside className="enrollment-policy-callout" role="status">
         <Warning size={16} weight="fill" aria-hidden />
         <div>
@@ -1714,7 +1803,7 @@ export default function PlanningWorkspace() {
         onThemeToggle={toggleTheme}
         onSignOut={() => void signOut()}
       >
-        <Suspense fallback={<LoadingView />}>{renderView(contentView)}</Suspense>
+        <WorkspaceErrorBoundary resetKey={contentView}><Suspense fallback={<LoadingView />}>{renderView(contentView)}</Suspense></WorkspaceErrorBoundary>
       </AppChrome>
       {view === "settings" && <Suspense fallback={null}>
         <SettingsDialog

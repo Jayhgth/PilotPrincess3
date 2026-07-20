@@ -23,6 +23,7 @@ const schoolName = argument("--school-name");
 const selectedOnly = args.includes("--selected");
 const maxSchools = args.includes("--all") || selectedOnly ? 10_000 : Math.max(1, Number(argument("--limit") ?? 25));
 const explicitSource = argument("--source-url");
+const promoteRunId = argument("--promote-run");
 const CDE_DIRECTORY_URL = "https://www.cde.ca.gov/schooldirectory/report?rid=dl1&tp=txt";
 
 const supabaseUrl = process.env.PUBLIC_SUPABASE_URL;
@@ -287,6 +288,20 @@ async function publishSchool(school, audit) {
   return reconciledLegacyCourses > 0 ? `synced_reconciled_${reconciledLegacyCourses}` : "synced";
 }
 
+async function stageSchool(school, audit) {
+  const { data, error } = await supabase.from("school_academic_sync_runs").insert({
+    school_id: school.id,
+    academic_year: audit.academic_year,
+    payload: { school, audit },
+    course_count: audit.courses.length,
+    requirement_count: audit.requirements.length,
+    validation: audit.validation,
+    status: "staged"
+  }).select("id").single();
+  if (error) throw error;
+  return `staged:${data.id}`;
+}
+
 async function auditSchool(school) {
   const ucopDetails = await ucopInstitution(school);
   const ucopWebsite = ucopDetails?.website
@@ -349,6 +364,24 @@ async function auditSchool(school) {
   };
 }
 
+if (promoteRunId) {
+  const staged = await supabase.from("school_academic_sync_runs").select("*").eq("id", promoteRunId).eq("status", "staged").maybeSingle();
+  if (staged.error) throw staged.error;
+  if (!staged.data) throw new Error("The staged academic sync run was not found or has already been reviewed.");
+  const payload = staged.data.payload;
+  if (!payload?.school || !payload?.audit) throw new Error("The staged academic sync payload is incomplete.");
+  try {
+    const result = await publishSchool(payload.school, payload.audit);
+    const update = await supabase.from("school_academic_sync_runs").update({ status: "promoted", reviewed_at: new Date().toISOString(), review_note: result }).eq("id", promoteRunId).eq("status", "staged");
+    if (update.error) throw update.error;
+    console.log(JSON.stringify({ run_id: promoteRunId, mode: "promoted", result }, null, 2));
+  } catch (error) {
+    await supabase.from("school_academic_sync_runs").update({ status: "failed", reviewed_at: new Date().toISOString(), review_note: error instanceof Error ? error.message : String(error) }).eq("id", promoteRunId);
+    throw error;
+  }
+  process.exit(0);
+}
+
 const schools = await loadSchools();
 if (!schools.length) {
   if (selectedOnly) {
@@ -364,7 +397,7 @@ for (const school of schools) {
   try {
     const audit = await auditSchool(school);
     audits.push(audit);
-    const publicationMode = !dryRun && !discoverOnly ? await publishSchool(school, audit) : null;
+    const publicationMode = !dryRun && !discoverOnly ? await stageSchool(school, audit) : null;
     console.log(JSON.stringify({
       school: audit.school,
       academic_year: audit.academic_year,

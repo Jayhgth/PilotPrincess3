@@ -1,6 +1,6 @@
 # Product and design reference
 
-Last reviewed: 2026-07-16
+Last reviewed: 2026-07-17
 
 Pilot Princess is a student-first academic planning workspace, not a KPI dashboard. It helps a California public or charter high-school student understand what is finished, what is happening now, what decisions come next, and how concurrent enrollment may change the path. Planning is the current product center; application features may be added later without turning the product into a counselor collaboration or live enrollment system.
 
@@ -24,7 +24,7 @@ Associate-degree discovery uses one search field rather than stacked mode, award
 | Tool | Student job | Standout capability |
 | --- | --- | --- |
 | GPA planner | Understand GPA arithmetic and compare the saved schedule safely | Locked transcript baseline, expected-grade scenario, saved-schedule ceiling, target-grade calculation, and source-backed college-unit checks |
-| Pilot Assistant | Ask across the workspace and request an exact, reversible change | Optional onboarding connection plus a docked rail that archives conversations, shows readable work, deterministically validates low-risk changes, and independently reviews ambiguous or destructive changes |
+| Pilot Assistant | Ask across the workspace and request an exact, reversible change | Optional onboarding connection plus a docked rail that archives conversations, shows readable work, and validates exact changes through the same product commands as the UI |
 
 The tools support students first. Counselors can use the same evidence to ask better questions, but the app does not certify eligibility or replace counseling.
 
@@ -70,7 +70,7 @@ Use alignment, spacing, and surface tone before borders. A divider is reserved f
 
 React Bits adaptations may clarify loading, selection, reveal, drag, and bounded focus. Motion is never ornamental and must respect reduced motion. Loading removes stale output when it could be mistaken for the new result.
 
-AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps the model picker on the left and the image attachment control at the far right; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. It does not display or send the active tab. Read tools run automatically. Every write begins as a visible exact proposal. Low-risk exact writes use deterministic validation; ambiguous or destructive writes receive an independent binary safety decision. Approved changes apply without another student confirmation step and remain undoable.
+AI results follow progressive disclosure: user messages are compact bubbles, answers are unboxed readable text, and settled reasoning/tool work folds underneath the turn. The composer keeps the model picker on the left and the image attachment control at the far right; image attachments appear as a compact thumbnail strip with remove and full-preview actions rather than a second upload card. It does not display or send the active tab. Read tools run automatically. Every write begins as a visible exact proposal, uses the owning deterministic product command, applies without another student confirmation step, and remains undoable. Ambiguous destructive intent is clarified rather than guessed.
 
 Assistant chrome stays secondary to the student's page. The rail stays attached to the workspace, uses a forgiving invisible resize target on wide screens, and stores only its width. Archiving updates the picker optimistically without closing it; archived conversations remain restorable for 14 days. Connection, model, reasoning, and archive management live in the universal Settings page. The rail contains conversation work only. Mobile uses a full-width rail with resize controls removed.
 

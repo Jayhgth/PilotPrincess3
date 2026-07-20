@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { pilotCapabilitiesForMessage } from "@/lib/app-capabilities";
 
 const CONTEXT_TAGS = [
   "assistant",
@@ -26,28 +27,12 @@ export interface AssistantKnowledgeChunk {
   score: number;
   matchReason: "required" | "text_and_context" | "text" | "context";
 }
-function includesAny(value: string, expressions: RegExp[]) {
-  return expressions.some((expression) => expression.test(value));
-}
-
 export function assistantKnowledgeTags(userMessage: string) {
-  const value = userMessage.toLowerCase();
-  const tags = new Set<string>(["assistant"]);
-  if (includesAny(value, [/\bcourse/, /\bclass/, /\bplan\b/])) tags.add("courses");
-  if (includesAny(value, [/\bschedule/, /four[ -]?year plan/, /suggest.*course/, /plan.*course/])) tags.add("schedule");
-  if (includesAny(value, [/graduat/, /diploma/, /requirement/, /credit gap/])) tags.add("graduation");
-  if (includesAny(value, [/\bgpa\b/, /grade point/, /all[ -]?a/])) tags.add("gpa");
-  if (includesAny(value, [/transcript/, /import/, /parsed/])) tags.add("transcript");
-  if (includesAny(value, [/college/, /smccd/, /csm/, /skyline/, /cañada/, /canada/])) {
-    tags.add("college");
-    tags.add("smccd");
-  }
-  if (includesAny(value, [/high[ -]?school/, /selected school/, /school catalog/, /carlmont/, /d\.tech/, /district/])) tags.add("school");
-  if (includesAny(value, [/degree/, /major/, /associate/, /general education/, /\bge\b/])) tags.add("degree");
-  if (includesAny(value, [/prereq/, /eligib/, /placement/, /course sequence/])) tags.add("prerequisites");
-  if (includesAny(value, [/setting/, /preference/, /theme/, /dark mode/, /light mode/])) tags.add("settings");
-  if (includesAny(value, [/overview/, /dashboard/, /current path/])) tags.add("overview");
-  if (includesAny(value, [/\bundo\b/, /\brevert\b/, /\brestore\b/, /bring.*back/, /previous change/, /last change/])) tags.add("history");
+  const capabilities = pilotCapabilitiesForMessage(userMessage);
+  const tags = new Set<string>(["assistant", ...capabilities]);
+  if (capabilities.includes("college")) tags.add("smccd");
+  if (capabilities.includes("settings")) tags.add("school");
+  if (capabilities.includes("core")) tags.add("overview");
   return [...tags].filter((tag) => (CONTEXT_TAGS as readonly string[]).includes(tag));
 }
 
@@ -60,7 +45,7 @@ export async function retrieveAssistantKnowledge(
   const { data, error } = await supabase.rpc("search_ai_knowledge", {
     query_text: queryText.slice(0, 500),
     context_tags: contextTags,
-    result_limit: 7
+    result_limit: 8
   });
   if (error) throw new Error(`Pilot guidance retrieval failed: ${error.message}`);
   return (data ?? []).map((row: Record<string, unknown>) => ({

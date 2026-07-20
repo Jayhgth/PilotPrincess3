@@ -25,11 +25,11 @@ import {
   DotsSixVerticalIcon as DotsSixVertical,
   HandGrabbingIcon as HandGrabbing,
   LockKeyIcon as LockKey,
-  SortAscendingIcon as SortAscending,
+  InfoIcon as Info,
   TrashIcon as Trash
 } from "@phosphor-icons/react";
 import { useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import InstitutionMark from "@/components/InstitutionMark";
 import {
   boardTermForYearDrop,
@@ -47,7 +47,9 @@ import {
 import { INSTITUTIONS } from "@/lib/institutions";
 import { selectedSchoolCourseHasFixedFullYearTerm } from "@/lib/catalog-eligibility";
 import { courseDisplayName, GRADE_LEVELS, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
-import type { Course, CourseStatus, GradeLevel, PlanCourse, SmccdCourse, StudentSettings } from "@/lib/models";
+import { resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
+import { coursePlanEvidence, type CoursePlanEvidence } from "@/lib/course-evidence";
+import type { Course, CourseRequirementMapping, CourseStatus, GradeLevel, GraduationRequirement, PlanCourse, SmccdCourse, SmccdHighSchoolEquivalency, SmccdProgram, SmccdProgramRequirement, SmccdRequirementCourse, StudentSettings, StudentSmccdGoal } from "@/lib/models";
 
 const TERM_CONTENT: Record<CourseBoardTerm, { label: string; description: string }> = {
   fall: { label: "Fall", description: "Full-year classes begin here" },
@@ -74,23 +76,31 @@ interface CourseKanbanProps {
   rows: PlanCourse[];
   courses: Course[];
   smccdCourses: SmccdCourse[];
+  equivalencies: SmccdHighSchoolEquivalency[];
+  requirements: GraduationRequirement[];
+  mappings: CourseRequirementMapping[];
+  goals: StudentSmccdGoal[];
+  programs: SmccdProgram[];
+  degreeRequirements: SmccdProgramRequirement[];
+  degreeRequirementCourses: SmccdRequirementCourse[];
   settings: StudentSettings;
   busy: boolean;
   onMove: (row: PlanCourse, placement: CoursePlacement) => boolean;
   onRemove: (id: string) => void;
-  onSort: () => void;
 }
 
 interface CourseCardProps {
   row: PlanCourse;
   courseMap: Map<string, Course>;
   smccdCourseMap: Map<string, SmccdCourse>;
+  equivalencies: SmccdHighSchoolEquivalency[];
   sectionLocked: boolean;
   continuation?: boolean;
   confirmingRemove: boolean;
   busy: boolean;
   onRemoveRequest: (id: string) => void;
   boardTerm: CourseBoardTerm;
+  evidence: CoursePlanEvidence[];
 }
 
 type SortableBindings = Pick<
@@ -98,11 +108,11 @@ type SortableBindings = Pick<
   "attributes" | "listeners" | "setNodeRef" | "setActivatorNodeRef" | "isDragging" | "isOver" | "transform" | "transition"
 >;
 
-function CourseCard(props: CourseCardProps) {
+const CourseCard = memo(function CourseCard(props: CourseCardProps) {
   if (props.continuation) return <CourseCardBody {...props} locked continuation />;
   const locked = props.sectionLocked || props.row.status === "completed" || Boolean(props.row.source_review_item_id);
   return <SortableCourseCard {...props} locked={locked} />;
-}
+});
 
 function SortableCourseCard(props: CourseCardProps & { locked: boolean }) {
   const sortable = useSortable({
@@ -126,13 +136,16 @@ function CourseCardBody({
   row,
   courseMap,
   smccdCourseMap,
+  equivalencies,
   confirmingRemove,
   busy,
   onRemoveRequest,
+  evidence,
   locked,
   continuation = false,
   drag
 }: CourseCardProps & { locked: boolean; drag?: SortableBindings }) {
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const {
     attributes,
     listeners,
@@ -150,9 +163,10 @@ function CourseCardBody({
   const weighted = isSmccd || row.is_weighted;
   const isPassFail = isPassFailPlanCourse(row);
   const title = courseDisplayName(row, courseMap);
+  const displayedCredits = resolvePlanCourseHighSchoolCredits(row, equivalencies).credits;
   const metadata = [
     termLabel(row.term),
-    row.credits ? formatCredits(Number(row.credits)) : "Credits need review",
+    displayedCredits ? formatCredits(displayedCredits) : "Credits need review",
     isSmccd ? null : catalogCourse?.subject ?? (row.requirement_area_override ? REQUIREMENT_LABELS[row.requirement_area_override] : "Custom"),
     weighted ? "Weighted" : null,
     isPassFail ? "Pass/fail, outside GPA" : null,
@@ -175,7 +189,6 @@ function CourseCardBody({
         {...(!locked && !confirmingRemove ? attributes : {})}
         {...(!locked && !confirmingRemove ? listeners : {})}
         aria-label={continuation ? `${title}, full-year course continuing in spring.` : locked || confirmingRemove ? undefined : `Move ${title}. Drag this card to another school year or term.`}
-        aria-describedby={!locked && !confirmingRemove ? "course-plan-drag-guide" : undefined}
       >
         {continuation
           ? <span className="kanban-continuation-mark" aria-hidden />
@@ -188,7 +201,9 @@ function CourseCardBody({
           <div className="kanban-course-meta">{metadata.map((item) => <span key={item}>{item}</span>)}</div>
           {row.status === "completed" && <small>{row.letter_grade ? `Final grade ${row.letter_grade}` : "Final grade not entered"}</small>}
         </div>
+        {!continuation && <button className="course-evidence-toggle" type="button" aria-label="Course evidence" title="Course evidence" aria-expanded={evidenceOpen} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setEvidenceOpen((open) => !open); }}><Info size={14} /></button>}
       </article>
+      {!continuation && evidenceOpen && <div className="course-evidence-panel">{evidence.map((item, index) => <div key={`${item.title}:${index}`}><span className={item.verified ? "verified" : "advisory"}>{item.verified ? "Verified" : "Advisory"}</span><p><strong>{item.title}</strong>{item.detail}</p></div>)}</div>}
       {!continuation && <button
         className={`icon-button course-delete-button ${confirmingRemove ? "confirm" : ""}`}
         type="button"
@@ -203,7 +218,6 @@ function CourseCardBody({
 
 function GradeTab({
   grade,
-  currentGrade,
   selected,
   activeRow,
   schoolYear,
@@ -211,14 +225,12 @@ function GradeTab({
   onSelect
 }: {
   grade: GradeLevel;
-  currentGrade: GradeLevel;
   selected: boolean;
   activeRow: PlanCourse | null;
   schoolYear: string;
   courseCount: number;
   onSelect: () => void;
 }) {
-  const state = grade < currentGrade ? "past" : grade === currentGrade ? "current" : "future";
   const acceptsActive = Boolean(activeRow);
   const { setNodeRef, isOver } = useDroppable({
     id: `grade-${grade}`,
@@ -227,7 +239,7 @@ function GradeTab({
   return <button
     ref={setNodeRef}
     id={`course-grade-${grade}`}
-    className={`${state} ${activeRow && acceptsActive ? "drag-available" : ""} ${isOver ? "drop-target" : ""}`}
+    className={`${activeRow && acceptsActive ? "drag-available" : ""} ${isOver ? "drop-target" : ""}`}
     type="button"
     role="tab"
     aria-selected={selected}
@@ -281,13 +293,24 @@ export default function CourseKanban(props: CourseKanbanProps) {
   );
   const courseMap = useMemo(() => new Map(props.courses.map((course) => [course.id, course])), [props.courses]);
   const smccdCourseMap = useMemo(() => new Map(props.smccdCourses.map((course) => [course.id, course])), [props.smccdCourses]);
+  const evidenceByRow = useMemo(() => new Map(props.rows.map((row) => [row.id, coursePlanEvidence({
+    row,
+    course: row.course_id ? courseMap.get(row.course_id) : null,
+    collegeCourse: row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null,
+    requirements: props.requirements,
+    mappings: props.mappings,
+    equivalencies: props.equivalencies,
+    goals: props.goals,
+    programs: props.programs,
+    degreeRequirements: props.degreeRequirements,
+    degreeRequirementCourses: props.degreeRequirementCourses
+  })])), [courseMap, props.degreeRequirementCourses, props.degreeRequirements, props.equivalencies, props.goals, props.mappings, props.programs, props.requirements, props.rows, smccdCourseMap]);
   const activeRow = useMemo(() => activeId ? props.rows.find((row) => row.id === activeId) ?? null : null, [activeId, props.rows]);
   const graduationYear = props.settings.graduation_year ?? new Date().getFullYear() + (12 - currentGrade);
   const selectedRows = useMemo(
     () => props.rows.filter((row) => row.grade_level === selectedGrade),
     [props.rows, selectedGrade]
   );
-  const selectedYearState = selectedGrade < currentGrade ? "past" : selectedGrade === currentGrade ? "current" : "future";
   const collisionDetection = useCallback<CollisionDetection>((args) => {
     const pointerCollisions = pointerWithin(args);
     if (pointerCollisions.length > 0) {
@@ -380,18 +403,11 @@ export default function CourseKanban(props: CourseKanbanProps) {
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
     >
-      <div className="course-plan-toolbar">
-        <p className={`course-plan-drag-guide ${activeRow ? "active" : ""}`} id="course-plan-drag-guide">{activeRow ? "Drop on a grade tab to move years, or on a term column to place it precisely." : "Drag from any open area of an editable card. Completed and transcript-backed courses stay locked."}</p>
-        <div className="course-plan-toolbar-actions">
-          <button className="secondary-button small" type="button" onClick={props.onSort} disabled={props.busy || props.rows.length < 2} title="Sort every grade with college courses first and pass/fail courses last"><SortAscending size={15} /> Sort courses</button>
-        </div>
-      </div>
       <div className={`course-grade-tabs ${activeRow ? "dragging-course" : ""}`} role="tablist" aria-label="High school year">
         {GRADE_LEVELS.map((grade) => {
           const courseCount = props.rows.filter((row) => row.grade_level === grade).length;
           return <GradeTab
             grade={grade}
-            currentGrade={currentGrade}
             selected={selectedGrade === grade}
             activeRow={activeRow}
             schoolYear={schoolYearForGrade(graduationYear, grade)}
@@ -405,13 +421,13 @@ export default function CourseKanban(props: CourseKanbanProps) {
         })}
       </div>
       <section className="course-year-board" aria-label="Four-year course plan">
-        <section className={`course-year ${selectedYearState}`} id={`course-year-${selectedGrade}`} role="tabpanel" aria-labelledby={`course-grade-${selectedGrade}`}>
+        <section className="course-year" id={`course-year-${selectedGrade}`} role="tabpanel" aria-labelledby={`course-grade-${selectedGrade}`}>
           <div className={`course-year-terms ${selectedGrade === 12 ? "two-terms" : ""}`}>{courseBoardTermsForGrade(selectedGrade).map((term) => {
             const termRows = selectedRows.filter((row) => courseAppearsInBoardTerm(row, term)).sort(compareCourseBoardRowsForTerm(term));
             const sortableTermRows = termRows.filter((row) => !(row.term === "full_year" && term === "spring"));
             return <TermLane grade={selectedGrade} term={term} rows={termRows} locked={false} key={term}>
               <SortableContext items={sortableTermRows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
-                {termRows.map((row) => <CourseCard row={row} boardTerm={term} courseMap={courseMap} smccdCourseMap={smccdCourseMap} sectionLocked={false} continuation={row.term === "full_year" && term === "spring"} confirmingRemove={confirmingRemoveId === row.id} busy={props.busy} onRemoveRequest={handleRemoveRequest} key={`${row.id}-${term}`} />)}
+                {termRows.map((row) => <CourseCard row={row} boardTerm={term} courseMap={courseMap} smccdCourseMap={smccdCourseMap} equivalencies={props.equivalencies} evidence={evidenceByRow.get(row.id) ?? []} sectionLocked={false} continuation={row.term === "full_year" && term === "spring"} confirmingRemove={confirmingRemoveId === row.id} busy={props.busy} onRemoveRequest={handleRemoveRequest} key={`${row.id}-${term}`} />)}
               </SortableContext>
             </TermLane>;
           })}</div>

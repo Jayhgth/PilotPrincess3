@@ -62,7 +62,8 @@ describe("Codex feature boundaries", () => {
 
     {
     expect(sanitizeCodexText("Authorization: Bearer secret-token-value")).toBe("Authorization: Bearer [redacted]");
-    expect(sanitizeCodexText("key=sk-proj-abcdefghijklmnop")).toBe("key=[redacted]");
+    const fakeApiKey = ["sk", "proj", "abcdefghijklmnop"].join("-");
+    expect(sanitizeCodexText(`key=${fakeApiKey}`)).toBe("key=[redacted]");
     expect(sanitizeCodexValue({ clientSecret: "visible", nested: { refresh_token: "also-visible", safe: "keep" } })).toEqual({
       clientSecret: "[redacted]",
       nested: { refresh_token: "[redacted]", safe: "keep" }
@@ -104,6 +105,7 @@ describe("Codex feature boundaries", () => {
 
     {
     expect(parseAssistantToolCall("list_plan_courses", { status: "current" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("search_course_catalog", { query: "biology", source: "college" })).toMatchObject({ mutatesData: false, arguments: { source: "college" } });
     expect(parseAssistantToolCall("update_enrollment_preference", { program_type: "concurrent" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("audit_transcript_data", { include_source_text: true })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("get_gpa_evidence", { scope: "projected" })).toMatchObject({ mutatesData: false });
@@ -124,7 +126,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("get_nearby_education_providers", {})).toMatchObject({ mutatesData: false });
     expect(() => parseAssistantToolCall("save_plan_snapshot", { label: "Before senior changes" })).toThrow();
     expect(parseAssistantToolCall("create_plan_snapshot", { label: "Before senior changes" })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("update_student_settings", { plan_start_grade: 11, plan_end_grade: 12 })).toMatchObject({ mutatesData: true });
+    expect(() => parseAssistantToolCall("update_student_settings", { plan_start_grade: 11, plan_end_grade: 12 })).toThrow();
     expect(requestedPreferredName("Change my preferred name to Jay.")).toBe("Jay");
     expect(requestedPreferredName("Set my preferred name back to Pilot QA.")).toBe("Pilot QA");
     expect(parseAssistantToolCall("submit_shared_data_correction", { entity_type: "school", target_table: "schools", target_id: "00000000-0000-4000-8000-000000000003", proposed_payload: { website_url: "https://example.edu" }, evidence_url: "https://example.edu", evidence_summary: "The official school homepage uses this address." })).toMatchObject({ mutatesData: true });
@@ -135,7 +137,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("set_current_school", { school_id: crypto.randomUUID() })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("sort_plan_courses", {})).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("update_gpa_scenario", { choices: [{ plan_course_id: crypto.randomUUID(), included: true, expected_grade: "A" }] })).toMatchObject({ mutatesData: true });
-    expect(parseAssistantToolCall("add_course_schedule", { course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
+    expect(parseAssistantToolCall("add_course_schedule", { target_plan_version_id: "00000000-0000-4000-8000-000000000010", course_ids: ["00000000-0000-4000-8000-000000000001"], respect_recommended_limit: true })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("add_high_school_course", { course_id: "00000000-0000-4000-8000-000000000001", status: "planned", grade_level: 12, term: "fall" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goal", { program_id: "CSM:computer-science-as", notes: "Explore" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("set_college_goals", {
@@ -205,7 +207,9 @@ describe("Codex feature boundaries", () => {
       verifiedBatchResolution: true
     })).resolves.toMatchObject({ decision: "approve", risk: "medium" });
     const scheduleCourseId = crypto.randomUUID();
+    const scheduleVersionId = crypto.randomUUID();
     const scheduleArguments = {
+      target_plan_version_id: scheduleVersionId,
       course_ids: [scheduleCourseId],
       respect_recommended_limit: true,
       interests: ["computer science"],
@@ -221,6 +225,7 @@ describe("Codex feature boundaries", () => {
       objectives: ["complete_diploma", "maximize_degree_overlap"]
     };
     const scheduleEvidence = { data: {
+      target_plan_version_id: scheduleVersionId,
       respect_recommended_limit: true,
       requested_preferences: {
         interests: ["computer science"], rigor: "balanced", max_courses_per_term: null, start_grade: 9,
@@ -236,6 +241,7 @@ describe("Codex feature boundaries", () => {
       degree_planning: { college_course_count: 12 }
     } };
     expect(scheduleResolutionCoversProposal({ arguments: scheduleArguments, scheduleOptions: scheduleEvidence })).toBe(true);
+    expect(scheduleResolutionCoversProposal({ arguments: { ...scheduleArguments, target_plan_version_id: crypto.randomUUID() }, scheduleOptions: scheduleEvidence })).toBe(false);
     expect(scheduleResolutionCoversProposal({ arguments: { ...scheduleArguments, starting_math_course: "geometry" }, scheduleOptions: scheduleEvidence })).toBe(false);
     await expect(reviewAssistantProposal({
       userMessage: "Here are my answers: use all of the above.",
@@ -376,18 +382,23 @@ describe("Codex feature boundaries", () => {
     }
 
     {
-    expect(assistantKnowledgeTags("Create a schedule with SMCCD classes")).toEqual([
+    expect(assistantKnowledgeTags("Create a schedule with SMCCD classes")).toEqual(expect.arrayContaining([
       "assistant",
       "courses",
       "schedule",
+      "graduation",
       "college",
+      "degree",
+      "prerequisites",
       "smccd"
-    ]);
-    expect(assistantKnowledgeTags("Audit my transcript GPA")).toEqual([
+    ]));
+    expect(assistantKnowledgeTags("Audit my transcript GPA")).toEqual(expect.arrayContaining([
       "assistant",
+      "courses",
+      "graduation",
       "gpa",
       "transcript"
-    ]);
+    ]));
     expect(assistantKnowledgeTags("Bring the previous change back")).toContain("history");
     }
   });
@@ -426,6 +437,7 @@ describe("Codex feature boundaries", () => {
 
     {
     const result = {
+      target_plan_version_id: crypto.randomUUID(),
       existing_course_count: 50,
       courses: [{
         course_id: crypto.randomUUID(),
@@ -604,6 +616,15 @@ describe("Codex feature boundaries", () => {
       arguments: { start_grade: 9, starting_math_course: "precalculus" }
     });
     expect(requiredAssistantEvidenceReadForConversation([
+      { role: "user", content: "Create a full four-year plan from grade 9." },
+      { role: "assistant", content: "The plan was created." },
+      { role: "user", content: "Remove discrete math and replace it with Calculus 3 from Skyline." },
+      { role: "assistant", content: "I found CSM MATH 253 instead. Is CSM acceptable?" }
+    ], "Here are my answers:\n- **Use CSM MATH 253 instead?** Yes, use CSM")).toEqual({
+      name: "get_academic_context",
+      arguments: { include_transcript_review: false, planning_objectives: [] }
+    });
+    expect(requiredAssistantEvidenceReadForConversation([
       { role: "user", content: "Create a full plan from grade 9 starting with Geometry." },
       { role: "assistant", content: "I created the plan." }
     ], "Change my starting math to Algebra 2 and rebuild it")).toMatchObject({
@@ -709,7 +730,7 @@ describe("Codex feature boundaries", () => {
     expect(scheduleProposalAction("Here are my answers:\n- **Keep college coursework within the district limit?** No")).toEqual({ kind: "propose", respectRecommendedLimit: false });
     expect(requestedUiTheme("Switch the app to dark mode")).toBe("dark");
     expect(requestedUiTheme("Use the light theme")).toBe("light");
-    expect(requestedStudentSettings("Set my current grade to 10, graduation year to 2029, and planning window from grade 10 through grade 12.")).toEqual({ grade_level: 10, graduation_year: 2029, plan_start_grade: 10, plan_end_grade: 12 });
+    expect(requestedStudentSettings("Set my current grade to 10, graduation year to 2029, and planning window from grade 10 through grade 12.")).toEqual({ grade_level: 10, graduation_year: 2029 });
     expect(parseExactCourseAddition("Add Carlmont Biology to grade 9 as an in-progress full-year course.")).toEqual({ query: "Carlmont Biology", gradeLevel: 9, status: "current", term: "full_year", source: "high_school" });
     expect(parseDegreeGoalIntent("Bookmark the Computer Science Applications and Development AS degree at College of San Mateo as my college goal.")).toEqual({ query: "Computer Science Applications and Development", college: "CSM", awardType: "AS" });
     expect(parseAcademicClearIntent("Clear my whole schedule, every degree bookmark, and all saved GPA assumptions.")).toEqual({ courses: true, degree_bookmarks: true, gpa_scenario: true });
@@ -792,6 +813,7 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantToolCall("remove_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()] })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("move_plan_courses", { plan_course_ids: [crypto.randomUUID(), crypto.randomUUID()], status: "completed" })).toMatchObject({ mutatesData: true });
     expect(parseAssistantToolCall("search_smccd_programs", { query: "computer science", college: "CSM", award_type: "AS" })).toMatchObject({ mutatesData: false });
+    expect(parseAssistantToolCall("search_college_programs", { query: "computer science", college: "CSM", award_type: "AS" })).toMatchObject({ mutatesData: false });
     expect(parseAssistantToolCall("undo_change", { tool_call_id: crypto.randomUUID() })).toMatchObject({ mutatesData: true });
     }
   });

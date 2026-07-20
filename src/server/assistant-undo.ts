@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
+import type { PlanVersion } from "@/lib/models";
+import { activateOwnedPlanVersion, archiveOwnedPlanVersion, renameOwnedPlanVersion, restoreOwnedPlanVersion } from "@/lib/plan-version-store";
 
 const rowSchema = z.record(z.string(), z.unknown());
 const undoSchema = z.discriminatedUnion("kind", [
@@ -9,7 +11,7 @@ const undoSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("restore_enrollment_preference"), row: rowSchema.nullable(), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_student_settings"), values: rowSchema, summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_school_selection"), school_id: z.uuid(), college_district_preference: rowSchema.nullable().optional(), summary: z.string().min(1).max(500) }),
-  z.object({ kind: z.literal("restore_college_district_preference"), row: rowSchema.nullable(), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("restore_college_district_preference"), row: rowSchema.nullable(), school_id: z.uuid(), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_gpa_scenario"), plan_course_ids: z.array(z.uuid()).min(1).max(160), rows: z.array(rowSchema).max(160), summary: z.string().min(1).max(500) }),
   z.object({ kind: z.literal("restore_smccd_completion"), college_code: z.enum(["CSM", "SKY", "CAN"]), area: z.enum(["7A", "information_literacy"]), completed: z.boolean(), summary: z.string().min(1).max(500) }),
   z.object({
@@ -34,17 +36,21 @@ const undoSchema = z.discriminatedUnion("kind", [
     goal_rows: z.array(rowSchema).max(200),
     gpa_rows: z.array(rowSchema).max(200),
     summary: z.string().min(1).max(500)
-  })
+  }),
+  z.object({ kind: z.literal("activate_plan_version"), version_id: z.uuid(), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("remove_created_plan_version"), previous_version_id: z.uuid(), created_version_id: z.uuid(), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("rename_plan_version"), version_id: z.uuid(), label: z.string().trim().min(1).max(100), summary: z.string().min(1).max(500) }),
+  z.object({ kind: z.literal("restore_archived_plan_version"), version_id: z.uuid(), summary: z.string().min(1).max(500) })
 ]);
 
 const RESTORABLE_KEYS = {
   plan_courses: ["id", "plan_version_id", "user_id", "course_id", "custom_course_name", "grade_level", "school_year", "term", "status", "credits", "college_units", "letter_grade", "is_weighted", "mapping_verified", "user_edited", "notes", "sort_order", "source_review_item_id", "smccd_course_id", "college_provider_code", "requirement_area_override"],
-  student_smccd_goals: ["id", "user_id", "program_id", "is_primary", "notes"],
+  student_smccd_goals: ["id", "user_id", "plan_id", "program_id", "is_primary", "notes"],
   student_prerequisite_clearances: ["id", "user_id", "target_course_id", "clearance_type", "status", "verification_status", "authority", "evidence_summary", "decided_at", "expires_at", "source_url", "verified_by", "verified_at"]
 } as const;
 
 const RESTORABLE_SETTING_KEYS = [
-  "preferred_name", "age", "grade_level", "graduation_year", "plan_start_grade", "plan_end_grade",
+  "preferred_name", "age", "grade_level", "graduation_year",
   "tracker_mode", "tracked_requirement_areas", "ai_model", "ai_reasoning_effort", "ui_theme"
 ] as const;
 
@@ -128,20 +134,20 @@ export async function undoAssistantToolCall(options: {
       if (undo.data.college_district_preference !== undefined) {
         if (undo.data.college_district_preference) {
           const row = pickRow(undo.data.college_district_preference, ["user_id", "district_code", "selection_method", "school_id_at_selection"], options.userId);
-          const preferenceRestoration = await options.supabase.from("student_college_district_preferences").upsert(row, { onConflict: "user_id" });
+          const preferenceRestoration = await options.supabase.from("student_college_district_preferences").upsert(row, { onConflict: "user_id,school_id_at_selection" });
           if (preferenceRestoration.error) throw new Error(preferenceRestoration.error.message);
         } else {
-          const preferenceRemoval = await options.supabase.from("student_college_district_preferences").delete().eq("user_id", options.userId);
+          const preferenceRemoval = await options.supabase.from("student_college_district_preferences").delete().eq("user_id", options.userId).eq("school_id_at_selection", undo.data.school_id);
           if (preferenceRemoval.error) throw new Error(preferenceRemoval.error.message);
         }
       }
     } else if (undo.data.kind === "restore_college_district_preference") {
       if (undo.data.row) {
         const row = pickRow(undo.data.row, ["user_id", "district_code", "selection_method", "school_id_at_selection"], options.userId);
-        const restoration = await options.supabase.from("student_college_district_preferences").upsert(row, { onConflict: "user_id" });
+        const restoration = await options.supabase.from("student_college_district_preferences").upsert(row, { onConflict: "user_id,school_id_at_selection" });
         if (restoration.error) throw new Error(restoration.error.message);
       } else {
-        const removal = await options.supabase.from("student_college_district_preferences").delete().eq("user_id", options.userId);
+        const removal = await options.supabase.from("student_college_district_preferences").delete().eq("user_id", options.userId).eq("school_id_at_selection", undo.data.school_id);
         if (removal.error) throw new Error(removal.error.message);
       }
     } else if (undo.data.kind === "restore_gpa_scenario") {
@@ -214,6 +220,19 @@ export async function undoAssistantToolCall(options: {
         p_gpa_rows: gpaRows
       });
       if (restoration.error) throw new Error(restoration.error.message);
+    } else if (undo.data.kind === "activate_plan_version") {
+      const active = await options.supabase.from("plan_versions").select("*, four_year_plans!inner(is_active)").eq("user_id", options.userId).eq("kind", "active").eq("four_year_plans.is_active", true).single();
+      if (active.error) throw new Error(active.error.message);
+      await activateOwnedPlanVersion(options.supabase, options.userId, active.data as unknown as PlanVersion, undo.data.version_id);
+    } else if (undo.data.kind === "remove_created_plan_version") {
+      const active = await options.supabase.from("plan_versions").select("*, four_year_plans!inner(is_active)").eq("user_id", options.userId).eq("kind", "active").eq("four_year_plans.is_active", true).single();
+      if (active.error) throw new Error(active.error.message);
+      await activateOwnedPlanVersion(options.supabase, options.userId, active.data as unknown as PlanVersion, undo.data.previous_version_id);
+      await archiveOwnedPlanVersion(options.supabase, options.userId, undo.data.created_version_id);
+    } else if (undo.data.kind === "rename_plan_version") {
+      await renameOwnedPlanVersion(options.supabase, options.userId, undo.data.version_id, undo.data.label);
+    } else if (undo.data.kind === "restore_archived_plan_version") {
+      await restoreOwnedPlanVersion(options.supabase, options.userId, undo.data.version_id);
     }
 
     const undoneAt = new Date().toISOString();

@@ -22,6 +22,7 @@ import {
 } from "@/server/transcript-review";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { transcriptMimeType } from "@/lib/transcript-file";
+import { COLLEGE_COURSE_SELECT, COLLEGE_DATA } from "@/lib/college-provider-contract";
 
 export const prerender = false;
 
@@ -202,7 +203,7 @@ export const POST: APIRoute = async ({ request }) => {
       .map((course) => course.course_code ? normalizeSmccdCourseCode(course.course_code) : null)
       .filter((value): value is string => Boolean(value)))];
     const smccdResult = collegeCourseCodes.length > 0
-      ? await auth.supabase.from("smccd_courses").select("*").in("course_code", collegeCourseCodes)
+      ? await auth.supabase.from(COLLEGE_DATA.courses).select(COLLEGE_COURSE_SELECT).in("course_code", collegeCourseCodes)
       : { data: [], error: null };
     if (smccdResult.error) throw smccdResult.error;
     const rows = transcriptReviewRows(

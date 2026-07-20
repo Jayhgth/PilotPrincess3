@@ -79,7 +79,7 @@ export default function CodexConnectionSetup({
     </fieldset>
 
     {value.enabled && <FadeContent className={styles.connectionDetails} duration={0.16}>
-      <div className={styles.managedNote}><Cpu size={18} /><span><strong>No API key needed</strong><small>The app manages the server connection. You choose the model and whether Pilot may use your selected context.</small></span></div>
+      <div className={styles.managedNote}><Cpu size={18} /><span><strong>No personal API key needed</strong><small>The deployment provides Pilot's server connection. You choose the model and whether Pilot may use your selected context.</small></span></div>
       <fieldset className={styles.modelList}>
         <legend>Model</legend>
         {AI_MODEL_OPTIONS.map((option) => <label className={value.model === option.value ? styles.selected : ""} key={option.value}>
@@ -91,7 +91,7 @@ export default function CodexConnectionSetup({
       <label className={styles.consent}>
         <input type="checkbox" checked={value.approved} onChange={(event) => update({ approved: event.target.checked, testedAt: event.target.checked ? value.testedAt : null })} />
         <ShieldCheck size={18} />
-        <span>I approve sending my messages and the academic records needed for my request to OpenAI Codex. Every proposed change receives an independent safety review before it can apply.</span>
+        <span>I approve sending my messages and the academic records needed for my request to OpenAI Codex. Changes use the same ownership, transcript-lock, prerequisite, and absolute-limit rules as the rest of the app and remain undoable.</span>
       </label>
       <div className={styles.testRow}>
         <button type="button" onClick={() => void testConnection()} disabled={testing || !value.approved}>

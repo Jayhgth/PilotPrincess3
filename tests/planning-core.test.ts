@@ -2,17 +2,19 @@ import { describe, expect, it } from "vitest";
 import { compareCourseBoardRowsForTerm, courseTermForBoardDrop, orderedCourseIdsForAutomaticBoardSort } from "@/lib/course-board";
 import { selectedSchoolCatalogEligibility, selectedSchoolCourseAllowsGradePlacement, selectedSchoolCourseGradeOptions, selectedSchoolCourseTermOptions } from "@/lib/catalog-eligibility";
 import type { Course, CourseRequirementMapping, GraduationRequirement, PlanCourse, SchoolPlanningProfile, SmccdCourse, SmccdHighSchoolEquivalency, StudentSettings } from "@/lib/models";
-import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad } from "@/lib/planning";
+import { appliedCreditBreakdown, calculateGpa, calculateRequirementProgress, generateSuggestedPlan, mathSequenceRankFromText, planCourseMovePatch, scheduleTermLoad, selectedPlanGrades } from "@/lib/planning";
 import { evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
+import { resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
+import { planVersionDifferences } from "@/lib/plan-versions";
 
 const settings: StudentSettings = {
   id: "student", school_id: "school", preferred_name: "Jay", age: 14, grade_level: 9, graduation_year: 2030,
   school_confirmed: true, school_selected_at: null, onboarding_complete: true, ai_enabled: true,
   ai_model: "gpt-5.6-luna", ai_reasoning_effort: "low",
   ui_theme: "light",
-  ai_connection_approved_at: null, ai_setup_tested_at: null, plan_start_grade: 9, plan_end_grade: 12,
+  ai_connection_approved_at: null, ai_setup_tested_at: null,
   tracker_mode: "full", tracked_requirement_areas: []
 };
 
@@ -85,14 +87,32 @@ const requirement: GraduationRequirement = {
 };
 
 describe("core academic planning contracts", () => {
-  it("moves manual courses between school years and semester lanes", () => {
+  it("always exposes the complete grade 9–12 plan", () => {
+    expect(selectedPlanGrades(settings)).toEqual([9, 10, 11, 12]);
+  });
+
+  it("compares complete plan strategies by stable course identity", () => {
+    const catalog = [course("algebra-two", "Algebra 2"), course("biology", "Biology", "Science")];
+    const baseRows = [
+      plan({ id: "base-math", course_id: "algebra-two", grade_level: 9, term: "full_year" }),
+      plan({ id: "base-biology", course_id: "biology", grade_level: 10, term: "full_year" })
+    ];
+    const targetRows = [
+      plan({ id: "target-math", course_id: "algebra-two", grade_level: 10, term: "full_year" }),
+      plan({ id: "target-custom", course_id: null, custom_course_name: "Robotics", grade_level: 11, term: "fall" })
+    ];
+    expect(planVersionDifferences({ baseRows, targetRows, courses: catalog, collegeCourses: [] })).toEqual([
+      expect.objectContaining({ sourceCourseId: "target-math", label: "Algebra 2", kind: "moved", previousPlacement: "Grade 9, full year", placement: "Grade 10, full year" }),
+      expect.objectContaining({ sourceCourseId: "target-custom", label: "Robotics", kind: "added" }),
+      expect.objectContaining({ sourceCourseId: "base-biology", label: "Biology", kind: "removed" })
+    ]);
+  });
+
+  it("supports manual course placement across years and terms", () => {
     expect(courseTermForBoardDrop("full_year", false, "year", "fall")).toBe("full_year");
     expect(courseTermForBoardDrop("full_year", false, "lane", "spring")).toBe("spring");
     expect(courseTermForBoardDrop("fall", false, "lane", "summer")).toBe("summer");
     expect(courseTermForBoardDrop("full_year", true, "lane", "spring")).toBe("full_year");
-  });
-
-  it("allows user placement when local grade and term availability need verification", () => {
     const ucopOnly = course("ucop-physics", "AP Physics C: Electricity and Magnetism", "Physics", []);
     expect(selectedSchoolCourseGradeOptions(ucopOnly, [9, 10, 11, 12])).toEqual([9, 10, 11, 12]);
     expect(selectedSchoolCourseAllowsGradePlacement(ucopOnly, 12)).toBe(true);
@@ -106,7 +126,7 @@ describe("core academic planning contracts", () => {
     expect(selectedSchoolCourseTermOptions(locallyVerified, 11)).toEqual(["full_year"]);
   });
 
-  it("recognizes one cohesive high-school and college math ladder", () => {
+  it("recognizes one cross-provider math ladder and its prerequisite ordering", () => {
     expect(["Algebra 1", "Geometry", "Algebra 2", "MATH 225 Path to Calculus", "MATH 251 Calculus with Analytic Geometry I", "MATH 252 Calculus with Analytic Geometry II", "MATH 253 Calculus with Analytic Geometry III"].map(mathSequenceRankFromText)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(["CSM:MATH 251", "SKY:MATH 252", "CAN:MATH 253"].map(mathSequenceRankFromText)).toEqual([5, 6, 7]);
     expect(mathSequenceRankFromText("MATH 270 Linear Algebra")).toBeNull();
@@ -125,9 +145,6 @@ describe("core academic planning contracts", () => {
       [dtechCalculus],
       { schoolSlug: "design-tech-high-school" }
     )).toEqual({ eligible: false, reason: "below_math_level" });
-  });
-
-  it("accepts completed prerequisites across SMCCD colleges without weakening planned-course ordering", () => {
     const skylineMath252 = smccdCourse("SKY", "MATH 252", "Calculus with Analytic Geometry II");
     const csmMath253 = smccdCourse("CSM", "MATH 253", "Calculus with Analytic Geometry III", ["MATH 252"]);
     const canadaMath253 = smccdCourse("CAN", "MATH 253", "Analytic Geometry and Calculus III", ["MATH 252"]);
@@ -252,6 +269,7 @@ describe("core academic planning contracts", () => {
     expect(progress.find((item) => item.requirement.area === "world_language")).toMatchObject({ completedCredits: 20, ruleWarnings: [] });
     expect(progress.find((item) => item.requirement.area === "social_science")).toMatchObject({ completedCredits: 30, ruleWarnings: [] });
     }
+
   });
 
   it("honors starting placement and school-specific planning profiles", () => {
@@ -335,12 +353,21 @@ describe("core academic planning contracts", () => {
     }
 
     {
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 3, storedHighSchoolCredits: null })).toMatchObject({ credits: 5, basis: "provisional_unit_conversion" });
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 4, storedHighSchoolCredits: null })).toMatchObject({ credits: 5, basis: "provisional_unit_conversion" });
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 5, storedHighSchoolCredits: null })).toMatchObject({ credits: 10, basis: "provisional_unit_conversion" });
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 2, storedHighSchoolCredits: null })).toMatchObject({ credits: 0, basis: "unresolved" });
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 3, storedHighSchoolCredits: 3 })).toMatchObject({ credits: 5, basis: "provisional_unit_conversion" });
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 3, storedHighSchoolCredits: null, equivalencyHighSchoolCredits: 10 })).toMatchObject({ credits: 10, basis: "verified_equivalency" });
+    expect(resolveCollegeHighSchoolCredits({ collegeUnits: 3, storedHighSchoolCredits: 5, storedHighSchoolCreditsAreOfficial: true, equivalencyHighSchoolCredits: 10 })).toMatchObject({ credits: 5, basis: "official_high_school_credits" });
+
     const summary = calculateGpa([
       plan({ id: "hs", letter_grade: "A", credits: 5, is_weighted: false }),
-      plan({ id: "college", letter_grade: "A", credits: 5, college_units: 3, smccd_course_id: "CSM:MATH 251", is_weighted: false })
+      plan({ id: "college", letter_grade: "A", credits: 0, college_units: 3, smccd_course_id: "CSM:MATH 251", is_weighted: false })
     ]);
     expect(summary.currentUnweighted).toBe(4);
     expect(summary.currentWeighted).toBe(4.5);
+    expect(summary.currentGradedCredits).toBe(10);
     }
 
     {
@@ -400,7 +427,7 @@ describe("core academic planning contracts", () => {
       college_course_posture: "supplemental", college_eligible_grades: [11, 12], always_high_school_areas: [], guidance_notes: [], created_at: "2026-07-15", updated_at: "2026-07-15",
       grade_rules: { "9": { minimum_high_school_courses: 2, target_total_courses: 2, required_areas: ["math"], preferred_course_names: ["Geometry"] } }
     };
-    const generated = generateSuggestedPlan({ ...settings, plan_end_grade: 9 }, [algebra, geometry, journalism], [], null, true, {
+    const generated = generateSuggestedPlan(settings, [algebra, geometry, journalism], [], null, true, {
       schoolSlug: "example-high", planningProfile: profile, requirements: [{ ...requirement, credits_required: 10, years_required: 1 }, electiveRequirement],
       mappings: [
         { id: "algebra-map", course_id: algebra.id, requirement_id: requirement.id, confidence: "verified", is_user_override: false },

@@ -304,6 +304,7 @@ export function transcriptPlanCourseDraft(
     ? resolveCollegeHighSchoolCredits({
         collegeUnits,
         storedHighSchoolCredits: payload.credits ?? matched?.credits,
+        storedHighSchoolCreditsAreOfficial: Number.isFinite(Number(payload.credits)) && Number(payload.credits) > 0,
         equivalencyHighSchoolCredits: equivalency?.high_school_credits,
         normalizedCourseCode: equivalency?.normalized_course_code ?? normalizeCollegeCourseCode(payload.course_code ?? payload.course_name)
       })
@@ -340,8 +341,11 @@ export function transcriptPlanCourseDraft(
       equivalency
         ? `The verified selected-school equivalency applies ${equivalency.high_school_credits} high-school credits to ${equivalency.high_school_equivalent}. Confirm current approval with a counselor.`
         : null,
-      creditResolution?.basis === "district_unit_conversion"
-        ? `${creditResolution.collegeUnits} college units are represented as ${creditResolution.credits} high-school credits for GPA calculations; confirm transcript credit with the selected high school.`
+      creditResolution?.basis === "provisional_unit_conversion"
+        ? `${creditResolution.collegeUnits} college units are represented as ${creditResolution.credits} provisional high-school credits for GPA and planning. The selected school must verify the final transcript award and graduation area.`
+        : null,
+      creditResolution?.basis === "unresolved" && (collegeUnits ?? 0) > 0
+        ? "No selected-school equivalency or supported provisional credit conversion was found."
         : null,
       isIntersession
         ? `Recognized from the transcript as a d.tech intersession pass/fail course${passedIntersession ? " with Personal Development credit" : "; no Personal Development credit is earned for an F"}.`

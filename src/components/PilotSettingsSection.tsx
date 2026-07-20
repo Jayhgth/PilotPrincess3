@@ -182,7 +182,7 @@ export default function PilotSettingsSection({
         />
         <SettingRow
           title="Connection test"
-          description={testMessage ?? "Verify the selected model and reasoning level. No API key is needed."}
+          description={testMessage ?? "Verify the deployment's Pilot connection for the selected model and reasoning level."}
           control={<button className="secondary-button small" type="button" disabled={!draft.enabled || !draft.approved || testing} onClick={() => void testConnection()}>{testing ? "Testing" : draft.testedAt ? "Test again" : "Test"}</button>}
         />
       </div>

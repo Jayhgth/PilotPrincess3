@@ -39,6 +39,8 @@ export function scheduleResolutionCoversProposal(input: {
   const data = record(input.scheduleOptions?.data);
   if (!data || !scheduleResultIsComplete(data)) return false;
 
+  if (String(input.arguments.target_plan_version_id ?? "") !== String(data.target_plan_version_id ?? "")) return false;
+
   const proposedIds = normalizedStringArray(input.arguments.course_ids);
   const resolvedIds = records(data.courses).map((course) => String(course.course_id ?? "")).filter(Boolean).sort();
   if (JSON.stringify(proposedIds) !== JSON.stringify(resolvedIds)) return false;

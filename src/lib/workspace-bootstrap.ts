@@ -47,6 +47,7 @@ export interface WorkspaceBootstrap {
   plan: FourYearPlan | null;
   school: School | null;
   school_support: SchoolSupportReadiness;
+  school_planning_profile: SchoolPlanningProfile | null;
   active_version: PlanVersion | null;
   sources: OfficialSource[];
   courses: Course[];
@@ -71,7 +72,6 @@ export interface WorkspaceBootstrap {
 }
 
 export interface AssistantWorkspaceBootstrap extends WorkspaceBootstrap {
-  school_planning_profile: SchoolPlanningProfile | null;
   transcript_sources: OfficialSource[];
   transcript_review_items: CatalogReviewItem[];
   prerequisite_clearances: SmccdPrerequisiteClearance[];
@@ -116,6 +116,7 @@ export function normalizeWorkspaceBootstrap(value: unknown): WorkspaceBootstrap 
     school_support: snapshot.school_support && typeof snapshot.school_support === "object"
       ? snapshot.school_support
       : { level: "discovery", catalog_supported: false, diploma_supported: false, planning_supported: false, last_source_update: null },
+    school_planning_profile: snapshot.school_planning_profile ?? null,
     active_version: snapshot.active_version ?? null,
     enrollment_preference: snapshot.enrollment_preference ?? null,
     college_district_preference: snapshot.college_district_preference ?? null,

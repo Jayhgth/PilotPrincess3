@@ -1775,6 +1775,162 @@ input[type="range"] { height: 42px; border: 0; background: transparent; box-shad
 .course-workspace-tabs button:nth-child(3).active { color: var(--dual-ui); }
 .dual-enrollment-tabs button.active { color: var(--dual-ui); }
 
+.plan-version-bar {
+  display: flex;
+  min-height: 48px;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.plan-version-field { display: grid; min-width: min(320px, 42vw); gap: 4px; }
+.plan-version-label { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--ink-faint); font-size: 11px; font-weight: 650; }
+.plan-version-label > span:last-child { font-weight: 500; }
+.plan-version-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+.plan-version-trigger:hover,
+.plan-version-trigger[data-popup-open] { border-color: var(--accent); background: var(--surface-muted); }
+.plan-version-trigger:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent); outline-offset: 1px; }
+.plan-version-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-version-trigger > svg { flex: 0 0 auto; color: var(--ink-faint); }
+.plan-version-positioner { z-index: 120; outline: 0; }
+.plan-version-popup {
+  width: max(var(--anchor-width), 300px);
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--surface-raised);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--ink) 16%, transparent);
+  padding: 5px;
+}
+.plan-version-popup-heading { padding: 5px 7px; color: var(--ink-faint); font-size: 11px; font-weight: 650; }
+.plan-version-popup-heading.backup { margin-top: 4px; border-top: 1px solid var(--line); padding-top: 9px; }
+.plan-version-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; border-radius: 6px; }
+.plan-version-option:has([data-highlighted]) { background: var(--surface-muted); }
+.plan-version-option-open,
+.plan-version-option-delete,
+.plan-version-backup { border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; }
+.plan-version-option-open { display: grid; min-width: 0; min-height: 48px; cursor: default; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 6px; padding: 7px 8px 7px 5px; text-align: left; }
+.plan-version-option-open > span:last-child { display: grid; min-width: 0; gap: 1px; }
+.plan-version-option-open strong { overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.plan-version-option-open small { color: var(--ink-faint); font-size: 10px; }
+.plan-version-option-check { display: grid; place-items: center; color: var(--accent); }
+.plan-version-option-delete { display: inline-flex; min-width: 64px; cursor: default; align-items: center; justify-content: center; gap: 5px; border-radius: 6px; color: var(--danger); padding: 0 7px; font-size: 10px; font-weight: 650; }
+.plan-version-option-delete[data-highlighted] { background: var(--danger-soft); }
+.plan-version-option-delete.confirm { background: var(--danger-soft); }
+.plan-version-option-delete:disabled { opacity: .45; }
+.plan-version-backup { display: block; width: 100%; min-height: 34px; overflow: hidden; border-radius: 6px; padding: 6px 8px; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.plan-version-backup[data-highlighted] { background: var(--surface-muted); }
+.plan-version-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+.plan-version-menu { position: relative; }
+.plan-version-menu > summary {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  list-style: none;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-soft);
+}
+.plan-version-menu > summary::-webkit-details-marker { display: none; }
+.plan-version-menu[open] > summary { border-color: var(--accent); color: var(--ink); }
+.plan-version-menu > div {
+  position: absolute;
+  z-index: 24;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 190px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 12%, transparent);
+  padding: 4px;
+}
+.plan-version-menu > div button { display: flex; min-height: 34px; align-items: center; gap: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); padding: 6px 8px; font: inherit; font-size: 12px; text-align: left; }
+.plan-version-menu > div button:hover { background: var(--surface-muted); }
+.plan-version-menu > div button.danger { color: var(--danger); }
+.plan-version-message { display: flex; min-height: 34px; align-items: center; gap: 10px; margin: -4px 0 12px; border-left: 2px solid var(--success); background: var(--success-soft); color: var(--ink-soft); padding: 7px 10px; font-size: 12px; }
+.plan-version-message.error { border-left-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+.plan-version-message button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; }
+
+.modal-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; overflow-y: auto; place-items: center; background: color-mix(in srgb, var(--bg) 30%, transparent); padding: 24px; }
+.plan-version-dialog { display: grid; width: min(100%, 520px); gap: 18px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-raised); box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 14%, transparent); padding: 20px; }
+.plan-version-dialog.compact { width: min(100%, 430px); }
+.plan-version-dialog.compare { width: min(100%, 680px); }
+.plan-version-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.plan-version-dialog > header h2 { margin: 0; font-size: 17px; letter-spacing: -0.02em; }
+.plan-version-dialog > header p { margin: 4px 0 0; color: var(--ink-soft); font-size: 12px; }
+.plan-version-dialog > header > button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--ink-soft); }
+.plan-version-dialog > header > button:hover { background: var(--surface-muted); color: var(--ink); }
+.plan-version-dialog .field, .compare-plan-picker { display: grid; gap: 5px; }
+.plan-version-dialog .field > span, .compare-plan-picker > span { color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+.plan-version-dialog input, .plan-version-dialog select { min-height: 40px; font-size: 13px; }
+.plan-version-dialog fieldset { display: grid; gap: 9px; margin: 0; border: 0; padding: 0; }
+.plan-version-dialog legend { margin-bottom: 7px; color: var(--ink-soft); font-size: 12px; font-weight: 650; }
+.plan-version-dialog fieldset label { display: flex; align-items: center; justify-content: flex-start; gap: 8px; font-size: 13px; }
+.plan-version-dialog fieldset input[type="radio"] { width: 16px; height: 16px; min-height: 0; flex: 0 0 16px; margin: 0; }
+.plan-version-dialog > footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.plan-comparison-table { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; }
+.plan-comparison-table > div { display: grid; min-height: 42px; grid-template-columns: minmax(150px, 1.2fr) minmax(100px, 1fr) minmax(100px, 1fr); align-items: center; border-top: 1px solid var(--line); }
+.plan-comparison-table > div:first-child { border-top: 0; }
+.plan-comparison-table > div > * { min-width: 0; padding: 9px 12px; font-size: 12px; }
+.plan-comparison-table > div > * + * { border-left: 1px solid var(--line); }
+.plan-comparison-head { background: var(--surface-muted); }
+.plan-comparison-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-comparison-table > div:not(.plan-comparison-head) > span { color: var(--ink-soft); }
+.plan-comparison-table > div:not(.plan-comparison-head) > strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.plan-comparison-degrees,
+.plan-comparison-differences { display: grid; gap: 8px; }
+.plan-comparison-degrees h3,
+.plan-comparison-differences h3 { margin: 0; font-size: 13px; }
+.plan-comparison-degrees > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 7px 2px; font-size: 12px; }
+.plan-comparison-degrees > div > strong { text-align: right; font-variant-numeric: tabular-nums; }
+.plan-comparison-differences > header p { margin: 3px 0 0; color: var(--ink-soft); font-size: 12px; }
+.plan-comparison-differences > div { overflow: hidden; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.plan-comparison-differences label { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 8px 10px; }
+.plan-comparison-differences label:last-child { border-bottom: 0; }
+.plan-comparison-differences label.removed { color: var(--ink-faint); }
+.plan-comparison-differences label input { width: 15px; height: 15px; min-height: 0; margin: 0; }
+.plan-comparison-differences label > span:last-child { display: grid; gap: 1px; }
+.plan-comparison-differences label strong { font-size: 12px; }
+.plan-comparison-differences label small { color: var(--ink-faint); font-size: 10px; }
+.plan-version-dialog .field > small { color: var(--ink-faint); font-size: 11px; }
+
+@media (max-width: 760px) {
+  .plan-version-bar { flex-wrap: wrap; align-items: end; }
+  .plan-version-field { min-width: 0; flex: 1 1 220px; }
+  .plan-version-count { display: none; }
+  .plan-version-actions { width: 100%; margin-left: 0; }
+  .plan-version-actions .secondary-button { flex: 1; }
+  .modal-backdrop { align-items: end; padding: 12px; }
+  .plan-version-dialog { max-height: calc(100vh - 24px); overflow-y: auto; }
+  .plan-comparison-table { overflow-x: auto; }
+  .plan-comparison-table > div { min-width: 520px; }
+}
+
 .coverage-segments { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; gap: 4px; width: 100%; }
 .coverage-segments span { height: 7px; border-radius: 2px; background: var(--surface-muted); }
 .coverage-segments span.complete { background: var(--success); }
@@ -2350,23 +2506,16 @@ textarea,
 }
 
 /* Four-year course schedule and rule-aware graduation */
-.course-plan-toolbar { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.course-plan-toolbar-actions { display: flex; flex: 0 0 auto; gap: 7px; }
-.course-plan-drag-guide { display: flex; min-width: 0; align-items: center; gap: 6px; margin: 0; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
-.course-plan-drag-guide.active { color: var(--accent); font-weight: 650; }
 .course-grade-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 12px; border-bottom: 1px solid var(--line-strong); }
 .course-grade-tabs button { display: grid; min-width: 0; gap: 2px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--ink); opacity: 1; padding: 9px 12px 8px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease, box-shadow 120ms ease; }
 .course-grade-tabs button:hover { background: var(--surface-muted); color: var(--ink); }
 .course-grade-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 34%, transparent); outline-offset: -3px; }
 .course-grade-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
-.course-grade-tabs button.past { color: var(--ink-faint); opacity: .48; }
-.course-grade-tabs button.past[aria-selected="true"] { opacity: .66; }
 .course-grade-tabs.dragging-course button.drag-available { border-bottom-color: color-mix(in srgb, var(--accent) 22%, var(--line-strong)); background: color-mix(in srgb, var(--accent-soft) 24%, transparent); }
 .course-grade-tabs.dragging-course button.drag-available:hover,
 .course-grade-tabs.dragging-course button.drag-available.drop-target { border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface)); color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent); }
 .course-grade-tabs span { overflow: hidden; font-size: var(--type-body); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .course-grade-tabs small { overflow: hidden; color: var(--ink-soft); font-size: var(--type-supporting); font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.course-grade-tabs button.past small { color: currentColor; }
 .course-year-board { display: grid; gap: 14px; }
 .course-year { overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
 .course-year-terms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2391,7 +2540,7 @@ textarea,
 .kanban-course.confirming-remove { border-color: color-mix(in srgb, var(--danger) 48%, var(--line)); }
 .kanban-course.locked { background: color-mix(in srgb, var(--surface-raised) 84%, var(--surface-muted)); }
 .kanban-course.completed { opacity: .42; }
-.kanban-course-main { display: grid; min-height: 70px; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 7px; padding: 9px 40px 9px 7px; text-align: left; }
+.kanban-course-main { position: relative; display: grid; min-height: 70px; grid-template-columns: 28px minmax(0, 1fr); align-items: start; gap: 7px; padding: 9px 40px 9px 7px; text-align: left; }
 .kanban-course.draggable .kanban-course-main { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .kanban-course.draggable .kanban-course-main:active { cursor: grabbing; }
 .kanban-course.confirming-remove .kanban-course-main { padding-right: 96px; }
@@ -2414,6 +2563,14 @@ textarea,
 .kanban-course-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: 3px 10px; color: var(--ink-faint); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
 .kanban-course-meta > span { display: inline-flex; align-items: center; }
 .kanban-course-copy > small { color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.course-evidence-toggle { position: absolute; z-index: 2; right: 8px; bottom: 6px; display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: transparent; color: var(--ink-faint); padding: 0; font: inherit; }
+.course-evidence-toggle:hover, .course-evidence-toggle[aria-expanded="true"] { background: var(--surface-muted); color: var(--ink); }
+.course-evidence-panel { display: grid; gap: 8px; border-top: 1px solid var(--line); padding: 9px 11px 10px; background: color-mix(in srgb, var(--surface-muted) 56%, transparent); }
+.course-evidence-panel > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: start; gap: 8px; }
+.course-evidence-panel > div > span { margin-top: 1px; color: var(--ink-faint); font-size: 9px; font-weight: 750; letter-spacing: .02em; text-transform: uppercase; }
+.course-evidence-panel > div > span.verified { color: var(--success); }
+.course-evidence-panel p { display: grid; gap: 1px; margin: 0; color: var(--ink-soft); font-size: 10px; line-height: 1.4; }
+.course-evidence-panel p strong { color: var(--ink); font-size: 11px; }
 .kanban-course .course-delete-button { position: absolute; z-index: 2; top: 8px; right: 8px; width: 32px; opacity: .64; color: var(--danger); transition: width 140ms ease, background-color 140ms ease, color 140ms ease, opacity 140ms ease; }
 .kanban-course:hover .course-delete-button,
 .kanban-course .course-delete-button:focus-visible,
@@ -2444,8 +2601,6 @@ textarea,
   .smccd-program-toolbar { width: 100%; justify-content: space-between; }
   .smccd-ge-page-heading select { width: 100%; }
   .course-grade-tabs { overflow-x: auto; grid-template-columns: repeat(4, minmax(112px, 1fr)); }
-  .course-plan-toolbar { align-items: stretch; flex-direction: column; }
-  .course-plan-toolbar-actions { justify-content: flex-end; }
   .course-year-terms { grid-template-columns: 1fr; }
   .course-term-lane { border-top: 1px solid var(--line); border-left: 0; }
   .course-term-lane:first-child { border-top: 0; }

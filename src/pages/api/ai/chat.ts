@@ -20,7 +20,15 @@ export const prerender = false;
 const requestSchema = z.object({
   conversationId: z.uuid(),
   turnId: z.uuid().optional(),
-  message: z.string().trim().max(4000)
+  messageId: z.uuid(),
+  message: z.string().trim().max(4000),
+  attachments: z.array(z.object({
+    id: z.uuid(),
+    name: z.string().trim().min(1).max(120),
+    mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+    sizeBytes: z.number().int().positive().max(10 * 1024 * 1024),
+    storagePath: z.string().trim().min(1).max(500)
+  })).max(MAX_ASSISTANT_ATTACHMENTS).default([])
 });
 
 function boundedToolEvidence(value: unknown, depth = 0): unknown {
@@ -37,28 +45,51 @@ function boundedToolEvidence(value: unknown, depth = 0): unknown {
 export const POST: APIRoute = async ({ request }) => {
   const auth = await authenticateRequest(request);
   if (!auth) return jsonError("Authentication required.", 401);
-  const form = await request.formData().catch(() => null);
-  if (!form) return jsonError("Invalid assistant request.", 400);
-  const files = form.getAll("images").filter((entry): entry is File => entry instanceof File);
-  const parsed = requestSchema.safeParse({
-    conversationId: String(form.get("conversationId") ?? ""),
-    turnId: form.get("turnId") ? String(form.get("turnId")) : undefined,
-    message: String(form.get("message") ?? "")
-  });
+  const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "Invalid assistant request.", 400);
-  if (!parsed.data.message && !files.length) return jsonError("Add a message or an image.", 400);
-  if (files.length > MAX_ASSISTANT_ATTACHMENTS) return jsonError(`Add no more than ${MAX_ASSISTANT_ATTACHMENTS} images.`, 400);
-  for (const file of files) {
-    const validationError = validateAssistantImage(file);
+  if (!parsed.data.message && !parsed.data.attachments.length) return jsonError("Add a message or an image.", 400);
+  for (const attachment of parsed.data.attachments) {
+    const validationError = validateAssistantImage({
+      name: attachment.name,
+      type: attachment.mimeType,
+      size: attachment.sizeBytes
+    });
     if (validationError) return jsonError(validationError, 400);
+    const expectedPath = `${auth.user.id}/${parsed.data.conversationId}/${parsed.data.messageId}/${attachment.id}-${safeAssistantImageName(attachment.name)}`;
+    if (attachment.storagePath !== expectedPath) return jsonError("Invalid assistant attachment path.", 400);
   }
+  const uploadedPaths = parsed.data.attachments.map((attachment) => attachment.storagePath);
+  const cleanupUnclaimedUploads = async () => {
+    if (uploadedPaths.length) await auth.supabase.storage.from("ai-attachments").remove(uploadedPaths).catch(() => undefined);
+  };
   const preferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
-  if (!preferences.enabled || !preferences.approvedAt) return jsonError("Connect and approve Pilot Assistant before starting a conversation.", 403);
+  if (!preferences.enabled || !preferences.approvedAt) {
+    await cleanupUnclaimedUploads();
+    return jsonError("Connect and approve Pilot Assistant before starting a conversation.", 403);
+  }
   const conversationResult = await auth.supabase.from("ai_conversations").select("*").eq("id", parsed.data.conversationId).eq("user_id", auth.user.id).single();
-  if (conversationResult.error || !conversationResult.data) return jsonError("Conversation not found.", 404);
+  if (conversationResult.error || !conversationResult.data) {
+    await cleanupUnclaimedUploads();
+    return jsonError("Conversation not found.", 404);
+  }
+
+  const rateLimitResult = await auth.supabase.rpc("acquire_assistant_turn_v1");
+  if (rateLimitResult.error) {
+    await cleanupUnclaimedUploads();
+    return jsonError("Pilot request protection is unavailable. Try again shortly.", 503);
+  }
+  const rateLimit = Array.isArray(rateLimitResult.data) ? rateLimitResult.data[0] : rateLimitResult.data;
+  if (!rateLimit?.allowed) {
+    await cleanupUnclaimedUploads();
+    const retryAfter = Math.max(1, Number(rateLimit?.retry_after_seconds ?? 60));
+    const response = jsonError("Too many Pilot requests. Wait a moment and try again.", 429);
+    response.headers.set("retry-after", String(retryAfter));
+    return response;
+  }
 
   const turnId = parsed.data.turnId ?? crypto.randomUUID();
   const userMessageResult = await auth.supabase.from("ai_messages").insert({
+    id: parsed.data.messageId,
     conversation_id: parsed.data.conversationId,
     user_id: auth.user.id,
     turn_id: turnId,
@@ -66,41 +97,22 @@ export const POST: APIRoute = async ({ request }) => {
     content: parsed.data.message,
     page_context: {}
   }).select("*").single();
-  if (userMessageResult.error) return jsonError(userMessageResult.error.message, 500);
+  if (userMessageResult.error) {
+    await cleanupUnclaimedUploads();
+    return jsonError(userMessageResult.error.message, 500);
+  }
 
-  const uploadedPaths: string[] = [];
-  const attachmentRows: Array<{
-    id: string;
-    conversation_id: string;
-    message_id: string;
-    user_id: string;
-    name: string;
-    mime_type: string;
-    size_bytes: number;
-    storage_path: string;
-  }> = [];
+  const attachmentRows = parsed.data.attachments.map((attachment) => ({
+    id: attachment.id,
+    conversation_id: parsed.data.conversationId,
+    message_id: userMessageResult.data.id,
+    user_id: auth.user.id,
+    name: attachment.name,
+    mime_type: attachment.mimeType,
+    size_bytes: attachment.sizeBytes,
+    storage_path: attachment.storagePath
+  }));
   try {
-    for (const file of files) {
-      const id = crypto.randomUUID();
-      const storagePath = `${auth.user.id}/${parsed.data.conversationId}/${userMessageResult.data.id}/${id}-${safeAssistantImageName(file.name)}`;
-      const upload = await auth.supabase.storage.from("ai-attachments").upload(storagePath, file, {
-        cacheControl: "3600",
-        contentType: file.type,
-        upsert: false
-      });
-      if (upload.error) throw upload.error;
-      uploadedPaths.push(storagePath);
-      attachmentRows.push({
-        id,
-        conversation_id: parsed.data.conversationId,
-        message_id: userMessageResult.data.id,
-        user_id: auth.user.id,
-        name: file.name.slice(0, 120),
-        mime_type: file.type,
-        size_bytes: file.size,
-        storage_path: storagePath
-      });
-    }
     if (attachmentRows.length) {
       const attachmentResult = await auth.supabase.from("ai_message_attachments").insert(attachmentRows);
       if (attachmentResult.error) throw attachmentResult.error;

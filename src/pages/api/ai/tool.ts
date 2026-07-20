@@ -2,7 +2,7 @@ import type { APIRoute } from "astro";
 import { z } from "zod";
 import { authenticateRequest, jsonError } from "@/lib/supabase/server";
 import { academicPlanEvidenceCoversProposal, autoReviewResultSchema, reviewAssistantProposal, scheduleResolutionCoversProposal } from "@/server/ai-auto-review";
-import { executeAssistantMutationTool, parseAssistantToolCall } from "@/server/ai-tools";
+import { executeAssistantMutationTool, safeParseAssistantToolCall } from "@/server/ai-tools";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { affectedWorkspaceDomains, mutationReviewMode } from "@/lib/app-capabilities";
@@ -41,7 +41,20 @@ export const POST: APIRoute = async ({ request }) => {
 
   const preferences = await loadUserAiPreferences(auth.supabase, auth.user.id);
   if (!preferences.enabled || !preferences.approvedAt) return jsonError("Reconnect Pilot Assistant before applying this change.", 403);
-  const validated = parseAssistantToolCall(toolCall.tool_name, toolCall.arguments);
+  const validation = safeParseAssistantToolCall(toolCall.tool_name, toolCall.arguments);
+  if (!validation.success) {
+    const completedAt = new Date().toISOString();
+    const message = `Pilot produced an invalid change request: ${validation.error}`;
+    const { data } = await auth.supabase.from("ai_tool_calls")
+      .update({ status: "failed", result: { error: message }, completed_at: completedAt })
+      .eq("id", toolCall.id)
+      .eq("status", "pending_confirmation")
+      .select("*")
+      .maybeSingle();
+    if (data) await recordEvent("tool.failed", await nextSequence(), { toolCall: data, error: message });
+    return jsonError(message, 400, { toolCall: data ?? toolCall });
+  }
+  const validated = validation.data;
   if (!validated.mutatesData) return jsonError("This tool does not require review.", 400);
 
   let review: z.infer<typeof autoReviewResultSchema>;

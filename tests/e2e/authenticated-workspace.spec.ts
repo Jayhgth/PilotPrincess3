@@ -139,6 +139,16 @@ test.describe("authenticated student workspace", () => {
 
     await expect(page.getByRole("heading", { name: "Good to see you, Codex QA" })).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "Courses", exact: true }).click();
+    const planPicker = page.getByRole("button", { name: "Plan: New plan", exact: true });
+    await expect(planPicker).toBeVisible({ timeout: 15_000 });
+    await planPicker.click();
+    await expect(page.getByRole("menuitem").filter({ hasText: "New plan" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "New plan", exact: true }).click();
+    const newPlanDialog = page.getByRole("dialog", { name: "New four-year plan" });
+    await expect(newPlanDialog.getByLabel("Copy New plan", { exact: true })).toBeChecked();
+    await expect(newPlanDialog.getByLabel("Start with an empty four-year plan", { exact: true })).toBeVisible();
+    await newPlanDialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByText("English 3 Honors", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Advanced Statistics Honors", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("D.Lab: Innovation Diploma Honors", { exact: true }).first()).toBeVisible();

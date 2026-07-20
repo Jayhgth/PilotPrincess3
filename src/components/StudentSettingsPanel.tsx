@@ -1,10 +1,12 @@
 import { CheckIcon as Check } from "@phosphor-icons/react";
+import { MagnifyingGlassIcon as MagnifyingGlass } from "@phosphor-icons/react/dist/csr/MagnifyingGlass";
 import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState, type SyntheticEvent } from "react";
 import AccountLifecycleControls from "@/components/AccountLifecycleControls";
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import PilotSettingsSection from "@/components/PilotSettingsSection";
 import type { CollegeDistrict, GradeLevel, NearbyCollegeDistrict, School, StudentCollegeDistrictPreference, StudentSettings } from "@/lib/models";
+import type { SchoolSupportReadiness } from "@/lib/workspace-bootstrap";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import styles from "./StudentSettingsPanel.module.css";
 
@@ -16,17 +18,16 @@ export type StudentSettingsPatch = Partial<Pick<
   | "age"
   | "grade_level"
   | "graduation_year"
-  | "plan_start_grade"
-  | "plan_end_grade"
 >>;
 
-type StudentSettingsSection = "general" | "planning" | "pilot";
+type StudentSettingsSection = "general" | "pilot";
 
 interface StudentSettingsPanelProps {
   section: StudentSettingsSection;
   session: Session;
   settings: StudentSettings;
   school: School;
+  schoolSupport: SchoolSupportReadiness;
   busy?: boolean;
   onSave: (patch: StudentSettingsPatch) => void | Promise<void>;
   onAiPreferencesChanged: () => void | Promise<void>;
@@ -39,8 +40,6 @@ interface SettingsDraft {
   age: number | null;
   gradeLevel: GradeLevel | null;
   graduationYear: number | null;
-  planStartGrade: GradeLevel | null;
-  planEndGrade: GradeLevel | null;
 }
 
 function settingsDraft(settings: StudentSettings): SettingsDraft {
@@ -48,9 +47,7 @@ function settingsDraft(settings: StudentSettings): SettingsDraft {
     preferredName: settings.preferred_name,
     age: settings.age,
     gradeLevel: settings.grade_level as GradeLevel | null,
-    graduationYear: settings.graduation_year,
-    planStartGrade: settings.plan_start_grade,
-    planEndGrade: settings.plan_end_grade
+    graduationYear: settings.graduation_year
   };
 }
 
@@ -59,6 +56,7 @@ export default function StudentSettingsPanel({
   session,
   settings,
   school,
+  schoolSupport,
   busy = false,
   onSave,
   onAiPreferencesChanged,
@@ -74,14 +72,16 @@ export default function StudentSettingsPanel({
   const [districtPreference, setDistrictPreference] = useState<StudentCollegeDistrictPreference | null>(null);
   const [selectedDistrictCode, setSelectedDistrictCode] = useState("");
   const [districtStatus, setDistrictStatus] = useState<"loading" | "idle" | "saving" | "saved">("loading");
+  const [schoolQuery, setSchoolQuery] = useState("");
+  const [schoolResults, setSchoolResults] = useState<Array<Pick<School, "id" | "name" | "district_name" | "city" | "governance_type" | "website_url"> & { support?: SchoolSupportReadiness }>>([]);
+  const [schoolSearchBusy, setSchoolSearchBusy] = useState(false);
+  const [pendingSchool, setPendingSchool] = useState<(typeof schoolResults)[number] | null>(null);
+  const [switchingSchool, setSwitchingSchool] = useState(false);
 
-  const dirty = section === "general"
-    ? draft.preferredName !== settings.preferred_name
-      || draft.age !== settings.age
-      || draft.gradeLevel !== settings.grade_level
-      || draft.graduationYear !== settings.graduation_year
-    : draft.planStartGrade !== settings.plan_start_grade
-      || draft.planEndGrade !== settings.plan_end_grade;
+  const dirty = draft.preferredName !== settings.preferred_name
+    || draft.age !== settings.age
+    || draft.gradeLevel !== settings.grade_level
+    || draft.graduationYear !== settings.graduation_year;
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -102,7 +102,7 @@ export default function StudentSettingsPanel({
     void Promise.all([
       supabase.from("college_districts").select("district_code,name,website_url,policy_provider_code,status,source_url,source_updated_at").eq("status", "active").order("name"),
       supabase.rpc("nearby_college_districts", { target_school_id: school.id, result_limit: 8 }),
-      supabase.from("student_college_district_preferences").select("user_id,district_code,selection_method,school_id_at_selection,updated_at").eq("user_id", session.user.id).maybeSingle()
+      supabase.from("student_college_district_preferences").select("user_id,district_code,selection_method,school_id_at_selection,updated_at").eq("user_id", session.user.id).eq("school_id_at_selection", school.id).maybeSingle()
     ]).then(([districtResult, nearbyResult, preferenceResult]) => {
       if (!active) return;
       if (districtResult.error || nearbyResult.error || preferenceResult.error) {
@@ -121,6 +121,58 @@ export default function StudentSettingsPanel({
     return () => { active = false; };
   }, [school.id, section, session.user.id]);
 
+  useEffect(() => {
+    if (section !== "general" || schoolQuery.trim().length < 2) return;
+    const supabase = getBrowserSupabase();
+    if (!supabase) return;
+    let active = true;
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        const { data, error: searchError } = await supabase.rpc("search_california_high_schools", { query_text: schoolQuery.trim(), result_limit: 8 });
+        if (!active) return;
+        if (searchError) throw searchError;
+        const results = (Array.isArray(data) ? data : []) as Array<Pick<School, "id" | "name" | "district_name" | "city" | "governance_type" | "website_url">>;
+        const ids = results.map((result) => result.id);
+        const readiness = ids.length
+          ? await supabase.from("school_support_readiness").select("school_id,catalog_supported,diploma_supported,planning_supported,last_source_update").in("school_id", ids)
+          : { data: [], error: null };
+        if (readiness.error) throw readiness.error;
+        const supportBySchool = new Map((readiness.data ?? []).map((row) => [row.school_id, {
+          level: row.catalog_supported && row.diploma_supported && row.planning_supported ? "complete" : row.catalog_supported || row.diploma_supported || row.planning_supported ? "partial" : "discovery",
+          catalog_supported: Boolean(row.catalog_supported),
+          diploma_supported: Boolean(row.diploma_supported),
+          planning_supported: Boolean(row.planning_supported),
+          last_source_update: row.last_source_update ? String(row.last_source_update) : null
+        } satisfies SchoolSupportReadiness]));
+        if (active) setSchoolResults(results.filter((result) => result.id !== school.id).map((result) => ({ ...result, support: supportBySchool.get(result.id) })));
+      })().catch(() => {
+        if (active) setError("High-school search is temporarily unavailable.");
+      }).finally(() => {
+        if (active) setSchoolSearchBusy(false);
+      });
+    }, 220);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [school.id, schoolQuery, section]);
+
+  async function switchSchool() {
+    if (!pendingSchool) return;
+    const supabase = getBrowserSupabase();
+    if (!supabase) return;
+    setSwitchingSchool(true);
+    setError(null);
+    const { error: switchError } = await supabase.rpc("select_current_school", { target_school_id: pendingSchool.id });
+    if (switchError) {
+      setError(switchError.message);
+      setSwitchingSchool(false);
+      return;
+    }
+    setSchoolQuery("");
+    setSchoolResults([]);
+    setPendingSchool(null);
+    await onInstitutionChanged?.();
+    setSwitchingSchool(false);
+  }
+
   async function save(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
     event.preventDefault();
     setError(null);
@@ -130,26 +182,16 @@ export default function StudentSettingsPanel({
       setError("Enter a preferred name.");
       return;
     }
-    if (section === "planning" && draft.planStartGrade && draft.planEndGrade && draft.planStartGrade > draft.planEndGrade) {
-      setError("The planning window must end at or after its starting grade.");
-      return;
-    }
-
     const patch: StudentSettingsPatch = {};
-    if (section === "general") {
-      if (preferredName !== settings.preferred_name) patch.preferred_name = preferredName;
-      if (draft.age !== settings.age) patch.age = draft.age;
-      if (draft.gradeLevel !== settings.grade_level) patch.grade_level = draft.gradeLevel;
-      if (draft.graduationYear !== settings.graduation_year) patch.graduation_year = draft.graduationYear;
-    } else {
-      if (draft.planStartGrade !== settings.plan_start_grade) patch.plan_start_grade = draft.planStartGrade;
-      if (draft.planEndGrade !== settings.plan_end_grade) patch.plan_end_grade = draft.planEndGrade;
-    }
+    if (preferredName !== settings.preferred_name) patch.preferred_name = preferredName;
+    if (draft.age !== settings.age) patch.age = draft.age;
+    if (draft.gradeLevel !== settings.grade_level) patch.grade_level = draft.gradeLevel;
+    if (draft.graduationYear !== settings.graduation_year) patch.graduation_year = draft.graduationYear;
 
     setSaving(true);
     try {
       await onSave(patch);
-      if (section === "general") setDraft((current) => ({ ...current, preferredName }));
+      setDraft((current) => ({ ...current, preferredName }));
       setSaved(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Settings could not be saved.");
@@ -196,24 +238,6 @@ export default function StudentSettingsPanel({
     return <div className={styles.settingsPanel}><PilotSettingsSection key={pilotSettingsKey} settings={settings} onChanged={onAiPreferencesChanged} /></div>;
   }
 
-  if (section === "planning") {
-    return <div className={`${styles.settingsPanel} ${styles.compactPanel}`}>
-      <section className={`content-section ${styles.section} ${styles.planningSection}`} aria-labelledby="plan-settings-heading">
-        <header className={styles.sectionHeading}>
-          <div><h2 id="plan-settings-heading">Plan range</h2><p>First and last high-school years shown in the plan.</p></div>
-        </header>
-        <form className={styles.planningForm} onSubmit={save}>
-          <div className={`form-grid two ${styles.settingsGrid}`}>
-            <label className="form-field"><span>Starts</span><select value={draft.planStartGrade ?? ""} onChange={(event) => setDraft({ ...draft, planStartGrade: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-            <label className="form-field"><span>Ends</span><select value={draft.planEndGrade ?? ""} onChange={(event) => setDraft({ ...draft, planEndGrade: event.target.value ? Number(event.target.value) as GradeLevel : null })}><option value="">Not set</option>{GRADE_LEVELS.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
-          </div>
-          {error && <p className={styles.error} role="alert">{error}</p>}
-          <div className={styles.saveRow}>{saved && <span className={styles.savedStatus} role="status"><Check size={15} weight="bold" /> Plan range saved</span>}<button className="primary-button" type="submit" disabled={controlsDisabled || !dirty}>{saving ? "Saving" : "Save"}</button></div>
-        </form>
-      </section>
-    </div>;
-  }
-
   return <div className={styles.settingsPanel}>
     <section className={`content-section ${styles.section}`} aria-labelledby="account-settings-heading">
       <header className={styles.sectionHeading}><div><h2 id="account-settings-heading">Account</h2></div></header>
@@ -244,6 +268,18 @@ export default function StudentSettingsPanel({
       <div className={styles.institutionIdentity}>
         <InstitutionIdentityMark name={school.name} websiteUrl={school.website_url} size="header" decorative />
         <span><strong>{school.name}</strong><small>{[school.district_name, school.city, school.governance_type === "charter" ? "Charter" : "Public"].filter(Boolean).join(" · ")}</small></span>
+      </div>
+      <div className={styles.readiness} aria-label={`${school.name} support readiness`}>
+        <div><strong>{schoolSupport.level === "complete" ? "Full support" : schoolSupport.level === "partial" ? "Partial support" : "Discovery support"}</strong>{schoolSupport.last_source_update && <small>Sources refreshed {new Date(schoolSupport.last_source_update).toLocaleDateString()}</small>}</div>
+        <span className={schoolSupport.catalog_supported ? styles.ready : ""}><Check size={13} /> Catalog</span>
+        <span className={schoolSupport.diploma_supported ? styles.ready : ""}><Check size={13} /> Diploma</span>
+        <span className={schoolSupport.planning_supported ? styles.ready : ""}><Check size={13} /> Planning</span>
+      </div>
+      <div className={styles.schoolChange}>
+        <label className="form-field"><span>Change high school</span><div className={styles.searchField}><MagnifyingGlass size={16} aria-hidden /><input value={schoolQuery} onChange={(event) => { const query = event.target.value; setSchoolQuery(query); setPendingSchool(null); setSchoolSearchBusy(query.trim().length >= 2); if (query.trim().length < 2) setSchoolResults([]); }} placeholder="Search California public or charter schools" /></div><small>Each school has a separate saved academic workspace.</small></label>
+        {schoolSearchBusy && <small className={styles.searchStatus}>Searching…</small>}
+        {schoolResults.length > 0 && <div className={styles.schoolResults} role="listbox" aria-label="High-school results">{schoolResults.map((result) => <button type="button" role="option" aria-selected={pendingSchool?.id === result.id} key={result.id} onClick={() => setPendingSchool(result)}><InstitutionIdentityMark name={result.name} websiteUrl={result.website_url} decorative /><span><strong>{result.name}</strong><small>{[result.district_name, result.city].filter(Boolean).join(" · ")}</small></span><em>{result.support?.level === "complete" ? "Full support" : result.support?.level === "partial" ? "Partial" : "Discovery"}</em></button>)}</div>}
+        {pendingSchool && <div className={styles.schoolSwitchConfirm} role="alert"><p><strong>Switch to {pendingSchool.name}?</strong> The current academic workspace will be wiped from view, including courses, transcript review, GPA assumptions, and degree bookmarks. It remains saved under {school.name} and returns when you switch back.</p><div><button className="quiet-button small" type="button" onClick={() => setPendingSchool(null)}>Cancel</button><button className="primary-button small" type="button" onClick={() => void switchSchool()} disabled={switchingSchool}>{switchingSchool ? "Switching" : "Switch school"}</button></div></div>}
       </div>
       <form className={styles.districtForm} onSubmit={saveCollegeDistrict}>
         <label className="form-field"><span>Community-college district</span><select value={selectedDistrictCode} onChange={(event) => { setSelectedDistrictCode(event.target.value); setDistrictStatus("idle"); }} disabled={districtStatus === "loading" || districtStatus === "saving"}>

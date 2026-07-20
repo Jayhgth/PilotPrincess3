@@ -13,7 +13,7 @@ Students can:
 - contact administrators about support, bugs, or course-data issues; and
 - ask Pilot to make validated, reversible changes to their account and plan.
 
-School support is shown in the app as discovery, partial, or complete. A school without verified local data never inherits another school's catalog, graduation rules, or course sequence. SMCCD degree planning currently covers Cañada College, College of San Mateo, and Skyline College.
+School support is shown in the app as discovery, partial, or complete. A school without verified local data never inherits another school's catalog, graduation rules, or course sequence. College data is exposed through provider-neutral contracts; SMCCD is the first deep adapter and currently covers Cañada College, College of San Mateo, and Skyline College.
 
 ## Project
 
@@ -24,6 +24,7 @@ Important references:
 - [Product and design](./docs/PRODUCT_DESIGN.md)
 - [Academic rules](./docs/ACADEMIC_RULES.md)
 - [Pilot transparency](./docs/AI_TRANSPARENCY.md)
+- [Production deployment](./docs/DEPLOYMENT.md)
 
 ## Forking
 
@@ -51,6 +52,6 @@ The focused suite is intentionally small. The main live Pilot test covers a prog
 
 ## Data
 
-School identity comes from CDE, UC A–G course evidence from UCOP, and community-college identity from CCCCO. Local catalogs, diploma policies, mappings, and planning profiles retain their source and review status.
+School identity comes from CDE, UC A–G course evidence from UCOP, and community-college identity from CCCCO. Local catalogs, diploma policies, mappings, and planning profiles retain their source and review status. Automated school syncs stage extracted data for administrator review instead of publishing directly.
 
 Do not commit credentials, generated task reports, or private student data.

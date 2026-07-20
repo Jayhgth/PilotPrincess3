@@ -28,7 +28,7 @@ describe("DashboardDegreeProgress", () => {
       catalog_url: "https://catalog.collegeofsanmateo.edu/",
       source_year: "2026-2027"
     };
-    const goal: StudentSmccdGoal = { id: crypto.randomUUID(), user_id: crypto.randomUUID(), program_id: program.id, is_primary: true, notes: "" };
+    const goal: StudentSmccdGoal = { id: crypto.randomUUID(), user_id: crypto.randomUUID(), plan_id: crypto.randomUUID(), program_id: program.id, is_primary: true, notes: "" };
     const completion: StudentSmccdGeCompletion = { user_id: goal.user_id, college_code: "CSM", area: "7A", completion_source: "manual" };
     const html = renderToStaticMarkup(<DashboardDegreeProgress
       planCourses={[]}

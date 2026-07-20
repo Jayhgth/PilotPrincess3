@@ -28,11 +28,12 @@ import ShinyText from "@/components/reactbits/ShinyText";
 import AssistantMarkdown from "@/components/AssistantMarkdown";
 import AiModelPicker from "@/components/AiModelPicker";
 import type { AiModel, AiReasoningEffort } from "@/lib/ai-preferences";
-import { MAX_ASSISTANT_ATTACHMENTS, validateAssistantImage } from "@/lib/ai-attachments";
+import { MAX_ASSISTANT_ATTACHMENTS, safeAssistantImageName, validateAssistantImage } from "@/lib/ai-attachments";
 import { assistantTurnDuration, assistantTurnStartedAt, formatAssistantDuration } from "@/lib/assistant-display";
 import { asAssistantRecord, assistantDockedMaxWidth, assistantDraftKey, assistantQuestionsFromContext, changeDetailsFromContext, formatMessageTime, formatMessageTimeTitle, formatStructuredAnswers, prioritizeAssistantQueue, visibleToolCalls, type AssistantQuestion } from "@/lib/assistant-chat";
 import type { AiConversation, AiEvent, AiMessage, AiToolCall } from "@/lib/models";
 import { authenticatedFetch } from "@/lib/supabase/authenticated-fetch";
+import { getBrowserSupabase } from "@/lib/supabase/browser";
 import type { WorkspaceDomain } from "@/lib/app-capabilities";
 import styles from "./GlobalAssistant.module.css";
 
@@ -189,8 +190,11 @@ const TOOL_LABELS: Record<string, string> = {
   get_student_overview: "Student overview",
   get_academic_context: "Academic workspace",
   list_plan_courses: "Course plan",
+  get_plan_versions: "Four-year plans",
+  compare_plan_versions: "Plan comparison",
   search_california_high_schools: "California high schools",
   search_course_catalog: "Course catalog",
+  resolve_academic_course_batch: "Course catalog",
   get_graduation_progress: "Graduation progress",
   get_transcript_sources: "Transcript sources",
   get_student_data_inventory: "Student records",
@@ -204,6 +208,7 @@ const TOOL_LABELS: Record<string, string> = {
   get_degree_progress: "Degree progress",
   get_college_goal: "Degree bookmarks",
   search_smccd_programs: "College programs",
+  search_college_programs: "College programs",
   set_current_school: "Change selected school",
   undo_change: "Undo previous change",
   add_course_schedule: "Apply course schedule",
@@ -223,6 +228,10 @@ const TOOL_LABELS: Record<string, string> = {
   correct_transcript_course: "Correct transcript course",
   save_prerequisite_evidence: "Submit prerequisite evidence",
   create_plan_snapshot: "Save plan snapshot",
+  create_plan_version: "Create four-year plan",
+  activate_plan_version: "Open four-year plan",
+  rename_plan_version: "Rename four-year plan",
+  archive_plan_version: "Delete four-year plan",
   set_smccd_ge_completion: "Update college degree completion",
   set_college_goal: "Bookmark degree",
   set_college_goals: "Bookmark degrees",
@@ -296,10 +305,10 @@ function activityItem(event: LiveActivity) {
   if (event.type === "knowledge.failed") return { kind: "tool", label: "Planning guidance", detail: "Built-in guidance used because retrieved guidance was unavailable" };
   if (event.type === "memory.retrieved") return { kind: "tool", label: "Student context", detail: String(event.summary ?? "Retrieved relevant preferences") };
   if (event.type === "memory.updated") return { kind: "tool", label: "Student context", detail: String(event.summary ?? "Updated lightweight preferences") };
-  if (event.type === "safety_review.started" || event.type === "auto_review.started") return { kind: "review", label: "Safety review", detail: String(event.summary ?? "Checking the proposed change") };
+  if (event.type === "safety_review.started" || event.type === "auto_review.started") return { kind: "review", label: "Product check", detail: String(event.summary ?? "Checking the proposed change") };
   if (event.type === "safety_review.completed" || event.type === "auto_review.completed") {
     const review = event.review as Record<string, unknown> | undefined;
-    return { kind: "review", label: "Safety review", detail: String(review?.summary ?? "Review completed") };
+    return { kind: "review", label: "Product check", detail: String(review?.summary ?? "Check completed") };
   }
   const toolCall = event.toolCall as Record<string, unknown> | undefined;
   if (toolCall) {
@@ -375,6 +384,7 @@ function TurnActivity({ events, tools, running, reviewing }: {
 }
 
 export default function GlobalAssistant({ session, open, preferences, onPreferencesChanged, onClose, onDataChanged }: GlobalAssistantProps) {
+  const supabase = useMemo(() => getBrowserSupabase(), []);
   const [data, setData] = useState<ConversationPayload>(EMPTY_PAYLOAD);
   const [liveEvents, setLiveEvents] = useState<LiveActivity[]>([]);
   const [loading, setLoading] = useState(false);
@@ -822,7 +832,38 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
       abortController.signal.throwIfAborted();
       const activeConversation = conversation;
       const turnId = crypto.randomUUID();
-      optimisticId = `local-${turnId}`;
+      const messageId = crypto.randomUUID();
+      optimisticId = messageId;
+      const uploadedAttachments: Array<{
+        id: string;
+        name: string;
+        mimeType: "image/png" | "image/jpeg" | "image/webp";
+        sizeBytes: number;
+        storagePath: string;
+      }> = [];
+      try {
+        for (const image of messageImages) {
+          const storagePath = `${session.user.id}/${activeConversation.id}/${messageId}/${image.id}-${safeAssistantImageName(image.file.name)}`;
+          const upload = await supabase.storage.from("ai-attachments").upload(storagePath, image.file, {
+            cacheControl: "3600",
+            contentType: image.file.type,
+            upsert: false
+          });
+          if (upload.error) throw upload.error;
+          uploadedAttachments.push({
+            id: image.id,
+            name: image.file.name.slice(0, 120),
+            mimeType: image.file.type as "image/png" | "image/jpeg" | "image/webp",
+            sizeBytes: image.file.size,
+            storagePath
+          });
+        }
+      } catch (uploadError) {
+        if (uploadedAttachments.length) {
+          await supabase.storage.from("ai-attachments").remove(uploadedAttachments.map((attachment) => attachment.storagePath));
+        }
+        throw uploadError;
+      }
       const optimistic: AiMessage = {
         id: optimisticId,
         conversation_id: activeConversation.id,
@@ -835,7 +876,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
         attachments: messageImages.map((image) => ({
           id: image.id,
           conversation_id: activeConversation.id,
-          message_id: optimisticId!,
+          message_id: messageId,
           user_id: session.user.id,
           name: image.file.name,
           mime_type: image.file.type,
@@ -846,20 +887,26 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
       };
       setData((current) => ({ ...current, messages: [...current.messages, optimistic] }));
       setLiveEvents([]);
-      const form = new FormData();
-      form.set("conversationId", activeConversation.id);
-      form.set("turnId", turnId);
-      form.set("message", message);
-      for (const image of messageImages) form.append("images", image.file, image.file.name);
       const response = await authorizedFetch("/api/ai/chat", {
         method: "POST",
-        body: form,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeConversation.id,
+          turnId,
+          messageId,
+          message,
+          attachments: uploadedAttachments
+        }),
         signal: abortController.signal
       });
-      if (!response.ok || !response.body) {
+      if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { error?: string };
+        if (uploadedAttachments.length) {
+          await supabase.storage.from("ai-attachments").remove(uploadedAttachments.map((attachment) => attachment.storagePath));
+        }
         throw new Error(payload.error ?? "Pilot could not start the conversation.");
       }
+      if (!response.body) throw new Error("Pilot could not start the conversation stream.");
       messagePersisted = true;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1005,7 +1052,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
           {!loading && !data.messages.length && !running ? <div className={styles.empty}>
             <ChatCircleDots size={24} />
             <h2>Ask about your plan</h2>
-            <p>Pilot can read your records, search eligible courses, and apply valid changes after an independent safety review.</p>
+            <p>Pilot can read your records, search eligible courses, and apply exact reversible changes through the same rules as the rest of the app.</p>
             <div>{ASSISTANT_SUGGESTIONS.map((suggestion) => <button type="button" key={suggestion} onClick={() => void submitMessage(suggestion)}>{suggestion}</button>)}</div>
           </div> : null}
 

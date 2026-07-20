@@ -1,6 +1,6 @@
 # Academic data and rule reference
 
-Last reviewed: 2026-07-16
+Last reviewed: 2026-07-17
 
 This is the durable implementation reference for transcript, GPA, graduation, course eligibility, prerequisites, equivalencies, statewide school data, and college evidence.
 
@@ -40,11 +40,11 @@ Diploma progress keeps completed, current, planned, unverified, unused, and rema
 
 - Laboratory Science requires Biology, Chemistry, and a third lab science at 10 credits each.
 - A verified Level 3/III world-language course satisfies the full 20-credit sequence, even without lower levels in the record.
-- SMCCD high-school credit requires a reviewed directional equivalency; college units alone do not invent a d.tech requirement mapping.
+- College units and high-school credits are separate quantities. An official transcript award is authoritative; otherwise an exact selected-school equivalency controls. When neither exists, 3 to fewer than 5 units are represented as 5 provisional high-school credits and 5 or more units as 10 for GPA and planning. That provisional conversion never invents a graduation area: diploma credit still requires reviewed selected-school evidence.
 
 Only the selected school's published official diploma requirements are calculated. If those rules are unavailable, Pilot reports that limitation and does not fall back to California minimums or UC A–G.
 
-Local requirements are versioned by academic authority: district schools share their district rules and charter schools use their own CDS-scoped authority. The source discovery job follows official school-to-district navigation, checks official site maps and linked document hosts, records content hashes and exact evidence, and publishes only when all four core areas plus a complete local set validate. Default all-student plans are kept separate from transfer, foster-youth, or other exception plans. Required pathways whose credits are already part of electives are tracked as constraints and excluded from aggregate credit totals.
+Local requirements are versioned by academic authority: district schools share their district rules and charter schools use their own CDS-scoped authority. The source discovery job follows official school-to-district navigation, checks official site maps and linked document hosts, and records content hashes and exact evidence. Automated runs write a staged payload; an administrator promotes a reviewed run before shared catalogs or diploma rules change. Default all-student plans are kept separate from transfer, foster-youth, or other exception plans. Required pathways whose credits are already part of electives are tracked as constraints and excluded from aggregate credit totals.
 
 ## School planning profiles
 
@@ -112,7 +112,7 @@ For the reviewed 2026 SMCCD sources:
 
 Aggregate CSM, Skyline, and Cañada units across the same school year and term. A full-year row counts in fall and spring. Completed rows do not consume a future-term limit. Crossing a selected or fee-free limit produces review, while crossing the sourced absolute maximum blocks the scenario. Unit count never proves course eligibility: prerequisites, placement, school and college approval, impacted-course restrictions, materials, fees, and seat availability stay separate. Other districts require their own reviewed policy rows; do not infer them from SMCCD.
 
-Nearby-provider discovery uses the selected school's public CDE address and official provider coordinates. Colleges are normalized into their official community-college district before suggestions are ranked. `student_college_district_preferences` stores one suggested, student-selected, or Pilot-selected district; this is separate from the source-backed concurrent/dual-enrollment policy and never implies eligibility. A manual student or Pilot choice persists across high-school changes, while an untouched suggestion follows the newly selected school's public address. Institution marks use checked-in official assets where available, then the official institution website favicon, then a neutral accessible fallback. Discovery is not a claim of articulation or a current course offering and never requests precise student location.
+Nearby-provider discovery uses the selected school's public CDE address and official provider coordinates. Colleges are normalized into their official community-college district before suggestions are ranked. `student_college_district_preferences` stores one suggested, student-selected, or Pilot-selected district per high-school workspace; this is separate from the source-backed concurrent/dual-enrollment policy and never implies eligibility. Switching schools restores that school's saved plan versions, transcript context, GPA assumptions, degree bookmarks, and district choice instead of transferring them. Institution marks use checked-in official assets where available, then the official institution website favicon, then a neutral accessible fallback. Discovery is not a claim of articulation or a current course offering and never requests precise student location.
 
 California community-college identity and district selection are statewide. Equivalent course, degree, GE, prerequisite, and enrollment planning becomes available provider by provider only after that district's adapter has reviewed source data. SMCCD is the first complete academic provider; its rules are never used as defaults for another district.
 
@@ -130,7 +130,7 @@ pnpm smccd:requirements-migration
 pnpm smccd:validate
 pnpm schools:academics --discover-only --school-name "Carlmont High"
 pnpm schools:academics --selected
-pnpm schools:academics --all
+pnpm schools:academics --promote-run RUN_ID
 pnpm test
 supabase db lint --linked
 supabase db push --linked --dry-run
