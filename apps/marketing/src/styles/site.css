@@ -61,7 +61,7 @@ button { font: inherit; }
   background: #111416;
   box-shadow: 0 44px 110px #0009;
 }
-.dashboard-preview-frame img { display: block; width: 100%; height: 100%; object-fit: cover; filter: invert(.91) hue-rotate(180deg) saturate(.72) brightness(.83) contrast(1.04); }
+.dashboard-preview-frame img { display: block; width: 100%; height: 100%; object-fit: cover; filter: invert(.96) hue-rotate(180deg) saturate(.82) brightness(1.06) contrast(1.08); }
 .source-section { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; align-items: center; margin-bottom: 160px; }
 .source-section h2 { font-size: 43px; letter-spacing: -.045em; line-height: 1.08; margin: 20px 0; }
 .source-section p { color: #8e979c; line-height: 1.7; }
