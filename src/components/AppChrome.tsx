@@ -25,6 +25,18 @@ const SIDEBAR_MIN_EXPANDED_WIDTH = 184;
 const SIDEBAR_MAX_WIDTH = 320;
 const SIDEBAR_DEFAULT_WIDTH = 248;
 
+interface DesktopNavigationHistory extends EventTarget {
+  readonly canGoBack: boolean;
+  readonly canGoForward: boolean;
+  back: () => Promise<unknown>;
+  forward: () => Promise<unknown>;
+}
+
+function getDesktopNavigationHistory() {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as { navigation?: DesktopNavigationHistory }).navigation ?? null;
+}
+
 function normalizeSidebarWidth(value: number) {
   if (!Number.isFinite(value)) return SIDEBAR_DEFAULT_WIDTH;
   if (value < SIDEBAR_MIN_EXPANDED_WIDTH) return SIDEBAR_COLLAPSED_WIDTH;
@@ -78,6 +90,7 @@ export default function AppChrome<ViewId extends string>({
     if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH;
     return normalizeSidebarWidth(Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY)));
   });
+  const [historyAvailability, setHistoryAvailability] = useState({ canGoBack: false, canGoForward: false });
   const pendingSidebarWidth = useRef(sidebarWidth);
   const expandedSidebarWidth = useRef(sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? SIDEBAR_DEFAULT_WIDTH : sidebarWidth);
   const onAssistantToggleRef = useRef(onAssistantToggle);
@@ -85,6 +98,22 @@ export default function AppChrome<ViewId extends string>({
   useEffect(() => {
     onAssistantToggleRef.current = onAssistantToggle;
   }, [onAssistantToggle]);
+
+  useEffect(() => {
+    const navigation = getDesktopNavigationHistory();
+    const refreshHistoryAvailability = () => setHistoryAvailability({
+      canGoBack: navigation?.canGoBack ?? false,
+      canGoForward: navigation?.canGoForward ?? false
+    });
+
+    refreshHistoryAvailability();
+    navigation?.addEventListener("currententrychange", refreshHistoryAvailability);
+    window.addEventListener("popstate", refreshHistoryAvailability);
+    return () => {
+      navigation?.removeEventListener("currententrychange", refreshHistoryAvailability);
+      window.removeEventListener("popstate", refreshHistoryAvailability);
+    };
+  }, []);
 
   useEffect(() => {
     function togglePilotWithKeyboard(event: globalThis.KeyboardEvent) {
@@ -159,17 +188,24 @@ export default function AppChrome<ViewId extends string>({
       : SIDEBAR_COLLAPSED_WIDTH);
   }
 
+  function traverseHistory(direction: "back" | "forward") {
+    const navigation = getDesktopNavigationHistory();
+    if (!navigation) return;
+    if (direction === "back" && navigation.canGoBack) void navigation.back();
+    if (direction === "forward" && navigation.canGoForward) void navigation.forward();
+  }
+
   return <>
     <div className="desktop-navigation" role="toolbar" aria-label="Window navigation">
       <div className="desktop-navigation-controls">
         <button type="button" onClick={toggleSidebar} aria-label={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"} title={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"}>
-          <SidebarSimple size={18} />
+          <SidebarSimple size={16} />
         </button>
-        <button type="button" onClick={() => window.history.back()} aria-label="Go back" title="Go back">
-          <ArrowLeft size={18} />
+        <button type="button" onClick={() => traverseHistory("back")} disabled={!historyAvailability.canGoBack} aria-label="Go back" title="Go back">
+          <ArrowLeft size={16} />
         </button>
-        <button type="button" onClick={() => window.history.forward()} aria-label="Go forward" title="Go forward">
-          <ArrowRight size={18} />
+        <button type="button" onClick={() => traverseHistory("forward")} disabled={!historyAvailability.canGoForward} aria-label="Go forward" title="Go forward">
+          <ArrowRight size={16} />
         </button>
       </div>
       <button

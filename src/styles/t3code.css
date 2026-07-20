@@ -88,17 +88,18 @@
   display: flex;
   height: 100%;
   align-items: center;
-  gap: 2px;
-  margin-left: 150px;
+  gap: 0;
+  margin-left: 76px;
+  transform: translateY(2px);
   -webkit-app-region: no-drag;
 }
 .desktop-macos .desktop-navigation button {
   display: inline-grid;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--ink-faint);
   padding: 0;
@@ -107,6 +108,13 @@
 .desktop-macos .desktop-navigation button:hover {
   background: var(--surface-muted);
   color: var(--ink);
+}
+.desktop-macos .desktop-navigation button:disabled,
+.desktop-macos .desktop-navigation button:disabled:hover {
+  cursor: default;
+  background: transparent;
+  color: var(--ink-faint);
+  opacity: 0.28;
 }
 .desktop-macos .desktop-navigation .desktop-pilot-toggle {
   display: inline-flex;
