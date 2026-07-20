@@ -69,6 +69,7 @@
   :root[data-sidebar-collapsed="true"] .t3code-app .school-chip { min-height: 34px; margin-bottom: 6px; }
 }
 .t3code-app .app-toolbar { height: 52px; min-height: 52px; border-bottom: 1px solid var(--line); padding: 0 12px; }
+.t3code-app .app-toolbar .development-build-badge { margin-right: 8px; }
 .t3code-app .app-toolbar button { min-height: 30px; border-radius: 7px; padding-inline: 9px; font-size: 12px; }
 .desktop-navigation { display: none; }
 .desktop-macos .desktop-navigation {
@@ -90,6 +91,24 @@
   align-items: center;
   gap: 0;
   margin-left: 92px;
+  transform: translateY(3px);
+  -webkit-app-region: no-drag;
+}
+.development-build-badge {
+  display: inline-flex;
+  height: 18px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.desktop-macos .desktop-navigation .development-build-badge {
+  margin-left: 6px;
   transform: translateY(3px);
   -webkit-app-region: no-drag;
 }

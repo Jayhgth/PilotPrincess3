@@ -86,6 +86,7 @@ export default function AppChrome<ViewId extends string>({
   onSignOut,
   children
 }: Props<ViewId>) {
+  const isDevelopmentBuild = import.meta.env.DEV;
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     if (typeof window === "undefined") return SIDEBAR_DEFAULT_WIDTH;
     return normalizeSidebarWidth(Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY)));
@@ -208,6 +209,7 @@ export default function AppChrome<ViewId extends string>({
           <ArrowRight size={16} />
         </button>
       </div>
+      {isDevelopmentBuild && <span className="development-build-badge">Dev</span>}
       <button
         className={`desktop-pilot-toggle ${assistantOpen ? "active" : ""}`}
         type="button"
@@ -287,6 +289,7 @@ export default function AppChrome<ViewId extends string>({
         </div>
       </div>
       <div className="app-toolbar">
+        {isDevelopmentBuild && <span className="development-build-badge">Dev</span>}
         <button
           className={assistantOpen ? "active" : ""}
           type="button"
