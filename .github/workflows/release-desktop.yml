@@ -1,7 +1,6 @@
 name: Release desktop apps
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -10,24 +9,25 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    name: ${{ matrix.label }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-14
-            label: macOS ARM64
-            command: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --mac dmg zip --arm64 --publish always
-          - os: windows-latest
-            label: Windows x64
-            command: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --win nsis --x64 --publish always
-          - os: windows-latest
-            label: Windows ARM64
-            command: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --win nsis --arm64 --publish always
-    runs-on: ${{ matrix.os }}
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  build-macos:
+    name: macOS ARM64
+    needs: validate
+    runs-on: macos-14
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
       PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
       PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
@@ -42,6 +42,66 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm desktop:icons
-      - run: pnpm check
       - run: pnpm build
-      - run: ${{ matrix.command }}
+      - run: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --mac dmg zip --arm64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          if-no-files-found: error
+          path: |
+            release/Pilot-Princess-mac-arm64.dmg
+            release/Pilot-Princess-mac-arm64.zip
+            release/Pilot-Princess-mac-arm64.zip.blockmap
+            release/latest-mac.yml
+
+  build-windows:
+    name: Windows x64 and ARM64
+    needs: validate
+    runs-on: windows-latest
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm desktop:icons
+      - run: pnpm build
+      - run: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --win nsis --x64 --arm64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          if-no-files-found: error
+          path: |
+            release/Pilot-Princess-win-x64.exe
+            release/Pilot-Princess-win-x64.exe.blockmap
+            release/Pilot-Princess-win-arm64.exe
+            release/Pilot-Princess-win-arm64.exe.blockmap
+            release/latest.yml
+
+  publish:
+    name: Publish GitHub release
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create release and upload installers
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" release/* --generate-notes --title "Pilot Princess $GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY"
+          fi

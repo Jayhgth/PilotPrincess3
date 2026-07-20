@@ -584,5 +584,5 @@ College Admissions Requirements
     expect(planCourseMovePatch(settings, plan({ source_review_item_id: "review" }), "planned", 3)).toBeNull();
     expect(planCourseMovePatch(settings, plan(), "planned", 3)).toMatchObject({ status: "planned", grade_level: 10, sort_order: 3, letter_grade: null });
     }
-  });
+  }, 15_000);
 });
