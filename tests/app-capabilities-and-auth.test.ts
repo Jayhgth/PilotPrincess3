@@ -5,9 +5,10 @@ import { assistantTurnDuration, formatAssistantDuration } from "@/lib/assistant-
 import { COLLEGE_DATA } from "@/lib/college-provider-contract";
 import { planVersionDisplayLabel } from "@/lib/plan-versions";
 import { safeParseAssistantToolCall } from "@/server/ai-tools";
+import { acquireAssistantTurn } from "@/server/assistant-request-protection";
 
 describe("application capability and authentication boundaries", () => {
-  it("enforces capability, review, and redirect boundaries", () => {
+  it("enforces capability, review, and redirect boundaries", async () => {
     {
     const tools = pilotToolNamesForMessage("Build a four-year schedule that completes graduation and my associate degree");
     expect(tools).toContain("get_course_schedule_options");
@@ -56,6 +57,20 @@ describe("application capability and authentication boundaries", () => {
       { type: "safety_review.completed", occurredAt: "2026-07-16T10:00:05.000Z" },
       { type: "tool.completed", occurredAt: "2026-07-16T10:00:07.000Z" }
     ], [{ completed_at: "2026-07-16T10:00:08.000Z" }])).toBe("8s");
+    let limiterCalls = 0;
+    const transientLimiter = await acquireAssistantTurn(async () => {
+      limiterCalls += 1;
+      return limiterCalls === 1
+        ? { data: null, error: { code: "PGRST000", message: "Transient connection error" } }
+        : { data: [{ allowed: true, retry_after_seconds: 0 }], error: null };
+    }, async () => undefined);
+    expect(transientLimiter).toEqual({ status: "allowed", retryAfterSeconds: 0 });
+    expect(limiterCalls).toBe(2);
+    const unavailableLimiter = await acquireAssistantTurn(async () => ({
+      data: null,
+      error: { code: "PGRST202", message: "Function unavailable" }
+    }), async () => undefined);
+    expect(unavailableLimiter.status).toBe("unavailable");
     }
 
     {

@@ -14,6 +14,7 @@ import { explicitDurableMemoryUpdates, persistAssistantMemoryUpdates, retrieveAs
 import { loadUserAiPreferences } from "@/server/ai-preferences";
 import { sanitizeCodexEvent, sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { classifyAssistantRequest } from "@/server/assistant-request-scope";
+import { acquireAssistantTurn } from "@/server/assistant-request-protection";
 
 export const prerender = false;
 
@@ -73,17 +74,19 @@ export const POST: APIRoute = async ({ request }) => {
     return jsonError("Conversation not found.", 404);
   }
 
-  const rateLimitResult = await auth.supabase.rpc("acquire_assistant_turn_v1");
-  if (rateLimitResult.error) {
+  const turnProtection = await acquireAssistantTurn(() => auth.supabase.rpc("acquire_assistant_turn_v1"));
+  if (turnProtection.status === "unavailable") {
+    console.error("Pilot request protection unavailable after retry.", {
+      code: turnProtection.error.code ?? "unknown",
+      message: turnProtection.error.message ?? "Unknown limiter error"
+    });
     await cleanupUnclaimedUploads();
     return jsonError("Pilot request protection is unavailable. Try again shortly.", 503);
   }
-  const rateLimit = Array.isArray(rateLimitResult.data) ? rateLimitResult.data[0] : rateLimitResult.data;
-  if (!rateLimit?.allowed) {
+  if (turnProtection.status === "limited") {
     await cleanupUnclaimedUploads();
-    const retryAfter = Math.max(1, Number(rateLimit?.retry_after_seconds ?? 60));
     const response = jsonError("Too many Pilot requests. Wait a moment and try again.", 429);
-    response.headers.set("retry-after", String(retryAfter));
+    response.headers.set("retry-after", String(turnProtection.retryAfterSeconds));
     return response;
   }
 
