@@ -21,12 +21,13 @@ publish:
 mac:
   category: public.app-category.education
   icon: apps/desktop/build/icon.png
+  hardenedRuntime: true
+  notarize: true
   target:
     - target: dmg
       arch: [arm64]
     - target: zip
       arch: [arm64]
-  identity: null
 win:
   icon: apps/desktop/build/icon.ico
   target:

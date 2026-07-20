@@ -14,7 +14,7 @@ Provider client secrets stay in Supabase. Never put service-role keys, OAuth cli
 
 ## GitHub Actions
 
-`.github/workflows/release-desktop.yml` runs for tags beginning with `v` and can also be started manually. It publishes macOS ARM64 plus Windows x64 and ARM64 installers as a public, non-draft GitHub Release. The repository must be public for anonymous downloads from the marketing site; a private repository redirects visitors through GitHub authentication.
+`.github/workflows/release-desktop.yml` runs for tags beginning with `v`. It publishes macOS ARM64 plus Windows x64 and ARM64 installers as a public, non-draft GitHub Release. The repository must be public for anonymous downloads from the marketing site; a private repository redirects visitors through GitHub authentication.
 
 Repository Actions secrets:
 
@@ -22,10 +22,24 @@ Repository Actions secrets:
 | --- | --- |
 | `PUBLIC_SUPABASE_URL` | Production Supabase project URL |
 | `PUBLIC_SUPABASE_ANON_KEY` | Production publishable/anon key |
+| `CSC_LINK` | Base64-encoded Developer ID Application `.p12` certificate |
+| `CSC_KEY_PASSWORD` | Password used when exporting that `.p12` certificate |
+| `APPLE_API_KEY` | Complete contents of an App Store Connect API `.p8` key |
+| `APPLE_API_KEY_ID` | App Store Connect API key ID |
+| `APPLE_API_ISSUER` | App Store Connect API issuer ID |
 
 `GITHUB_TOKEN` is supplied automatically by GitHub Actions. No additional GitHub or OpenAI token is required. Confirm secrets with `gh secret list`; values cannot be read back after saving.
 
-Preview builds are currently unsigned. Add Apple notarization and Windows signing before a general public release.
+Stable macOS releases require all five Apple secrets. The workflow signs with the Developer ID certificate, submits the app to Apple notarization, and verifies the stapled ticket with `codesign`, `stapler`, and Gatekeeper before it can be uploaded. It intentionally fails instead of publishing a broken unsigned DMG. Local development does not require these credentials. Windows signing remains a separate future release-hardening step.
+
+To configure macOS distribution:
+
+1. Join the Apple Developer Program and create a **Developer ID Application** certificate.
+2. Export the certificate and private key from Keychain Access as a password-protected `.p12`. Base64-encode the file and save the result as `CSC_LINK`; save its export password as `CSC_KEY_PASSWORD`.
+3. Create an App Store Connect API key and save the complete `.p8` file contents as `APPLE_API_KEY`, plus its key ID and issuer ID as `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`.
+4. Add the five values under **GitHub repository settings → Secrets and variables → Actions**, then publish a new version tag.
+
+Do not upload the certificate, private key, `.p8`, or their decoded contents to the repository.
 
 ## Run and test locally
 
@@ -51,7 +65,7 @@ Pilot settings must show `Authenticated · <account type>` and the account email
 4. Create and push the matching tag, for example `git tag v0.2.0 && git push origin v0.2.0`.
 5. Check the **Release desktop apps** workflow and its GitHub Release artifacts.
 
-For the initial release, the workflow can instead be started from **Actions → Release desktop apps → Run workflow**. It publishes the version declared in `package.json`. Confirm that the release contains `Pilot-Princess-mac-arm64.dmg`, `Pilot-Princess-win-x64.exe`, and `Pilot-Princess-win-arm64.exe`; those stable names are the marketing site's direct download targets.
+Confirm that the release contains `Pilot-Princess-mac-arm64.dmg`, `Pilot-Princess-win-x64.exe`, and `Pilot-Princess-win-arm64.exe`; those stable names are the marketing site's direct download targets.
 
 Installed apps check GitHub Releases and install a downloaded update when the app quits.
 

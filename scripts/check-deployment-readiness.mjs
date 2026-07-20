@@ -95,11 +95,31 @@ const desktopConfig = readFileSync(join(root, "apps", "desktop", "electron-build
 for (const requiredDesktopContract of [
   "app.pilotprincess.desktop",
   "Pilot Princess",
+  "hardenedRuntime: true",
+  "notarize: true",
   "target: dmg",
   "target: nsis",
   "arch: [x64, arm64]"
 ]) {
   if (!desktopConfig.includes(requiredDesktopContract)) fail(`Desktop packaging contract is missing: ${requiredDesktopContract}`);
+}
+if (/^\s*identity:\s*null\s*$/m.test(desktopConfig)) fail("macOS release signing must not be disabled.");
+
+const desktopReleaseWorkflow = readFileSync(join(root, ".github", "workflows", "release-desktop.yml"), "utf8");
+for (const requiredReleaseContract of [
+  "secrets.CSC_LINK",
+  "secrets.CSC_KEY_PASSWORD",
+  "secrets.APPLE_API_KEY",
+  "secrets.APPLE_API_KEY_ID",
+  "secrets.APPLE_API_ISSUER",
+  "forceCodeSigning=true",
+  "codesign --verify --deep --strict",
+  "xcrun stapler validate",
+  "spctl --assess --type execute"
+]) {
+  if (!desktopReleaseWorkflow.includes(requiredReleaseContract)) {
+    fail(`macOS release verification contract is missing: ${requiredReleaseContract}`);
+  }
 }
 
 const desktopMain = readFileSync(join(root, "apps", "desktop", "main.mjs"), "utf8");
