@@ -1,4 +1,0 @@
-update public.ai_knowledge_chunks
-set content = 'Completed Pilot tool outcomes are canonical conversation history. The thread receives bounded public summaries and app-data results from recent read and write tools so follow-up references retain context. Each applied change also has a stable action identifier, undo availability, and a private server-side inverse. When a student says undo, revert, restore, or bring it back, resolve the reference against the recent change ledger and invoke the exact stored inverse. Never reconstruct deleted rows from the current plan, and never conclude that removed data is unavailable merely because it no longer appears in current records. Refresh historical tool evidence through the owning read tool when current state matters.',
-    updated_at = now()
-where id = 'thread-action-context-and-undo';
