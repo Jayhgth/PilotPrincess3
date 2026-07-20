@@ -1,0 +1,132 @@
+import { createClient } from "@supabase/supabase-js";
+import { ucopCourseValues } from "./lib/school-academic-sources.mjs";
+
+const ORIGIN = "https://hs-articulation.ucop.edu";
+const SOURCE_YEAR = "2026-27";
+const sourceTitle = "Official UCOP A-G Course List";
+
+function argumentValue(name) {
+  const index = process.argv.indexOf(name);
+  return index >= 0 ? process.argv[index + 1] : null;
+}
+
+const schoolId = argumentValue("--school-id");
+const limit = Number(argumentValue("--limit") ?? 0);
+const dryRun = process.argv.includes("--dry-run");
+
+async function mapWithConcurrency(rows, concurrency, transform) {
+  const output = new Array(rows.length);
+  let cursor = 0;
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (cursor < rows.length) {
+      const index = cursor++;
+      output[index] = await transform(rows[index], index);
+    }
+  }));
+  return output;
+}
+
+async function loadSchools(supabase) {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    let query = supabase.from("schools").select("id,name,uc_ag_institution_id").not("uc_ag_institution_id", "is", null).order("name").range(from, from + 999);
+    if (schoolId) query = query.eq("id", schoolId);
+    const { data, error } = await query;
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000 || schoolId) break;
+  }
+  return limit > 0 ? rows.slice(0, limit) : rows;
+}
+
+async function fetchCourseList(school) {
+  const response = await fetch(`${ORIGIN}/api/public/courselist/institution/${school.uc_ag_institution_id}/list/`);
+  if (!response.ok) throw new Error(`UCOP course list for ${school.name} returned ${response.status}.`);
+  const payload = await response.json();
+  return { school, payload, courses: Array.isArray(payload.courses) ? payload.courses : [] };
+}
+
+function courseValues(row, school, catalogVersionId, sourceId) {
+  return {
+    ...ucopCourseValues(row),
+    school_id: school.id,
+    catalog_version_id: catalogVersionId,
+    source_id: sourceId,
+  };
+}
+
+const supabaseUrl = process.env.PUBLIC_SUPABASE_URL;
+const key = dryRun ? process.env.PUBLIC_SUPABASE_ANON_KEY : process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseUrl || !key) throw new Error(dryRun ? "Public Supabase configuration is required." : "PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.");
+const supabase = createClient(supabaseUrl, key, { auth: { persistSession: false } });
+const schools = await loadSchools(supabase);
+const lists = await mapWithConcurrency(schools, 8, fetchCourseList);
+const available = lists.filter((item) => item.courses.length > 0);
+
+if (dryRun) {
+  console.log(`Read ${available.length} non-empty UCOP course lists with ${available.reduce((sum, item) => sum + item.courses.length, 0)} A-G course records.`);
+  console.log(available.slice(0, 3).map((item) => ({ school: item.school.name, courses: item.courses.length })));
+  process.exit(0);
+}
+
+let importedCourses = 0;
+await mapWithConcurrency(available, 4, async ({ school, courses }) => {
+  const sourceUrl = `${ORIGIN}/agcourselist/institution/${school.uc_ag_institution_id}`;
+  let sourceResult = await supabase.from("official_sources").select("id").eq("school_id", school.id).is("user_id", null).eq("source_url", sourceUrl).maybeSingle();
+  if (sourceResult.error) throw sourceResult.error;
+  let sourceId = sourceResult.data?.id;
+  if (!sourceId) {
+    const inserted = await supabase.from("official_sources").insert({
+      school_id: school.id, user_id: null, title: sourceTitle, kind: "official_url",
+      source_url: sourceUrl, storage_path: null, raw_text: null, mime_type: "application/json",
+      source_year: SOURCE_YEAR, is_official: true, parse_status: "complete", confidence: "verified", document_type: "general"
+    }).select("id").single();
+    if (inserted.error) throw inserted.error;
+    sourceId = inserted.data.id;
+  }
+
+  const versionResult = await supabase.from("catalog_versions").select("id,is_current").eq("school_id", school.id).eq("academic_year", SOURCE_YEAR).maybeSingle();
+  if (versionResult.error) throw versionResult.error;
+  let catalogVersionId = versionResult.data?.id;
+  if (!catalogVersionId) {
+    const currentResult = await supabase.from("catalog_versions").select("id").eq("school_id", school.id).eq("is_current", true).limit(1);
+    if (currentResult.error) throw currentResult.error;
+    const inserted = await supabase.from("catalog_versions").insert({
+      school_id: school.id, source_id: sourceId, label: "UCOP A-G approved courses",
+      academic_year: SOURCE_YEAR, is_current: (currentResult.data ?? []).length === 0, published_at: new Date().toISOString().slice(0, 10)
+    }).select("id").single();
+    if (inserted.error) throw inserted.error;
+    catalogVersionId = inserted.data.id;
+  }
+
+  const existingResult = await supabase.from("courses").select("id,name,external_course_id").eq("school_id", school.id);
+  if (existingResult.error) throw existingResult.error;
+  const existingByName = new Map((existingResult.data ?? []).map((row) => [row.name.toLowerCase(), row]));
+  const existingByExternalId = new Map((existingResult.data ?? []).filter((row) => row.external_course_id).map((row) => [row.external_course_id, row]));
+  const missingByIdentity = new Map();
+  for (const row of courses) {
+    const normalizedTitle = String(row.title).trim().toLowerCase();
+    const identity = String(row.courseId ?? row.recordId);
+    if (!existingByExternalId.has(identity) && !existingByName.has(normalizedTitle) && !missingByIdentity.has(identity)) missingByIdentity.set(identity, courseValues(row, school, catalogVersionId, sourceId));
+  }
+  const missing = [...missingByIdentity.values()];
+  if (missing.length) {
+    const inserted = await supabase.from("courses").insert(missing).select("id,name");
+    if (inserted.error) throw inserted.error;
+    for (const row of inserted.data ?? []) existingByName.set(row.name.toLowerCase(), row);
+    importedCourses += missing.length;
+  }
+
+  const honorByCourse = new Map();
+  for (const row of courses.filter((candidate) => Number(candidate.isHonors) === 1)) {
+    const course = existingByName.get(String(row.title).trim().toLowerCase());
+    if (course) honorByCourse.set(course.id, { course_id: course.id, designation: "uc_honors", source_url: sourceUrl, source_year: SOURCE_YEAR, confidence: "verified", review_status: "approved" });
+  }
+  const honors = [...honorByCourse.values()];
+  if (honors.length) {
+    const designationResult = await supabase.from("course_designations").upsert(honors, { onConflict: "course_id,designation" });
+    if (designationResult.error) throw designationResult.error;
+  }
+});
+
+console.log(`Synced ${available.length} UCOP A-G course lists: ${importedCourses} new catalog rows plus UC honors designations. A-G rows are identity evidence, not a graduation-progress layer.`);

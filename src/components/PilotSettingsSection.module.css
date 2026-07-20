@@ -39,6 +39,7 @@
 .settingRow strong { font-size: 12px; font-weight: 650; }
 .settingRow small { max-width: 54ch; color: var(--ink-soft); font-size: 11px; line-height: 1.4; }
 .control { display: flex; min-width: 180px; justify-content: flex-end; }
+.settingRow:first-child { align-items: start; }
 
 .select {
   width: 180px;

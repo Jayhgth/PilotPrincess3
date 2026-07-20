@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantQuestionsWithCombinedOption, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
+import { assistantConversationPrompt, assistantMessagePromisesFutureWork, assistantQuestionsWithCombinedOption, assistantUndoIntent, buildTransparentReviewPrompt, CODEX_FEATURES, CODEX_RUNTIME_CAPABILITIES, codexErrorMessage, codexProcessEnvironment, codexRuntimeStatus, parseAcademicClearIntent, parseAssistantScheduleIntent, parseBulkGpaIntent, parseCollegeDistrictSelection, parseCompoundAcademicCourseRequest, parseDegreeGoalIntent, parseEnrollmentPreference, parseExactCourseAddition, parseScheduleAnswer, parseSchoolSelection, requestedCourseSort, requestedPreferredName, requestedStudentSettings, requestedUiTheme, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, schedulePreview, scheduleProposalAction, scheduleResultIsComplete, selectAssistantUndoTarget, type AssistantRecentChange } from "@/server/codex";
 import { sanitizeCodexText, sanitizeCodexValue } from "@/server/codex-events";
 import { ASSISTANT_MESSAGE_MAX_LENGTH, assistantMemoryUpdateSchema, assistantTurnSchema } from "@/server/ai-schemas";
 import { parseAssistantToolCall } from "@/server/ai-tools";
@@ -33,6 +33,9 @@ describe("Codex feature boundaries", () => {
     expect(status.accessPolicy).toContain("sent to OpenAI Codex");
     expect(status.retentionPolicy).toContain("No local Codex CLI session history");
     expect(status.capabilities).toEqual(CODEX_RUNTIME_CAPABILITIES);
+    process.env.PILOT_CODEX_AUTH_CONTEXT_TEST = "shared";
+    expect(codexProcessEnvironment().PILOT_CODEX_AUTH_CONTEXT_TEST).toBe("shared");
+    delete process.env.PILOT_CODEX_AUTH_CONTEXT_TEST;
     }
 
     {
@@ -58,6 +61,7 @@ describe("Codex feature boundaries", () => {
     expect(codexErrorMessage(error, "Codex failed.")).toBe(
       "This server is still running an older Codex CLI. Restart the app to load the upgraded runtime."
     );
+    expect(codexErrorMessage(new Error("401 Unauthorized: Missing bearer or basic authentication in header"), "Codex failed.")).toContain("Codex authentication expired");
     }
 
     {

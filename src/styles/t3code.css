@@ -72,6 +72,37 @@
 }
 .t3code-app .app-toolbar { height: 52px; min-height: 52px; border-bottom: 1px solid var(--line); padding: 0 12px; }
 .t3code-app .app-toolbar button { min-height: 30px; border-radius: 7px; padding-inline: 9px; font-size: 12px; }
+.desktop-navigation { display: none; }
+.desktop-macos .desktop-navigation {
+  position: fixed;
+  z-index: 2147483646;
+  top: 5px;
+  left: 148px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.desktop-macos .desktop-navigation button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-faint);
+  padding: 0;
+}
+.desktop-macos .desktop-navigation button:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+.desktop-macos .t3code-app .sidebar-top {
+  min-height: 86px;
+  align-items: flex-end;
+  padding-bottom: 11px;
+}
 .t3code-app .app-content { width: min(100%, 1240px); min-width: 0; padding-top: 22px; }
 .t3code-app .page-header { min-height: 58px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
 .t3code-app .page-header h1 { color: var(--ink); font-size: var(--type-page); font-weight: 650; letter-spacing: -0.035em; line-height: var(--leading-page); }

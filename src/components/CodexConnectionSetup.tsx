@@ -5,6 +5,7 @@ import {
   WarningIcon as Warning
 } from "@phosphor-icons/react";
 import { useState } from "react";
+import CodexProviderStatus, { type CodexProviderSnapshot } from "@/components/CodexProviderStatus";
 import FadeContent from "@/components/reactbits/FadeContent";
 import ShinyText from "@/components/reactbits/ShinyText";
 import { AI_MODEL_OPTIONS, DEFAULT_AI_REASONING_EFFORT, type AiModel } from "@/lib/ai-preferences";
@@ -28,7 +29,7 @@ export default function CodexConnectionSetup({
   compact?: boolean;
 }) {
   const [testing, setTesting] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<CodexProviderSnapshot | null>(null);
   const [testMessage, setTestMessage] = useState<string | null>(value.testedAt ? "Connection verified." : null);
   const [testError, setTestError] = useState<string | null>(null);
 
@@ -66,22 +67,6 @@ export default function CodexConnectionSetup({
     }
   }
 
-  async function connectCodex() {
-    setConnecting(true);
-    setTestError(null);
-    setTestMessage("Complete Codex sign-in in the browser window that opens.");
-    try {
-      const response = await authenticatedFetch("/api/ai/login", { method: "POST" });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Codex sign-in did not complete.");
-      setTestMessage("Codex account connected. Test the connection to continue.");
-    } catch (error) {
-      setTestError(error instanceof Error ? error.message : "Codex sign-in did not complete.");
-    } finally {
-      setConnecting(false);
-    }
-  }
-
   return <div className={`${styles.setup} ${compact ? styles.compact : ""}`}>
     <fieldset className={styles.connectionChoice}>
       <legend>Use Pilot Assistant</legend>
@@ -96,7 +81,8 @@ export default function CodexConnectionSetup({
     </fieldset>
 
     {value.enabled && <FadeContent className={styles.connectionDetails} duration={0.16}>
-      <div className={styles.managedNote}><Cpu size={18} /><span><strong>No personal API key needed</strong><small>Pilot uses the Codex subscription connected on this computer.</small></span><button type="button" onClick={() => void connectCodex()} disabled={connecting}>{connecting ? "Connecting" : "Connect Codex"}</button></div>
+      <div className={styles.managedNote}><Cpu size={18} /><span><strong>Local Codex account</strong><small>Pilot automatically uses the Codex account already authenticated on this computer.</small></span></div>
+      <CodexProviderStatus onStatusChange={setProviderStatus} />
       <fieldset className={styles.modelList}>
         <legend>Model</legend>
         {AI_MODEL_OPTIONS.map((option) => <label className={value.model === option.value ? styles.selected : ""} key={option.value}>
@@ -111,7 +97,7 @@ export default function CodexConnectionSetup({
         <span>I approve sending my messages and the academic records needed for my request to OpenAI Codex. Changes use the same ownership, transcript-lock, prerequisite, and absolute-limit rules as the rest of the app and remain undoable.</span>
       </label>
       <div className={styles.testRow}>
-        <button type="button" onClick={() => void testConnection()} disabled={testing || !value.approved}>
+        <button type="button" onClick={() => void testConnection()} disabled={providerStatus?.providerStatus !== "ready" || testing || !value.approved}>
           {testing ? <ShinyText text="Testing connection" speed={1.7} /> : value.testedAt ? "Test again" : "Test connection"}
         </button>
         <span>GPT-5.6 Luna with {DEFAULT_AI_REASONING_EFFORT === "low" ? "Light" : DEFAULT_AI_REASONING_EFFORT} reasoning is recommended.</span>

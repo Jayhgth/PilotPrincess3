@@ -1,6 +1,6 @@
 import type { Input, ModelReasoningEffort, ThreadEvent, Usage, UserInput } from "@openai/codex-sdk";
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiRea
 import { mathSequenceRankFromText } from "@/lib/planning";
 import { classifyAssistantRequest, requestUsesFullPlanner } from "@/server/assistant-request-scope";
 import { pilotCoreInstructions } from "@/server/pilot-instructions";
-import { CodexAppServer } from "@/server/codex-app-server";
+import { CodexAppServer, type CodexAccountInfo } from "@/server/codex-app-server";
 
 const DEFAULT_TIMEOUT_MS = 9000;
 const DEFAULT_MODEL = DEFAULT_AI_MODEL;
@@ -30,6 +30,9 @@ interface ProviderProbe {
   providerStatus: ProviderStatus;
   providerMessage: string;
   authStatus: "configured" | "authenticated" | "unauthenticated" | "unknown";
+  authType: string | null;
+  authLabel: string | null;
+  accountEmail: string | null;
   cliVersion: string | null;
   checkedAt: string;
 }
@@ -176,35 +179,23 @@ function localAuthFallbackEnabled() {
   return !import.meta.env.PROD || process.env.PILOT_DESKTOP === "true" || process.env.CODEX_ALLOW_LOCAL_AUTH === "true";
 }
 
-function isolatedEnvironment(codexHome: string) {
-  const env: Record<string, string> = {
-    CODEX_HOME: codexHome,
+export function codexProcessEnvironment(): Record<string, string> {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  );
+  return {
+    ...env,
     HOME: process.env.HOME ?? homedir(),
     PATH: process.env.PATH ?? "",
     TMPDIR: process.env.TMPDIR ?? tmpdir(),
     LANG: process.env.LANG ?? "en_US.UTF-8",
     NO_COLOR: "1"
   };
-  return env;
 }
 
-async function prepareIsolatedCodexHome(feature: string) {
-  const codexHome = await mkdtemp(join(tmpdir(), `pilot-princess-codex-${feature}-`));
-  if (!process.env.OPENAI_API_KEY && !process.env.CODEX_API_KEY) {
-    if (!localAuthFallbackEnabled()) {
-      await rm(codexHome, { recursive: true, force: true });
-      throw new Error("Codex requires a server API key in production.");
-    }
-    const sourceHome = process.env.CODEX_HOME ?? join(homedir(), ".codex");
-    await mkdir(codexHome, { recursive: true });
-    await copyFile(join(sourceHome, "auth.json"), join(codexHome, "auth.json")).catch(() => undefined);
-  }
-  return codexHome;
-}
-
-function createCodex(codexHome: string) {
+function createCodex() {
   return new CodexAppServer({
-    env: isolatedEnvironment(codexHome),
+    env: codexProcessEnvironment(),
     config: {
       history: { persistence: "none" },
       model_reasoning_summary: "concise",
@@ -235,6 +226,25 @@ function createCodex(codexHome: string) {
       }
     }
   });
+}
+
+function accountAuthLabel(account: CodexAccountInfo) {
+  if (account.type === "apiKey") return "OpenAI API Key";
+  if (account.type !== "chatgpt") return "Codex";
+  const labels: Record<string, string> = {
+    free: "ChatGPT Free",
+    go: "ChatGPT Go",
+    plus: "ChatGPT Plus",
+    pro: "ChatGPT Pro",
+    prolite: "ChatGPT Pro",
+    team: "ChatGPT Team",
+    self_serve_business_usage_based: "ChatGPT Business",
+    business: "ChatGPT Business",
+    enterprise_cbp_usage_based: "ChatGPT Enterprise",
+    enterprise: "ChatGPT Enterprise",
+    edu: "ChatGPT Edu"
+  };
+  return account.planType ? labels[account.planType] ?? "ChatGPT subscription" : "ChatGPT subscription";
 }
 
 export function codexRuntimeStatus() {
@@ -279,9 +289,13 @@ export function codexErrorMessage(error: unknown, fallback: string) {
     // Plain error messages need no decoding.
   }
 
-  return message.includes("requires a newer version of Codex")
-    ? "This server is still running an older Codex CLI. Restart the app to load the upgraded runtime."
-    : message;
+  if (message.includes("requires a newer version of Codex")) {
+    return "This server is still running an older Codex CLI. Restart the app to load the upgraded runtime.";
+  }
+  if (/401 Unauthorized|Missing bearer or basic authentication/i.test(message)) {
+    return "Codex authentication expired. Sign in with the Codex app or `codex login`, then refresh the Codex account status in Pilot settings.";
+  }
+  return message;
 }
 
 function resolveCodexCliScript() {
@@ -292,51 +306,57 @@ async function runProviderProbe(): Promise<ProviderProbe> {
   const checkedAt = new Date().toISOString();
   const apiKeyConfigured = Boolean(process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY);
   let cliVersion: string | null = null;
+  let codex: CodexAppServer | null = null;
 
   try {
     const cliScript = resolveCodexCliScript();
     const versionResult = await execFileAsync(process.execPath, [cliScript, "--version"], {
+      env: { ...codexProcessEnvironment(), ELECTRON_RUN_AS_NODE: "1" },
       timeout: 3000,
       windowsHide: true
     });
     cliVersion = versionResult.stdout.trim().replace(/^codex-cli\s+/, "") || null;
 
-    if (apiKeyConfigured) {
-      return {
-        providerStatus: "ready",
-        providerMessage: "The bundled Codex runtime and a server API key are configured.",
-        authStatus: "configured",
-        cliVersion,
-        checkedAt
-      };
-    }
-
-    if (!localAuthFallbackEnabled()) {
+    if (!apiKeyConfigured && !localAuthFallbackEnabled()) {
       return {
         providerStatus: "needs_auth",
         providerMessage: "Set OPENAI_API_KEY or CODEX_API_KEY on the production server to enable Codex.",
         authStatus: "unauthenticated",
+        authType: null,
+        authLabel: null,
+        accountEmail: null,
         cliVersion,
         checkedAt
       };
     }
 
-    let authenticated = false;
-    try {
-      const authResult = await execFileAsync(process.execPath, [cliScript, "login", "status"], {
-        timeout: 3000,
-        windowsHide: true
-      });
-      authenticated = /logged in/i.test(`${authResult.stdout}\n${authResult.stderr}`);
-    } catch {
-      // An unauthenticated CLI exits non-zero, but the installed provider is still available.
+    codex = createCodex();
+    const accountStatus = await codex.readAccount();
+    if (accountStatus.account) {
+      const authLabel = accountAuthLabel(accountStatus.account);
+      return {
+        providerStatus: "ready",
+        providerMessage: accountStatus.account.email
+          ? `Authenticated as ${accountStatus.account.email}.`
+          : `Authenticated with ${authLabel}.`,
+        authStatus: apiKeyConfigured ? "configured" : "authenticated",
+        authType: accountStatus.account.type,
+        authLabel,
+        accountEmail: accountStatus.account.email,
+        cliVersion,
+        checkedAt
+      };
     }
+
     return {
-      providerStatus: authenticated ? "ready" : "needs_auth",
-      providerMessage: authenticated
-        ? "The bundled Codex runtime found an authenticated local Codex session."
-        : "The Codex runtime is installed, but no authenticated local session was found.",
-      authStatus: authenticated ? "authenticated" : "unauthenticated",
+      providerStatus: accountStatus.requiresOpenaiAuth ? "needs_auth" : "ready",
+      providerMessage: accountStatus.requiresOpenaiAuth
+        ? "Codex is not authenticated. Sign in with the Codex app or `codex login`, then refresh."
+        : "Codex is available, but the account type could not be identified.",
+      authStatus: accountStatus.requiresOpenaiAuth ? "unauthenticated" : "unknown",
+      authType: null,
+      authLabel: null,
+      accountEmail: null,
       cliVersion,
       checkedAt
     };
@@ -345,31 +365,15 @@ async function runProviderProbe(): Promise<ProviderProbe> {
       providerStatus: "unavailable",
       providerMessage: "The bundled Codex runtime could not be started on this server.",
       authStatus: "unknown",
+      authType: null,
+      authLabel: null,
+      accountEmail: null,
       cliVersion,
       checkedAt
     };
+  } finally {
+    await codex?.close().catch(() => undefined);
   }
-}
-
-export async function connectLocalCodexAccount() {
-  if (process.env.PILOT_DESKTOP !== "true" && import.meta.env.PROD) {
-    throw new Error("Codex account connection is available in the Pilot Princess desktop app.");
-  }
-  const cliScript = resolveCodexCliScript();
-  await execFileAsync(process.execPath, [cliScript, "login"], {
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: "1",
-      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "pilot_princess_desktop"
-    },
-    timeout: 330_000,
-    windowsHide: true,
-    maxBuffer: 1024 * 1024
-  });
-  providerProbeCache = null;
-  const status = await probeCodexRuntimeStatus({ force: true });
-  if (status.providerStatus !== "ready") throw new Error("Codex sign-in did not complete.");
-  return status;
 }
 
 export async function probeCodexRuntimeStatus(options: { force?: boolean } = {}) {
@@ -394,14 +398,12 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
   const timeoutMs = options.timeoutMs ?? Number(process.env.CODEX_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
   const timeout = setTimeout(() => controller.abort(new Error("Codex turn timed out.")), timeoutMs);
   let scratchDirectory: string | null = null;
-  let isolatedHome: string | null = null;
   let codex: CodexAppServer | null = null;
 
   try {
     scratchDirectory =
       options.workingDirectory ?? (await mkdtemp(join(tmpdir(), `pilot-princess-${options.feature}-`)));
-    isolatedHome = await prepareIsolatedCodexHome(options.feature);
-    codex = createCodex(isolatedHome);
+    codex = createCodex();
     const model = options.model ?? process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
@@ -446,7 +448,6 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
     if (!options.workingDirectory && scratchDirectory) {
       await rm(scratchDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
-    if (isolatedHome) await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -461,14 +462,12 @@ export async function runCodexStructuredStream<T>(
   const timeoutMs = options.timeoutMs ?? Number(process.env.CODEX_TIMEOUT_MS ?? 60_000);
   const timeout = setTimeout(() => controller.abort(new Error("Codex turn timed out.")), timeoutMs);
   let scratchDirectory: string | null = null;
-  let isolatedHome: string | null = null;
   let codex: CodexAppServer | null = null;
   const events: ThreadEvent[] = [];
 
   try {
     scratchDirectory = options.workingDirectory ?? (await mkdtemp(join(tmpdir(), `pilot-princess-${options.feature}-`)));
-    isolatedHome = await prepareIsolatedCodexHome(options.feature);
-    codex = createCodex(isolatedHome);
+    codex = createCodex();
     const model = options.model ?? process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
@@ -506,7 +505,6 @@ export async function runCodexStructuredStream<T>(
     if (!options.workingDirectory && scratchDirectory) {
       await rm(scratchDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
-    if (isolatedHome) await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -1894,7 +1892,6 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
   const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
   const timeout = setTimeout(() => controller.abort(new Error("Pilot Assistant reached its six-minute work limit.")), options.timeoutMs ?? 350_000);
   let scratchDirectory: string | null = null;
-  let isolatedHome: string | null = null;
   let codex: CodexAppServer | null = null;
   let usage: Usage | null = null;
   let latestMessage = "";
@@ -1904,8 +1901,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
 
   try {
     scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-assistant-"));
-    isolatedHome = await prepareIsolatedCodexHome("assistant_chat");
-    codex = createCodex(isolatedHome);
+    codex = createCodex();
     const model = options.model;
     const thread = codex.startThread({
       model,
@@ -2585,6 +2581,5 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
     release();
     await codex?.close().catch(() => undefined);
     if (scratchDirectory) await rm(scratchDirectory, { recursive: true, force: true }).catch(() => undefined);
-    if (isolatedHome) await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
   }
 }

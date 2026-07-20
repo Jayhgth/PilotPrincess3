@@ -1,0 +1,27 @@
+.status {
+  display: grid;
+  width: min(100%, 360px);
+  min-width: 260px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 9px;
+  text-align: left;
+}
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); }
+.ready .dot { background: var(--success); }
+.problem .dot { background: var(--danger); }
+.copy { display: grid; min-width: 0; gap: 1px; }
+.copy strong { overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.copy small { overflow: hidden; color: var(--ink-soft); font-size: 11px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.status > button { display: inline-grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--ink-soft); padding: 0; }
+.status > button:hover:not(:disabled) { background: var(--surface-muted); color: var(--ink); }
+.spinning { animation: status-spin 700ms linear infinite; }
+@keyframes status-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 620px) { .status { width: 100%; min-width: 0; } }
+@media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }

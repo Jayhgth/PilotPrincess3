@@ -1,0 +1,161 @@
+.settingsPanel {
+  display: grid;
+  max-width: 820px;
+  gap: 18px;
+}
+
+.section { min-width: 0; }
+
+.sectionHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+.sectionHeading h2 {
+  margin: 0;
+  font-size: var(--type-section);
+  letter-spacing: -.015em;
+}
+
+.sectionHeading p {
+  max-width: 60ch;
+  margin: 3px 0 0;
+  color: var(--ink-soft);
+  font-size: var(--type-supporting);
+  line-height: var(--leading-supporting);
+}
+
+.settingsGrid { max-width: 720px; }
+
+.accountIdentity {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+}
+
+.accountIdentity > span { display: grid; gap: 2px; }
+.accountIdentity strong { font-size: var(--type-body); }
+.accountIdentity small { color: var(--ink-faint); font-size: var(--type-supporting); }
+
+.institutionIdentity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+}
+
+.institutionIdentity > span { display: grid; min-width: 0; gap: 2px; }
+.institutionIdentity strong { overflow: hidden; font-size: var(--type-body); text-overflow: ellipsis; white-space: nowrap; }
+.institutionIdentity small { color: var(--ink-faint); font-size: var(--type-supporting); }
+.districtForm { max-width: 620px; }
+
+.readiness {
+  display: flex;
+  max-width: 620px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  border-block: 1px solid var(--line);
+  padding-block: 12px;
+}
+
+.readiness > div { display: grid; min-width: 180px; margin-right: auto; gap: 2px; }
+.readiness > div strong { font-size: var(--type-supporting); }
+.readiness > div small { color: var(--ink-faint); font-size: 11px; }
+.readiness > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 650;
+}
+.readiness > span svg { opacity: .35; }
+.readiness > span.ready { color: var(--success); }
+.readiness > span.ready svg { opacity: 1; }
+
+.schoolChange { max-width: 620px; margin-bottom: 20px; }
+.searchField { position: relative; }
+.searchField svg { position: absolute; z-index: 1; top: 50%; left: 13px; color: var(--ink-faint); transform: translateY(-50%); }
+.searchField input { width: 100%; padding-left: 38px; }
+.searchStatus { display: block; margin-top: 7px; color: var(--ink-faint); }
+
+.schoolResults {
+  overflow: hidden;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.schoolResults button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 10px 12px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.schoolResults button:last-child { border-bottom: 0; }
+.schoolResults button:hover, .schoolResults button[aria-selected="true"] { background: var(--surface-raised); }
+.schoolResults button > span { display: grid; min-width: 0; gap: 1px; }
+.schoolResults button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schoolResults button small { color: var(--ink-faint); }
+.schoolResults button em { color: var(--ink-soft); font-size: 11px; font-style: normal; font-weight: 650; }
+
+.schoolSwitchConfirm {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  border: 1px solid color-mix(in srgb, var(--warning) 32%, var(--line));
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--warning-soft);
+}
+.schoolSwitchConfirm p { margin: 0; color: var(--ink-soft); font-size: var(--type-supporting); line-height: var(--leading-supporting); }
+.schoolSwitchConfirm p strong { color: var(--ink); }
+.schoolSwitchConfirm > div { display: flex; justify-content: flex-end; gap: 8px; }
+
+.error {
+  margin: 13px 0 0;
+  color: var(--danger);
+  font-size: var(--type-supporting);
+  line-height: var(--leading-supporting);
+}
+
+.saveRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.savedStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--success);
+  font-size: var(--type-supporting);
+  font-weight: 650;
+}
+
+@media (max-width: 620px) {
+  .sectionHeading { align-items: stretch; flex-direction: column; }
+  .settingsGrid { grid-template-columns: 1fr; }
+}

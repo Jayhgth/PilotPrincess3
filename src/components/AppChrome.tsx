@@ -1,8 +1,11 @@
 import { ChatCircleDotsIcon as ChatCircleDots } from "@phosphor-icons/react/dist/csr/ChatCircleDots";
+import { ArrowLeftIcon as ArrowLeft } from "@phosphor-icons/react/dist/csr/ArrowLeft";
+import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/ArrowRight";
 import { GearSixIcon as GearSix } from "@phosphor-icons/react/dist/csr/GearSix";
 import { MoonIcon as Moon } from "@phosphor-icons/react/dist/csr/Moon";
 import { SignOutIcon as SignOut } from "@phosphor-icons/react/dist/csr/SignOut";
 import { SunIcon as Sun } from "@phosphor-icons/react/dist/csr/Sun";
+import { SidebarSimpleIcon as SidebarSimple } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { XIcon as X } from "@phosphor-icons/react/dist/csr/X";
 import type { Icon } from "@phosphor-icons/react";
 import {
@@ -77,6 +80,7 @@ export default function AppChrome<ViewId extends string>({
     return normalizeSidebarWidth(Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY)));
   });
   const pendingSidebarWidth = useRef(sidebarWidth);
+  const expandedSidebarWidth = useRef(sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? SIDEBAR_DEFAULT_WIDTH : sidebarWidth);
   const onAssistantToggleRef = useRef(onAssistantToggle);
 
   useEffect(() => {
@@ -98,6 +102,7 @@ export default function AppChrome<ViewId extends string>({
 
   useEffect(() => {
     pendingSidebarWidth.current = sidebarWidth;
+    if (sidebarWidth !== SIDEBAR_COLLAPSED_WIDTH) expandedSidebarWidth.current = sidebarWidth;
     document.documentElement.style.setProperty("--app-sidebar-width", `${sidebarWidth}px`);
     document.documentElement.dataset.sidebarCollapsed = String(sidebarWidth === SIDEBAR_COLLAPSED_WIDTH);
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
@@ -149,7 +154,24 @@ export default function AppChrome<ViewId extends string>({
     setSidebarWidth(normalizeSidebarWidth(nextWidth));
   }
 
+  function toggleSidebar() {
+    setSidebarWidth((current) => current === SIDEBAR_COLLAPSED_WIDTH
+      ? normalizeSidebarWidth(expandedSidebarWidth.current)
+      : SIDEBAR_COLLAPSED_WIDTH);
+  }
+
   return <>
+    <div className="desktop-navigation" aria-label="Window navigation">
+      <button type="button" onClick={toggleSidebar} aria-label={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"} title={sidebarWidth === SIDEBAR_COLLAPSED_WIDTH ? "Expand sidebar" : "Collapse sidebar"}>
+        <SidebarSimple size={18} />
+      </button>
+      <button type="button" onClick={() => window.history.back()} aria-label="Go back" title="Go back">
+        <ArrowLeft size={18} />
+      </button>
+      <button type="button" onClick={() => window.history.forward()} aria-label="Go forward" title="Go forward">
+        <ArrowRight size={18} />
+      </button>
+    </div>
     <aside className={`app-sidebar ${mobileNavOpen ? "open" : ""}`}>
       <div className="sidebar-top">
         <button className="wordmark" type="button" onClick={() => onNavigate(navItems[0].id)}><BrandMark /><span>Pilot Princess</span></button>

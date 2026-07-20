@@ -6,6 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import AiModelPicker from "@/components/AiModelPicker";
+import CodexProviderStatus, { type CodexProviderSnapshot } from "@/components/CodexProviderStatus";
 import {
   AI_REASONING_OPTIONS,
   type AiModel,
@@ -59,7 +60,7 @@ export default function PilotSettingsSection({
   const [loadingArchives, setLoadingArchives] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [providerStatus, setProviderStatus] = useState<CodexProviderSnapshot | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -127,22 +128,6 @@ export default function PilotSettingsSection({
     }
   }
 
-  async function connectCodex() {
-    setConnecting(true);
-    setError(null);
-    setTestMessage("Complete Codex sign-in in the browser window that opens.");
-    try {
-      const response = await authorizedFetch("/api/ai/login", { method: "POST" });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Codex sign-in did not complete.");
-      setTestMessage("Codex account connected. Run the connection test to verify the selected model.");
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Codex sign-in did not complete.");
-    } finally {
-      setConnecting(false);
-    }
-  }
-
   async function restore(conversation: AiConversation) {
     setRestoringId(conversation.id);
     setError(null);
@@ -173,8 +158,8 @@ export default function PilotSettingsSection({
       <div className={styles.rows}>
         <SettingRow
           title="Codex account"
-          description="Connect the Codex subscription on this computer. No API key is required."
-          control={<button className="secondary-button small" type="button" disabled={connecting} onClick={() => void connectCodex()}>{connecting ? "Connecting" : "Connect"}</button>}
+          description="Pilot automatically uses the Codex account already authenticated on this computer."
+          control={<CodexProviderStatus onStatusChange={setProviderStatus} />}
         />
         <SettingRow
           title="Pilot Assistant"
@@ -205,7 +190,7 @@ export default function PilotSettingsSection({
         <SettingRow
           title="Connection test"
           description={testMessage ?? "Verify the deployment's Pilot connection for the selected model and reasoning level."}
-          control={<button className="secondary-button small" type="button" disabled={!draft.enabled || !draft.approved || testing} onClick={() => void testConnection()}>{testing ? "Testing" : draft.testedAt ? "Test again" : "Test"}</button>}
+          control={<button className="secondary-button small" type="button" disabled={providerStatus?.providerStatus !== "ready" || !draft.enabled || !draft.approved || testing} onClick={() => void testConnection()}>{testing ? "Testing" : draft.testedAt ? "Test again" : "Test"}</button>}
         />
       </div>
     </section>

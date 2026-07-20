@@ -20,7 +20,7 @@ cp .env.example .env
 pnpm dev:desktop
 ```
 
-Use your own Supabase project and apply `supabase/migrations/` in filename order. Enable the email, Google, and GitHub sign-in methods you want to support. Connect Codex from the app or run `codex login` before testing Pilot.
+Use your own Supabase project and apply `supabase/migrations/` in filename order. Enable the email, Google, and GitHub sign-in methods you want to support. Pilot automatically uses the Codex account already authenticated on the computer; if no account is present, run `codex login` before testing Pilot.
 
 Useful commands:
 
@@ -32,6 +32,10 @@ pnpm dev:marketing
 ```
 
 The download website is in `apps/marketing` and can be deployed independently to Vercel. Tagged releases are built by GitHub Actions; setup and release instructions are in the deployment reference below.
+
+## Archived web app
+
+`archive/web-app` is a self-contained snapshot of commit `dbdfc9a`, the final web application before the desktop conversion. It keeps the original Vercel adapter, deployment configuration, source, tests, migrations, and lockfile. Run its commands from that directory; it is intentionally excluded from the active pnpm workspace and does not share dependencies or build output with the desktop app.
 
 ## References
 

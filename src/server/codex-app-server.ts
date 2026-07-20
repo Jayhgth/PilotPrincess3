@@ -13,6 +13,17 @@ import type {
 
 type JsonRecord = Record<string, unknown>;
 
+export interface CodexAccountInfo {
+  type: string;
+  email: string | null;
+  planType: string | null;
+}
+
+export interface CodexAccountStatus {
+  account: CodexAccountInfo | null;
+  requiresOpenaiAuth: boolean;
+}
+
 interface AppServerTurn {
   items: ThreadItem[];
   finalResponse: string;
@@ -115,6 +126,21 @@ export class CodexAppServer {
 
   startThread(options: ThreadOptions = {}) {
     return new AppServerThread(this, options);
+  }
+
+  async readAccount(): Promise<CodexAccountStatus> {
+    await this.ensureInitialized();
+    const result = await this.request("account/read", {});
+    const response = isRecord(result) ? result : {};
+    const account = isRecord(response.account) ? response.account : null;
+    return {
+      account: account ? {
+        type: String(account.type ?? "unknown"),
+        email: typeof account.email === "string" ? account.email : null,
+        planType: typeof account.planType === "string" ? account.planType : null
+      } : null,
+      requiresOpenaiAuth: response.requiresOpenaiAuth === true
+    };
   }
 
   async close() {

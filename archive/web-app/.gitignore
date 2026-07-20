@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+.vercel/
+.pnpm-store/
+node_modules/
+dist/
+.astro/
+coverage/
+playwright-report/
+test-results/
+supabase/.temp/

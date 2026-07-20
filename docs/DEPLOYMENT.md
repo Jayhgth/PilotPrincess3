@@ -1,6 +1,6 @@
 # Deploy, update, and test
 
-Pilot Princess ships as a desktop app. Supabase hosts authentication, private storage, and Postgres; Pilot runs locally through the bundled official Codex app-server and the student's Codex login. No OpenAI API key is used.
+Pilot Princess ships as a desktop app. Supabase hosts authentication, private storage, and Postgres; Pilot runs locally through the bundled official Codex app-server. It reads the existing Codex account with the app-server `account/read` method and uses the standard Codex home and OS credential store, matching t3code. It never starts a separate browser login. No OpenAI API key is used.
 
 ## One-time setup
 
@@ -40,6 +40,8 @@ pnpm build:desktop:win   # Windows x64 and ARM64
 ```
 
 Before a release, use an isolated QA account to verify sign-in, transcript import, plans, undo, Pilot read → apply → live refresh → undo, move/resize, quit/relaunch persistence, and account isolation. Remove the QA records afterward.
+
+Pilot settings must show `Authenticated · <account type>` and the account email before a Pilot test can run. If it shows `Not authenticated`, authenticate Codex outside Pilot with the Codex app or `codex login`, then refresh the status. Pilot does not own, copy, or replace that login.
 
 ## Release an update
 

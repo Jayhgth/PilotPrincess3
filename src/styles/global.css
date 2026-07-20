@@ -617,7 +617,7 @@ input:focus, select:focus, textarea:focus {
   z-index: 2147483647;
   top: 0;
   right: 320px;
-  left: 88px;
+  left: 250px;
   display: block;
   height: 34px;
   -webkit-app-region: drag;
