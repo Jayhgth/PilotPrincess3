@@ -16,8 +16,9 @@ function fail(message) {
 const trackedFiles = git(["ls-files", "-z"]).split("\0").filter(Boolean);
 const repositoryFiles = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"]).split("\0").filter(Boolean);
 const trackedEnvironmentFiles = trackedFiles.filter((file) => /(^|\/)\.env(?:\.|$)/.test(file));
-if (trackedEnvironmentFiles.some((file) => file !== ".env.example")) {
-  fail(`Tracked environment file: ${trackedEnvironmentFiles.filter((file) => file !== ".env.example").join(", ")}`);
+const unsafeEnvironmentFiles = trackedEnvironmentFiles.filter((file) => file !== ".env.example" && !file.endsWith("/.env.example"));
+if (unsafeEnvironmentFiles.length) {
+  fail(`Tracked environment file: ${unsafeEnvironmentFiles.join(", ")}`);
 }
 
 try {

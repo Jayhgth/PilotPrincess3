@@ -5,7 +5,26 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/**", "**/.astro/**", "**/.vercel/**", "**/node_modules/**", "coverage/**", "playwright-report/**", "test-results/**", "release/**"] },
+  {
+    ignores: [
+      "**/dist/**",
+      "**/.astro/**",
+      "**/.vercel/**",
+      "**/node_modules/**",
+      "archive/**",
+      "coverage/**",
+      "playwright-report/**",
+      "test-results/**",
+      "release/**"
+    ]
+  },
+  {
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname
+      }
+    }
+  },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   ...astro.configs.recommended,

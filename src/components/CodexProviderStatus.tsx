@@ -40,7 +40,10 @@ export default function CodexProviderStatus({
     }
   }, [onStatusChange]);
 
-  useEffect(() => { void refresh(false); }, [refresh]);
+  useEffect(() => {
+    const refreshTimer = window.setTimeout(() => { void refresh(false); }, 0);
+    return () => window.clearTimeout(refreshTimer);
+  }, [refresh]);
 
   const ready = status?.providerStatus === "ready";
   const headline = checking

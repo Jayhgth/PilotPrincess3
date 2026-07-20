@@ -23,15 +23,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
+      - name: Check sync configuration
+        id: configuration
+        env:
+          PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -n "$PUBLIC_SUPABASE_URL" ] && [ -n "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=School sync skipped::Add PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY as Actions secrets to enable catalog writes."
+          fi
       - uses: actions/checkout@v6
+        if: steps.configuration.outputs.ready == 'true'
       - uses: pnpm/action-setup@v6
+        if: steps.configuration.outputs.ready == 'true'
       - uses: actions/setup-node@v6
+        if: steps.configuration.outputs.ready == 'true'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.configuration.outputs.ready == 'true'
       - run: sudo apt-get update && sudo apt-get install -y imagemagick tesseract-ocr
+        if: steps.configuration.outputs.ready == 'true'
       - name: Refresh official catalogs and diploma rules
+        if: steps.configuration.outputs.ready == 'true'
         env:
           PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
