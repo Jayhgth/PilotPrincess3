@@ -22,38 +22,25 @@ const downloads = {
     <div class="grid-light" aria-hidden="true"></div>
     <header class="site-nav shell">
       <a class="brand" href="#top"><img src="/pilot-princess-mark.svg" alt="" /><span>Pilot Princess</span></a>
-      <nav aria-label="Main navigation">
-        <a href="#product">Product</a>
-        <a href="#open-source">Open source</a>
-        <a href={repo} target="_blank" rel="noreferrer">GitHub ↗</a>
-        <a class="nav-download" data-smart-download href={downloads.mac}>Download</a>
-      </nav>
     </header>
 
     <main id="top">
       <section class="hero shell">
         <div class="hero-glow" aria-hidden="true"></div>
-        <div class="float-chip chip-one" aria-hidden="true"><span>✓</span> Prerequisites checked</div>
-        <div class="float-chip chip-two" aria-hidden="true"><span>4.63</span> projected GPA</div>
-        <div class="float-chip chip-three" aria-hidden="true"><span>↗</span> Degree overlap found</div>
-        <p class="eyebrow"><span></span> Open-source academic planning</p>
         <h1>Plan the whole path.<br /><em>Change it in a sentence.</em></h1>
-        <p class="hero-copy">Verified course data, four-year plan versions, and local Codex automation in one private desktop workspace.</p>
+        <p class="hero-copy">Orchestrate Codex into your academic success.</p>
         <div class="hero-actions">
-          <a class="primary-download" data-smart-download href={downloads.mac}><span class="platform-icon" aria-hidden="true"><svg data-platform-mac viewBox="0 0 24 24"><path d="M17.1 12.5c0-2.4 2-3.6 2.1-3.7a4.6 4.6 0 0 0-3.6-2c-1.5-.2-3 .9-3.8.9-.8 0-2-1-3.3-.9a4.9 4.9 0 0 0-4.1 2.5c-1.8 3-.5 7.6 1.2 10.1.8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4a10.9 10.9 0 0 0 1.4-2.9 4.3 4.3 0 0 1-2.4-4.1ZM14.6 5.2A4.4 4.4 0 0 0 15.7 2a4.5 4.5 0 0 0-3 1.5 4.2 4.2 0 0 0-1.1 3.1 3.7 3.7 0 0 0 3-1.4Z" /></svg><svg class="platform-windows" data-platform-windows viewBox="0 0 24 24"><path d="M3 4.8 10.5 3.8v7.4H3V4.8Zm8.5-1.1L21 2.4v8.8h-9.5V3.7ZM3 12.2h7.5v7.5L3 18.7v-6.5Zm8.5 0H21V21l-9.5-1.3v-7.5Z" /></svg></span><span><strong data-download-label>Download for macOS</strong><small>Apple silicon</small></span></a>
-          <a class="secondary-action" href={repo} target="_blank" rel="noreferrer">View source ↗</a>
+          <a class="primary-download" data-smart-download href={downloads.mac}><span class="platform-icon" aria-hidden="true"><svg data-platform-mac viewBox="0 0 24 24"><path d="M17.1 12.5c0-2.4 2-3.6 2.1-3.7a4.6 4.6 0 0 0-3.6-2c-1.5-.2-3 .9-3.8.9-.8 0-2-1-3.3-.9a4.9 4.9 0 0 0-4.1 2.5c-1.8 3-.5 7.6 1.2 10.1.8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4a10.9 10.9 0 0 0 1.4-2.9 4.3 4.3 0 0 1-2.4-4.1ZM14.6 5.2A4.4 4.4 0 0 0 15.7 2a4.5 4.5 0 0 0-3 1.5 4.2 4.2 0 0 0-1.1 3.1 3.7 3.7 0 0 0 3-1.4Z" /></svg><svg class="platform-windows" data-platform-windows viewBox="0 0 24 24"><path d="M3 4.8 10.5 3.8v7.4H3V4.8Zm8.5-1.1L21 2.4v8.8h-9.5V3.7ZM3 12.2h7.5v7.5L3 18.7v-6.5Zm8.5 0H21V21l-9.5-1.3v-7.5Z" /></svg></span><strong data-download-label>Download for macOS</strong></a>
+          <a class="source-action" href={repo} target="_blank" rel="noreferrer"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.4.7-4.1-1.4-4.1-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.2c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z" /></svg><span>Steal our code (legally)</span><span aria-hidden="true">↗</span></a>
         </div>
-        <p class="hero-note">Free and open source. Codex account and Supabase sign-in required.</p>
       </section>
 
-      <section class="product-stage shell" id="product" aria-label="Pilot Princess dashboard preview">
+      <section class="product-stage shell" id="product" aria-label="Pilot Princess dashboard preview" data-tilt-preview>
         <div class="stage-shadow" aria-hidden="true"></div>
         <figure class="dashboard-preview-frame">
           <img src="/dashboard-preview.png" alt="Pilot Princess dashboard showing diploma progress, GPA, courses, and associate degree planning." width="1600" height="1000" loading="eager" decoding="async" />
         </figure>
       </section>
-
-      <section class="value-strip shell"><p>One workspace for the decisions that usually live in five tabs.</p><div><span>Four-year plans</span><span>Diploma progress</span><span>College degrees</span><span>GPA scenarios</span></div></section>
 
       <section class="source-section shell" id="open-source">
         <div><p class="eyebrow"><span></span> Open by design</p><h2>Inspect the planner you depend on.</h2><p>The desktop shell, planning engine, source provenance, and Pilot tool contracts are public. Student data remains protected by Supabase row-level security.</p><a href={repo} target="_blank" rel="noreferrer">Explore the repository ↗</a></div>
@@ -67,7 +54,7 @@ const downloads = {
 
     </main>
 
-    <footer class="shell"><a class="brand" href="#top"><img src="/pilot-princess-mark.svg" alt="" /><span>Pilot Princess</span></a><p>Open-source academic planning.</p><div><a href={repo}>GitHub</a><a href={`${repo}/releases`}>Releases</a><a href={`${repo}/blob/main/README.md`}>Docs</a></div></footer>
+    <footer class="shell"><a class="brand" href="#top"><img src="/pilot-princess-mark.svg" alt="" /><span>Pilot Princess</span></a><div><a href={repo}>GitHub</a><a href={`${repo}/releases`}>Releases</a><a href={`${repo}/blob/main/README.md`}>Docs</a></div></footer>
 
     <script is:inline define:vars={{ downloads }}>
       const isWindows = navigator.userAgent.includes("Windows");
@@ -82,6 +69,25 @@ const downloads = {
         heroDownload?.querySelector("small")?.replaceChildren("x64 installer");
         heroDownload?.querySelector("[data-platform-mac]")?.classList.add("platform-hidden");
         heroDownload?.querySelector("[data-platform-windows]")?.classList.remove("platform-windows");
+      }
+
+      const preview = document.querySelector("[data-tilt-preview]");
+      if (preview && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        preview.addEventListener("pointermove", (event) => {
+          const bounds = preview.getBoundingClientRect();
+          const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+          const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+          preview.style.setProperty("--tilt-x", `${(-y * 5).toFixed(2)}deg`);
+          preview.style.setProperty("--tilt-y", `${(x * 6).toFixed(2)}deg`);
+          preview.style.setProperty("--glow-x", `${((x + 0.5) * 100).toFixed(1)}%`);
+          preview.style.setProperty("--glow-y", `${((y + 0.5) * 100).toFixed(1)}%`);
+        });
+        preview.addEventListener("pointerleave", () => {
+          preview.style.removeProperty("--tilt-x");
+          preview.style.removeProperty("--tilt-y");
+          preview.style.removeProperty("--glow-x");
+          preview.style.removeProperty("--glow-y");
+        });
       }
     </script>
   </body>
