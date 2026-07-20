@@ -17,6 +17,7 @@ publish:
   provider: github
   owner: Jayhgth
   repo: PilotPrincess3
+  releaseType: release
 mac:
   category: public.app-category.education
   icon: apps/desktop/build/icon.png

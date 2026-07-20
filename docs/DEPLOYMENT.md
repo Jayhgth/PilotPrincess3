@@ -14,7 +14,7 @@ Provider client secrets stay in Supabase. Never put service-role keys, OAuth cli
 
 ## GitHub Actions
 
-`.github/workflows/release-desktop.yml` runs for tags beginning with `v` and publishes macOS ARM64 plus Windows x64 and ARM64 installers to GitHub Releases.
+`.github/workflows/release-desktop.yml` runs for tags beginning with `v` and can also be started manually. It publishes macOS ARM64 plus Windows x64 and ARM64 installers as a public, non-draft GitHub Release. The repository must be public for anonymous downloads from the marketing site; a private repository redirects visitors through GitHub authentication.
 
 Repository Actions secrets:
 
@@ -50,6 +50,8 @@ Pilot settings must show `Authenticated · <account type>` and the account email
 3. Commit and push the change.
 4. Create and push the matching tag, for example `git tag v0.2.0 && git push origin v0.2.0`.
 5. Check the **Release desktop apps** workflow and its GitHub Release artifacts.
+
+For the initial release, the workflow can instead be started from **Actions → Release desktop apps → Run workflow**. It publishes the version declared in `package.json`. Confirm that the release contains `Pilot-Princess-mac-arm64.dmg`, `Pilot-Princess-win-x64.exe`, and `Pilot-Princess-win-arm64.exe`; those stable names are the marketing site's direct download targets.
 
 Installed apps check GitHub Releases and install a downloaded update when the app quits.
 
