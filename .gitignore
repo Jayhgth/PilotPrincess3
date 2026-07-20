@@ -10,4 +10,8 @@ dist/
 coverage/
 playwright-report/
 test-results/
+release/
+apps/marketing/dist/
+apps/desktop/build/icon.png
+apps/desktop/build/icon.ico
 supabase/.temp/

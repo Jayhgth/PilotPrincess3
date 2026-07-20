@@ -12,6 +12,7 @@ const {
   title = "Pilot Princess",
   description = "Source-backed course and graduation planning for California high school students."
 } = Astro.props;
+const isDesktopMac = process.env.PILOT_DESKTOP === "true" && process.platform === "darwin";
 ---
 
 <!doctype html>
@@ -31,7 +32,8 @@ const {
       })();
     </script>
   </head>
-  <body>
+  <body class:list={{ "desktop-macos": isDesktopMac }}>
+    {isDesktopMac && <div class="desktop-window-drag-region" aria-hidden="true"></div>}
     <slot />
   </body>
 </html>

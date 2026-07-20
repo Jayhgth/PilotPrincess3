@@ -36,6 +36,8 @@
 .managedNote span { display: grid; gap: 2px; }
 .managedNote strong { color: var(--ink); font-size: 13px; }
 .managedNote small { font-size: 12px; line-height: 1.5; }
+.managedNote button { margin-left: auto; flex: 0 0 auto; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-raised); color: var(--ink); padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.managedNote button:disabled { cursor: default; opacity: .55; }
 
 .modelList { display: grid; gap: 6px; }
 .modelList > label { min-height: 60px; }

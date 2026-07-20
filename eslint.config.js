@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", ".astro/**", ".vercel/**", "node_modules/**", "coverage/**", "playwright-report/**", "test-results/**"] },
+  { ignores: ["**/dist/**", "**/.astro/**", "**/.vercel/**", "**/node_modules/**", "coverage/**", "playwright-report/**", "test-results/**", "release/**"] },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   ...astro.configs.recommended,
@@ -16,7 +16,7 @@ export default tseslint.config(
     }
   },
   {
-    files: ["scripts/**/*.mjs"],
+    files: ["scripts/**/*.mjs", "apps/**/*.mjs"],
     languageOptions: {
       globals: globals.node
     }

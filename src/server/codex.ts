@@ -1,4 +1,4 @@
-import { Codex, type Input, type ModelReasoningEffort, type ThreadEvent, type Usage, type UserInput } from "@openai/codex-sdk";
+import type { Input, ModelReasoningEffort, ThreadEvent, Usage, UserInput } from "@openai/codex-sdk";
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -14,6 +14,7 @@ import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiRea
 import { mathSequenceRankFromText } from "@/lib/planning";
 import { classifyAssistantRequest, requestUsesFullPlanner } from "@/server/assistant-request-scope";
 import { pilotCoreInstructions } from "@/server/pilot-instructions";
+import { CodexAppServer } from "@/server/codex-app-server";
 
 const DEFAULT_TIMEOUT_MS = 9000;
 const DEFAULT_MODEL = DEFAULT_AI_MODEL;
@@ -172,7 +173,7 @@ export const CODEX_RUNTIME_CAPABILITIES = [
 ] as const;
 
 function localAuthFallbackEnabled() {
-  return !import.meta.env.PROD || process.env.CODEX_ALLOW_LOCAL_AUTH === "true";
+  return !import.meta.env.PROD || process.env.PILOT_DESKTOP === "true" || process.env.CODEX_ALLOW_LOCAL_AUTH === "true";
 }
 
 function isolatedEnvironment(codexHome: string) {
@@ -202,9 +203,7 @@ async function prepareIsolatedCodexHome(feature: string) {
 }
 
 function createCodex(codexHome: string) {
-  const apiKey = process.env.OPENAI_API_KEY ?? process.env.CODEX_API_KEY;
-  return new Codex({
-    ...(apiKey ? { apiKey } : {}),
+  return new CodexAppServer({
     env: isolatedEnvironment(codexHome),
     config: {
       history: { persistence: "none" },
@@ -249,8 +248,8 @@ export function codexRuntimeStatus() {
     reasoningEffort: DEFAULT_REASONING_EFFORT,
     maxConcurrentTurns: MAX_CONCURRENT_TURNS,
     maxWaitingTurns: MAX_WAITING_TURNS,
-    runtime: "Official Codex SDK",
-    transport: "Codex exec JSONL through the TypeScript SDK",
+    runtime: "Official Codex app-server",
+    transport: "Local Codex app-server JSON-RPC over stdio",
     accessPolicy: "Conversation history is sent to OpenAI Codex; student-data reads and exact reversible writes use scoped server tools and normal product rules",
     retentionPolicy: "No local Codex CLI session history is retained; provider handling follows the configured OpenAI account",
     features: CODEX_FEATURES,
@@ -286,8 +285,7 @@ export function codexErrorMessage(error: unknown, fallback: string) {
 }
 
 function resolveCodexCliScript() {
-  const sdkEntry = import.meta.resolve("@openai/codex-sdk");
-  return createRequire(sdkEntry).resolve("@openai/codex/bin/codex.js");
+  return createRequire(import.meta.url).resolve("@openai/codex/bin/codex.js");
 }
 
 async function runProviderProbe(): Promise<ProviderProbe> {
@@ -353,6 +351,27 @@ async function runProviderProbe(): Promise<ProviderProbe> {
   }
 }
 
+export async function connectLocalCodexAccount() {
+  if (process.env.PILOT_DESKTOP !== "true" && import.meta.env.PROD) {
+    throw new Error("Codex account connection is available in the Pilot Princess desktop app.");
+  }
+  const cliScript = resolveCodexCliScript();
+  await execFileAsync(process.execPath, [cliScript, "login"], {
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "pilot_princess_desktop"
+    },
+    timeout: 330_000,
+    windowsHide: true,
+    maxBuffer: 1024 * 1024
+  });
+  providerProbeCache = null;
+  const status = await probeCodexRuntimeStatus({ force: true });
+  if (status.providerStatus !== "ready") throw new Error("Codex sign-in did not complete.");
+  return status;
+}
+
 export async function probeCodexRuntimeStatus(options: { force?: boolean } = {}) {
   const now = Date.now();
   if (options.force || !providerProbeCache || providerProbeCache.expiresAt <= now) {
@@ -376,12 +395,13 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
   const timeout = setTimeout(() => controller.abort(new Error("Codex turn timed out.")), timeoutMs);
   let scratchDirectory: string | null = null;
   let isolatedHome: string | null = null;
+  let codex: CodexAppServer | null = null;
 
   try {
     scratchDirectory =
       options.workingDirectory ?? (await mkdtemp(join(tmpdir(), `pilot-princess-${options.feature}-`)));
     isolatedHome = await prepareIsolatedCodexHome(options.feature);
-    const codex = createCodex(isolatedHome);
+    codex = createCodex(isolatedHome);
     const model = options.model ?? process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
@@ -422,6 +442,7 @@ export async function runCodexStructured<T>(options: StructuredRunOptions<T>): P
   } finally {
     clearTimeout(timeout);
     release();
+    await codex?.close().catch(() => undefined);
     if (!options.workingDirectory && scratchDirectory) {
       await rm(scratchDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -441,12 +462,13 @@ export async function runCodexStructuredStream<T>(
   const timeout = setTimeout(() => controller.abort(new Error("Codex turn timed out.")), timeoutMs);
   let scratchDirectory: string | null = null;
   let isolatedHome: string | null = null;
+  let codex: CodexAppServer | null = null;
   const events: ThreadEvent[] = [];
 
   try {
     scratchDirectory = options.workingDirectory ?? (await mkdtemp(join(tmpdir(), `pilot-princess-${options.feature}-`)));
     isolatedHome = await prepareIsolatedCodexHome(options.feature);
-    const codex = createCodex(isolatedHome);
+    codex = createCodex(isolatedHome);
     const model = options.model ?? process.env.CODEX_MODEL ?? DEFAULT_MODEL;
     const thread = codex.startThread({
       model,
@@ -480,6 +502,7 @@ export async function runCodexStructuredStream<T>(
   } finally {
     clearTimeout(timeout);
     release();
+    await codex?.close().catch(() => undefined);
     if (!options.workingDirectory && scratchDirectory) {
       await rm(scratchDirectory, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -1872,6 +1895,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
   const timeout = setTimeout(() => controller.abort(new Error("Pilot Assistant reached its six-minute work limit.")), options.timeoutMs ?? 350_000);
   let scratchDirectory: string | null = null;
   let isolatedHome: string | null = null;
+  let codex: CodexAppServer | null = null;
   let usage: Usage | null = null;
   let latestMessage = "";
   let latestQuestions: AssistantQuestion[] = [];
@@ -1881,7 +1905,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
   try {
     scratchDirectory = await mkdtemp(join(tmpdir(), "pilot-princess-assistant-"));
     isolatedHome = await prepareIsolatedCodexHome("assistant_chat");
-    const codex = createCodex(isolatedHome);
+    codex = createCodex(isolatedHome);
     const model = options.model;
     const thread = codex.startThread({
       model,
@@ -2559,6 +2583,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
   } finally {
     clearTimeout(timeout);
     release();
+    await codex?.close().catch(() => undefined);
     if (scratchDirectory) await rm(scratchDirectory, { recursive: true, force: true }).catch(() => undefined);
     if (isolatedHome) await rm(isolatedHome, { recursive: true, force: true }).catch(() => undefined);
   }

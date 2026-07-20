@@ -83,23 +83,38 @@ for (const requiredContract of [
 }
 
 const astroConfig = readFileSync(join(root, "astro.config.mjs"), "utf8");
-if (!astroConfig.includes('from "@astrojs/vercel"')) fail("Astro is not configured with the Vercel adapter.");
-if (!astroConfig.includes("maxDuration")) fail("Vercel function duration is not configured.");
-if (!astroConfig.includes("codexRuntimeAssets")) fail("The native Codex runtime is not explicitly included in the Vercel function.");
+if (!astroConfig.includes('from "@astrojs/node"')) fail("The desktop application server must use Astro's standalone Node adapter.");
+if (!astroConfig.includes('mode: "standalone"')) fail("Astro must emit a standalone server for Electron.");
 
-const vercelConfig = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
-if (vercelConfig.framework !== "astro") fail("vercel.json must pin the Astro framework preset.");
-if ("outputDirectory" in vercelConfig) fail("Do not override Vercel's output directory; the Astro adapter emits Build Output API routes.");
-if (vercelConfig.buildCommand !== "pnpm build") fail("Vercel must run the repository's production build.");
+const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+if (packageJson.main !== "apps/desktop/main.mjs") fail("Electron's main entry is not configured.");
+if (!packageJson.dependencies?.["electron-updater"]) fail("electron-updater must be a production dependency.");
+
+const desktopConfig = readFileSync(join(root, "apps", "desktop", "electron-builder.yml"), "utf8");
+for (const requiredDesktopContract of [
+  "app.pilotprincess.desktop",
+  "Pilot Princess",
+  "target: dmg",
+  "target: nsis",
+  "arch: [x64, arm64]"
+]) {
+  if (!desktopConfig.includes(requiredDesktopContract)) fail(`Desktop packaging contract is missing: ${requiredDesktopContract}`);
+}
+
+const desktopMain = readFileSync(join(root, "apps", "desktop", "main.mjs"), "utf8");
+if (!desktopMain.includes("contextIsolation: true") || !desktopMain.includes("nodeIntegration: false")) {
+  fail("Electron renderer isolation is not enforced.");
+}
+if (!desktopMain.includes("setPermissionRequestHandler")) fail("Electron permissions are not explicitly denied.");
+
+const marketingConfig = JSON.parse(readFileSync(join(root, "apps", "marketing", "vercel.json"), "utf8"));
+if (marketingConfig.framework !== "astro") fail("The download website must use Vercel's Astro preset.");
 
 const exampleEnvironment = readFileSync(join(root, ".env.example"), "utf8");
 for (const requiredName of [
   "PUBLIC_SUPABASE_URL",
   "PUBLIC_SUPABASE_ANON_KEY",
-  "OPENAI_API_KEY",
-  "CODEX_TIMEOUT_MS",
-  "VERCEL_FUNCTION_MAX_DURATION",
-  "VERCEL_SUPPORT_LARGE_FUNCTIONS"
+  "CODEX_TIMEOUT_MS"
 ]) {
   if (!exampleEnvironment.includes(`${requiredName}=`)) fail(`.env.example is missing ${requiredName}.`);
 }
@@ -109,4 +124,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log(`Deployment readiness passed: ${createdTables.size} public tables have RLS, privileged functions pin an empty search path, required auth/storage contracts exist, and no repository credential pattern was found.`);
+console.log(`Deployment readiness passed: ${createdTables.size} public tables have RLS, privileged functions pin an empty search path, desktop isolation and packaging contracts are present, the download site is deployable, and no repository credential pattern was found.`);

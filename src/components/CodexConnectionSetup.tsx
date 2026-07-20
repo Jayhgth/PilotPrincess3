@@ -28,6 +28,7 @@ export default function CodexConnectionSetup({
   compact?: boolean;
 }) {
   const [testing, setTesting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [testMessage, setTestMessage] = useState<string | null>(value.testedAt ? "Connection verified." : null);
   const [testError, setTestError] = useState<string | null>(null);
 
@@ -65,6 +66,22 @@ export default function CodexConnectionSetup({
     }
   }
 
+  async function connectCodex() {
+    setConnecting(true);
+    setTestError(null);
+    setTestMessage("Complete Codex sign-in in the browser window that opens.");
+    try {
+      const response = await authenticatedFetch("/api/ai/login", { method: "POST" });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Codex sign-in did not complete.");
+      setTestMessage("Codex account connected. Test the connection to continue.");
+    } catch (error) {
+      setTestError(error instanceof Error ? error.message : "Codex sign-in did not complete.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   return <div className={`${styles.setup} ${compact ? styles.compact : ""}`}>
     <fieldset className={styles.connectionChoice}>
       <legend>Use Pilot Assistant</legend>
@@ -79,7 +96,7 @@ export default function CodexConnectionSetup({
     </fieldset>
 
     {value.enabled && <FadeContent className={styles.connectionDetails} duration={0.16}>
-      <div className={styles.managedNote}><Cpu size={18} /><span><strong>No personal API key needed</strong><small>The deployment provides Pilot's server connection. You choose the model and whether Pilot may use your selected context.</small></span></div>
+      <div className={styles.managedNote}><Cpu size={18} /><span><strong>No personal API key needed</strong><small>Pilot uses the Codex subscription connected on this computer.</small></span><button type="button" onClick={() => void connectCodex()} disabled={connecting}>{connecting ? "Connecting" : "Connect Codex"}</button></div>
       <fieldset className={styles.modelList}>
         <legend>Model</legend>
         {AI_MODEL_OPTIONS.map((option) => <label className={value.model === option.value ? styles.selected : ""} key={option.value}>

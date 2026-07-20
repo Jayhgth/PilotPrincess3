@@ -3,12 +3,13 @@ import { ArrowRightIcon as ArrowRight } from "@phosphor-icons/react/dist/csr/Arr
 import { CheckCircleIcon as CheckCircle } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { ShieldCheckIcon as ShieldCheck } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { GoogleLogoIcon as GoogleLogo } from "@phosphor-icons/react/dist/csr/GoogleLogo";
+import { GithubLogoIcon as GithubLogo } from "@phosphor-icons/react/dist/csr/GithubLogo";
 import { lazy, Suspense, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { hasPublicEnv } from "@/lib/env";
 import { getBrowserSupabase } from "@/lib/supabase/browser";
 import BrandMark from "@/components/BrandMark";
 import SpotlightCard from "@/components/reactbits/SpotlightCard";
-import { authCallbackUrl, ensureAuthenticatedWorkspace, googleOAuthIsAvailable } from "@/lib/auth";
+import { authCallbackUrl, ensureAuthenticatedWorkspace, oauthProviderAvailability, type SupportedOAuthProvider } from "@/lib/auth";
 
 const ColorBends = lazy(() => import("@/components/reactbits/ColorBends"));
 const AUTH_COLOR_BENDS = ["#38bdf8"];
@@ -48,6 +49,7 @@ export default function AuthExperience() {
   const [preferredName, setPreferredName] = useState("");
   const [busy, setBusy] = useState(false);
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [githubAvailable, setGithubAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -68,7 +70,13 @@ export default function AuthExperience() {
 
   useEffect(() => {
     if (!configured) return;
-    void googleOAuthIsAvailable().then(setGoogleAvailable, () => setGoogleAvailable(false));
+    void oauthProviderAvailability().then((providers) => {
+      setGoogleAvailable(providers.google);
+      setGithubAvailable(providers.github);
+    }, () => {
+      setGoogleAvailable(false);
+      setGithubAvailable(false);
+    });
   }, [configured]);
 
   function changeMode(nextMode: AuthMode) {
@@ -132,14 +140,14 @@ export default function AuthExperience() {
     }
   }
 
-  async function continueWithGoogle() {
+  async function continueWithProvider(provider: SupportedOAuthProvider) {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
       if (!supabase) throw new Error("Supabase environment variables are not configured.");
       const result = await supabase.auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: { redirectTo: authCallbackUrl("/app") }
       });
       if (result.error) throw result.error;
@@ -239,11 +247,17 @@ export default function AuthExperience() {
           {error && <div className="inline-alert error" role="alert">{error}</div>}
           {notice && <div className="inline-alert success" role="status">{notice}</div>}
 
-          {mode !== "forgot-password" && googleAvailable && <>
-            <button className="auth-oauth-button" type="button" onClick={() => void continueWithGoogle()} disabled={busy || !configured}>
-              <GoogleLogo size={18} weight="bold" aria-hidden />
-              Continue with Google
-            </button>
+          {mode !== "forgot-password" && (googleAvailable || githubAvailable) && <>
+            <div className="auth-oauth-options">
+              {googleAvailable && <button className="auth-oauth-button" type="button" onClick={() => void continueWithProvider("google")} disabled={busy || !configured}>
+                <GoogleLogo size={18} weight="bold" aria-hidden />
+                Continue with Google
+              </button>}
+              {githubAvailable && <button className="auth-oauth-button" type="button" onClick={() => void continueWithProvider("github")} disabled={busy || !configured}>
+                <GithubLogo size={18} weight="bold" aria-hidden />
+                Continue with GitHub
+              </button>}
+            </div>
             <div className="auth-divider"><span>or use email</span></div>
           </>}
 

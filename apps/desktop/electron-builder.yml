@@ -1,0 +1,40 @@
+appId: app.pilotprincess.desktop
+productName: Pilot Princess
+copyright: Copyright © 2026 Pilot Princess contributors
+directories:
+  output: release
+  buildResources: apps/desktop/build
+files:
+  - dist/**/*
+  - apps/desktop/main.mjs
+  - package.json
+asar: true
+asarUnpack:
+  - "**/node_modules/@openai/codex*/**/*"
+  - "**/node_modules/.pnpm/@openai+codex*/**/*"
+artifactName: "Pilot-Princess-${os}-${arch}.${ext}"
+publish:
+  provider: github
+  owner: Jayhgth
+  repo: PilotPrincess3
+mac:
+  category: public.app-category.education
+  icon: apps/desktop/build/icon.png
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  identity: null
+win:
+  icon: apps/desktop/build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Pilot Princess

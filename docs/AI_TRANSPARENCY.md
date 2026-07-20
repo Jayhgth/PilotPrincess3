@@ -130,7 +130,7 @@ Bulk and scoped plan-change language such as “remove all my in progress classe
 
 ## t3code and SDK boundary
 
-[t3code](https://github.com/pingdotgg/t3code) is the interaction reference: a chat timeline, folded agent work, and readable tools. Pilot Princess adds an application capability registry, deterministic validation for exact changes, and a reserved reviewer boundary for a future action that is both ambiguous and destructive. It uses the official TypeScript `@openai/codex-sdk`, not t3code's app-server transport.
+[t3code](https://github.com/pingdotgg/t3code) is an interaction and runtime reference: a desktop chat timeline, folded agent work, readable tools, and the local Codex app-server. Pilot Princess adds an application capability registry, deterministic validation for exact changes, and a reserved reviewer boundary for a future action that is both ambiguous and destructive. Pilot runs the official Codex app-server locally with the user's Codex account; no Codex credential is stored in Supabase or the repository.
 
 Each request runs in an isolated temporary workspace and Codex home. The app replays bounded conversation history into the turn, executes only its own allowlisted student-data tools, and deletes the temporary runtime after the request. The active app tab is not part of the turn. Product persistence therefore lives in Supabase rather than Codex CLI history.
 

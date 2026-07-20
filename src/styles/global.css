@@ -458,6 +458,7 @@ input:focus, select:focus, textarea:focus {
   font-size: 14px;
   font-weight: 650;
 }
+.auth-oauth-options { display: grid; gap: .65rem; }
 .auth-oauth-button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-muted); }
 .auth-divider { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 18px 0; color: var(--ink-faint); font-size: 11px; }
 .auth-divider::before, .auth-divider::after { height: 1px; background: var(--line); content: ""; }
@@ -606,6 +607,21 @@ input:focus, select:focus, textarea:focus {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* The macOS desktop build uses a hidden native title bar. Keep a clear center
+   strip draggable without covering the traffic lights or app controls. */
+.desktop-window-drag-region { display: none; }
+.desktop-macos .desktop-window-drag-region {
+  position: fixed;
+  z-index: 2147483647;
+  top: 0;
+  right: 320px;
+  left: 88px;
+  display: block;
+  height: 34px;
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
 /* Decision tools and transparent Codex review */

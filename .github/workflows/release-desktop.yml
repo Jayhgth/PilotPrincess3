@@ -1,0 +1,46 @@
+name: Release desktop apps
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            label: macOS ARM64
+            command: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --mac dmg zip --arm64 --publish always
+          - os: windows-latest
+            label: Windows x64
+            command: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --win nsis --x64 --publish always
+          - os: windows-latest
+            label: Windows ARM64
+            command: pnpm exec electron-builder --config apps/desktop/electron-builder.yml --win nsis --arm64 --publish always
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      PUBLIC_SUPABASE_URL: ${{ secrets.PUBLIC_SUPABASE_URL }}
+      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm desktop:icons
+      - run: pnpm check
+      - run: pnpm build
+      - run: ${{ matrix.command }}

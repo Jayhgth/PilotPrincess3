@@ -21,12 +21,17 @@ export async function ensureAuthenticatedWorkspace(supabase: SupabaseClient): Pr
   return userResult.data.user;
 }
 
-export async function googleOAuthIsAvailable() {
+export type SupportedOAuthProvider = "google" | "github";
+
+export async function oauthProviderAvailability() {
   const env = getPublicEnv();
   const response = await fetch(`${env.PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
     headers: { apikey: env.PUBLIC_SUPABASE_ANON_KEY }
   });
-  if (!response.ok) return false;
-  const settings = await response.json() as { external?: { google?: boolean } };
-  return settings.external?.google === true;
+  if (!response.ok) return { google: false, github: false };
+  const settings = await response.json() as { external?: Partial<Record<SupportedOAuthProvider, boolean>> };
+  return {
+    google: settings.external?.google === true,
+    github: settings.external?.github === true
+  };
 }

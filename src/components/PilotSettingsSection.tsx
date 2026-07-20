@@ -59,6 +59,7 @@ export default function PilotSettingsSection({
   const [loadingArchives, setLoadingArchives] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -126,6 +127,22 @@ export default function PilotSettingsSection({
     }
   }
 
+  async function connectCodex() {
+    setConnecting(true);
+    setError(null);
+    setTestMessage("Complete Codex sign-in in the browser window that opens.");
+    try {
+      const response = await authorizedFetch("/api/ai/login", { method: "POST" });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Codex sign-in did not complete.");
+      setTestMessage("Codex account connected. Run the connection test to verify the selected model.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Codex sign-in did not complete.");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   async function restore(conversation: AiConversation) {
     setRestoringId(conversation.id);
     setError(null);
@@ -154,6 +171,11 @@ export default function PilotSettingsSection({
     <section className={styles.settingsSection} aria-labelledby="pilot-settings-heading">
       <header><h2 id="pilot-settings-heading">Pilot Assistant</h2></header>
       <div className={styles.rows}>
+        <SettingRow
+          title="Codex account"
+          description="Connect the Codex subscription on this computer. No API key is required."
+          control={<button className="secondary-button small" type="button" disabled={connecting} onClick={() => void connectCodex()}>{connecting ? "Connecting" : "Connect"}</button>}
+        />
         <SettingRow
           title="Pilot Assistant"
           description="Use Pilot chat and AI-assisted planning."

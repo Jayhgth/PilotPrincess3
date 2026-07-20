@@ -1,5 +1,11 @@
+packages:
+  - apps/*
+
 allowBuilds:
   esbuild: true
+  electron: true
+  electron-winstaller: true
+  sharp: true
 overrides:
   path-to-regexp@6.1.0: 6.3.0
 minimumReleaseAgeExclude:

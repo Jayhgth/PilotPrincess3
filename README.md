@@ -1,57 +1,43 @@
 # Pilot Princess
 
-Pilot Princess is an open-source academic planning web app for California high-school students.
+Pilot Princess is an open-source desktop academic planner for California high-school students. It is available for macOS Apple silicon and Windows x64/ARM64.
 
-**Hosted app:** WIP
+**Downloads:** WIP
 
-Students can:
+It combines four-year plans, transcript import, diploma progress, GPA scenarios, community-college catalogs, associate-degree tracking, and a local Codex-powered Pilot assistant. Pilot can read and change the same student-owned data as the interface, with validation, receipts, real-time refresh, and undo.
 
-- build and revise a four-year course plan;
-- import a transcript and track diploma progress;
-- compare weighted GPA scenarios;
-- explore community-college courses and associate-degree progress;
-- contact administrators about support, bugs, or course-data issues; and
-- ask Pilot to make validated, reversible changes to their account and plan.
-
-School support is shown in the app as discovery, partial, or complete. A school without verified local data never inherits another school's catalog, graduation rules, or course sequence. College data is exposed through provider-neutral contracts; SMCCD is the first deep adapter and currently covers Cañada College, College of San Mateo, and Skyline College.
-
-## Project
-
-The web app uses Astro, React, Supabase, TypeScript, Vitest, Playwright, and the Codex SDK. Supabase provides authentication, private storage, row-level security, and the application database.
-
-Important references:
-
-- [Product and design](./docs/PRODUCT_DESIGN.md)
-- [Academic rules](./docs/ACADEMIC_RULES.md)
-- [Pilot transparency](./docs/AI_TRANSPARENCY.md)
-- [Production deployment](./docs/DEPLOYMENT.md)
+The app uses Electron, Astro, React, Supabase, and the official Codex app-server. Supabase provides authentication, private storage, Postgres, and row-level security. Pilot uses the Codex account connected on the student's computer; no OpenAI API key is required.
 
 ## Forking
 
-Fork the repository on GitHub, clone your fork, and install the development dependencies:
+Fork the repository on GitHub, then:
 
 ```sh
 git clone https://github.com/YOUR_USERNAME/PilotPrincess3.git
 cd PilotPrincess3
 pnpm install
 cp .env.example .env
-pnpm dev
+pnpm dev:desktop
 ```
 
-Use your own Supabase project and credentials. Apply the migrations in `supabase/migrations/` before testing authenticated features. Google sign-in and Pilot require their respective server-side credentials; never commit secrets.
+Use your own Supabase project and apply `supabase/migrations/` in filename order. Enable the email, Google, and GitHub sign-in methods you want to support. Connect Codex from the app or run `codex login` before testing Pilot.
 
-Useful checks:
+Useful commands:
 
 ```sh
 pnpm check
-pnpm test:e2e
-pnpm check:release
+pnpm build:desktop:mac
+pnpm build:desktop:win
+pnpm dev:marketing
 ```
 
-The focused suite is intentionally small. The main live Pilot test covers a progress-aware diploma and associate-degree schedule through read, proposal, validated apply, and undo.
+The download website is in `apps/marketing` and can be deployed independently to Vercel. Tagged releases are built by GitHub Actions; setup and release instructions are in the deployment reference below.
 
-## Data
+## References
 
-School identity comes from CDE, UC A–G course evidence from UCOP, and community-college identity from CCCCO. Local catalogs, diploma policies, mappings, and planning profiles retain their source and review status. Automated school syncs stage extracted data for administrator review instead of publishing directly.
+- [Product and design](./docs/PRODUCT_DESIGN.md)
+- [Academic rules](./docs/ACADEMIC_RULES.md)
+- [Pilot transparency](./docs/AI_TRANSPARENCY.md)
+- [Deploy, update, and test](./docs/DEPLOYMENT.md)
 
-Do not commit credentials, generated task reports, or private student data.
+School support is labeled discovery, partial, or complete. An unsupported school never borrows another school's catalog, diploma rules, or planning profile. Do not commit credentials or private student data.
