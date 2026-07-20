@@ -4,6 +4,7 @@ import "../styles/site.css";
 
 const repo = "https://github.com/Jayhgth/PilotPrincess3";
 const downloads = {
+  // Keep the stable URL ready, but do not bind it until the macOS build is signed and notarized.
   mac: `${repo}/releases/latest/download/Pilot-Princess-mac-arm64.dmg`,
   windows: `${repo}/releases/latest/download/Pilot-Princess-win-x64.exe`,
   windowsArm: `${repo}/releases/latest/download/Pilot-Princess-win-arm64.exe`
@@ -30,7 +31,8 @@ const downloads = {
         <h1>Plan the whole path.<br /><em>Change it in a sentence.</em></h1>
         <p class="hero-copy">Orchestrate Codex into your academic success.</p>
         <div class="hero-actions">
-          <a class="primary-download" data-smart-download href={downloads.mac}><span class="platform-icon" aria-hidden="true"><svg data-platform-mac viewBox="0 0 24 24"><path d="M17.1 12.5c0-2.4 2-3.6 2.1-3.7a4.6 4.6 0 0 0-3.6-2c-1.5-.2-3 .9-3.8.9-.8 0-2-1-3.3-.9a4.9 4.9 0 0 0-4.1 2.5c-1.8 3-.5 7.6 1.2 10.1.8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4a10.9 10.9 0 0 0 1.4-2.9 4.3 4.3 0 0 1-2.4-4.1ZM14.6 5.2A4.4 4.4 0 0 0 15.7 2a4.5 4.5 0 0 0-3 1.5 4.2 4.2 0 0 0-1.1 3.1 3.7 3.7 0 0 0 3-1.4Z" /></svg><svg class="platform-windows" data-platform-windows viewBox="0 0 24 24"><path d="M3 4.8 10.5 3.8v7.4H3V4.8Zm8.5-1.1L21 2.4v8.8h-9.5V3.7ZM3 12.2h7.5v7.5L3 18.7v-6.5Zm8.5 0H21V21l-9.5-1.3v-7.5Z" /></svg></span><strong data-download-label>Download for macOS</strong></a>
+          {/* Restore href={downloads.mac} after the signed and notarized macOS release is published. */}
+          <a class="primary-download download-unavailable" data-smart-download aria-disabled="true" tabindex="-1"><span class="platform-icon" aria-hidden="true"><svg data-platform-mac viewBox="0 0 24 24"><path d="M17.1 12.5c0-2.4 2-3.6 2.1-3.7a4.6 4.6 0 0 0-3.6-2c-1.5-.2-3 .9-3.8.9-.8 0-2-1-3.3-.9a4.9 4.9 0 0 0-4.1 2.5c-1.8 3-.5 7.6 1.2 10.1.8 1.2 1.8 2.6 3.1 2.5 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.2.8c1.3 0 2.2-1.2 3-2.4a10.9 10.9 0 0 0 1.4-2.9 4.3 4.3 0 0 1-2.4-4.1ZM14.6 5.2A4.4 4.4 0 0 0 15.7 2a4.5 4.5 0 0 0-3 1.5 4.2 4.2 0 0 0-1.1 3.1 3.7 3.7 0 0 0 3-1.4Z" /></svg><svg class="platform-windows" data-platform-windows viewBox="0 0 24 24"><path d="M3 4.8 10.5 3.8v7.4H3V4.8Zm8.5-1.1L21 2.4v8.8h-9.5V3.7ZM3 12.2h7.5v7.5L3 18.7v-6.5Zm8.5 0H21V21l-9.5-1.3v-7.5Z" /></svg></span><strong data-download-label>Download for macOS</strong></a>
           <a class="source-action" href={repo} target="_blank" rel="noreferrer"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 .7a11.5 11.5 0 0 0-3.6 22.4c.6.1.8-.2.8-.6v-2.2c-3.4.7-4.1-1.4-4.1-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0c2.2-1.5 3.2-1.2 3.2-1.2.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v3.2c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z" /></svg><span>Github</span><span aria-hidden="true">↗</span></a>
         </div>
       </section>
@@ -61,7 +63,12 @@ const downloads = {
       const smartDownloads = document.querySelectorAll("[data-smart-download]");
       const label = document.querySelector("[data-download-label]");
       if (isWindows) {
-        smartDownloads.forEach((link) => link.setAttribute("href", downloads.windows));
+        smartDownloads.forEach((link) => {
+          link.setAttribute("href", downloads.windows);
+          link.removeAttribute("aria-disabled");
+          link.removeAttribute("tabindex");
+          link.classList.remove("download-unavailable");
+        });
       }
       if (isWindows && label) {
         label.textContent = "Download for Windows";
