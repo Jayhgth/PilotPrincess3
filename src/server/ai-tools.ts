@@ -4,6 +4,7 @@ import { APP_CAPABILITY_REGISTRY, appCapability, pilotToolNamesForMessage } from
 import { createSmccdPlanCourseIndex, selectedSchoolCatalogEligibility, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import { COLLEGE_HIGH_SCHOOL_CREDIT_POLICY, resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import { COLLEGE_COURSE_SELECT, COLLEGE_DATA, COLLEGE_PROGRAM_SEARCH_SELECT, COLLEGE_PROGRAM_SELECT } from "@/lib/college-provider-contract";
+import { insertStudentSmccdGoals, saveStudentSmccdGoal } from "@/lib/smccd-goals";
 import type {
   CatalogReviewItem,
   CollegeDistrict,
@@ -5613,8 +5614,14 @@ export async function executeAssistantMutationTool(
     const programResult = await supabase.from(COLLEGE_DATA.programs).select("id,title,award_type,college_code").eq("id", args.program_id).single();
     if (programResult.error || !programResult.data) throw new Error("That supported college degree program is no longer available.");
     const previous = workspace.collegeGoals.find((goal) => goal.program_id === args.program_id);
-    const { data, error } = await supabase.from("student_smccd_goals").upsert({ user_id: userId, plan_id: workspace.activeVersion.plan_id, program_id: args.program_id, is_primary: false, notes: args.notes }, { onConflict: "plan_id,program_id" }).select("id").single();
-    if (error) throw new Error(error.message);
+    const data = await saveStudentSmccdGoal(supabase, {
+      userId,
+      planId: workspace.activeVersion.plan_id,
+      programId: args.program_id,
+      isPrimary: false,
+      notes: args.notes,
+      existing: previous
+    });
     return {
       summary: `${programResult.data.title} was bookmarked.`,
       data: { ...programResult.data, notes: args.notes },
@@ -5638,15 +5645,15 @@ export async function executeAssistantMutationTool(
     const existingProgramIds = new Set(workspace.collegeGoals.map((goal) => goal.program_id));
     const missingPrograms = programs.filter((program) => !existingProgramIds.has(program.id));
     if (!missingPrograms.length) throw new Error("All requested degrees are already bookmarked.");
-    const insertResult = await supabase.from("student_smccd_goals").insert(missingPrograms.map((program) => ({
-      user_id: userId,
-      plan_id: workspace.activeVersion.plan_id,
-      program_id: program.id,
-      is_primary: false,
-      notes: args.notes
-    }))).select("id, program_id");
-    if (insertResult.error) throw new Error(insertResult.error.message);
-    const inserted = insertResult.data ?? [];
+    const inserted = await insertStudentSmccdGoals(supabase, {
+      userId,
+      planId: workspace.activeVersion.plan_id,
+      goals: missingPrograms.map((program) => ({
+        programId: program.id,
+        isPrimary: false,
+        notes: args.notes
+      }))
+    });
     if (inserted.length !== missingPrograms.length) throw new Error("The complete degree-bookmark batch was not saved.");
     return {
       summary: `${missingPrograms.length} ${missingPrograms.length === 1 ? "degree was" : "degrees were"} bookmarked.`,

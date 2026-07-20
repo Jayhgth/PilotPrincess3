@@ -33,7 +33,7 @@ import { createSmccdPlannerPrerequisiteEvaluator } from "@/lib/prerequisites";
 import { normalizeCollegeCourseCode } from "@/lib/transcript";
 import { createSmccdPlanCourseIndex, smccdCourseAlreadyInPlanIndex } from "@/lib/catalog-eligibility";
 import { resolveCollegeHighSchoolCredits, resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
-import { cachedStudentSmccdGoals, cacheStudentSmccdGoals, loadStudentSmccdGoals } from "@/lib/smccd-goals";
+import { cachedStudentSmccdGoals, cacheStudentSmccdGoals, loadStudentSmccdGoals, saveStudentSmccdGoal } from "@/lib/smccd-goals";
 import type {
   GradeLevel,
   PlanCourse,
@@ -469,13 +469,12 @@ export default function SmccdPlanner({
         setNotice("This degree is already bookmarked.");
         return;
       }
-      const { data, error: mutationError } = await supabase.from("student_smccd_goals").insert({
-        user_id: session.user.id,
-        plan_id: activeVersion.plan_id,
-        program_id: programId,
-        is_primary: false
-      }).select("*").single();
-      if (mutationError) throw mutationError;
+      const data = await saveStudentSmccdGoal(supabase, {
+        userId: session.user.id,
+        planId: activeVersion.plan_id,
+        programId,
+        isPrimary: false
+      });
       setGoals((current) => {
         const next = [...current, data as unknown as StudentSmccdGoal];
         cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);

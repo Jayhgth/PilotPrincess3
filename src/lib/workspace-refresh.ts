@@ -7,10 +7,10 @@ import type {
   SmccdRequirementCourse,
   StudentEnrollmentPreference,
   StudentSmccdGeCompletion,
-  StudentSettings,
-  StudentSmccdGoal
+  StudentSettings
 } from "@/lib/models";
 import { COLLEGE_COURSE_SELECT, COLLEGE_DATA, COLLEGE_PROGRAM_SELECT } from "@/lib/college-provider-contract";
+import { loadStudentSmccdGoals } from "@/lib/smccd-goals";
 
 export interface PlanWorkspaceSlice {
   planCourses: PlanCourse[];
@@ -86,13 +86,11 @@ export async function loadSettingsWorkspaceSlice(supabase: SupabaseClient, userI
 }
 
 export async function loadDegreeWorkspaceSlice(supabase: SupabaseClient, userId: string, activePlanId: string) {
-  const [goalsResult, completionsResult] = await Promise.all([
-    supabase.from("student_smccd_goals").select("*").eq("user_id", userId).eq("plan_id", activePlanId).order("is_primary", { ascending: false }).order("created_at"),
+  const [goals, completionsResult] = await Promise.all([
+    loadStudentSmccdGoals(supabase, userId, activePlanId, { force: true }),
     supabase.from("student_smccd_ge_completions").select("user_id,college_code,area,completion_source").eq("user_id", userId)
   ]);
-  if (goalsResult.error) throw goalsResult.error;
   if (completionsResult.error) throw completionsResult.error;
-  const goals = (goalsResult.data ?? []) as unknown as StudentSmccdGoal[];
   const programIds = goals.map((goal) => goal.program_id);
   const programsResult = programIds.length
     ? await supabase.from(COLLEGE_DATA.programs).select(COLLEGE_PROGRAM_SELECT).in("id", programIds)
