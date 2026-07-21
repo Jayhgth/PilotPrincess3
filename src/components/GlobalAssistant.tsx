@@ -392,6 +392,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [creatingConversation, setCreatingConversation] = useState(false);
   const [busyUndo, setBusyUndo] = useState<string | null>(null);
   const [reviewingChange, setReviewingChange] = useState(false);
   const [pendingModel, setPendingModel] = useState<AiModel | null>(null);
@@ -411,6 +412,10 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLElement>(null);
+  const conversationPickerRef = useRef<HTMLDivElement>(null);
+  const conversationCacheRef = useRef(new Map<string, Omit<ConversationPayload, "conversations">>());
+  const conversationLoadRef = useRef(0);
+  const historyLoadedRef = useRef(false);
   const imagesRef = useRef<ComposerImage[]>([]);
   const queueRef = useRef<QueuedMessage[]>([]);
   const reviewedPendingRef = useRef<Set<string>>(new Set());
@@ -449,7 +454,18 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
     }
   }
 
-  const loadConversation = useCallback(async (conversationId?: string) => {
+  const loadConversation = useCallback(async (conversationId?: string, preferCache = false) => {
+    const loadId = ++conversationLoadRef.current;
+    if (conversationId && preferCache) {
+      const cached = conversationCacheRef.current.get(conversationId);
+      if (cached) {
+        setData((current) => ({ ...cached, conversations: current.conversations }));
+        setLiveEvents([]);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+    }
     setLoading(true);
     setError(null);
     try {
@@ -457,12 +473,23 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
       const response = await authorizedFetch(url);
       const payload = await response.json() as ConversationPayload & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Conversation history could not be loaded.");
+      if (loadId !== conversationLoadRef.current) return;
       setData(payload);
+      historyLoadedRef.current = true;
+      if (payload.activeConversation) {
+        conversationCacheRef.current.set(payload.activeConversation.id, {
+          activeConversation: payload.activeConversation,
+          messages: payload.messages,
+          events: payload.events,
+          toolCalls: payload.toolCalls
+        });
+      }
       setLiveEvents([]);
     } catch (caught) {
+      if (loadId !== conversationLoadRef.current) return;
       setError(caught instanceof Error ? caught.message : "Conversation history could not be loaded.");
     } finally {
-      setLoading(false);
+      if (loadId === conversationLoadRef.current) setLoading(false);
     }
   }, [authorizedFetch]);
 
@@ -495,13 +522,25 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
 
   useEffect(() => {
     if (!open || !preferences.enabled) return;
-    const loadTimer = window.setTimeout(() => void loadConversation(data.activeConversation?.id), 0);
+    const loadTimer = historyLoadedRef.current
+      ? undefined
+      : window.setTimeout(() => void loadConversation(data.activeConversation?.id), 0);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 180);
     return () => {
-      window.clearTimeout(loadTimer);
+      if (loadTimer !== undefined) window.clearTimeout(loadTimer);
       window.clearTimeout(focusTimer);
     };
   }, [open, preferences.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!data.activeConversation) return;
+    conversationCacheRef.current.set(data.activeConversation.id, {
+      activeConversation: data.activeConversation,
+      messages: data.messages,
+      events: data.events,
+      toolCalls: data.toolCalls
+    });
+  }, [data.activeConversation, data.events, data.messages, data.toolCalls]);
 
   useEffect(() => {
     if (!open || running || reviewBacklogRef.current) return;
@@ -552,11 +591,21 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || running) return;
       if (previewImage) setPreviewImage(null);
+      else if (historyOpen) setHistoryOpen(false);
       else onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, open, previewImage, running]);
+  }, [historyOpen, onClose, open, previewImage, running]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!conversationPickerRef.current?.contains(event.target as Node)) setHistoryOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePress);
+  }, [historyOpen]);
 
   useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { queueRef.current = queuedMessages; }, [queuedMessages]);
@@ -575,11 +624,12 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
 
   useEffect(() => {
     if (!open) return;
-    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: running ? "smooth" : "auto" }));
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "auto" }));
     return () => cancelAnimationFrame(frame);
   }, [data.messages, data.toolCalls, liveEvents, open, running]);
 
   async function createConversation() {
+    conversationLoadRef.current += 1;
     const response = await authorizedFetch("/api/ai/conversations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
     const payload = await response.json() as { conversation?: AiConversation; error?: string };
     if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "A new conversation could not be created.");
@@ -589,20 +639,19 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
     return payload.conversation;
   }
 
-  function startNewConversation() {
-    if (runningRef.current) return;
-    setData((current) => ({
-      ...current,
-      activeConversation: null,
-      messages: [],
-      events: [],
-      toolCalls: []
-    }));
-    setLiveEvents([]);
+  async function startNewConversation() {
+    if (runningRef.current || creatingConversation) return;
+    setCreatingConversation(true);
     setError(null);
-    setHistoryOpen(false);
-    setRenamingConversationId(null);
-    window.setTimeout(() => inputRef.current?.focus(), 0);
+    try {
+      await createConversation();
+      setRenamingConversationId(null);
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "A new conversation could not be created.");
+    } finally {
+      setCreatingConversation(false);
+    }
   }
 
   function handleDockResizeStart(event: ReactPointerEvent<HTMLDivElement>) {
@@ -661,7 +710,8 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
       });
       const payload = await response.json() as { conversation?: AiConversation; error?: string };
       if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "The conversation could not be updated.");
-      if (data.activeConversation?.id === conversationId && nextActive) await loadConversation(nextActive.id);
+      conversationCacheRef.current.delete(conversationId);
+      if (data.activeConversation?.id === conversationId && nextActive) await loadConversation(nextActive.id, true);
     } catch (caught) {
       setData(previousData);
       setError(caught instanceof Error ? caught.message : "The conversation could not be updated.");
@@ -684,6 +734,8 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
       const payload = await response.json() as { conversation?: AiConversation; error?: string };
       if (!response.ok || !payload.conversation) throw new Error(payload.error ?? "The conversation could not be renamed.");
       const renamed = payload.conversation;
+      const cached = conversationCacheRef.current.get(conversationId);
+      if (cached) conversationCacheRef.current.set(conversationId, { ...cached, activeConversation: renamed });
       setData((current) => ({
         ...current,
         conversations: current.conversations.map((conversation) => conversation.id === renamed.id ? renamed : conversation),
@@ -1000,24 +1052,34 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
     ...data.events.map((event) => asAssistantRecord(event.payload) as LiveActivity),
     ...liveEvents
   ], [data.events, liveEvents]);
-  const turnIds = data.messages.map((message) => message.turn_id).filter((id): id is string => Boolean(id));
-  const latestTurnId = turnIds.at(-1) ?? null;
-  const turnContent = (turnId: string) => {
-    const tools = data.toolCalls.filter((call) => call.turn_id === turnId);
-    const persistedToolIds = new Set(tools.map((tool) => tool.id));
-    return {
-      events: events.filter((event) => {
-        if (String((event as { turnId?: unknown }).turnId ?? "") !== turnId) return false;
-        const eventTool = event.toolCall as { id?: unknown } | undefined;
-        return !eventTool?.id || !persistedToolIds.has(String(eventTool.id));
-      }),
-      tools
-    };
-  };
-  const userMessagesByTurn = new Map(data.messages.filter((message) => message.role === "user" && message.turn_id).map((message) => [message.turn_id!, message]));
-  const answeredQuestionMessages = new Set(data.messages
+  const latestTurnId = useMemo(() => data.messages.findLast((message) => message.turn_id)?.turn_id ?? null, [data.messages]);
+  const turnContentById = useMemo(() => {
+    const content = new Map<string, { events: LiveActivity[]; tools: AiToolCall[] }>();
+    for (const tool of data.toolCalls) {
+      if (!tool.turn_id) continue;
+      const turn = content.get(tool.turn_id) ?? { events: [], tools: [] };
+      turn.tools.push(tool);
+      content.set(tool.turn_id, turn);
+    }
+    const persistedToolIdsByTurn = new Map<string, Set<string>>();
+    for (const [turnId, turn] of content) persistedToolIdsByTurn.set(turnId, new Set(turn.tools.map((tool) => tool.id)));
+    for (const event of events) {
+      const turnId = String(event.turnId ?? "");
+      if (!turnId) continue;
+      const eventTool = event.toolCall as { id?: unknown } | undefined;
+      if (eventTool?.id && persistedToolIdsByTurn.get(turnId)?.has(String(eventTool.id))) continue;
+      const turn = content.get(turnId) ?? { events: [], tools: [] };
+      turn.events.push(event);
+      content.set(turnId, turn);
+    }
+    return content;
+  }, [data.toolCalls, events]);
+  const userMessagesByTurn = useMemo(() => new Map(data.messages
+    .filter((message) => message.role === "user" && message.turn_id)
+    .map((message) => [message.turn_id!, message])), [data.messages]);
+  const answeredQuestionMessages = useMemo(() => new Set(data.messages
     .filter((message) => message.role === "user" && typeof asAssistantRecord(message.page_context).structured_answer_to === "string")
-    .map((message) => String(asAssistantRecord(message.page_context).structured_answer_to)));
+    .map((message) => String(asAssistantRecord(message.page_context).structured_answer_to))), [data.messages]);
   if (!open) return null;
   return (
     <>
@@ -1025,19 +1087,19 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
       <aside ref={drawerRef} style={{ width: panelWidth }} className={`${styles.drawer} ${styles.dockedDrawer} desktop-assistant-drawer`} role="dialog" aria-modal="false" aria-label="Pilot Assistant">
         <div className={styles.resizeRail} role="separator" aria-label="Resize Pilot Assistant" aria-orientation="vertical" onPointerDown={handleDockResizeStart} onPointerMove={handleDockResizeMove} onPointerUp={handleDockResizeEnd} onPointerCancel={handleDockResizeEnd}><span /></div>
         <header className={styles.header}>
-          <div className={styles.conversationPicker}>
+          <div className={styles.conversationPicker} ref={conversationPickerRef}>
             <button type="button" onClick={() => setHistoryOpen((current) => !current)} aria-expanded={historyOpen}>
               <span>{data.activeConversation?.title ?? "New conversation"}</span><CaretDown size={11} />
             </button>
             {historyOpen && <div className={styles.historyMenu}>
-              <button className={styles.newConversation} type="button" onClick={startNewConversation}><Plus size={14} /> New conversation</button>
+              <button className={styles.newConversation} type="button" onClick={() => void startNewConversation()} disabled={creatingConversation || running}><Plus size={14} /> {creatingConversation ? "Creating conversation" : "New conversation"}</button>
               <div className={styles.historyList}>{data.conversations.map((conversation) => <div className={`${styles.historyRow} ${conversation.id === activeId ? styles.activeConversation : ""}`} key={conversation.id}>
                 {renamingConversationId === conversation.id ? <form className={styles.renameConversation} onSubmit={(event) => { event.preventDefault(); void renameConversation(conversation.id); }}>
                   <input autoFocus value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} maxLength={120} aria-label="Conversation title" />
                   <button type="submit" disabled={!renameDraft.trim() || savingRename} aria-label="Save conversation title" title="Save"><Check size={13} /></button>
                   <button type="button" onClick={() => setRenamingConversationId(null)} aria-label="Cancel rename" title="Cancel"><X size={13} /></button>
                 </form> : <>
-                  <button className={styles.historySelect} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id); }}><span>{conversation.title}</span></button>
+                  <button className={styles.historySelect} type="button" onClick={() => { setHistoryOpen(false); void loadConversation(conversation.id, true); }}><span>{conversation.title}</span></button>
                   <button className={styles.renameConversationButton} type="button" onClick={() => { setRenamingConversationId(conversation.id); setRenameDraft(conversation.title); }} disabled={running} aria-label={`Rename ${conversation.title}`} title="Rename conversation"><PencilSimple size={14} /></button>
                   <button className={styles.archiveConversation} type="button" onClick={() => void archiveConversation(conversation.id)} disabled={running || busyArchive === conversation.id} aria-label={`Archive ${conversation.title}`} title="Archive conversation"><Archive size={14} /></button>
                 </>}
@@ -1057,7 +1119,7 @@ export default function GlobalAssistant({ session, open, preferences, onPreferen
           </div> : null}
 
           {data.messages.map((message) => {
-            const turn = message.turn_id ? turnContent(message.turn_id) : { events: [], tools: [] };
+            const turn = message.turn_id ? turnContentById.get(message.turn_id) ?? { events: [], tools: [] } : { events: [], tools: [] };
             if (message.role === "user") return <div key={message.id} className={styles.userTurn}>
               <FadeContent className={styles.userMessage} duration={0.14}><MessageImages message={message} onPreview={setPreviewImage} />{message.content && <AssistantMarkdown text={message.content} />}</FadeContent>
               <MessageActions message={message} align="right" />

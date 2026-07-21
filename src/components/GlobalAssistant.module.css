@@ -34,6 +34,7 @@
 
 .header {
   position: relative;
+  z-index: 10;
   display: flex;
   min-width: 0;
   min-height: 52px;
@@ -41,8 +42,8 @@
   justify-content: space-between;
   gap: 6px;
   border-bottom: 1px solid var(--line);
+  background: var(--surface);
   padding: 0 12px;
-  touch-action: none;
 }
 
 .conversationPicker { position: relative; min-width: 0; flex: 1 1 auto; }
@@ -67,12 +68,12 @@
 
 .historyMenu {
   position: absolute;
-  z-index: 3;
+  z-index: 20;
   top: calc(100% + 7px);
   left: 0;
   display: grid;
-  width: min(330px, calc(100vw - 32px));
-  max-height: 320px;
+  width: min(350px, calc(100vw - 24px));
+  max-height: min(360px, calc(100dvh - 76px));
   gap: 2px;
   overflow-y: auto;
   border: 1px solid var(--line-strong);
@@ -94,6 +95,7 @@
   text-align: left;
 }
 .newConversation { min-height: 34px; gap: 7px; padding: 6px 8px; }
+.newConversation:disabled { cursor: wait; opacity: 0.55; }
 .historyList { display: grid; gap: 2px; }
 .historyRow { display: grid; grid-template-columns: minmax(0, 1fr) 30px 30px; align-items: center; border-radius: 6px; }
 .historyRow:hover, .historyRow.activeConversation { background: var(--surface-muted); }
@@ -115,7 +117,6 @@
   overflow-x: hidden;
   overscroll-behavior: contain;
   padding: 18px 14px 24px;
-  scroll-behavior: smooth;
 }
 
 .empty {
@@ -146,6 +147,7 @@
 
 .loadingHistory, .liveWorking { padding: 10px 3px; color: var(--ink-faint); font-size: 12px; }
 .userTurn { display: grid; margin: 0 0 15px; }
+.userTurn, .assistantTurn, .changeReceipt { content-visibility: auto; contain-intrinsic-size: auto 140px; }
 .userMessage {
   min-width: 0;
   justify-self: end;
@@ -536,8 +538,13 @@
 
 @media (max-width: 1439px) {
   .backdrop { display: block; }
-  .drawer { inset: 0 0 0 auto !important; width: min(420px, 100vw) !important; min-width: 0; height: 100dvh !important; resize: none; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: -10px 0 28px rgb(20 22 26 / 0.14); }
+  .drawer { inset: 0 0 0 auto !important; width: clamp(380px, 40vw, 500px) !important; min-width: 0; height: 100dvh !important; resize: none; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; box-shadow: -10px 0 28px rgb(20 22 26 / 0.14); }
   .resizeRail { display: none !important; }
+}
+
+@media (max-width: 899px) {
+  .drawer { width: min(420px, 100vw) !important; }
+  .historyMenu { width: min(350px, calc(100vw - 20px)); }
 }
 
 @media (max-width: 620px) {

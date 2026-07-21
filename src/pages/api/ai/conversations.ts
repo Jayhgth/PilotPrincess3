@@ -55,35 +55,51 @@ export const GET: APIRoute = async ({ request }) => {
   if (archived) await purgeExpiredArchives(auth);
   const conversationResult = await auth.supabase
     .from("ai_conversations")
-    .select("*")
+    .select("id,user_id,title,is_archived,archived_at,created_at,updated_at")
     .eq("user_id", auth.user.id)
     .eq("is_archived", archived)
     .order("updated_at", { ascending: false })
-    .limit(archived ? 100 : 20);
+    .limit(archived ? 100 : 50);
   if (conversationResult.error) return jsonError(conversationResult.error.message, 500);
-  const conversations = conversationResult.data ?? [];
+  let conversations = conversationResult.data ?? [];
   if (archived) {
     return new Response(JSON.stringify({ conversations, activeConversation: null, messages: [], events: [], toolCalls: [] }), {
       headers: { "content-type": "application/json", "cache-control": "no-store" }
     });
   }
-  const activeConversation = requestedId
+  let activeConversation = requestedId
     ? conversations.find((conversation) => conversation.id === requestedId) ?? null
     : conversations[0] ?? null;
+  if (requestedId && !activeConversation) {
+    const requestedResult = await auth.supabase
+      .from("ai_conversations")
+      .select("id,user_id,title,is_archived,archived_at,created_at,updated_at")
+      .eq("id", requestedId)
+      .eq("user_id", auth.user.id)
+      .eq("is_archived", false)
+      .maybeSingle();
+    if (requestedResult.error) return jsonError(requestedResult.error.message, 500);
+    activeConversation = requestedResult.data;
+    if (activeConversation) conversations = [activeConversation, ...conversations];
+  }
   if (!activeConversation) {
     return new Response(JSON.stringify({ conversations, activeConversation: null, messages: [], events: [], toolCalls: [] }), {
       headers: { "content-type": "application/json", "cache-control": "no-store" }
     });
   }
 
-  const [messageResult, eventResult, toolResult, attachmentResult] = await Promise.all([
+  const [messageResult, eventResult, toolResult] = await Promise.all([
     auth.supabase.from("ai_messages").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: false }).limit(100),
     auth.supabase.from("ai_events").select("*").eq("conversation_id", activeConversation.id).order("id", { ascending: false }).limit(400),
-    auth.supabase.from("ai_tool_calls").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: false }).limit(120),
-    auth.supabase.from("ai_message_attachments").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: true }).limit(800)
+    auth.supabase.from("ai_tool_calls").select("*").eq("conversation_id", activeConversation.id).order("created_at", { ascending: false }).limit(120)
   ]);
-  const error = messageResult.error ?? eventResult.error ?? toolResult.error ?? attachmentResult.error;
+  const error = messageResult.error ?? eventResult.error ?? toolResult.error;
   if (error) return jsonError(error.message, 500);
+  const messageIds = (messageResult.data ?? []).map((message) => message.id);
+  const attachmentResult = messageIds.length
+    ? await auth.supabase.from("ai_message_attachments").select("*").eq("conversation_id", activeConversation.id).in("message_id", messageIds).order("created_at", { ascending: true })
+    : { data: [], error: null };
+  if (attachmentResult.error) return jsonError(attachmentResult.error.message, 500);
   const attachments = attachmentResult.data ?? [];
   const signedResult = attachments.length
     ? await auth.supabase.storage.from("ai-attachments").createSignedUrls(attachments.map((attachment) => attachment.storage_path), 3600)
