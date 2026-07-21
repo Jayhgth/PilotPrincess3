@@ -24,7 +24,15 @@ function missingPlanScopeColumn(error: { code?: string; message?: string } | nul
 }
 
 function withPlanScope(goal: Record<string, unknown>, planId: string) {
-  return { ...goal, plan_id: typeof goal.plan_id === "string" ? goal.plan_id : planId } as unknown as StudentSmccdGoal;
+  return {
+    ...goal,
+    plan_id: typeof goal.plan_id === "string" ? goal.plan_id : planId,
+    notes: typeof goal.notes === "string" ? goal.notes : ""
+  } as unknown as StudentSmccdGoal;
+}
+
+function normalizeGoalNotes(notes: string | null | undefined) {
+  return notes?.trim() ?? "";
 }
 
 async function selectStudentSmccdGoals(supabase: SupabaseClient, userId: string, planId: string) {
@@ -83,7 +91,7 @@ export async function insertStudentSmccdGoals(
     user_id: input.userId,
     program_id: goal.programId,
     is_primary: goal.isPrimary ?? false,
-    notes: goal.notes ?? null
+    notes: normalizeGoalNotes(goal.notes)
   }));
 
   if (planScopedGoalSchemaAvailable !== false) {
@@ -117,7 +125,7 @@ export async function saveStudentSmccdGoal(
   if (input.existing) {
     const updated = await supabase.from("student_smccd_goals").update({
       is_primary: input.isPrimary ?? false,
-      notes: input.notes ?? null
+      notes: normalizeGoalNotes(input.notes)
     }).eq("id", input.existing.id).eq("user_id", input.userId).select("*").single();
     if (updated.error) throw new Error(updated.error.message);
     return withPlanScope(updated.data, input.planId);
