@@ -2585,6 +2585,8 @@ textarea,
 .course-evidence-panel > div { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: start; gap: 8px; }
 .course-evidence-panel > div > span { margin-top: 1px; color: var(--ink-faint); font-size: 9px; font-weight: 750; letter-spacing: .02em; text-transform: uppercase; }
 .course-evidence-panel > div > span.verified { color: var(--success); }
+.course-evidence-panel > div > span.danger,
+.course-evidence-panel > div.danger p strong { color: var(--danger); }
 .course-evidence-panel p { display: grid; gap: 1px; margin: 0; color: var(--ink-soft); font-size: 10px; line-height: 1.4; }
 .course-evidence-panel p strong { color: var(--ink); font-size: 11px; }
 .kanban-course .course-delete-button { position: absolute; z-index: 2; top: 8px; right: 8px; width: 32px; opacity: .64; color: var(--danger); transition: width 140ms ease, background-color 140ms ease, color 140ms ease, opacity 140ms ease; }

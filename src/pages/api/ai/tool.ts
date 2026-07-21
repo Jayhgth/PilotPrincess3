@@ -71,8 +71,8 @@ export const POST: APIRoute = async ({ request }) => {
     if (reviewMode !== "model") {
       // Deterministic, reversible student-owned mutations do not need a
       // second model to reinterpret a clear request. Execution below still
-      // enforces RLS, ownership, locks, record existence, atomicity, explicit
-      // prerequisite overrides, and true absolute limits.
+      // enforces RLS, ownership, locks, record existence, atomicity, and true
+      // absolute limits. Prerequisite gaps are saved as visible advisories.
       review = {
         decision: "approve",
         risk: "low",

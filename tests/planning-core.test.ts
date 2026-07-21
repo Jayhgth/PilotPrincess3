@@ -7,6 +7,7 @@ import { evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import { visibleTranscriptUncertaintyNotes } from "@/lib/transcript";
 import { normalizeWorkspaceBootstrap } from "@/lib/workspace-bootstrap";
 import { resolveCollegeHighSchoolCredits } from "@/lib/college-credits";
+import { coursePlanEvidence } from "@/lib/course-evidence";
 import { planVersionDifferences } from "@/lib/plan-versions";
 
 const settings: StudentSettings = {
@@ -187,6 +188,22 @@ describe("core academic planning contracts", () => {
     );
     expect(futurePlan.result.status).toBe("blocked");
     expect(futurePlan.result.orderingViolations).toHaveLength(1);
+    expect(coursePlanEvidence({
+      row: plan({ id: "planned-math-253", course_id: null, smccd_course_id: csmMath253.id, status: "planned", grade_level: 11, term: "fall" }),
+      collegeCourse: csmMath253,
+      requirements: [],
+      mappings: [],
+      equivalencies: [],
+      goals: [],
+      programs: [],
+      degreeRequirements: [],
+      degreeRequirementCourses: [],
+      prerequisiteEvaluation: futurePlan
+    })[0]).toMatchObject({
+      title: "Prerequisite not found earlier",
+      tone: "danger",
+      verified: false
+    });
   });
   it("enforces ordering, credit, mapping, and GPA invariants", () => {
     {

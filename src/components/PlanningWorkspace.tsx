@@ -86,7 +86,7 @@ import type {
 import { defaultEnrollmentPreference, evaluateEnrollmentSchedule, policyForPreference } from "@/lib/enrollment-policy";
 import { hasPublicEnv } from "@/lib/env";
 import { institutionKeyFromName } from "@/lib/institutions";
-import { evaluateSelectedSchoolPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
+import { evaluateSelectedSchoolPlannerPrerequisites } from "@/lib/prerequisites";
 import {
   selectedSchoolCatalogEligibility,
   selectedSchoolCourseAllowsGradePlacement,
@@ -845,11 +845,6 @@ export default function PlanningWorkspace() {
           : "That course is already represented in the current plan.");
       return;
     }
-    const evaluation = evaluateSelectedSchoolPlannerPrerequisites(course, placement, courses, planCourses, plannedSmccdCourses, equivalencies);
-    if (evaluation.result.status === "blocked") {
-      notify("Complete the listed prerequisite before adding this course in that year.");
-      return;
-    }
     const mappingVerified = mappings.some(
       (mapping) => mapping.course_id === course.id && mapping.confidence === "verified"
     );
@@ -899,34 +894,6 @@ export default function PlanningWorkspace() {
     if (dtechCourse && !selectedSchoolCourseAllowsGradePlacement(dtechCourse, placement.gradeLevel)) {
       notify(`${dtechCourse.name} is not offered for grade ${placement.gradeLevel}.`);
       return false;
-    }
-    if (dtechCourse) {
-      const evaluation = evaluateSelectedSchoolPlannerPrerequisites(
-        dtechCourse,
-        { gradeLevel: placement.gradeLevel, term: placement.term, instanceId: row.id },
-        courses,
-        planCourses,
-        plannedSmccdCourses,
-        equivalencies
-      );
-      if (evaluation.result.status === "blocked") {
-        notify("That year would place this course before its prerequisite.");
-        return false;
-      }
-    }
-    const smccdCourse = row.smccd_course_id ? plannedSmccdCourses.find((course) => course.id === row.smccd_course_id) : null;
-    if (smccdCourse) {
-      const evaluation = evaluateSmccdPlannerPrerequisites(
-        smccdCourse,
-        { gradeLevel: placement.gradeLevel, term: placement.term, instanceId: row.id },
-        plannedSmccdCourses,
-        planCourses,
-        courses
-      );
-      if (evaluation.result.status === "blocked") {
-        notify("That year would place this course before its prerequisite.");
-        return false;
-      }
     }
     const previousRows = planCourses;
     const orderById = new Map(placement.orderedCourseIds.map((id, index) => [id, index]));
@@ -1544,7 +1511,7 @@ export default function PlanningWorkspace() {
           controls={<form className="catalog-plan-controls" onSubmit={(event) => { event.preventDefault(); void addCatalogCourse(selectedDtechCourse, "planned", dtechDraft); }}>
             <label><span>School year</span><select value={dtechDraft.gradeLevel} onChange={(event) => selectDtechGrade(Number(event.target.value) as GradeLevel)}>{selectedDtechGradeOptions.map((grade) => <option value={grade} key={grade}>Grade {grade}</option>)}</select></label>
             <label><span>Term</span><select value={dtechDraft.term} onChange={(event) => setDtechDraft({ ...dtechDraft, term: event.target.value as PlanCourse["term"] })}>{selectedDtechTermOptions.map((term) => <option value={term} key={term}>{term === "full_year" ? "Full year" : term[0].toUpperCase() + term.slice(1)}</option>)}</select></label>
-            <button className="primary-button" type="submit" disabled={selectedDtechEvaluation.result.status === "blocked"}><Plus size={16} /> Add to plan</button>
+            <button className="primary-button" type="submit"><Plus size={16} /> Add to plan</button>
           </form>}
         >
           <PrerequisiteReadout evaluation={selectedDtechEvaluation} />

@@ -10,12 +10,15 @@ import type {
   SmccdRequirementCourse,
   StudentSmccdGoal
 } from "@/lib/models";
+import type { PlannerPrerequisiteEvaluation } from "@/lib/prerequisites";
+import { prerequisiteWarningDetail } from "@/lib/prerequisite-display";
 import { normalizeSmccdCourseCode } from "@/lib/smccd";
 
 export interface CoursePlanEvidence {
   title: string;
   detail: string;
   verified: boolean;
+  tone?: "verified" | "advisory" | "danger";
 }
 
 export function coursePlanEvidence(input: {
@@ -29,8 +32,18 @@ export function coursePlanEvidence(input: {
   programs: SmccdProgram[];
   degreeRequirements: SmccdProgramRequirement[];
   degreeRequirementCourses: SmccdRequirementCourse[];
+  prerequisiteEvaluation?: PlannerPrerequisiteEvaluation | null;
 }): CoursePlanEvidence[] {
   const evidence: CoursePlanEvidence[] = [];
+  const prerequisiteWarning = input.prerequisiteEvaluation
+    ? prerequisiteWarningDetail(input.prerequisiteEvaluation)
+    : null;
+  if (prerequisiteWarning) evidence.push({
+    title: "Prerequisite not found earlier",
+    detail: prerequisiteWarning,
+    verified: false,
+    tone: "danger"
+  });
   const requirementById = new Map(input.requirements.map((requirement) => [requirement.id, requirement]));
   if (input.course) {
     const mapped = input.mappings.filter((mapping) => mapping.course_id === input.course?.id);

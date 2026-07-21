@@ -518,10 +518,6 @@ export default function SmccdPlanner({
       setError("That college course is already represented in the active plan.");
       return;
     }
-    if (selectedPrerequisiteEvaluation?.result.status === "blocked") {
-      setError("Complete the listed prerequisite before adding this course for the selected year.");
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
@@ -696,7 +692,7 @@ export default function SmccdPlanner({
           controls={<form className="catalog-plan-controls smccd-course-draft" onSubmit={addCatalogCourse}>
             <label><span>School year</span><select value={targetGrade} onChange={(event) => selectTargetGrade(Number(event.target.value) as GradeLevel)}>{availablePlanGrades.map((grade) => <option key={grade} value={grade}>Grade {grade}</option>)}</select></label>
             <label><span>Term</span><select value={courseDraft.term} onChange={(event) => setCourseDraft({ ...courseDraft, term: event.target.value as PlanCourse["term"] })}><option value="fall">Fall</option><option value="spring">Spring</option>{targetGrade < 12 && <option value="summer">Summer</option>}</select></label>
-            <button className="primary-button" type="submit" disabled={busy || selectedPrerequisiteEvaluation.result.status === "blocked"}><Plus size={16} /> Add to plan</button>
+            <button className="primary-button" type="submit" disabled={busy}><Plus size={16} /> Add to plan</button>
           </form>}
         >
           {(selectedCourse.attributes ?? []).length > 0 && <section className="catalog-detail-section"><strong>College gen-ed</strong><ul>{selectedCourse.attributes.map((attribute) => <li key={attribute}>{attribute}</li>)}</ul></section>}

@@ -506,6 +506,8 @@ describe("Pilot complete academic control", () => {
     expect(prompt).toContain("audit the entire assembled schedule for duplicate or near-duplicate titles");
     expect(prompt).toContain("use resolve_academic_course_batch once");
     expect(prompt).toContain("normal product validation, RLS, receipts, and undo");
+    expect(prompt).toContain("Unmet prerequisites never block a student-owned add, move, or update");
+    expect(prompt).toContain("saved course will show that issue as a red prerequisite flag");
     expect(prompt).not.toContain("Current page context");
     expect(prompt).not.toContain("Selected change-review mode");
     }
@@ -528,6 +530,7 @@ describe("Pilot complete academic control", () => {
     expect(planContextMigration).toContain("course.source_review_item_id is not null");
     expect(planContextMigration).toContain("existing.plan_version_id = target.id");
     const toolSource = readFileSync(new URL("../src/server/ai-tools.ts", import.meta.url), "utf8");
+    expect(toolSource).not.toContain("has an unmet prerequisite for the requested planning window");
     expect(toolSource).toContain('.eq("plan_version_id", workspace.activeVersion.id)');
     expect(toolSource).toContain("target_plan_version_id !== workspace.activeVersion.id");
     const removedPlanWindowMigration = readFileSync(new URL("../supabase/migrations/20260719131000_remove_plan_window_settings.sql", import.meta.url), "utf8");

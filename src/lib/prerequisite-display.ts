@@ -12,3 +12,11 @@ export function prerequisiteDisplay(evaluation: PlannerPrerequisiteEvaluation) {
   }
   return { label: "Review", tone: "review" as const };
 }
+
+export function prerequisiteWarningDetail(evaluation: PlannerPrerequisiteEvaluation) {
+  if (evaluation.result.status !== "blocked") return null;
+  return evaluation.result.missingCourses[0]?.message
+    ?? evaluation.result.orderingViolations[0]?.message
+    ?? evaluation.result.evidence.find((item) => item.satisfied === false)?.message
+    ?? "A listed prerequisite is not present in an earlier term of this plan.";
+}

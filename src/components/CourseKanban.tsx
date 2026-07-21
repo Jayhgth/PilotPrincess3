@@ -49,6 +49,7 @@ import { selectedSchoolCourseHasFixedFullYearTerm } from "@/lib/catalog-eligibil
 import { courseDisplayName, GRADE_LEVELS, REQUIREMENT_LABELS, schoolYearForGrade } from "@/lib/planning";
 import { resolvePlanCourseHighSchoolCredits } from "@/lib/college-credits";
 import { coursePlanEvidence, type CoursePlanEvidence } from "@/lib/course-evidence";
+import { evaluateSelectedSchoolPlannerPrerequisites, evaluateSmccdPlannerPrerequisites } from "@/lib/prerequisites";
 import type { Course, CourseRequirementMapping, CourseStatus, GradeLevel, GraduationRequirement, PlanCourse, SmccdCourse, SmccdHighSchoolEquivalency, SmccdProgram, SmccdProgramRequirement, SmccdRequirementCourse, StudentSettings, StudentSmccdGoal } from "@/lib/models";
 
 const TERM_CONTENT: Record<CourseBoardTerm, { label: string; description: string }> = {
@@ -203,7 +204,10 @@ function CourseCardBody({
         </div>
         {!continuation && <button className="course-evidence-toggle" type="button" aria-label="Course evidence" title="Course evidence" aria-expanded={evidenceOpen} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); setEvidenceOpen((open) => !open); }}><Info size={14} /></button>}
       </article>
-      {!continuation && evidenceOpen && <div className="course-evidence-panel">{evidence.map((item, index) => <div key={`${item.title}:${index}`}><span className={item.verified ? "verified" : "advisory"}>{item.verified ? "Verified" : "Advisory"}</span><p><strong>{item.title}</strong>{item.detail}</p></div>)}</div>}
+      {!continuation && evidenceOpen && <div className="course-evidence-panel">{evidence.map((item, index) => {
+        const tone = item.tone ?? (item.verified ? "verified" : "advisory");
+        return <div className={tone} key={`${item.title}:${index}`}><span className={tone}>{tone === "danger" ? "Flag" : tone === "verified" ? "Verified" : "Advisory"}</span><p><strong>{item.title}</strong>{item.detail}</p></div>;
+      })}</div>}
       {!continuation && <button
         className={`icon-button course-delete-button ${confirmingRemove ? "confirm" : ""}`}
         type="button"
@@ -293,18 +297,31 @@ export default function CourseKanban(props: CourseKanbanProps) {
   );
   const courseMap = useMemo(() => new Map(props.courses.map((course) => [course.id, course])), [props.courses]);
   const smccdCourseMap = useMemo(() => new Map(props.smccdCourses.map((course) => [course.id, course])), [props.smccdCourses]);
-  const evidenceByRow = useMemo(() => new Map(props.rows.map((row) => [row.id, coursePlanEvidence({
-    row,
-    course: row.course_id ? courseMap.get(row.course_id) : null,
-    collegeCourse: row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null,
-    requirements: props.requirements,
-    mappings: props.mappings,
-    equivalencies: props.equivalencies,
-    goals: props.goals,
-    programs: props.programs,
-    degreeRequirements: props.degreeRequirements,
-    degreeRequirementCourses: props.degreeRequirementCourses
-  })])), [courseMap, props.degreeRequirementCourses, props.degreeRequirements, props.equivalencies, props.goals, props.mappings, props.programs, props.requirements, props.rows, smccdCourseMap]);
+  const evidenceByRow = useMemo(() => new Map(props.rows.map((row) => {
+    const selectedCourse = row.course_id ? courseMap.get(row.course_id) : null;
+    const collegeCourse = row.smccd_course_id ? smccdCourseMap.get(row.smccd_course_id) : null;
+    const target = { gradeLevel: row.grade_level, term: row.term, instanceId: row.id };
+    const prerequisiteEvaluation = row.status === "completed"
+      ? null
+      : selectedCourse
+        ? evaluateSelectedSchoolPlannerPrerequisites(selectedCourse, target, props.courses, props.rows, props.smccdCourses, props.equivalencies)
+        : collegeCourse
+          ? evaluateSmccdPlannerPrerequisites(collegeCourse, target, props.smccdCourses, props.rows, props.courses)
+          : null;
+    return [row.id, coursePlanEvidence({
+      row,
+      course: selectedCourse,
+      collegeCourse,
+      requirements: props.requirements,
+      mappings: props.mappings,
+      equivalencies: props.equivalencies,
+      goals: props.goals,
+      programs: props.programs,
+      degreeRequirements: props.degreeRequirements,
+      degreeRequirementCourses: props.degreeRequirementCourses,
+      prerequisiteEvaluation
+    })];
+  })), [courseMap, props.courses, props.degreeRequirementCourses, props.degreeRequirements, props.equivalencies, props.goals, props.mappings, props.programs, props.requirements, props.rows, props.smccdCourses, smccdCourseMap]);
   const activeRow = useMemo(() => activeId ? props.rows.find((row) => row.id === activeId) ?? null : null, [activeId, props.rows]);
   const graduationYear = props.settings.graduation_year ?? new Date().getFullYear() + (12 - currentGrade);
   const selectedRows = useMemo(
