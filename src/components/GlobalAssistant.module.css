@@ -44,9 +44,10 @@
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   padding: 0 12px;
+  -webkit-app-region: no-drag;
 }
 
-.conversationPicker { position: relative; min-width: 0; flex: 1 1 auto; }
+.conversationPicker { position: relative; min-width: 0; flex: 1 1 auto; -webkit-app-region: no-drag; }
 .conversationPicker > button {
   display: flex;
   min-width: 0;
@@ -81,6 +82,7 @@
   background: var(--surface);
   box-shadow: 0 8px 22px rgb(20 22 26 / 0.12);
   padding: 6px;
+  -webkit-app-region: no-drag;
 }
 .newConversation, .historySelect, .archiveConversation, .renameConversationButton {
   display: flex;
