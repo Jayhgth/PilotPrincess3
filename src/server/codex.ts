@@ -1257,9 +1257,7 @@ function scheduleDegreeLine(
 ) {
   const goalCount = Number(degreePlanning?.bookmarked_goal_count ?? 0);
   if (!goalCount) return null;
-  if (degreePlanning?.all_bookmarked_goals_covered === true) {
-    return `The integrated college portion covers all ${goalCount} bookmarked degree ${goalCount === 1 ? "goal" : "goals"}.`;
-  }
+  if (degreePlanning?.all_bookmarked_goals_covered === true) return null;
 
   const goals = Array.isArray(degreePlanning?.goals)
     ? degreePlanning.goals.filter((goal): goal is Record<string, unknown> => Boolean(goal) && typeof goal === "object" && !Array.isArray(goal))
@@ -1313,12 +1311,12 @@ function scheduleDegreeLine(
 
   if (startingMath && unreachableMath.length) {
     const codes = unreachableMath.slice(0, 3).join(" and ");
-    return `The diploma schedule is valid, but ${titleText} remains incomplete: starting at ${startingMath} in grade ${startingGrade} leaves too few prerequisite-ordered years to reach ${codes} by graduation. The exact remaining items stay visible in the degree audit.`;
+    return `Degree goal still open: starting at ${startingMath} in grade ${startingGrade} leaves too little time to reach ${codes} for ${titleText}.`;
   }
   const remaining = exactMissingCodes.length
     ? exactMissingCodes.slice(0, 3).join(", ")
     : unresolvedSummaries.slice(0, 2).join("; ");
-  return `The diploma schedule is valid, but ${titleText} remains incomplete${remaining ? `; remaining verified requirements include ${remaining}` : ""}. The exact remaining items stay visible in the degree audit.`;
+  return `Degree goal still open: ${titleText}${remaining ? ` still needs ${remaining}` : " is incomplete"}.`;
 }
 
 export function schedulePreview(data: Record<string, unknown>) {
@@ -1326,7 +1324,6 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? data.courses.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
     : [];
   const existingCount = Number(data.existing_course_count ?? data.existing_courses_retained ?? 0);
-  const retainedCount = Number(data.existing_courses_retained ?? 0);
   const replacedCount = Number(data.existing_courses_replaced ?? 0);
   const replacesExisting = data.replace_existing === true;
   const adjustments = Array.isArray(data.adjustments)
@@ -1355,40 +1352,28 @@ export function schedulePreview(data: Record<string, unknown>) {
     ? data.requested_preferences as Record<string, unknown>
     : {};
   const addedCourseCount = courses.length + degreeCourses.length;
-  const highSchoolCount = courses.length;
-  const collegeCount = degreeCourses.length;
-  const gradeCounts = ([9, 10, 11, 12] as const)
-    .map((grade) => ({
-      grade,
-      count: courses.filter((course) => Number(course.grade_level) === grade).length
-        + degreeCourses.filter((course) => Number(course.grade_level) === grade).length
-    }))
-    .filter((entry) => entry.count > 0);
   const opening = replacesExisting
     ? addedCourseCount
-      ? `I prepared a ${addedCourseCount}-course rebuild, replacing ${replacedCount} editable courses and retaining ${retainedCount} unaffected or transcript-backed ${retainedCount === 1 ? "course" : "courses"}.`
-      : `I could not build a safe replacement schedule. Your ${replacedCount} editable courses remain unchanged.`
+      ? `Prepared a ${addedCourseCount}-course rebuild.`
+      : `No replacement was prepared; ${replacedCount} editable ${replacedCount === 1 ? "course remains" : "courses remain"} unchanged.`
     : adjustments.length
-    ? `I kept the ${existingCount} courses already in your plan, corrected ${adjustments.length} ${adjustments.length === 1 ? "placement" : "placements"}, and prepared ${addedCourseCount} ${addedCourseCount === 1 ? "addition" : "additions"}.`
+    ? `Prepared ${adjustments.length} placement ${adjustments.length === 1 ? "correction" : "corrections"}${addedCourseCount ? ` and ${addedCourseCount} course ${addedCourseCount === 1 ? "addition" : "additions"}` : ""}.`
     : addedCourseCount
-      ? `I kept the ${existingCount} courses already in your plan and prepared ${addedCourseCount} ${addedCourseCount === 1 ? "addition" : "additions"}.`
-      : `Your current four-year plan already has ${existingCount} ${existingCount === 1 ? "course" : "courses"}. I found no additional selected-school courses that safely satisfy the verified requirements and constraints.`;
+      ? `Prepared ${addedCourseCount} course ${addedCourseCount === 1 ? "addition" : "additions"}.`
+      : `No course changes were prepared for the ${existingCount}-course plan.`;
   const coverageLine = readiness.evidence_ready !== true
-    ? `${String(readiness.selected_school ?? "The selected school")}'s official catalog, diploma requirements, and verified course mappings are not complete enough for Pilot to build or apply a trustworthy schedule. No other school's sequence will be substituted.`
+    ? `${String(readiness.selected_school ?? "The selected school")} does not yet have enough verified planning data for a complete schedule.`
     : constraintFailures.length
-      ? `I could not produce a valid schedule, so nothing will be changed. ${constraintFailures.slice(0, 2).join(" ")}`
+      ? `Could not apply it: ${constraintFailures[0]}`
       : remainingGaps.length
-    ? `${courses.length ? `After this ${courses.length === 1 ? "addition" : "batch"}` : "The current plan"}, ${remainingGaps.length} graduation ${remainingGaps.length === 1 ? "area remains" : "areas remain"} open: ${remainingGaps.slice(0, 3).map((gap) => `${String(gap.requirement ?? gap.area)} (${Number(gap.credits_remaining ?? 0)} credits)`).join(", ")}${remainingGaps.length > 3 ? `, plus ${remainingGaps.length - 3} more` : ""}. This is a partial completion, not a complete schedule.`
-    : `${courses.length ? `After this ${courses.length === 1 ? "addition" : "batch"}` : "The current plan"}, all ${Number(coverage.requirement_count ?? 0)} tracked graduation areas have verified completed, in-progress, or planned coverage.`;
-  const compositionLine = addedCourseCount
-    ? `${highSchoolCount ? `${highSchoolCount} high-school ${highSchoolCount === 1 ? "course" : "courses"}` : "No high-school courses"} and ${collegeCount ? `${collegeCount} college ${collegeCount === 1 ? "course" : "courses"}` : "no college courses"} are included${gradeCounts.length ? ` across ${gradeCounts.map(({ grade, count }) => `grade ${grade} (${count})`).join(", ")}` : ""}. The change card contains the complete course list.`
+    ? `Graduation still needs ${remainingGaps.slice(0, 3).map((gap) => `${String(gap.requirement ?? gap.area)} (${Number(gap.credits_remaining ?? 0)} credits)`).join(", ")}${remainingGaps.length > 3 ? ` and ${remainingGaps.length - 3} more` : ""}.`
     : null;
   const degreeLine = scheduleDegreeLine(degreePlanning, courses, degreeCourses, requestedPreferences);
   const planningWarnings = Array.isArray(data.planning_warnings) ? data.planning_warnings.map(String) : [];
   const warningLine = planningWarnings.length
-    ? `The best feasible result still has ${planningWarnings.length} planning ${planningWarnings.length === 1 ? "warning" : "warnings"}: ${planningWarnings.slice(0, 2).join(" ")}${planningWarnings.length > 2 ? ` Plus ${planningWarnings.length - 2} more in the change details.` : ""}`
+    ? `Warning: ${planningWarnings[0]}`
     : null;
-  return [opening, compositionLine, coverageLine, degreeLine, warningLine].filter(Boolean).join("\n\n");
+  return [opening, ...[coverageLine, degreeLine, warningLine].filter(Boolean).slice(0, 2)].join("\n\n");
 }
 
 export function scheduleResultIsComplete(data: Record<string, unknown>) {
@@ -2230,7 +2215,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
           };
           await options.onToolActivity(proposal);
           return {
-            message: `${preview}\n\nThe validated schedule is being applied now.`,
+            message: preview,
             questions: [],
             threadId: thread.id,
             usage,
@@ -2540,7 +2525,7 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         latestProposals = [];
         prompt = [
           "Continue the same student conversation using these actual tool results.",
-          "Answer with only the result that matters. Keep it to one to three short sentences or at most three compact bullets. Do not dump or restate the tool data. For an audit, distinguish confirmed mismatches from unresolved verification, name at most three exact affected records, count any remainder, and never convert a downstream planning gap into a source-data error.",
+          "Answer with only the student-facing outcome in one or two short sentences. Use bullets only for important unresolved items. Do not narrate checks or reasoning, restate tool data, or repeat exact changes already shown by the receipt. For an audit, distinguish confirmed mismatches from unresolved verification, name at most three exact affected records, count any remainder, and never convert a downstream planning gap into a source-data error.",
           "If the student requested a write, propose the exact mutating tool now and do not repeat the read tool or tell them to make the change manually.",
           `TOOL RESULTS: ${JSON.stringify(results)}`,
           mutationCalls.length ? "The earlier mixed write proposal was not retained. Re-propose it only if the read results still support it." : ""

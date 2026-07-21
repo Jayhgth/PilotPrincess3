@@ -1881,6 +1881,19 @@ function looksLikeUnmappedCoreCourse(course: Course) {
   return /\b(?:math|algebra|geometry|calculus|statistics|english|history|government|economics|biology|chemistry|physics|environmental science|physical education|spanish|french|chinese|mandarin|japanese|latin|german|italian)\b/.test(text);
 }
 
+const FLEXIBLE_DIPLOMA_AREAS = new Set(["world_language", "visual_performing_arts", "career_technical_education"]);
+
+function canonicalDiplomaAreaIsCovered(workspace: AssistantWorkspace, rows: PlanCourse[], area: string) {
+  const progress = calculateRequirementProgress(
+    workspace.requirements,
+    rows,
+    workspace.mappings,
+    workspace.courses,
+    workspace.equivalencies
+  ).filter((item) => item.requirement.area === area && !item.requirement.constraint_only);
+  return progress.length === 0 || progress.every((item) => item.status !== "missing");
+}
+
 function schedulePlanningWarnings(
   workspace: AssistantWorkspace,
   generatedRows: PlanCourse[],
@@ -1925,23 +1938,14 @@ function schedulePlanningWarnings(
   };
   const yearRows = (grade: GradeLevel) => combined.filter((row) => row.grade_level === grade);
   const generatedYearRows = (grade: GradeLevel) => generatedRows.filter((row) => row.grade_level === grade);
-  const flexibleDiplomaAreas = new Set(["world_language", "visual_performing_arts", "career_technical_education"]);
-  const diplomaAreaIsCovered = (area: string) => {
-    const required = workspace.requirements
-      .filter((requirement) => requirement.area === area)
-      .reduce((total, requirement) => total + Number(requirement.credits_required ?? 0), 0);
-    if (required <= 0) return true;
-    return combined
-      .filter((row) => rowMatchesArea(row, area))
-      .reduce((total, row) => total + Number(row.credits ?? 0), 0) >= required;
-  };
+  const diplomaAreaIsCovered = (area: string) => canonicalDiplomaAreaIsCovered(workspace, combined, area);
   const forwardPolicyAppliesForGrade = (grade: GradeLevel) => grade > accountGrade || !yearRows(grade).some((row) => row.status === "completed");
   for (const grade of planningGrades) {
     const rows = yearRows(grade);
     const policyRule = gradeRule(grade);
     const forwardPolicyApplies = forwardPolicyAppliesForGrade(grade);
     for (const area of forwardPolicyApplies ? policyRule?.required_areas ?? [] : []) {
-      if (!rows.some((row) => rowMatchesArea(row, area)) && !(flexibleDiplomaAreas.has(area) && diplomaAreaIsCovered(area))) {
+      if (!rows.some((row) => rowMatchesArea(row, area)) && !(FLEXIBLE_DIPLOMA_AREAS.has(area) && diplomaAreaIsCovered(area))) {
         failures.push(`Grade ${grade} is missing the school-required ${area.replaceAll("_", " ")} area.`);
       }
     }
@@ -2230,8 +2234,9 @@ function pruneRedundantGeneratedSchedule(
         if (highSchoolCount < Number(gradeRule?.minimum_high_school_courses ?? 0)) return false;
       }
       for (const area of gradeRule?.required_areas ?? []) {
-        if (!rows.some((row) => row.grade_level === grade
-          && (row.requirement_area_override === area || (row.course_id && areasByCourse.get(row.course_id)?.has(area))))) return false;
+        const hasGradeCourse = rows.some((row) => row.grade_level === grade
+          && (row.requirement_area_override === area || (row.course_id && areasByCourse.get(row.course_id)?.has(area))));
+        if (!hasGradeCourse && !(FLEXIBLE_DIPLOMA_AREAS.has(area) && canonicalDiplomaAreaIsCovered(workspace, rows, area))) return false;
       }
     }
     if (requestedMath && !rows.some((row) => row.grade_level === startGrade && rowText(row).includes(requestedMath))) return false;
@@ -2564,16 +2569,6 @@ function generateValidatedSchedule(
     if (area === "physical_education") return /\bphysical education\b|\bpe\s*(?:1|2|i|ii)?\b/.test(text);
     return false;
   };
-  const flexibleDiplomaAreas = new Set(["world_language", "visual_performing_arts", "career_technical_education"]);
-  const diplomaAreaIsCovered = (rows: PlanCourse[], area: string) => {
-    const required = workspace.requirements
-      .filter((requirement) => requirement.area === area)
-      .reduce((total, requirement) => total + Number(requirement.credits_required ?? 0), 0);
-    if (required <= 0) return true;
-    return rows
-      .filter((row) => planRowCoversArea(row, area))
-      .reduce((total, row) => total + Number(row.credits ?? 0), 0) >= required;
-  };
   const tryAddRequiredCourse = (grade: GradeLevel, area: string, namePattern?: RegExp, requiredMathRank?: number) => {
     const planWithAccepted = [...workspace.planCourses, ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))];
     const usedCourseIds = new Set(planWithAccepted.map((row) => row.course_id).filter(Boolean));
@@ -2677,7 +2672,7 @@ function generateValidatedSchedule(
       }
       const planWithAccepted = [...workspace.planCourses, ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))];
       const alreadyCovered = planWithAccepted.some((row) => row.grade_level === grade && planRowCoversArea(row, area))
-        || (flexibleDiplomaAreas.has(area) && diplomaAreaIsCovered(planWithAccepted, area));
+        || (FLEXIBLE_DIPLOMA_AREAS.has(area) && canonicalDiplomaAreaIsCovered(workspace, planWithAccepted, area));
       if (alreadyCovered) continue;
       tryAddRequiredCourse(grade, area);
     }

@@ -369,7 +369,8 @@ describe("Codex feature boundaries", () => {
     expect(prompt).toContain("audit_transcript_data with source text");
     expect(prompt).toContain("separate confirmed extraction mismatches from review uncertainty");
     expect(prompt).toContain("normal product validation, RLS, receipts, and undo");
-    expect(prompt).toContain("Default to one to three short sentences");
+    expect(prompt).toContain("Default to one or two short sentences");
+    expect(prompt).toContain("The change receipt owns exact course and field details");
     expect(prompt).toContain("Every write must match the request narrowly");
     expect(prompt).toContain("attached 1 image: schedule.png");
     expect(prompt).toContain("Use visible content only for this turn");
@@ -459,10 +460,9 @@ describe("Codex feature boundaries", () => {
       constraint_validation: { satisfied: true, failures: [] }
     };
     const preview = schedulePreview(result);
-    expect(preview).toContain("kept the 50 courses already in your plan");
-    expect(preview).toContain("prepared 1 addition");
-    expect(preview).toContain("change card contains the complete course list");
-    expect(preview).toContain("all 8 tracked graduation areas");
+    expect(preview).toBe("Prepared 1 course addition.");
+    expect(preview).not.toContain("change card");
+    expect(preview).not.toContain("tracked graduation areas");
     expect(preview).not.toContain("English 4 / English 4 Honors");
     expect(preview).not.toContain("saved plan");
     expect(scheduleResultIsComplete(result)).toBe(true);
@@ -484,7 +484,7 @@ describe("Codex feature boundaries", () => {
       source_readiness: { evidence_ready: false, selected_school: "Carlmont High" },
       constraint_validation: { satisfied: true, failures: [] },
       graduation_coverage: { requirement_count: 0, all_requirements_covered_after: false, remaining_gaps: [] }
-    })).toContain("No other school's sequence will be substituted");
+    })).toContain("does not yet have enough verified planning data");
     const incompleteDegreePreview = schedulePreview({
       existing_course_count: 0,
       requested_preferences: { start_grade: 9, starting_math_course: "Algebra 1" },
@@ -508,7 +508,7 @@ describe("Codex feature boundaries", () => {
         }]
       }
     });
-    expect(incompleteDegreePreview).toContain("remains incomplete");
+    expect(incompleteDegreePreview).toContain("Degree goal still open");
     expect(incompleteDegreePreview).toContain("starting at Algebra 1 in grade 9");
     expect(incompleteDegreePreview).toContain("MATH 252");
     expect(incompleteDegreePreview).not.toContain("covers all 1 bookmarked degree goal");
