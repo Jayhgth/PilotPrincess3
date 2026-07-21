@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ZodType } from "zod";
 import { assistantTurnJsonSchema, assistantTurnSchema, type AssistantMemoryUpdate, type AssistantQuestion } from "@/server/ai-schemas";
-import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
+import { assistantToolCatalogPrompt, assistantToolLabel, parseAssistantToolCall, rankCourseCatalogCandidate, type AssistantToolName, type AssistantToolResult } from "@/server/ai-tools";
 import type { AssistantKnowledgeChunk } from "@/server/ai-knowledge";
 import type { AssistantMemory } from "@/server/ai-memory";
 import { DEFAULT_AI_MODEL, DEFAULT_AI_REASONING_EFFORT, type AiModel, type AiReasoningEffort } from "@/lib/ai-preferences";
@@ -1671,11 +1671,21 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
   }
 
   if (intent.startingLanguageCourse) {
-    const normalized = (value: unknown) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    const query = normalized(intent.startingLanguageCourse);
     const replacement = languageOptions
-      .filter((course) => normalized(`${String(course.name ?? "")} ${String(course.subject ?? "")}`).includes(query))
-      .sort((left, right) => Number(right.weighted === true) - Number(left.weighted === true) || String(left.name).localeCompare(String(right.name)))[0];
+      .map((course) => ({
+        course,
+        match: rankCourseCatalogCandidate(intent.startingLanguageCourse!, {
+          code: String(course.course_code ?? ""),
+          title: String(course.name ?? ""),
+          subject: String(course.subject ?? ""),
+          description: String(course.description ?? ""),
+          prerequisites: Array.isArray(course.prerequisites) ? course.prerequisites.map(String) : []
+        })
+      }))
+      .filter((item) => item.match.score >= 0)
+      .sort((left, right) => right.match.score - left.match.score
+        || Number(right.course.weighted === true) - Number(left.course.weighted === true)
+        || String(left.course.name).localeCompare(String(right.course.name)))[0]?.course;
     const languageCourseIds = new Set(languageOptions.map((course) => course.course_id).filter((id): id is string => typeof id === "string"));
     const collegeLanguageCourseIds = new Set(collegeSequenceOptions
       .filter((course) => course.high_school_requirement_area === "world_language")
@@ -1689,18 +1699,20 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
       .sort((left, right) => Number(left.grade_level) - Number(right.grade_level));
     const targetRow = existingLanguageRows[0];
     if (!replacement || typeof replacement.course_id !== "string") {
-      const normalizeLanguage = (value: unknown) => normalized(String(value ?? ""))
-        .replace(/\bmandarin\b/g, "chinese")
-        .replace(/\biii\b/g, "3").replace(/\bii\b/g, "2").replace(/\bi\b/g, "1");
-      const requested = normalizeLanguage(intent.startingLanguageCourse);
       const collegeReplacement = collegeSequenceOptions
         .filter((course) => course.high_school_requirement_area === "world_language")
         .map((course) => ({
           course,
-          text: normalizeLanguage(`${String(course.course_code ?? "")} ${String(course.title ?? "")} ${String(course.high_school_equivalent ?? "")}`)
+          match: rankCourseCatalogCandidate(intent.startingLanguageCourse!, {
+            code: String(course.course_code ?? ""),
+            title: String(course.title ?? ""),
+            provider: String(course.college ?? ""),
+            prerequisites: Array.isArray(course.prerequisites) ? course.prerequisites.map(String) : [],
+            aliases: [String(course.high_school_equivalent ?? ""), String(course.high_school_requirement_area ?? "")]
+          })
         }))
-        .filter((item) => item.text.includes(requested) || requested.includes(item.text))
-        .sort((left, right) => Number(right.text.includes(requested)) - Number(left.text.includes(requested))
+        .filter((item) => item.match.score >= 0)
+        .sort((left, right) => right.match.score - left.match.score
           || Number(right.course.high_school_credits ?? 0) - Number(left.course.high_school_credits ?? 0)
           || String(left.course.course_code).localeCompare(String(right.course.course_code)))[0]?.course;
       if (collegeReplacement && typeof collegeReplacement.course_id === "string") {
@@ -1741,12 +1753,13 @@ function targetedStartingSequenceProposal(userMessage: string, context: Record<s
         });
       }
     } else if (!targetRow || typeof targetRow.plan_course_id !== "string") {
-      warnings.push(`There is no editable selected-school language row to replace with ${intent.startingLanguageCourse}.`);
-      questions.push({
-        id: "language_course_placement",
-        prompt: `Where should ${intent.startingLanguageCourse} be added?`,
-        options: [{ id: "fall", label: "Fall / 1st semester" }, { id: "spring", label: "Spring / 2nd semester" }],
-        allow_custom: true
+      additions.push({
+        source: "selected_school",
+        course_id: replacement.course_id,
+        status: startGrade === Number((context.student as Record<string, unknown> | undefined)?.grade_level ?? startGrade) ? "current" : "planned",
+        grade_level: startGrade,
+        term: replacement.term_type === "year" ? "full_year" : "fall",
+        prerequisite_override_reason: `The student explicitly selected ${String(replacement.name)} as their language placement in grade ${startGrade}.`
       });
     } else {
       const requestedTerm = /(?:to be|move|put|place)[^.]{0,50}\b(?:first|1st) semester\b/i.test(userMessage)
@@ -2228,13 +2241,23 @@ export async function runAssistantChat(options: AssistantChatOptions): Promise<A
         }
         if (requiredRead.name === "search_course_catalog" && Array.isArray(result.data)) {
           const intent = parseExactCourseAddition(options.userMessage);
-          const matches = result.data.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row));
+          const matches = result.data
+            .filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+            .filter((row) => row.already_in_plan !== true);
           const normalizedIntent = intent?.query.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ?? "";
-          const exact = matches.find((row) => {
+          const literal = matches.find((row) => {
             const normalizedName = String(row.name ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
             return normalizedName === normalizedIntent || normalizedIntent.endsWith(` ${normalizedName}`);
-          })
-            ?? (matches.length === 1 ? matches[0] : null);
+          });
+          const ranked = [...matches].sort((left, right) => Number(right.match_score ?? -1) - Number(left.match_score ?? -1));
+          const top = ranked[0] ?? null;
+          const runnerUp = ranked[1] ?? null;
+          const confidentTop = top
+            && top.match_confidence === "strong"
+            && (Number(top.match_score ?? 0) - Number(runnerUp?.match_score ?? 0) >= 100 || !runnerUp)
+            ? top
+            : null;
+          const exact = literal ?? confidentTop ?? (matches.length === 1 ? matches[0] : null);
           if (intent && exact && typeof exact.course_id === "string") {
             const college = "units" in exact;
             const proposal: AssistantChatToolActivity = {

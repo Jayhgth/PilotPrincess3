@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { assistantConversationPrompt, parseAcademicClearIntent, parseAssistantScheduleIntent, parsePlanVersionCreationIntent, requiredAssistantEvidenceRead, requiredAssistantEvidenceReadForConversation, runAssistantChat, selectAssistantUndoTarget, type AssistantChatHistoryMessage } from "@/server/codex";
-import { assistantToolContractNames, courseCatalogMatchScore, normalizedCatalogSearchText, parseAssistantToolCall, safeParseAssistantToolCall } from "@/server/ai-tools";
+import { assistantToolContractNames, courseCatalogMatchScore, normalizedCatalogSearchText, parseAssistantToolCall, rankCourseCatalogCandidate, safeParseAssistantToolCall } from "@/server/ai-tools";
 import { assistantUndoAvailability } from "@/server/assistant-undo";
 import { createOwnedPlanVersion } from "@/lib/plan-version-store";
 
@@ -224,6 +224,23 @@ describe("Pilot complete academic control", () => {
     expect(courseCatalogMatchScore("engc1000", "ENGL C1000 Academic Reading and Writing SKY")).toBeGreaterThan(0);
     expect(courseCatalogMatchScore("intercultural comm", "COMM 150 Intercultural Communication CSM")).toBeGreaterThan(0);
     expect(courseCatalogMatchScore("calc 1", "PHYS 250 Physics with Calculus I CSM")).toBe(-1);
+    expect(normalizedCatalogSearchText("Multivariable Calc class")).toBe("calculus 3");
+    const chineseThreeMatch = rankCourseCatalogCandidate("Chinese level 3", {
+      code: "CHIN 131",
+      title: "Intermediate Chinese I",
+      subject: "Chinese",
+      provider: "CSM",
+      aliases: ["Mandarin 3 Fall", "World Language", "5 high school credits"],
+      prerequisites: ["Advanced Elementary Chinese II"]
+    });
+    expect(chineseThreeMatch).toMatchObject({ confidence: "strong", matchedOn: "alias" });
+    expect(chineseThreeMatch.score).toBeGreaterThan(rankCourseCatalogCandidate("Chinese level 3", {
+      code: "CHIN 111",
+      title: "Elementary Chinese I",
+      subject: "Chinese",
+      provider: "CSM",
+      aliases: ["Mandarin 1 Fall", "World Language"]
+    }).score);
 
     const shorthandBatch = await runAssistantChat({
       history: [],
@@ -403,6 +420,10 @@ describe("Pilot complete academic control", () => {
     ], additions: [
       { source: "smccd", course_id: calculusThree, grade_level: 12, term: "fall" }
     ] });
+    const languageChanges = (partiallyResolvable.proposals[0]?.arguments.patches as Array<Record<string, unknown>>)
+      .filter((patch) => patch.plan_course_id === spanishRow);
+    expect(languageChanges).toHaveLength(1);
+    expect(languageChanges[0]).toMatchObject({ smccd_course_id: collegeChineseThree, grade_level: 9, term: "fall" });
     expect(partiallyResolvable.questions).toEqual([]);
     expect(partiallyResolvable.message).toContain("math starting with algebra 2 and language using chinese 3");
   });

@@ -1015,15 +1015,17 @@ function integratedDegreePlan(
   }
   const requestedLanguageText = normalizedLanguageCourseText(preferences.startingLanguageCourse);
   const requestedLanguageCourses = requestedLanguageText
-    ? catalog.filter((course) => {
+    ? catalog.flatMap((course) => {
         const code = degreeCode(course.course_code);
-        const equivalency = workspace.equivalencies.find((candidate) => degreeCode(candidate.normalized_course_code) === code);
-        if (equivalency?.requirement_area !== "world_language") return false;
-        const candidateText = normalizedLanguageCourseText(`${course.course_code} ${course.title} ${equivalency.high_school_equivalent}`);
-        return candidateText.includes(requestedLanguageText) || requestedLanguageText.includes(candidateText);
-      }).sort((left, right) => Number(awardingColleges.has(right.college_code)) - Number(awardingColleges.has(left.college_code))
-        || left.prerequisites.length - right.prerequisites.length
-        || left.course_code.localeCompare(right.course_code))
+        const equivalency = workspace.equivalencies.find((candidate) => degreeCode(candidate.normalized_course_code) === code) ?? null;
+        if (equivalency?.requirement_area !== "world_language") return [];
+        const match = rankCourseCatalogCandidate(preferences.startingLanguageCourse!, collegeCatalogDocument(course, equivalency));
+        return match.score >= 0 ? [{ course, match }] : [];
+      }).sort((left, right) => right.match.score - left.match.score
+        || Number(awardingColleges.has(right.course.college_code)) - Number(awardingColleges.has(left.course.college_code))
+        || left.course.prerequisites.length - right.course.prerequisites.length
+        || left.course.course_code.localeCompare(right.course.course_code))
+      .map((item) => item.course)
     : [];
   const requestedLanguageCodes = new Set(requestedLanguageCourses.map((course) => degreeCode(course.course_code)));
   for (const code of requestedLanguageCodes) optionCodes.add(code);
@@ -1677,6 +1679,9 @@ export function normalizedCatalogSearchText(value: string | null | undefined) {
     .replace(/\bno\s+sql\b/g, "nosql")
     .replace(/\bintercultural\s+comm(?:s|unication)?\b/g, "intercultural communication")
     .replace(/\blinear\s+alg\b/g, "linear algebra")
+    .replace(/\bmulti(?:variate|variable)\s+calc(?:ulus)?\b/g, "calculus 3")
+    .replace(/\bmandarin\b/g, "chinese")
+    .replace(/\b(?:course|class|level)\b/g, " ")
     .replace(/\biii\b/g, "3")
     .replace(/\bii\b/g, "2")
     .replace(/\bi\b/g, "1")
@@ -1684,23 +1689,119 @@ export function normalizedCatalogSearchText(value: string | null | undefined) {
     .trim();
 }
 
-export function courseCatalogMatchScore(queryValue: string, candidateValue: string) {
+export interface CourseCatalogSearchDocument {
+  code?: string | null;
+  title: string;
+  subject?: string | null;
+  provider?: string | null;
+  description?: string | null;
+  attributes?: readonly string[] | null;
+  prerequisites?: readonly string[] | null;
+  aliases?: readonly string[] | null;
+}
+
+export interface CourseCatalogMatch {
+  score: number;
+  confidence: "strong" | "possible" | "none";
+  matchedOn: "code" | "title" | "alias" | "metadata" | "none";
+  reason: string;
+}
+
+function catalogSearchParts(document: CourseCatalogSearchDocument) {
+  const parts = {
+    code: normalizedCatalogSearchText(document.code),
+    title: normalizedCatalogSearchText(document.title),
+    alias: normalizedCatalogSearchText(document.aliases?.join(" ")),
+    metadata: normalizedCatalogSearchText([
+      document.subject,
+      document.provider,
+      document.description,
+      ...(document.attributes ?? []),
+      ...(document.prerequisites ?? [])
+    ].filter(Boolean).join(" "))
+  };
+  return { parts, combined: Object.values(parts).filter(Boolean).join(" ") };
+}
+
+/**
+ * Rank the same complete catalog record that the course UI presents. Titles
+ * are useful evidence, but verified aliases/equivalencies, descriptions and
+ * course codes are searchable too. The score is deterministic so Pilot can
+ * reason over alternatives without inventing an institutional identity.
+ */
+export function rankCourseCatalogCandidate(queryValue: string, document: CourseCatalogSearchDocument): CourseCatalogMatch {
   const query = normalizedCatalogSearchText(queryValue);
-  const candidate = normalizedCatalogSearchText(candidateValue);
-  if (!query || !candidate) return -1;
-  if (!query.includes("physics") && candidate.includes("physics")) return -1;
-  let score = candidate === query ? 1000
-    : candidate.startsWith(`${query} `) || candidate.endsWith(` ${query}`) ? 850
-      : candidate.includes(query) ? 700
-        : -1;
+  const { parts, combined } = catalogSearchParts(document);
+  if (!query || !combined) return { score: -1, confidence: "none", matchedOn: "none", reason: "No searchable text." };
+  // "Physics with Calculus" is not Calculus I. Keep subject identity in the
+  // ranker so a shared word cannot silently select the wrong discipline.
+  if (!query.includes("physics") && normalizedCatalogSearchText(`${document.subject} ${document.title}`).includes("physics")) {
+    return { score: -1, confidence: "none", matchedOn: "none", reason: "The subject does not match the request." };
+  }
+  const fields = (["code", "title", "alias", "metadata"] as const).map((field) => ({ field, value: parts[field] }));
+  const exact = fields.find(({ value }) => value === query);
+  if (exact) {
+    const score = exact.field === "code" ? 1700 : exact.field === "title" ? 1600 : exact.field === "alias" ? 1500 : 1200;
+    return { score, confidence: "strong", matchedOn: exact.field, reason: `Exact ${exact.field} match.` };
+  }
+  const phrase = fields.find(({ value }) => value.includes(query));
+  let score = phrase ? (phrase.field === "code" ? 1450 : phrase.field === "title" ? 1350 : phrase.field === "alias" ? 1300 : 950) : -1;
   const queryTokens = query.split(" ").filter(Boolean);
   if (score < 0) {
-    if (!queryTokens.every((token) => candidate.includes(token))) return -1;
-    score = 500 + queryTokens.length * 10;
+    const matchedTokens = queryTokens.filter((token) => combined.split(" ").includes(token));
+    if (matchedTokens.length !== queryTokens.length) return { score: -1, confidence: "none", matchedOn: "none", reason: "The catalog metadata does not support the request." };
+    score = 800 + queryTokens.length * 20;
   }
-  if (/^calculus [123]$/.test(query) && candidate.includes("analytic geometry")) score += 220;
-  if (/^calculus [123]$/.test(query) && candidate.includes("applied calculus")) score -= 120;
-  return score;
+  if (/^calculus [123]$/.test(query) && combined.includes("analytic geometry")) score += 220;
+  if (/^calculus [123]$/.test(query) && combined.includes("applied calculus")) score -= 120;
+  const matchedOn = phrase?.field ?? (parts.alias && queryTokens.some((token) => parts.alias.split(" ").includes(token)) ? "alias" : "metadata");
+  return {
+    score,
+    confidence: score >= 900 ? "strong" : "possible",
+    matchedOn,
+    reason: phrase ? `Matched the catalog ${matchedOn}.` : "All requested concepts appear in the catalog record."
+  };
+}
+
+export function courseCatalogMatchScore(queryValue: string, candidateValue: string) {
+  return rankCourseCatalogCandidate(queryValue, { title: candidateValue }).score;
+}
+
+function selectedSchoolCatalogDocument(course: Course): CourseCatalogSearchDocument {
+  return {
+    code: course.course_code,
+    title: course.name,
+    subject: course.subject,
+    description: course.description,
+    prerequisites: course.prerequisites,
+    aliases: [course.uc_ag_area, course.course_type].filter((value): value is string => Boolean(value))
+  };
+}
+
+function collegeCatalogDocument(
+  course: SmccdCourse,
+  equivalency: SmccdHighSchoolEquivalency | null
+): CourseCatalogSearchDocument {
+  return {
+    code: course.course_code,
+    title: course.title,
+    subject: course.subject,
+    provider: course.college_code,
+    attributes: course.attributes,
+    prerequisites: course.prerequisites,
+    aliases: [
+      equivalency?.high_school_equivalent,
+      equivalency?.requirement_area,
+      equivalency ? `${equivalency.high_school_credits} high school credits` : null
+    ].filter((value): value is string => Boolean(value))
+  };
+}
+
+function collegeEquivalencyForCourse(workspace: AssistantWorkspace, course: SmccdCourse) {
+  const code = normalizeCollegeCourseCode(course.course_code);
+  return code
+    ? workspace.equivalencies.find((candidate) => candidate.normalized_course_code === code) ?? null
+    : null;
 }
 
 function batchSequenceIdentity(course: SmccdCourse) {
@@ -2108,7 +2209,6 @@ function pruneRedundantGeneratedSchedule(
   const initialPrerequisiteFailures = prerequisiteFailures(initialRows);
   const startGrade = preferences.startGrade ?? workspace.settings.grade_level ?? 9;
   const requestedMath = normalizedScheduleText(preferences.startingMathCourse);
-  const requestedLanguage = normalizedLanguageCourseText(preferences.startingLanguageCourse);
   const rowText = (row: PlanCourse) => {
     const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
     const collegeCourse = row.smccd_course_id ? collegeById.get(row.smccd_course_id) : null;
@@ -2135,7 +2235,22 @@ function pruneRedundantGeneratedSchedule(
       }
     }
     if (requestedMath && !rows.some((row) => row.grade_level === startGrade && rowText(row).includes(requestedMath))) return false;
-    if (requestedLanguage && !rows.some((row) => row.grade_level === startGrade && rowText(row).includes(requestedLanguage))) return false;
+    if (preferences.startingLanguageCourse && !rows.some((row) => {
+      if (row.grade_level !== startGrade) return false;
+      const schoolCourse = row.course_id ? courseById.get(row.course_id) : null;
+      const collegeCourse = row.smccd_course_id ? collegeById.get(row.smccd_course_id) : null;
+      const equivalency = collegeCourse ? collegeEquivalencyForCourse(workspace, collegeCourse) : null;
+      const match = collegeCourse
+        ? rankCourseCatalogCandidate(preferences.startingLanguageCourse!, collegeCatalogDocument(collegeCourse, equivalency))
+        : rankCourseCatalogCandidate(preferences.startingLanguageCourse!, {
+            code: schoolCourse?.course_code,
+            title: schoolCourse?.name ?? row.custom_course_name ?? "",
+            subject: schoolCourse?.subject,
+            description: schoolCourse?.description,
+            prerequisites: schoolCourse?.prerequisites
+          });
+      return match.score >= 0;
+    })) return false;
     if (bookmarkedRequiresMath) {
       const mathRanks = rows.flatMap((row) => {
         const rank = mathSequenceRankFromText(rowText(row));
@@ -2294,14 +2409,13 @@ function generateValidatedSchedule(
     const course = workspace.courses.find((row) => row.id === candidate.course_id);
     if (!course) continue;
     const requestedMath = normalizedScheduleText(preferences.startingMathCourse);
-    const requestedLanguage = normalizedScheduleText(preferences.startingLanguageCourse);
     const requestedStartGrade = preferences.startGrade ?? workspace.settings.grade_level ?? 9;
     const isExplicitStartingMath = Boolean(requestedMath)
       && candidate.grade_level === requestedStartGrade
       && normalizedScheduleText(`${course.course_code ?? ""} ${course.name}`).includes(requestedMath);
-    const isExplicitStartingLanguage = Boolean(requestedLanguage)
+    const isExplicitStartingLanguage = Boolean(preferences.startingLanguageCourse)
       && candidate.grade_level === requestedStartGrade
-      && normalizedScheduleText(`${course.course_code ?? ""} ${course.name}`).includes(requestedLanguage);
+      && rankCourseCatalogCandidate(preferences.startingLanguageCourse!, selectedSchoolCatalogDocument(course)).score >= 0;
     const planWithAccepted = [
       ...workspace.planCourses,
       ...accepted.map((row, index) => generatedPlanCourseRow(workspace, row, index))
@@ -2847,7 +2961,18 @@ function generateValidatedSchedule(
       startingLanguageCourse: preferences.startingLanguageCourse
     }
   );
-  const finalSchoolAdditions = finalPruned.schoolAdditions;
+  const requestedCollegeLanguagePlaced = Boolean(preferences.startingLanguageCourse && finalPruned.degreeAdditions.some((row) => {
+    if (row.requirement_area_override !== "world_language") return false;
+    const course = workspace.degreeCatalogCourses.find((candidate) => candidate.id === row.smccd_course_id);
+    if (!course) return false;
+    const equivalency = collegeEquivalencyForCourse(workspace, course);
+    return rankCourseCatalogCandidate(preferences.startingLanguageCourse!, collegeCatalogDocument(course, equivalency)).score >= 0;
+  }));
+  // A requested verified college language placement replaces the generated
+  // school-language path. It must not be appended beside Spanish/French/etc.
+  const finalSchoolAdditions = requestedCollegeLanguagePlaced
+    ? finalPruned.schoolAdditions.filter((row) => !(mappedAreasByCourse.get(row.course_id)?.has("world_language")))
+    : finalPruned.schoolAdditions;
   const finalDegreeAdditions = finalPruned.degreeAdditions;
   return {
     additions: finalSchoolAdditions,
@@ -2986,9 +3111,16 @@ function analyzeGeneratedSchedule(
     const equivalency = collegeCourse
       ? workspace.equivalencies.find((candidate) => candidate.normalized_course_code === normalizeCollegeCourseCode(collegeCourse.course_code))
       : null;
-    const query = normalizedLanguageCourseText(preferences.startingLanguageCourse);
-    const candidate = normalizedLanguageCourseText(`${course?.course_code ?? collegeCourse?.course_code ?? ""} ${course?.name ?? collegeCourse?.title ?? row.custom_course_name ?? ""} ${equivalency?.high_school_equivalent ?? ""}`);
-    return row.grade_level === requestedStartGrade && Boolean(query) && candidate.includes(query);
+    const match = collegeCourse
+      ? rankCourseCatalogCandidate(preferences.startingLanguageCourse!, collegeCatalogDocument(collegeCourse, equivalency ?? null))
+      : rankCourseCatalogCandidate(preferences.startingLanguageCourse!, {
+          code: course?.course_code,
+          title: course?.name ?? row.custom_course_name ?? "",
+          subject: course?.subject,
+          description: course?.description,
+          prerequisites: course?.prerequisites
+        });
+    return row.grade_level === requestedStartGrade && match.score >= 0;
   });
   const collegeExclusionSatisfied = preferences.includeCollegeCourses !== false || generated.every((row) => Number(row.college_units ?? 0) === 0);
   const requestedPlacementWarnings = [
@@ -3149,9 +3281,10 @@ export async function executeAssistantReadTool(
 
   if (name === "get_academic_context") {
     const args = toolArgumentSchemas.get_academic_context.parse(argumentsValue);
-    const planningWorkspace = workspace.collegeGoals.length
-      ? await hydrateDegreePlanningCatalog(supabase, workspace, true)
-      : workspace;
+    // Targeted edits need the same supported college catalog that the Courses
+    // UI searches even when no degree is bookmarked. The response remains
+    // bounded below to sequence/degree-relevant records.
+    const planningWorkspace = await hydrateDegreePlanningCatalog(supabase, workspace, true);
     const plannedCollegeById = new Map([
       ...planningWorkspace.plannedSmccdCourses,
       ...planningWorkspace.degreeCatalogCourses
@@ -3457,14 +3590,12 @@ export async function executeAssistantReadTool(
     const matches: Array<Record<string, unknown>> = [];
     if (source === "high_school" || source === "dtech" || source === "all") {
       const candidates = workspace.courses
-        .map((course) => ({ course, score: courseCatalogMatchScore(query, [course.course_code ?? "", course.name, course.subject].join(" ")) }))
-        .filter(({ score }) => score >= 0)
-        .sort((left, right) => right.score - left.score || left.course.name.localeCompare(right.course.name))
-        .map(({ course }) => course);
-      for (const course of candidates) {
-        if (!selectedSchoolCatalogEligibility(course, targetGrade, workspace.planCourses, workspace.courses, { schoolSlug: workspace.school.slug }).eligible) continue;
+        .map((course) => ({ course, match: rankCourseCatalogCandidate(query, selectedSchoolCatalogDocument(course)) }))
+        .filter(({ match }) => match.score >= 0)
+        .sort((left, right) => right.match.score - left.match.score || left.course.name.localeCompare(right.course.name));
+      for (const { course, match } of candidates) {
+        const availability = selectedSchoolCatalogEligibility(course, targetGrade, workspace.planCourses, workspace.courses, { schoolSlug: workspace.school.slug });
         const prerequisite = evaluateSelectedSchoolPlannerPrerequisites(course, { gradeLevel: targetGrade, term: course.term_type === "semester" ? "fall" : "full_year" }, workspace.courses, workspace.planCourses, workspace.plannedSmccdCourses, workspace.equivalencies);
-        if (prerequisite.result.status === "blocked") continue;
         matches.push({
           source: workspace.school.short_name,
           course_id: course.id,
@@ -3473,7 +3604,16 @@ export async function executeAssistantReadTool(
           credits: course.credits,
           weighted: course.is_weighted,
           grade_levels: course.grade_levels,
-          prerequisite_status: prerequisite.result.status
+          description: course.description,
+          prerequisites: course.prerequisites,
+          already_in_plan: availability.reason === "already_in_plan",
+          placement_status: availability.eligible ? "available" : availability.reason,
+          prerequisite_status: prerequisite.result.status,
+          prerequisite_warning: prerequisiteWarningDetail(prerequisite),
+          match_score: match.score,
+          match_confidence: match.confidence,
+          matched_on: match.matchedOn,
+          match_reason: match.reason
         });
         if (matches.length >= 8) break;
       }
@@ -3491,13 +3631,15 @@ export async function executeAssistantReadTool(
         .replace(/\bskyline(?: college)?\b/gi, "SKY")
         .replace(/\bca(?:ñ|n)ada(?: college)?\b/gi, "CAN");
       const rankedCourses = ((catalogResult.data ?? []) as unknown as SmccdCourse[])
-        .map((course) => ({ course, score: courseCatalogMatchScore(collegeQuery, `${course.course_code} ${course.title} ${course.college_code}`) }))
-        .filter(({ score }) => score >= 0)
-        .sort((left, right) => right.score - left.score
+        .map((course) => {
+          const equivalency = collegeEquivalencyForCourse(workspace, course);
+          return { course, equivalency, match: rankCourseCatalogCandidate(collegeQuery, collegeCatalogDocument(course, equivalency)) };
+        })
+        .filter(({ match }) => match.score >= 0)
+        .sort((left, right) => right.match.score - left.match.score
           || right.course.source_year.localeCompare(left.course.source_year)
           || left.course.college_code.localeCompare(right.course.college_code));
-      for (const { course } of rankedCourses) {
-        if (smccdCourseAlreadyInPlanIndex(course, index)) continue;
+      for (const { course, equivalency, match } of rankedCourses) {
         matches.push({
           source: course.college_code,
           course_id: course.id,
@@ -3506,12 +3648,21 @@ export async function executeAssistantReadTool(
           units: course.units_max ?? course.units_min,
           transfer_credit: course.transfer_credit,
           prerequisites: course.prerequisites,
-          catalog_year: course.source_year
+          attributes: course.attributes,
+          catalog_year: course.source_year,
+          already_in_plan: smccdCourseAlreadyInPlanIndex(course, index),
+          high_school_equivalent: equivalency?.high_school_equivalent ?? null,
+          high_school_requirement_area: equivalency?.requirement_area ?? null,
+          high_school_credits: equivalency?.high_school_credits ?? null,
+          match_score: match.score,
+          match_confidence: match.confidence,
+          matched_on: match.matchedOn,
+          match_reason: match.reason
         });
         if (matches.length >= 10) break;
       }
     }
-    return { summary: `Found ${matches.length} eligible catalog matches for ${String(argumentsValue.query)}.`, data: matches };
+    return { summary: `Found ${matches.length} ranked catalog matches for ${String(argumentsValue.query)}.`, data: matches };
   }
 
   if (name === "resolve_academic_course_batch") {
@@ -3523,7 +3674,7 @@ export async function executeAssistantReadTool(
       grade_level: GradeLevel;
       term: PlanCourse["term"];
     }> = [];
-    const resolved: Array<{ query: string; name: string; source: string; grade_level: GradeLevel; term: PlanCourse["term"] }> = [];
+    const resolved: Array<{ query: string; name: string; source: string; grade_level: GradeLevel; term: PlanCourse["term"]; match_reason?: string; match_confidence?: CourseCatalogMatch["confidence"] }> = [];
     const unresolved: Array<{ query: string; reason: string }> = [];
     const skippedExisting: Array<{ query: string; name: string }> = [];
     const validationRows = [...workspace.planCourses];
@@ -3613,18 +3764,19 @@ export async function executeAssistantReadTool(
     };
 
     const resolvedRequests = args.requests.map((request, requestIndex) => {
-      const grade = request.grade_level ?? targetGraduationGrade;
       const selectedCandidates = request.source === "smccd" ? [] : workspace.courses
-        .map((course) => ({ course, score: courseCatalogMatchScore(request.query, `${course.course_code ?? ""} ${course.name}`) }))
-        .filter((candidate) => candidate.score >= 0)
+        .map((course) => ({ course, match: rankCourseCatalogCandidate(request.query, selectedSchoolCatalogDocument(course)) }))
+        .filter((candidate) => candidate.match.score >= 0)
         .filter(({ course }) => !validationRows.some((row) => row.course_id === course.id))
-        .filter(({ course }) => selectedSchoolCatalogEligibility(course, grade, validationRows, workspace.courses, { schoolSlug: workspace.school.slug }).eligible)
-        .sort((left, right) => right.score - left.score || left.course.name.localeCompare(right.course.name));
+        .sort((left, right) => right.match.score - left.match.score || left.course.name.localeCompare(right.course.name));
       const smccdCandidates = request.source === "selected_school" ? [] : smccdCatalog
-        .map((course) => ({ course, score: courseCatalogMatchScore(request.query, `${course.course_code} ${course.title} ${course.college_code}`) }))
-        .filter((candidate) => candidate.score >= 0)
+        .map((course) => {
+          const equivalency = collegeEquivalencyForCourse(workspace, course);
+          return { course, match: rankCourseCatalogCandidate(request.query, collegeCatalogDocument(course, equivalency)) };
+        })
+        .filter((candidate) => candidate.match.score >= 0)
         .filter(({ course }) => !smccdCourseAlreadyInPlanIndex(course, existingSmccdIndex))
-        .sort((left, right) => right.score - left.score
+        .sort((left, right) => right.match.score - left.match.score
           || collegePreferenceScore(right.course, request.query) - collegePreferenceScore(left.course, request.query)
           || right.course.source_year.localeCompare(left.course.source_year)
           || left.course.college_code.localeCompare(right.course.college_code));
@@ -3632,13 +3784,14 @@ export async function executeAssistantReadTool(
       const smccd = smccdCandidates[0] ?? null;
       const queryLooksLikeCollegeCode = /\b(?:[a-z]{2,5})\s*c?\d{2,4}[a-z.]*\b/i.test(request.query);
       const useSmccd = Boolean(smccd && (!selected
-        || smccd.score > selected.score
-        || (smccd.score === selected.score && queryLooksLikeCollegeCode)));
+        || smccd.match.score > selected.match.score
+        || (smccd.match.score === selected.match.score && queryLooksLikeCollegeCode)));
       return {
         request,
         requestIndex,
         course: useSmccd ? null : selected?.course ?? null,
-        smccd: useSmccd ? smccd?.course ?? null : null
+        smccd: useSmccd ? smccd?.course ?? null : null,
+        match: useSmccd ? smccd?.match ?? null : selected?.match ?? null
       };
     }).sort((left, right) => {
       const leftExplicit = left.request.term ? 0 : 1;
@@ -3665,7 +3818,7 @@ export async function executeAssistantReadTool(
         if (already) skippedExisting.push({ query: request.query, name: "name" in already ? already.name : `${already.course_code} ${already.title}` });
         else unresolved.push({
           query: request.query,
-          reason: `No eligible exact ${request.source === "smccd" ? "SMCCD" : request.source === "selected_school" ? workspace.school.short_name : `${workspace.school.short_name} or SMCCD`} catalog match was found.`
+          reason: `No supported ${request.source === "smccd" ? "SMCCD" : request.source === "selected_school" ? workspace.school.short_name : `${workspace.school.short_name} or SMCCD`} catalog record matched the requested concepts.`
         });
         continue;
       }
@@ -3736,7 +3889,9 @@ export async function executeAssistantReadTool(
         name: selectedCourse?.name ?? `${smccdCourse!.course_code} ${smccdCourse!.title}`,
         source: selectedCourse ? workspace.school.short_name : smccdCourse!.college_code,
         grade_level: selectedEntry.grade_level,
-        term: selectedEntry.term
+        term: selectedEntry.term,
+        match_reason: item.match?.reason,
+        match_confidence: item.match?.confidence
       });
     }
 
