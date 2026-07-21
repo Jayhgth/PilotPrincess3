@@ -635,7 +635,10 @@ async function loadAssistantWorkspace(supabase: SupabaseClient, userId: string):
 }
 
 async function hydrateDegreePlanningCatalog(supabase: SupabaseClient, workspace: AssistantWorkspace, enabled: boolean) {
-  if (!enabled || !workspace.collegeGoals.length || workspace.degreeCatalogCourses.length) return workspace;
+  // College catalog access is needed for explicit concurrent-course requests
+  // and diploma overlap even when the student has not bookmarked a degree.
+  // Degree bookmarks shape optimization; they are not permission to search.
+  if (!enabled || workspace.degreeCatalogCourses.length) return workspace;
   const catalog = await supabase.from(COLLEGE_DATA.courses).select(COLLEGE_COURSE_SELECT);
   if (catalog.error) throw new Error(catalog.error.message);
   return {
@@ -814,14 +817,14 @@ function collegePlanningDifficulty(course: SmccdCourse) {
 function integratedDegreePlan(
   workspace: AssistantWorkspace,
   enrollmentPolicy: EnrollmentPolicy | null,
-  respectRecommendedLimit: boolean,
   preferences: { startGrade?: GradeLevel; startingMathCourse?: string | null; startingLanguageCourse?: string | null; maxCoursesPerTerm?: number | null; enforceSchoolCourseCounts?: boolean; interests?: string[]; objectives?: string[] }
 ) {
   const degreeCode = (value: string) => normalizeCollegeCourseCode(value) ?? normalizedScheduleText(value).toUpperCase();
   const programs = workspace.degreePrograms.filter((program) => workspace.collegeGoals.some((goal) => goal.program_id === program.id));
   const catalog = workspace.degreeCatalogCourses;
-  if (!workspace.collegeGoals.length) return { additions: [] as GeneratedDegreeCourse[], complete: true, goals: [] as Array<Record<string, unknown>> };
-  if (!programs.length || !catalog.length) return {
+  const hasExplicitCollegePlacement = Boolean(preferences.startingLanguageCourse);
+  if (!workspace.collegeGoals.length && !hasExplicitCollegePlacement) return { additions: [] as GeneratedDegreeCourse[], complete: true, goals: [] as Array<Record<string, unknown>> };
+  if (!catalog.length || (workspace.collegeGoals.length > 0 && !programs.length)) return {
     additions: [] as GeneratedDegreeCourse[],
     complete: false,
     goals: workspace.collegeGoals.map((goal) => ({
@@ -1014,7 +1017,7 @@ function integratedDegreePlan(
   const requestedLanguageCourses = requestedLanguageText
     ? catalog.filter((course) => {
         const code = degreeCode(course.course_code);
-        const equivalency = workspace.equivalencies.find((candidate) => candidate.normalized_course_code === code);
+        const equivalency = workspace.equivalencies.find((candidate) => degreeCode(candidate.normalized_course_code) === code);
         if (equivalency?.requirement_area !== "world_language") return false;
         const candidateText = normalizedLanguageCourseText(`${course.course_code} ${course.title} ${equivalency.high_school_equivalent}`);
         return candidateText.includes(requestedLanguageText) || requestedLanguageText.includes(candidateText);
@@ -1297,8 +1300,10 @@ function integratedDegreePlan(
         const affectedEnrollmentKey = `${candidateRow.school_year}:${candidateRow.term}`;
         const affectedEnrollment = evaluateEnrollmentSchedule([...currentRows, candidateRow], enrollmentPolicy)
           .find((evaluation) => evaluation.key === affectedEnrollmentKey);
-        const exceedsEnrollmentPolicy = Boolean(affectedEnrollment
-          && (affectedEnrollment.state === "blocked" || (respectRecommendedLimit && affectedEnrollment.state === "over_policy")));
+        // The recommended unit threshold is advisory. Only the provider's
+        // absolute product limit can prevent an explicitly requested course
+        // placement; over-policy terms remain visible as warnings.
+        const exceedsEnrollmentPolicy = Boolean(affectedEnrollment?.state === "blocked");
         return !exceedsEnrollmentPolicy;
       });
   };
@@ -1308,7 +1313,7 @@ function integratedDegreePlan(
     const period = placementFor(explicitLanguageCourse);
     if (period) {
       const code = degreeCode(explicitLanguageCourse.course_code);
-      const equivalency = workspace.equivalencies.find((candidate) => candidate.normalized_course_code === code);
+      const equivalency = workspace.equivalencies.find((candidate) => degreeCode(candidate.normalized_course_code) === code);
       const collegeUnits = Number(explicitLanguageCourse.units_max ?? explicitLanguageCourse.units_min);
       additions.push({
         smccd_course_id: explicitLanguageCourse.id,
@@ -1534,8 +1539,8 @@ function integratedDegreePlan(
           const nextAudit = audit(nextRows);
           const nextDiploma = diplomaSignatureFor(nextRows);
           const nextBlocked = blockedPrerequisitesFor(nextRows);
-          const enrollmentAccepted = !enrollmentPolicy || evaluateEnrollmentSchedule(nextRows, enrollmentPolicy).every((evaluation) => evaluation.state !== "blocked"
-            && (!respectRecommendedLimit || evaluation.state !== "over_policy"));
+          const enrollmentAccepted = !enrollmentPolicy || evaluateEnrollmentSchedule(nextRows, enrollmentPolicy)
+            .every((evaluation) => evaluation.state !== "blocked");
           const preservesDiploma = [...baselineDiploma].every(([id, value]) => Number(nextDiploma.get(id) ?? 0) + 0.001 >= value);
           const introducesBlockedPrerequisite = [...nextBlocked].some((id) => !baselineBlocked.has(id));
           const gain = nextAudit.score - currentAudit.score;
@@ -1658,7 +1663,7 @@ function normalizedLanguageCourseText(value: string | null | undefined) {
     .replace(/\biii\b/g, "3")
     .replace(/\bii\b/g, "2")
     .replace(/\bi\b/g, "1")
-    .replace(/\b(?:fall|spring|summer|semester|first|second|intermediate|advanced|elementary|beginning)\b/g, " ")
+    .replace(/\b(?:fall|spring|summer|semester|first|second|intermediate|advanced|elementary|beginning|level)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -2406,9 +2411,8 @@ function generateValidatedSchedule(
       } as const;
       if (enrollmentPolicy && Number(course.college_units ?? 0) > 0) {
         const tentative = [...planWithAccepted, generatedPlanCourseRow(workspace, addition, accepted.length)];
-        const exceedsLimit = evaluateEnrollmentSchedule(tentative, enrollmentPolicy).some((termEvaluation) =>
-          termEvaluation.state === "blocked" || (respectRecommendedLimit && termEvaluation.state === "over_policy")
-        );
+        const exceedsLimit = evaluateEnrollmentSchedule(tentative, enrollmentPolicy)
+          .some((termEvaluation) => termEvaluation.state === "blocked");
         if (exceedsLimit) continue;
       }
       accepted.push(addition);
@@ -2504,7 +2508,7 @@ function generateValidatedSchedule(
       } as const;
       if (enrollmentPolicy && Number(course.college_units ?? 0) > 0) {
         const tentative = [...planWithAccepted, generatedPlanCourseRow(workspace, addition, accepted.length)];
-        if (evaluateEnrollmentSchedule(tentative, enrollmentPolicy).some((evaluation) => evaluation.state === "blocked" || (respectRecommendedLimit && evaluation.state === "over_policy"))) continue;
+        if (evaluateEnrollmentSchedule(tentative, enrollmentPolicy).some((evaluation) => evaluation.state === "blocked")) continue;
       }
       accepted.push(addition);
       return true;
@@ -2820,7 +2824,7 @@ function generateValidatedSchedule(
   };
   const degreeRefinement = preferences.includeCollegeCourses === false
     ? { additions: [] as GeneratedDegreeCourse[], complete: true, goals: [] as Array<Record<string, unknown>> }
-    : integratedDegreePlan(refinementWorkspace, enrollmentPolicy, respectRecommendedLimit, {
+    : integratedDegreePlan(refinementWorkspace, enrollmentPolicy, {
         startGrade: preferences.startGrade,
         startingMathCourse: preferences.startingMathCourse,
         startingLanguageCourse: preferences.startingLanguageCourse,
@@ -2987,14 +2991,19 @@ function analyzeGeneratedSchedule(
     return row.grade_level === requestedStartGrade && Boolean(query) && candidate.includes(query);
   });
   const collegeExclusionSatisfied = preferences.includeCollegeCourses !== false || generated.every((row) => Number(row.college_units ?? 0) === 0);
-  const planningWarnings = schedulePlanningWarnings(workspace, generatedRows, [...adjustedPlanCourses, ...integratedCollegeRows], preferences);
+  const requestedPlacementWarnings = [
+    ...(!startingMathSatisfied ? [`No verified ${preferences.startingMathCourse} course was placed in grade ${requestedStartGrade}; the best feasible schedule was kept.`] : []),
+    ...(!startingLanguageSatisfied ? [`No verified ${preferences.startingLanguageCourse} course was placed in grade ${requestedStartGrade}; the best feasible schedule was kept.`] : [])
+  ];
+  const planningWarnings = [
+    ...requestedPlacementWarnings,
+    ...schedulePlanningWarnings(workspace, generatedRows, [...adjustedPlanCourses, ...integratedCollegeRows], preferences)
+  ];
   const proposedRows = [...adjustedPlanCourses, ...integratedCollegeRows, ...generatedRows];
   const enrollmentTerms = enrollmentPolicy ? evaluateEnrollmentSchedule(proposedRows, enrollmentPolicy) : [];
   const invalidEnrollmentTerms = enrollmentTerms.filter((term) => term.state === "blocked");
   const advisoryEnrollmentTerms = enrollmentTerms.filter((term) => term.state === "over_policy");
   const constraintFailures = [
-    ...(!startingMathSatisfied ? [`No verified ${preferences.startingMathCourse} course was placed in grade ${requestedStartGrade}.`] : []),
-    ...(!startingLanguageSatisfied ? [`No verified ${preferences.startingLanguageCourse} course was placed in grade ${requestedStartGrade}.`] : []),
     ...(!collegeExclusionSatisfied ? ["The proposed batch includes college coursework even though it was excluded."] : []),
     ...invalidEnrollmentTerms.map((term) => `${term.schoolYear} ${term.term} has ${term.units} college units, above the selected ${term.selectedLimit}-unit planning limit.`)
   ];

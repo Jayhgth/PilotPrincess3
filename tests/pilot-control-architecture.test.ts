@@ -111,6 +111,7 @@ describe("Pilot complete academic control", () => {
             adjustments: [],
             source_readiness: { evidence_ready: true },
             constraint_validation: { satisfied: true, failures: [] },
+            planning_warnings: ["One requested preference could not be verified; the best feasible schedule was kept."],
             graduation_coverage: { requirement_count: 8, all_requirements_covered_after: false, remaining_gaps: [{ requirement: "Math", credits_remaining: 30 }] },
             degree_planning: { college_course_count: 0 }
           }

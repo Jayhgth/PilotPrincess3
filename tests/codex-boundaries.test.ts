@@ -610,6 +610,10 @@ describe("Codex feature boundaries", () => {
     expect(parseAssistantScheduleIntent("Use ASL 1 instead as my world language and update the plan")).toMatchObject({
       startingLanguageCourse: "asl 1"
     });
+    expect(parseAssistantScheduleIntent("Create a full schedule, start at Chinese level 3 and Algebra 2")).toMatchObject({
+      startingLanguageCourse: "chinese 3",
+      startingMathCourse: "algebra 2"
+    });
     expect(parseAssistantScheduleIntent("Change my intended major to biology and update the plan").interests).toContain("biology");
     expect(parseExactCourseAddition("Add Biology in 10th grade as a full-year course.")).toMatchObject({ query: "Biology", gradeLevel: 10, term: "full_year" });
     expect(requiredAssistantEvidenceReadForConversation([
@@ -634,6 +638,18 @@ describe("Codex feature boundaries", () => {
     ], "Change my starting math to Algebra 2 and rebuild it")).toMatchObject({
       name: "get_course_schedule_options",
       arguments: { start_grade: 9, starting_math_course: "algebra 2", replace_existing: true }
+    });
+    expect(requiredAssistantEvidenceReadForConversation([
+      { role: "user", content: "Create a full schedule, start at Chinese level 3 and Algebra 2." },
+      { role: "assistant", content: "I could not place the requested language course." },
+      { role: "user", content: "This is CSM CHIN 131, Intermediate Chinese I. It counts as Mandarin 3 Fall." },
+      { role: "assistant", content: "The image confirms CSM CHIN 131, Intermediate Chinese I, for Mandarin 3 Fall." }
+    ], "Add that course in along with the rest of the plan.")).toMatchObject({
+      name: "get_course_schedule_options",
+      arguments: {
+        starting_language_course: "CHIN 131",
+        starting_math_course: "algebra 2"
+      }
     });
     expect(requiredAssistantEvidenceRead("Edit my schedule, I start math at alg 2 in 9th")).toEqual({
       name: "get_academic_context",

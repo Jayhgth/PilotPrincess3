@@ -993,14 +993,37 @@ export function requiredAssistantEvidenceReadForConversation(
     return requiredAssistantEvidenceRead(continuedRequest) ?? direct;
   }
 
+  const referencesPriorCourse = /\b(?:that|this|the)\s+(?:exact\s+)?course\b/i.test(userMessage);
+  const addsCourseToPriorPlan = referencesPriorCourse
+    && /\b(?:add|include|put|place|use)\b/i.test(userMessage)
+    && /\b(?:rest of (?:the )?(?:plan|schedule)|full (?:plan|schedule)|along with)\b/i.test(userMessage);
   const scheduleContinuation = Boolean(parseScheduleAnswer(userMessage))
-    || /\b(?:redo|rebuild|regenerate|redesign)\b.{0,30}\b(?:it|that|plan|schedule)\b/i.test(userMessage);
+    || /\b(?:redo|rebuild|regenerate|redesign)\b.{0,30}\b(?:it|that|plan|schedule)\b/i.test(userMessage)
+    || addsCourseToPriorPlan;
   if (!scheduleContinuation) return direct;
 
   const previousRequest = [...history].reverse().find((message) => message.role === "user"
     && requiredAssistantEvidenceRead(message.content)?.name === "get_course_schedule_options");
   if (!previousRequest) return direct;
-  return requiredAssistantEvidenceRead(`${userMessage}\n\nPrevious schedule request: ${previousRequest.content}`) ?? direct;
+  const recentCourseEvidence = referencesPriorCourse
+    ? [...history].reverse().find((message) => /\b[A-Z]{2,5}\s+C?\d{3,4}[A-Z]?\b/.test(message.content))?.content
+    : null;
+  const continuation = requiredAssistantEvidenceRead([
+    userMessage,
+    `Previous schedule request: ${previousRequest.content}`,
+    recentCourseEvidence ? `Previously resolved course evidence: ${recentCourseEvidence}` : null
+  ].filter(Boolean).join("\n\n")) ?? direct;
+  const exactCourseCode = recentCourseEvidence?.match(/\b(?:[A-Z]{2,5}:)?([A-Z]{2,5}\s+C?\d{3,4}[A-Z]?)\b/)?.[1];
+  if (continuation?.name === "get_course_schedule_options" && exactCourseCode) {
+    return {
+      ...continuation,
+      arguments: {
+        ...continuation.arguments,
+        starting_language_course: exactCourseCode
+      }
+    };
+  }
+  return continuation;
 }
 
 function isStructuredAssistantAnswer(value: string) {
@@ -1127,6 +1150,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     new RegExp(`\\b(?:change|switch|set|move)\\s+(?:my\\s+)?(?:starting\\s+)?math\\s+(?:course\\s+)?(?:to|as)\\s+${mathName}\\b`),
     new RegExp(`\\b(?:make|have|use)\\s+${mathName}\\s+(?:as|for)\\s+(?:my\\s+)?(?:starting\\s+)?math\\b`),
     new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+${mathName}\\b`),
+    new RegExp(`\\bstart(?:ing)?\\s+(?:at|with)\\s+[^,.;]{1,60}\\band\\s+${mathName}\\b`),
     new RegExp(`\\b${mathName}\\s+(?:in|at|for)\\s+grade\\s*(?:9|10|11|12)\\b`)
   ].map((pattern) => normalized.match(pattern)?.[1]).find(Boolean)?.trim() ?? null;
   const startingMathCourse = rawStartingMathCourse
@@ -1134,7 +1158,7 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
     .replace(/^algebra\s+i$/i, "algebra 1")
     .replace(/^algebra\s+ii$/i, "algebra 2")
     ?? null;
-  const languageName = "((?:spanish|french|chinese|mandarin|japanese|latin|german|italian)(?:\\s+(?:1|2|3|4|i|ii|iii|iv|ap))?|american sign language(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?|asl(?:\\s+(?:1|2|3|4|i|ii|iii|iv))?)";
+  const languageName = "((?:spanish|french|chinese|mandarin|japanese|latin|german|italian)(?:\\s+(?:level\\s*)?(?:1|2|3|4|i|ii|iii|iv|ap))?|american sign language(?:\\s+(?:level\\s*)?(?:1|2|3|4|i|ii|iii|iv))?|asl(?:\\s+(?:level\\s*)?(?:1|2|3|4|i|ii|iii|iv))?)";
   const patternLanguageCourse = [
     new RegExp(`\\b(?:replace|swap)\\s+${languageName}\\s+(?:with|for)\\s+${languageName}\\b`),
     new RegExp(`\\b(?:change|switch|set)\\s+(?:(?:my|the)\\s+)?(?:world\\s+)?language(?:\\s+(?:course|credit))?\\s+(?:to|as)\\s+(?:just\\s+|only\\s+)?${languageName}\\b`),
@@ -1159,7 +1183,9 @@ export function parseAssistantScheduleIntent(userMessage: string): AssistantSche
   const mostSpecificLanguageMention = conversationalLanguageIntent
     ? languageMentions.sort((left, right) => Number(/\b(?:1|2|3|4|i|ii|iii|iv|ap)\b/.test(right)) - Number(/\b(?:1|2|3|4|i|ii|iii|iv|ap)\b/.test(left)) || right.length - left.length)[0] ?? null
     : null;
-  const startingLanguageCourse = mostSpecificLanguageMention ?? patternLanguageCourse;
+  const startingLanguageCourse = (mostSpecificLanguageMention ?? patternLanguageCourse)
+    ?.replace(/\blevel\s+/i, "")
+    ?? null;
   const clearing = /\b(clear|empty|wipe|remove|delete)\b/.test(normalized)
     && /\b(schedule|plan|courses|classes)\b/.test(normalized)
     && (/\b(all|every|whole|entire)\b/.test(normalized) || requestsScheduleConstruction(userMessage))
