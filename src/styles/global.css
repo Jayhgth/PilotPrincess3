@@ -614,7 +614,7 @@ input:focus, select:focus, textarea:focus {
 .desktop-window-drag-region { display: none; }
 .desktop-macos .desktop-window-drag-region {
   position: fixed;
-  z-index: 2147483645;
+  z-index: 70;
   top: 0;
   right: 0;
   left: calc(var(--app-sidebar-width, 248px) + 12px);

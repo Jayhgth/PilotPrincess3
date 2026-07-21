@@ -82,8 +82,15 @@
   border-bottom: 1px solid var(--line);
   background: var(--chrome-surface);
   padding-right: 10px;
+  transition: right 180ms cubic-bezier(.2, .8, .2, 1);
   -webkit-app-region: drag;
   user-select: none;
+}
+.desktop-macos .t3code-app.assistant-docked .desktop-navigation {
+  right: var(--assistant-panel-width, 420px);
+}
+:root[data-assistant-resizing="true"] .desktop-macos .desktop-navigation {
+  transition: none;
 }
 .desktop-macos .desktop-navigation-controls {
   display: flex;
@@ -163,7 +170,11 @@
 }
 .desktop-macos .t3code-app .app-toolbar { display: none; }
 .desktop-macos .desktop-assistant-drawer {
-  top: 44px;
+  top: 0;
+}
+.desktop-macos .desktop-assistant-drawer > header {
+  height: 44px;
+  min-height: 44px;
 }
 .t3code-app .app-content { width: min(100%, 1240px); min-width: 0; padding-top: 22px; }
 .t3code-app .page-header { min-height: 58px; margin-bottom: 16px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
