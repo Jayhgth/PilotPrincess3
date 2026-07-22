@@ -33,7 +33,6 @@ import {
   transcriptPlanCourseDraft,
   type TranscriptCoursePayload
 } from "@/lib/transcript";
-import BrandMark from "@/components/BrandMark";
 import CodexConnectionSetup, { type CodexSetupValue } from "@/components/CodexConnectionSetup";
 import InstitutionIdentityMark from "@/components/InstitutionIdentityMark";
 import TranscriptAiRunDetails, { type TranscriptAiTransparency } from "@/components/TranscriptAiRunDetails";
@@ -534,7 +533,6 @@ export default function OnboardingFlow({
   return (
     <main className="onboarding-shell t3code-app" data-stage={stage} data-stage-index={stageIndex}>
       <header className="onboarding-topbar">
-        <a className="wordmark" href="/app"><BrandMark /><span>Pilot Princess</span></a>
         <div className="onboarding-topbar-actions">
           {isReplay && <span>Setup changes save at Finish. Pilot approval saves on its step.</span>}
           <button className="quiet-button onboarding-theme-toggle" onClick={onThemeToggle} type="button" title={`Use ${theme === "light" ? "dark" : "light"} theme`} aria-label={`Use ${theme === "light" ? "dark" : "light"} theme`}>

@@ -681,7 +681,7 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   min-height: 68px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   padding: 0 clamp(18px, 4vw, 48px);
