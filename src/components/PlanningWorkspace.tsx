@@ -1272,7 +1272,6 @@ export default function PlanningWorkspace() {
           courses={courses}
           mappings={mappings}
           equivalencies={equivalencies}
-          activeVersion={activeVersion}
           existingPlanCourses={planCourses}
           theme={theme}
           mode={replayingOnboarding ? "replay" : "initial"}

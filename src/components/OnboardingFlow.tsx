@@ -114,7 +114,6 @@ interface OnboardingFlowProps {
   courses: Course[];
   mappings: CourseRequirementMapping[];
   equivalencies: SmccdHighSchoolEquivalency[];
-  activeVersion: PlanVersion;
   existingPlanCourses: PlanCourse[];
   theme: "light" | "dark";
   mode?: "initial" | "replay";
@@ -132,7 +131,6 @@ export default function OnboardingFlow({
   courses,
   mappings,
   equivalencies,
-  activeVersion,
   existingPlanCourses,
   theme,
   mode = "initial",
@@ -380,6 +378,7 @@ export default function OnboardingFlow({
         .from("official_sources")
         .select("*")
         .eq("user_id", session.user.id)
+        .eq("school_id", activeSchool.id)
         .eq("document_type", "transcript")
         .order("created_at", { ascending: false })
         .limit(1)
@@ -446,13 +445,33 @@ export default function OnboardingFlow({
     if (!validateStage()) return;
     setBusyLabel(isReplay ? "Saving onboarding changes" : "Creating your workspace");
     try {
+      // The school-selection RPC can activate a different school-scoped plan
+      // after this component was mounted. Resolve the current version at the
+      // write boundary so transcript history never lands in the prior school.
+      const { data: currentPlan, error: currentPlanError } = await supabase
+        .from("four_year_plans")
+        .select("id")
+        .eq("user_id", session.user.id)
+        .eq("is_active", true)
+        .single();
+      if (currentPlanError || !currentPlan) throw currentPlanError ?? new Error("The active plan is unavailable.");
+      const { data: currentVersion, error: currentVersionError } = await supabase
+        .from("plan_versions")
+        .select("*")
+        .eq("plan_id", currentPlan.id)
+        .eq("user_id", session.user.id)
+        .eq("kind", "active")
+        .is("archived_at", null)
+        .single();
+      if (currentVersionError || !currentVersion) throw currentVersionError ?? new Error("The active plan version is unavailable.");
+      const targetVersion = currentVersion as unknown as PlanVersion;
       const selectedIds = [...selectedTranscriptIds];
       const rejectedIds = transcriptItems.filter((item) => !selectedTranscriptIds.has(item.id)).map((item) => item.id);
 
       const { data: persistedPlanData, error: persistedPlanError } = await supabase
         .from("plan_courses")
         .select("*")
-        .eq("plan_version_id", activeVersion.id);
+        .eq("plan_version_id", targetVersion.id);
       if (persistedPlanError) throw persistedPlanError;
       const persistedPlanCourses = (persistedPlanData ?? []) as unknown as PlanCourse[];
       const linkedPlanCoursesByReviewId = new Map(
@@ -470,13 +489,13 @@ export default function OnboardingFlow({
         return {
           id: existing?.id ?? crypto.randomUUID(),
           ...draft,
-          plan_version_id: activeVersion.id,
+          plan_version_id: targetVersion.id,
           user_id: session.user.id,
           sort_order: existing?.sort_order ?? nextSortOrder++
         };
       });
       await commitTranscriptImport(supabase, {
-        planVersionId: activeVersion.id,
+        planVersionId: targetVersion.id,
         approvedIds: selectedIds,
         rejectedIds,
         planRows: candidates
@@ -502,7 +521,7 @@ export default function OnboardingFlow({
         .from("plan_versions")
         .update({
           generation_config: {
-            ...activeVersion.generation_config,
+            ...targetVersion.generation_config,
             tracker_mode: completedSettings.tracker_mode,
             tracked_requirement_areas: completedSettings.tracked_requirement_areas,
             ai_enabled: completedSettings.ai_enabled,
@@ -510,7 +529,7 @@ export default function OnboardingFlow({
             ...(isReplay ? {} : { transcript_courses_imported: candidates.length })
           }
         })
-        .eq("id", activeVersion.id);
+        .eq("id", targetVersion.id);
       if (versionError) throw versionError;
       await supabase.rpc("log_app_event", {
         event_name: isReplay ? "onboarding_replayed" : "onboarding_completed",

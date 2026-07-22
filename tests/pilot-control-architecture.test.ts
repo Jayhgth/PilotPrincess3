@@ -551,6 +551,12 @@ describe("Pilot complete academic control", () => {
     const planContextMigration = readFileSync(new URL("../supabase/migrations/20260719130000_plan_context_and_transcript_history.sql", import.meta.url), "utf8");
     expect(planContextMigration).toContain("course.source_review_item_id is not null");
     expect(planContextMigration).toContain("existing.plan_version_id = target.id");
+    const transcriptImportMigration = readFileSync(new URL("../supabase/migrations/20260722120000_idempotent_transcript_import.sql", import.meta.url), "utf8");
+    expect(transcriptImportMigration).toContain("on conflict (plan_version_id, source_review_item_id)");
+    expect(transcriptImportMigration).toContain("course.plan_version_id = p_plan_version_id");
+    const onboardingSource = readFileSync(new URL("../src/components/OnboardingFlow.tsx", import.meta.url), "utf8");
+    expect(onboardingSource).toContain('.eq("is_active", true)');
+    expect(onboardingSource).toContain("planVersionId: targetVersion.id");
     const toolSource = readFileSync(new URL("../src/server/ai-tools.ts", import.meta.url), "utf8");
     expect(toolSource).not.toContain("has an unmet prerequisite for the requested planning window");
     expect(toolSource).toContain('.eq("plan_version_id", workspace.activeVersion.id)');
