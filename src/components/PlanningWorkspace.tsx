@@ -520,10 +520,18 @@ export default function PlanningWorkspace() {
       setGpaScenarioChoices(cached.gpaChoices as GpaScenarioChoice[]);
     }
     try {
-      const slice = await loadPlanWorkspaceSlice(supabase, session.user.id, nextVersion.id);
+      const [slice, degreeSlice] = await Promise.all([
+        loadPlanWorkspaceSlice(supabase, session.user.id, nextVersion.id),
+        loadDegreeWorkspaceSlice(supabase, session.user.id, nextVersion.plan_id)
+      ]);
       setPlanCourses(slice.planCourses);
       if (!slice.collegeCatalogError) setPlannedSmccdCourses(slice.plannedCollegeCourses);
       setGpaScenarioChoices(slice.gpaChoices as GpaScenarioChoice[]);
+      setDegreeGoals(degreeSlice.goals);
+      setDegreePrograms(degreeSlice.programs);
+      setDegreeRequirements(degreeSlice.requirements);
+      setDegreeRequirementCourses(degreeSlice.requirementCourses);
+      setManualSmccdCompletions(degreeSlice.manualCompletions);
       if (slice.collegeCatalogError) {
         setToastKind("info");
         setToast("The plan opened. College catalog details will refresh automatically when the provider is available.");
@@ -1558,6 +1566,18 @@ export default function PlanningWorkspace() {
             activeVersion={activeVersion}
             planCourses={planCourses}
             equivalencies={equivalencies}
+            savedGoals={degreeGoals}
+            onGoalsChanged={(goals, catalog) => {
+              const programIds = new Set(goals.map((goal) => goal.program_id));
+              const nextPrograms = catalog.programs.filter((program) => programIds.has(program.id));
+              const requirementIds = new Set(catalog.requirements
+                .filter((requirement) => programIds.has(requirement.program_id))
+                .map((requirement) => requirement.id));
+              setDegreeGoals(goals);
+              setDegreePrograms(nextPrograms);
+              setDegreeRequirements(catalog.requirements.filter((requirement) => requirementIds.has(requirement.id)));
+              setDegreeRequirementCourses(catalog.requirementCourses.filter((option) => requirementIds.has(option.requirement_id)));
+            }}
             manualCompletions={manualSmccdCompletions}
             onManualCompletionsChanged={setManualSmccdCompletions}
             onFindCourse={(course) => {

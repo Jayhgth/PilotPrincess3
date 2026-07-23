@@ -60,6 +60,8 @@ interface Props {
   activeVersion: PlanVersion;
   planCourses: PlanCourse[];
   equivalencies: SmccdHighSchoolEquivalency[];
+  savedGoals?: StudentSmccdGoal[];
+  onGoalsChanged?: (goals: StudentSmccdGoal[], catalog: SmccdDegreeCatalog) => void;
   manualCompletions?: StudentSmccdGeCompletion[];
   onManualCompletionsChanged?: (completions: StudentSmccdGeCompletion[]) => void;
   focusCourseId?: string | null;
@@ -167,6 +169,8 @@ export default function SmccdPlanner({
   activeVersion,
   planCourses,
   equivalencies,
+  savedGoals,
+  onGoalsChanged,
   manualCompletions,
   onManualCompletionsChanged,
   focusCourseId,
@@ -177,7 +181,7 @@ export default function SmccdPlanner({
 }: Props) {
   const [courseCatalogReady, setCourseCatalogReady] = useState(Boolean(courseCatalogCache));
   const [degreeCatalogReady, setDegreeCatalogReady] = useState(Boolean(degreeCatalogCache));
-  const [goalsReady, setGoalsReady] = useState(surface === "courses" || cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id) !== null);
+  const [goalsReady, setGoalsReady] = useState(savedGoals !== undefined || surface === "courses" || cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id) !== null);
   const [geCompletionsReady, setGeCompletionsReady] = useState(surface === "courses" || manualCompletions !== undefined || geCompletionsCache.has(session.user.id));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -188,6 +192,7 @@ export default function SmccdPlanner({
   const [requirements, setRequirements] = useState<SmccdProgramRequirement[]>(() => degreeCatalogCache?.requirements ?? []);
   const [requirementCourses, setRequirementCourses] = useState<SmccdRequirementCourse[]>(() => degreeCatalogCache?.requirementCourses ?? []);
   const [goals, setGoals] = useState<StudentSmccdGoal[]>(() => cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id) ?? []);
+  const effectiveGoals = savedGoals ?? goals;
   const [geCompletions, setGeCompletions] = useState<StudentSmccdGeCompletion[]>(() => manualCompletions ?? geCompletionsCache.get(session.user.id) ?? []);
   const effectiveGeCompletions = manualCompletions ?? geCompletions;
   const [geCollegeCode, setGeCollegeCode] = useState<SmccdCourse["college_code"]>("CSM");
@@ -243,6 +248,11 @@ export default function SmccdPlanner({
 
   useEffect(() => {
     if (surface !== "degree") return;
+    if (savedGoals !== undefined) {
+      cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, savedGoals);
+      setGoalsReady(true);
+      return;
+    }
     const cachedGoals = cachedStudentSmccdGoals(session.user.id, activeVersion.plan_id);
     if (cachedGoals) {
       void Promise.resolve().then(() => {
@@ -268,7 +278,7 @@ export default function SmccdPlanner({
       }
     })();
     return () => { active = false; };
-  }, [activeVersion.plan_id, session.user.id, supabase, surface]);
+  }, [activeVersion.plan_id, savedGoals, session.user.id, supabase, surface]);
 
   useEffect(() => {
     if (surface === "courses") return;
@@ -464,7 +474,7 @@ export default function SmccdPlanner({
     setBusy(true);
     setError(null);
     try {
-      const existing = goals.find((goal) => goal.program_id === programId);
+      const existing = effectiveGoals.find((goal) => goal.program_id === programId);
       if (existing) {
         setNotice("This degree is already bookmarked.");
         return;
@@ -475,11 +485,10 @@ export default function SmccdPlanner({
         programId,
         isPrimary: false
       });
-      setGoals((current) => {
-        const next = [...current, data as unknown as StudentSmccdGoal];
-        cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);
-        return next;
-      });
+      const next = [...effectiveGoals, data as unknown as StudentSmccdGoal];
+      setGoals(next);
+      cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);
+      onGoalsChanged?.(next, { programs, requirements, requirementCourses });
       setNotice("Degree bookmarked.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The degree could not be bookmarked.");
@@ -494,11 +503,10 @@ export default function SmccdPlanner({
     try {
       const { error } = await supabase.from("student_smccd_goals").delete().eq("id", goal.id);
       if (error) throw error;
-      setGoals((current) => {
-        const next = current.filter((item) => item.id !== goal.id);
-        cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);
-        return next;
-      });
+      const next = effectiveGoals.filter((item) => item.id !== goal.id);
+      setGoals(next);
+      cacheStudentSmccdGoals(session.user.id, activeVersion.plan_id, next);
+      onGoalsChanged?.(next, { programs, requirements, requirementCourses });
       setNotice("Bookmark removed. Your course plan was not changed.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The bookmark could not be removed.");
@@ -713,7 +721,7 @@ export default function SmccdPlanner({
           <div><h2>Associate degree planner</h2><p>Compare official AA and AS programs against completed work and the active plan.</p></div>
           <div className="smccd-program-filters smccd-program-toolbar">
             <label className="search-box"><MagnifyingGlass size={15} /><input aria-label="Search associate degrees" value={programSearch} onChange={(event) => { setProgramSearch(event.target.value); setProgramRenderLimit(24); }} placeholder="Search degrees" /></label>
-            <span>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs, ${goals.length} marked`}</span>
+            <span>{programSearch !== deferredProgramSearch ? "Updating" : `${visiblePrograms.length} programs, ${effectiveGoals.length} marked`}</span>
           </div>
         </header>
 
@@ -722,7 +730,7 @@ export default function SmccdPlanner({
             <colgroup><col className="smccd-degree-column" /><col className="smccd-progress-column" /><col className="smccd-major-column" /></colgroup>
             <thead><tr><th>Degree</th><th>Progress</th><th>Major units</th></tr></thead>
             <tbody>{renderedPrograms.map(({ program, progress: programResult }) => {
-              const markedGoal = goals.find((goal) => goal.program_id === program.id);
+              const markedGoal = effectiveGoals.find((goal) => goal.program_id === program.id);
               const isMarked = Boolean(markedGoal);
               const isSelected = goalProgramId === program.id;
               const localDegreeProgress = localDegreeProgressByCollege.get(program.college_code)!;
