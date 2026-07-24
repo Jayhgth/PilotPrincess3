@@ -570,6 +570,11 @@ describe("Pilot complete academic control", () => {
     const planNameMigration = readFileSync(new URL("../supabase/migrations/20260720100000_plan_version_name_reuse.sql", import.meta.url), "utf8");
     expect(planNameMigration).toContain("create_plan_version_v3");
     expect(planNameMigration).toContain("generation_config ->> 'role' = 'backup'");
+    const smccdArea7aMigration = readFileSync(new URL("../supabase/migrations/20260723120000_default_smccd_area_7a_completion.sql", import.meta.url), "utf8");
+    expect(smccdArea7aMigration).toContain("seed_smccd_area_7a_defaults");
+    expect(smccdArea7aMigration).toContain("district.policy_provider_code = 'SMCCD'");
+    expect(smccdArea7aMigration).toContain("from (values ('CSM'), ('SKY'), ('CAN'))");
+    expect(smccdArea7aMigration).toContain("on conflict (user_id, college_code, area) do nothing");
     expect(toolSource).toContain('rpc("replace_pilot_course_schedule_v2"');
     }
   });
